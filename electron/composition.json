@@ -616,6 +616,13 @@
     "file": "features/html-video-ipc.ts",
     "export": "htmlVideoFeature",
     "config": null
+  },
+  {
+    "id": "cloud-reserve",
+    "enabled": true,
+    "file": "features/cloud-reserve-ipc.ts",
+    "export": "cloudReserveFeature",
+    "config": null
   }
   ]
 }

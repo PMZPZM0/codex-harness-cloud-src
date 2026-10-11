@@ -670,6 +670,34 @@ contextBridge.exposeInMainWorld("codex", {
   freeGatewayModels: () => __ipc("free-gateway:models", 0, []),
   /* 免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除） */
   freeGatewayUninstall: () => __ipc("free-gateway:uninstall", 0, []),
+  /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
+  cloudSyncStatus: () => __ipc("cloud:sync/status", 0, []),
+  /* 云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}） */
+  cloudSyncPush: (input?: { paths: string[] }) => __ipc("cloud:sync/push", 0, [input]),
+  /* 云版预留：按 key 从云端拉回数据（未开通前为预留桩） */
+  cloudSyncPull: (input?: { keys: string[] }) => __ipc("cloud:sync/pull", 0, [input]),
+  /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
+  cloudSyncConflictResolve: (key: string, resolution: string) => __ipc("cloud:sync/conflict/resolve", 2, [key, resolution]),
+  /* 云版预留（真实现）：列出本机已配对设备/用户（HARNESS_CLOUD_HOME/users.json），token 只给指纹前 6 位 */
+  cloudDeviceList: () => __ipc("cloud:device/list", 0, []),
+  /* 云版预留（真实现）：解绑设备/用户（从 users.json 移除，其 token 立即失效） */
+  cloudDeviceUnbind: (name: string) => __ipc("cloud:device/unbind", 1, [name]),
+  /* 云版预留（本地缓存真实现）：站长公告列表（userData/cloud-notify.json）；fetchedFromServer=false = 服务器拉取尚未接入 */
+  cloudNotifyList: () => __ipc("cloud:notify/list", 0, []),
+  /* 云版预留（真实现）：公告标记已读 */
+  cloudNotifyMarkRead: (id: string) => __ipc("cloud:notify/mark-read", 1, [id]),
+  /* 云版预留（真实现）：助手自更新检查——探测 /cloud/assistant/version.json（当前服务器无此文件 → available:false + reason） */
+  cloudUpdateCheck: () => __ipc("cloud:update/check", 0, []),
+  /* 云版预留（桩）：下载新版本包——check 的 url 字段已就位，接下载器即通 */
+  cloudUpdateDownload: () => __ipc("cloud:update/download", 0, []),
+  /* 云版预留（桩）：应用更新（替换 + 重启） */
+  cloudUpdateApply: () => __ipc("cloud:update/apply", 0, []),
+  /* 云版预留（真实现）：工具链在位状态（node/python/rg；mode=on-demand 对应用户定稿的「精简包+按需下载」发布形态） */
+  cloudToolsStatus: () => __ipc("cloud:tools/status", 0, []),
+  /* 云版预留（桩）：按需下载指定工具（服务器 /cloud/tools/ 分发目录就绪后即通） */
+  cloudToolsDownload: (name: string) => __ipc("cloud:tools/download", 1, [name]),
+  /* 云版预留（真实现）：工具下载进度 */
+  cloudToolsProgress: (name: string) => __ipc("cloud:tools/progress", 1, [name]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

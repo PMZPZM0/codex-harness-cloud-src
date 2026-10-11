@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（89 个能力域 / 449 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（90 个能力域 / 463 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -337,6 +337,10 @@ SkillHub **专家市场包**（skillhub.cn/skillspackage，55 包）：list 浏�
 ### whatsnew（3 通道）
 「更新到新版本后首次启动」的**新功能介绍弹窗**（10-06）：state 取该版本的要点与「该不该弹」（判定含：这个版本有没有要点、用户看过没有、是升级还是全新安装——全新安装不弹，避免新用户看到莫名其妙的「更新内容」）；ack 记下当前版本已看过 ⇒ 同版本不再弹。要点数据在主进程 electron/whats-new-notes.ts，每次发版要加一条（守卫【11r】钉）。⛔ 模型侧用不到它
 通道：whatsnew:ack, whatsnew:history, whatsnew:state
+
+### cloud（14 通道）
+**云版预留接口层**（10-11，14 条，命名 cloud:<组>/<动作>）：云版产品线的占位通道，渲染层/远端按稳定通道名先行开发，后端逐步把桩换真。五组：cloud:sync/*（云端存储数据同步，预留桩）、cloud:device/*（本机配对设备管理，真实现）、cloud:notify/*（站长公告，本地缓存真实现）、cloud:update/*（助手自更新，check 真实现）、cloud:tools/*（工具链按需下载，status/progress 真实现）。⛔ 预留桩统一返回 {ok:false, reserved:true, code, error}，调用方以 reserved!==true 判能力；通道名发布即冻结只增不改
+通道：cloud:sync/conflict/resolve, cloud:sync/pull, cloud:sync/push, cloud:sync/status, cloud:device/list, cloud:device/unbind, cloud:notify/list, cloud:notify/mark-read, cloud:update/apply, cloud:update/check, cloud:update/download, cloud:tools/download, cloud:tools/progress, cloud:tools/status
 
 ### soul-market（4 通道）
 SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏览 / get 看人设全文 / current 当前生效 / apply 应用人格（写 personalization.persona + 同步 AGENTS.md，**下一个新会话生效**，slug=null 还原默认）。用户想「换个性格/语气」时用它

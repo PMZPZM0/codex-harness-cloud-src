@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 449,
+  "count": 463,
   "channels": [
     {
       "name": "request",
@@ -4461,6 +4461,146 @@
       "invokeArgs": "",
       "cast": null,
       "note": "免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除）"
+    },
+    {
+      "name": "cloudSyncStatus",
+      "channel": "cloud:sync/status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ enabled: boolean; reserved: boolean; quotaBytes: number; usedBytes: number; lastSyncAt: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出）"
+    },
+    {
+      "name": "cloudSyncPush",
+      "channel": "cloud:sync/push",
+      "paramsImpl": "input?: { paths: string[] }",
+      "paramsDecl": "input?: { paths: string[] }",
+      "returns": "Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}）"
+    },
+    {
+      "name": "cloudSyncPull",
+      "channel": "cloud:sync/pull",
+      "paramsImpl": "input?: { keys: string[] }",
+      "paramsDecl": "input?: { keys: string[] }",
+      "returns": "Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "云版预留：按 key 从云端拉回数据（未开通前为预留桩）"
+    },
+    {
+      "name": "cloudSyncConflictResolve",
+      "channel": "cloud:sync/conflict/resolve",
+      "paramsImpl": "key: string, resolution: string",
+      "paramsDecl": "key: string, resolution: string",
+      "returns": "Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>",
+      "invokeArgs": "key, resolution",
+      "cast": null,
+      "note": "云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩）"
+    },
+    {
+      "name": "cloudDeviceList",
+      "channel": "cloud:device/list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ devices: { name: string; createdAt: number; tokenFingerprint: string }[] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "云版预留（真实现）：列出本机已配对设备/用户（HARNESS_CLOUD_HOME/users.json），token 只给指纹前 6 位"
+    },
+    {
+      "name": "cloudDeviceUnbind",
+      "channel": "cloud:device/unbind",
+      "paramsImpl": "name: string",
+      "paramsDecl": "name: string",
+      "returns": "Promise<{ ok: boolean; removed: string; remaining: number }>",
+      "invokeArgs": "name",
+      "cast": null,
+      "note": "云版预留（真实现）：解绑设备/用户（从 users.json 移除，其 token 立即失效）"
+    },
+    {
+      "name": "cloudNotifyList",
+      "channel": "cloud:notify/list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ notices: { id: string; title: string; body: string; at: number; read?: boolean }[]; fetchedFromServer: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "云版预留（本地缓存真实现）：站长公告列表（userData/cloud-notify.json）；fetchedFromServer=false = 服务器拉取尚未接入"
+    },
+    {
+      "name": "cloudNotifyMarkRead",
+      "channel": "cloud:notify/mark-read",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "云版预留（真实现）：公告标记已读"
+    },
+    {
+      "name": "cloudUpdateCheck",
+      "channel": "cloud:update/check",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ available: boolean; current?: string; latest?: string; url?: string; notes?: string; reason?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "云版预留（真实现）：助手自更新检查——探测 /cloud/assistant/version.json（当前服务器无此文件 → available:false + reason）"
+    },
+    {
+      "name": "cloudUpdateDownload",
+      "channel": "cloud:update/download",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "云版预留（桩）：下载新版本包——check 的 url 字段已就位，接下载器即通"
+    },
+    {
+      "name": "cloudUpdateApply",
+      "channel": "cloud:update/apply",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "云版预留（桩）：应用更新（替换 + 重启）"
+    },
+    {
+      "name": "cloudToolsStatus",
+      "channel": "cloud:tools/status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ tools: { name: string; label: string; ready: boolean }[]; mode: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "云版预留（真实现）：工具链在位状态（node/python/rg；mode=on-demand 对应用户定稿的「精简包+按需下载」发布形态）"
+    },
+    {
+      "name": "cloudToolsDownload",
+      "channel": "cloud:tools/download",
+      "paramsImpl": "name: string",
+      "paramsDecl": "name: string",
+      "returns": "Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>",
+      "invokeArgs": "name",
+      "cast": null,
+      "note": "云版预留（桩）：按需下载指定工具（服务器 /cloud/tools/ 分发目录就绪后即通）"
+    },
+    {
+      "name": "cloudToolsProgress",
+      "channel": "cloud:tools/progress",
+      "paramsImpl": "name: string",
+      "paramsDecl": "name: string",
+      "returns": "Promise<{ running: boolean; bytes: number; total: number; error: string | null }>",
+      "invokeArgs": "name",
+      "cast": null,
+      "note": "云版预留（真实现）：工具下载进度"
     }
   ]
 }
