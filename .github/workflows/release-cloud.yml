@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ASSISTANT_VERSION: "0.0.1"
+  ASSISTANT_VERSION: "0.0.2"
   PUBLIC_REPO: PMZPZM0/codex-harness-desktop
 
 jobs:
@@ -82,7 +82,7 @@ jobs:
         include:
           - runner: macos-latest
             arch: arm64
-          - runner: macos-13
+          - runner: macos-15-intel
             arch: x64
     runs-on: ${{ matrix.runner }}
     steps:
