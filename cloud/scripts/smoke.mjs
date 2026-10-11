@@ -18,7 +18,7 @@
  *   与模型无关。失败时一定是我们的 bug，不会跟上游随机行为混淆。
  */
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -125,6 +125,10 @@ function schemaCheck(name, schemaFile, payload) {
 const PORT = Number(process.env.SMOKE_PORT || 8919);
 const BASE = `http://127.0.0.1:${PORT}`;
 const home = mkdtempSync(path.join(tmpdir(), "chc-smoke-"));
+// 多用户：预先给「Alice」签发个人码（真实流程是 --add-user 签发后落这个文件）
+writeFileSync(path.join(home, "users.json"), JSON.stringify([
+  { name: "Alice", code: "a1b2c3d4", token: "f".repeat(48), createdAt: Date.now() },
+]), "utf8");
 const child = spawn(process.execPath, [path.join(CLOUD_DIR, "local-agent", "server.js"), "--mock"], {
   cwd: CLOUD_DIR,
   env: { ...process.env, HARNESS_CLOUD_HOME: home, HARNESS_CLOUD_PORT: String(PORT), HARNESS_CLOUD_QUIET: "1", MOCK_ENGINE_STEP_MS: "40" },
@@ -161,9 +165,9 @@ async function waitForValue(fn, timeoutMs, label) {
 }
 
 let token = "";
-async function api(pathname, { method = "GET", body, auth = true, headers = {}, origin } = {}) {
+async function api(pathname, { method = "GET", body, auth = true, headers = {}, origin, token: tokenOverride } = {}) {
   const finalHeaders = { "x-harness-client": "web", ...headers };
-  if (auth && token) finalHeaders.Authorization = `Bearer ${token}`;
+  if (auth && (tokenOverride ?? token)) finalHeaders.Authorization = `Bearer ${tokenOverride ?? token}`;
   if (body !== undefined) finalHeaders["Content-Type"] = "application/json";
   if (origin) finalHeaders.Origin = origin;
   const response = await fetch(BASE + pathname, { method, headers: finalHeaders, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -283,6 +287,26 @@ try {
   token = goodPair.payload?.token || "";
   const replay = await api("/api/pair", { method: "POST", body: { code: pairCode }, auth: false });
   check("配对码一次性（重放 → 403）", replay.status === 403 && replay.payload?.error === "no-code", JSON.stringify(replay.payload));
+
+  group("②' 多用户：个人配对码（长期凭据，一人一个）");
+  const alice = await api("/api/pair", { method: "POST", body: { code: "a1b2c3d4" }, auth: false });
+  const aliceToken = alice.payload?.token || "";
+  check("个人码配对成功 → 用户自己的 token（≠ owner token）",
+    alice.status === 200 && aliceToken.length >= 32 && aliceToken !== (goodPair.payload?.token || ""),
+    JSON.stringify(alice.payload || {}).slice(0, 80));
+  check("个人码可**反复**使用（长期凭据，不是一次性的）",
+    (await api("/api/pair", { method: "POST", body: { code: "a1b2c3d4" }, auth: false })).status === 200);
+  check("回包带账号身份（userId=Alice + 云存储预留位）",
+    alice.payload?.account?.userId === "Alice" && alice.payload?.account?.cloudStorage?.enabled === false,
+    JSON.stringify(alice.payload?.account || {}));
+  const userHs = await api("/api/handshake", { auth: true, token: aliceToken });
+  check("用户 token 的 handshake 带本人身份", userHs.payload?.account?.userId === "Alice", JSON.stringify(userHs.payload?.account || {}));
+  const anonHs = await api("/api/handshake", { auth: false });
+  check("匿名 handshake 不泄露身份（userId=null）", anonHs.payload?.account?.userId === null);
+  check("用户 token 能正常调用 RPC（thread/list → 200）",
+    (await api("/api/rpc", { method: "POST", body: { method: "thread/list", params: {} }, auth: true, token: aliceToken })).status === 200);
+  check("用户码错一位 → 403（与 owner 码同闸）",
+    (await api("/api/pair", { method: "POST", body: { code: "a1b2c3d5" }, auth: false })).status === 403);
 
   group("③ RPC 白名单");
   const denied = await rpc("fs/readFile", { path: "C:/Windows/win.ini" });

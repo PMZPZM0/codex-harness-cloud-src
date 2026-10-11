@@ -1075,6 +1075,15 @@ async function main() {
   buildDom();
   const params = new URLSearchParams(location.search);
   const code = params.get("pair");
+
+  // ⛔ 云端登录门的 token 交接：`/#t=<token>`（fragment 不进服务器日志）。
+  //   收下就存进本机 localStorage 并**立刻从地址里抹掉**——别让凭据留在历史记录里。
+  const handoff = /^t=([0-9a-f]{16,})$/.exec(location.hash.slice(1));
+  if (handoff) {
+    history.replaceState(null, "", location.pathname + location.search);
+    try { localStorage.setItem(LS.token, handoff[1]); } catch { /* 忽略 */ }
+  }
+
   try { state.token = localStorage.getItem(LS.token) || ""; } catch { state.token = ""; }
 
   if (code) {

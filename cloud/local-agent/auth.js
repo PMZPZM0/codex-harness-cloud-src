@@ -18,6 +18,8 @@
  *   另：token 与配对码**绝不写日志**（日志可能被用户贴出去求助）。
  */
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const PAIR_CODE_TTL_MS = 5 * 60_000;
 const PAIR_CODE_MAX_TRIES = 10;
@@ -76,6 +78,83 @@ class Pairing {
   }
 }
 
+/* ── 多用户注册表 ────────────────────────────────────────────────────────────
+   ⛔ 与 owner 的一次性开机码不同：**用户配对码是长期个人凭据**（可反复使用），
+   由机主通过 `--add-user 名字` 签发，一人一个；配对成功换到的是**该用户自己的
+   固定 token**（不是 owner 的）—— 这是"登录界面 + 每用户单独配对码"的地基，
+   也是将来云端存储按账号隔离的挂点（userId 已经一路带到 token → handshake）。
+
+   安全口径：
+   · 用户码与 token 落在 users.json（本机磁盘，与 owner token 文件同信任级）；
+   · 连续错 10 次 → 全部用户码锁 60 秒（registry.lockedUntil），防本机枚举；
+   · 常量时间比较逐条做，命中前不短路泄露长度信息。 */
+const USER_LOCK_MS = 60_000;
+const USER_MAX_TRIES = 10;
+
+class UserRegistry {
+  constructor(homeDir, logger) {
+    this.log = logger;
+    this.file = path.join(homeDir, "users.json");
+    this.users = [];
+    this.tries = 0;
+    this.lockedUntil = 0;
+    try {
+      this.users = JSON.parse(fs.readFileSync(this.file, "utf8"));
+      if (!Array.isArray(this.users)) this.users = [];
+    } catch { /* 首次运行没有这个文件，正常 */ }
+  }
+
+  persist() {
+    fs.writeFileSync(this.file, JSON.stringify(this.users, null, 2), "utf8");
+  }
+
+  /** 签发一个用户：返回 { name, code, token }，code 只在签发那一刻显示。 */
+  add(name) {
+    const clean = String(name || "").trim();
+    if (!clean) throw new Error("用户名不能为空");
+    if (this.users.some((u) => u.name === clean)) throw new Error(`用户「${clean}」已存在`);
+    const user = {
+      name: clean,
+      code: crypto.randomBytes(PAIR_CODE_BYTES).toString("hex"),
+      token: crypto.randomBytes(24).toString("hex"),
+      createdAt: Date.now(),
+    };
+    this.users.push(user);
+    this.persist();
+    return user;
+  }
+
+  /** 用个人配对码换 token（长期有效、可重复）。 */
+  redeem(candidate) {
+    if (Date.now() < this.lockedUntil) return { ok: false, reason: "locked" };
+    const code = String(candidate || "").trim().toLowerCase();
+    if (!code) return { ok: false, reason: "mismatch" };
+    this.tries += 1;
+    if (this.tries >= USER_MAX_TRIES) {
+      this.lockedUntil = Date.now() + USER_LOCK_MS;
+      this.tries = 0;
+      this.log(`[pair] 用户码连续错误过多，锁定 ${Math.round(USER_LOCK_MS / 1000)} 秒`);
+      return { ok: false, reason: "locked" };
+    }
+    for (const user of this.users) {
+      if (safeEqual(code, user.code)) {
+        this.tries = 0;
+        return { ok: true, user };
+      }
+    }
+    return { ok: false, reason: "mismatch" };
+  }
+
+  /** token → 用户名；owner token 不在这里（服务端自己先比对）。 */
+  userByToken(token) {
+    const presented = String(token || "");
+    for (const user of this.users) {
+      if (safeEqual(presented, user.token)) return user.name;
+    }
+    return null;
+  }
+}
+
 /**
  * 判断 Origin 是否可信。
  * ⛔ 不用 `startsWith(origin, allowed)`：`http://127.0.0.1:8917.evil.com` 会被前缀匹配放行。
@@ -102,7 +181,7 @@ function originAllowed(origin, allowedOrigins) {
  * 请求鉴权。返回 null 表示通过，否则返回 { status, body }。
  * opts.skipToken: 配对接口自己不带 token（它就是为了换 token）。
  */
-function authorize(req, { token, allowedOrigins, requireToken = true, mutating = false }) {
+function authorize(req, { token, allowedOrigins, requireToken = true, mutating = false, matchToken = null }) {
   // ① Origin 白名单
   if (!originAllowed(req.headers.origin, allowedOrigins)) {
     return { status: 403, body: { ok: false, error: "origin-not-allowed" } };
@@ -116,7 +195,10 @@ function authorize(req, { token, allowedOrigins, requireToken = true, mutating =
   if (requireToken) {
     const header = String(req.headers.authorization || "");
     const presented = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-    if (!presented || !safeEqual(presented, token)) {
+    // ⛔ matchToken（token → 用户身份）与单 token 两种形态并存：
+    //   多用户后有效凭据 = owner token + N 个用户 token，逐条常量时间比较。
+    const ok = matchToken ? Boolean(matchToken(presented)) : (presented && safeEqual(presented, token));
+    if (!presented || !ok) {
       return { status: 401, body: { ok: false, error: "unauthorized" } };
     }
   }
@@ -139,4 +221,4 @@ function corsHeaders(origin, allowedOrigins) {
   };
 }
 
-module.exports = { Pairing, authorize, originAllowed, corsHeaders, safeEqual, PAIR_CODE_TTL_MS };
+module.exports = { Pairing, UserRegistry, authorize, originAllowed, corsHeaders, safeEqual, PAIR_CODE_TTL_MS };
