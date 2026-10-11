@@ -76,12 +76,14 @@ app.on("browser-window-created", (_event: unknown, win: { hide: () => void; setS
   };
 });
 
-/* ── ②b 对话框桥：浏览器点不到原生弹窗 ⇒ 预置答案队列 ─────────────────────
-   真实路径全部保留：shim 先在浏览器里要一个路径 → POST /__dialog 进队列 → 再走
-   真通道（dialog:directory 等）⇒ main 侧 showOpenDialog 消费队首答案，trustPicked
-   （登记可信根）等域内语义照常执行。⛔ 队列空时**不弹原生框**（无头没人点会永久
-   挂起），直接返回 canceled —— UI 表现为「取消」，与用户关掉弹窗同形。 */
+/* ── ②b 对话框桥：能弹真弹，预置只作自动化后备 ───────────────────────────
+   助手跑在用户本机 ⇒ **没有预置答案时直接弹真正的原生对话框**（窗口虽隐藏，
+   原生对话框不依赖窗口可见，app-modal 照样出现在用户屏幕上）——与桌面版交互
+   完全一致，绝对路径、trustPicked 全部走真实链路。预置答案队列（/__dialog）只
+   供自动化/E2E 用。⛔ 远程场景（人不在机器前）对话框会没人点 ⇒ 设
+   HARNESS_DIALOG_MODE=cancel 让无答案时直接按取消处理。 */
 const dialogAnswers: Array<{ canceled: boolean; filePaths: string[] }> = [];
+const DIALOG_MODE = process.env.HARNESS_DIALOG_MODE === "cancel" ? "cancel" : "native";
 type DialogModule = {
   showOpenDialog: (...a: unknown[]) => Promise<{ canceled: boolean; filePaths: string[] }>;
   showSaveDialog: (...a: unknown[]) => Promise<{ canceled: boolean; filePath?: string }>;
@@ -89,16 +91,21 @@ type DialogModule = {
 const electronDialog = (electron as { dialog?: DialogModule }).dialog;
 if (electronDialog) {
   try {
+    const origOpen = electronDialog.showOpenDialog.bind(electronDialog);
+    const origSave = electronDialog.showSaveDialog.bind(electronDialog);
+    // 域层传 (window, options) 或 (options)：统一剥出 options 再调原生（不依赖隐藏窗口）
+    const optsOf = (a: unknown[]) => (a.length >= 2 ? a[1] : a[0]);
     const wrapOpen = (...a: unknown[]) => {
       const next = dialogAnswers.shift();
       if (next) { console.log(`[headless] 对话框桥：消费预置答案 ${JSON.stringify(next.filePaths)}`); return Promise.resolve(next); }
-      console.log("[headless] 对话框桥：无预置答案（浏览器端应先 POST /__dialog）→ canceled");
+      if (DIALOG_MODE === "native") return origOpen(optsOf(a) as never);
+      console.log("[headless] 对话框桥：cancel 模式无预置答案 → canceled");
       return Promise.resolve({ canceled: true, filePaths: [] });
     };
     const wrapSave = (...a: unknown[]) => {
       const next = dialogAnswers.shift();
       if (next) return Promise.resolve({ canceled: false, filePath: next.filePaths[0] });
-      console.log("[headless] 对话框桥：另存为无预置答案 → canceled");
+      if (DIALOG_MODE === "native") return origSave(optsOf(a) as never);
       return Promise.resolve({ canceled: true, filePath: undefined });
     };
     // ⛔ electron 模块方法一般可赋值（ipcMain.handle 同例）；defineProperty 兜一层。
@@ -326,29 +333,10 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
   }
 
   var codex = {};
-  /* ⛔ 浏览器没有原生文件对话框 ⇒ 选图改写为 <input type=file> + 上传（≤2MB，
-     服务端同样硬卡）。返回本地路径，与桌面版选图同形；预览用的自定义协议在
-     浏览器没有对应物，预览可能不显示（发送不受影响）—— 下一阶段接 HTTP 文件读。 */
-  function pickFiles(accept, multiple, isImage) {
-    return new Promise(function (resolve) {
-      var input = document.createElement("input");
-      input.type = "file"; input.accept = accept; input.multiple = !!multiple; input.style.display = "none";
-      document.body.appendChild(input);
-      input.onchange = function () {
-        var files = Array.prototype.slice.call(input.files || []);
-        if (!files.length) { input.remove(); resolve([]); return; }
-        var tooBig = files.find(function (f) { return f.size > 2 * 1024 * 1024; });
-        if (tooBig) { input.remove(); alert("图片「" + tooBig.name + "」超过 2MB 限制"); resolve([]); return; }
-        Promise.all(files.map(function (f) {
-          return fetch("/__upload", { method: "POST", headers: authHeaders({ "Content-Type": "application/octet-stream", "x-file-name": encodeURIComponent(f.name) }), body: f })
-            .then(function (r) { return r.json(); })
-            .then(function (j) { if (!j.ok) throw new Error(j.error || "上传失败"); return j.path; });
-        })).then(function (paths) { input.remove(); resolve(paths); })
-          .catch(function (e) { input.remove(); alert("上传失败：" + (e && e.message || e)); resolve([]); });
-      };
-      input.click();
-    });
-  }
+  /* ⛔ 选图/选文件直走真通道：main 侧弹**原生对话框**到用户屏幕（助手在本机），
+     返回绝对路径，与桌面版完全同形（无大小限制）。/__upload 仍保留作远程后备。 */
+  codex.chooseImages = function () { return invoke("dialog:images", []); };
+  codex.chooseFiles = function () { return invoke("dialog:files", []); };
   var CHANNELS = ${JSON.stringify(manifest.channels.map((c) => ({ name: c.name, channel: c.channel, invokeArgs: c.invokeArgs, defaults: parseDefaults(c.paramsDecl) })))};
   for (var entry of CHANNELS) {
     (function (entry) {
@@ -376,24 +364,11 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
   for (var ev of EVENTS) {
     (function (ev) { codex[ev.name] = function (listener) { return subscribe(ev.channel, listener); }; })(ev);
   }
-  codex.chooseImages = function () { return pickFiles("image/*", true, true); };
-  codex.chooseFiles = function () { return pickFiles("*/*", true, false); };
-
-  /* ⛔ 浏览器点不到原生目录弹窗：先 prompt 要路径 → POST /__dialog 预置答案 →
-     再调真通道（dialog:directory / directory-at）—— main 侧消费答案、trustPicked
-     登记可信根等真实语义照常执行。取消（空串/Esc）返回 null，与桌面版同形。 */
+  /* ⛔ 目录选择直走真通道：main 侧弹原生对话框到用户屏幕（助手在本机），
+     trustPicked 登记可信根等真实语义照常执行。取消返回 null，与桌面版同形。 */
   function pickDirectory(startPath, useAt) {
-    // 队列已有预置答案（如自动化/E2E 直接 POST 过来）→ 跳过 prompt 直接走真通道
-    return fetch("/__dialog", { headers: authHeaders() }).then(function (r) { return r.json(); }).then(function (j) {
-      if (j && j.ok && j.queued > 0) return invoke(useAt ? "dialog:directory-at" : "dialog:directory", useAt ? [startPath] : []);
-      var p = window.prompt(startPath ? ("输入目录的绝对路径（起始：" + startPath + "）：") : "输入工作区目录的绝对路径：", startPath || "");
-      if (p === null) return null;
-      p = String(p).trim();
-      if (!p) return null;
-      return fetch("/__dialog", { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ paths: [p] }) })
-        .then(function (r) { return r.json(); })
-        .then(function (j2) { if (!j2.ok) throw new Error(j2.error || "预置失败"); return invoke(useAt ? "dialog:directory-at" : "dialog:directory", useAt ? [startPath] : []); });
-    }).then(function (path) { return path == null ? null : path; })
+    return invoke(useAt ? "dialog:directory-at" : "dialog:directory", useAt ? [startPath] : [])
+      .then(function (path) { return path == null ? null : path; })
       .catch(function (e) { console.error("[shim] chooseDirectory", e); return null; });
   }
   codex.chooseDirectory = function () { return pickDirectory("", false); };
