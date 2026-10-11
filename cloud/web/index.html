@@ -6,40 +6,64 @@
 <meta name="color-scheme" content="dark light" />
 <title>Codex Harness Cloud</title>
 <!--
-  ⛔ 这个外壳由**本地伴生服务**下发（http://127.0.0.1:8917/），它不是界面本身：
-     它只回答两个问题 ——「资产去哪拿」和「拿不到怎么办」。
+  这个外壳**同一份文件在三个地方都能用**，靠运行时判断，不靠服务端替换占位符：
+    ① 云端：https://ppz123.asia/cloud/          ← 用户直接敲网址进来的入口
+    ② 本机：http://127.0.0.1:8917/              ← 伴生服务下发（同源，最省事）
+    ③ 离线：伴生服务在云端资产拿不到时给你本地副本
 
-  资产选址是**确定性**的（见下面的 bootstrap）：先问云端 `version.json` 在不在，
-  在就用云端、不在/超时就整份用本地副本。⇒ 换界面 = 重新部署云端资源，用户不用重装。
+  ⛔⛔ 之前这文件里写着 `__CDN_BASE__` / `__PROTOCOL_VERSION__` 之类的占位符，**只有本地服务端会替换**，
+     云端原样下发就出事了：`fetch("__CDN_BASE__/version.json")` 必然失败 → 回落 `/local-assets`（云端 404）
+     → 界面永远停在"正在连接本地伴生服务…"，而且**首屏没有超时**，就那样一直转。
+     教训：能被云端原样托管的文件，**必须自己就能跑**，不许依赖只有某一侧才会做的替换。
+     服务端现在改为**注入** `window.__CHC_CDN__`（可选覆盖），文件里不再有占位符。
 
-  ⛔⛔ 为什么要先探测、而不是"先插云端标签、失败再换本地"：后者依赖 <link> 的 error
-     事件，而**它根本不可靠** —— 云端返回的 404 是 JSON 而非 CSS 时，Chromium 不一定
-     触发 error，于是页面带着一张**空样式表**渲染出来：布局全塌、颜色全丢，而控制台
-     只有一条"跨源 cssRules 不可读"。走查台实测撞到过（appDisplay=block、
-     gridTemplateColumns=none）。"静默无样式"比"报错"危险得多，所以选址必须前置。
-
-  ⛔ 云端的模块脚本与 version.json 都是**跨源**请求：托管方必须回
-     `Access-Control-Allow-Origin`（ES module 永远按 CORS 模式抓取，这条躲不掉）。
-     缺这个头时 fetch 会失败 ⇒ 自动走本地副本，界面照常可用。
+  ⛔ 跨源两件事，缺一不可（云端页面要连本机 127.0.0.1）：
+     ① 伴生服务要回 CORS 头（Origin 白名单里要有 https://ppz123.asia）；
+     ② 要承诺 `Access-Control-Allow-Private-Network: true`（Chrome 的私有网络访问预检）。
 -->
 <style>
-  /* 外壳自带的极简首屏样式：资产到达前不能白屏，也不能跳版 */
+  /* 外壳自带的首屏样式：资产到达前不能白屏，也不能跳版 */
   html, body { margin: 0; height: 100%; background: #1b1b1a; color: #ececea; }
   html[data-theme="light"], html[data-theme="light"] body { background: #fff; color: #23231f; }
   body { font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
   #boot { padding: 32px; color: inherit; }
   #boot[hidden] { display: none; }
   #boot .mark { font-weight: 600; letter-spacing: .01em; }
-  #boot .sub { margin-top: 6px; font-size: 12.5px; opacity: .7; }
-  #boot .err { margin-top: 14px; font-size: 12.5px; color: #ec7a70; white-space: pre-wrap; }
+  #boot .sub { margin-top: 6px; font-size: 12.5px; opacity: .72; }
+  #gate { max-width: 640px; margin: 48px auto; padding: 26px 28px; border-radius: 14px;
+        border: 1px solid #ffffff1f; background: #ffffff0a; }
+html[data-theme="light"] #gate { border-color: #00000014; background: #00000005; }
+  #gate h1 { font-size: 16px; margin: 0 0 10px; }
+  #gate p { font-size: 13px; margin: 0 0 14px; opacity: .85; }
+  #gate code, #gate pre {
+    font: 12.5px/1.7 ui-monospace, Consolas, monospace;
+    background: #ffffff14; border: 1px solid #ffffff1f; border-radius: 8px;
+  }
+  html[data-theme="light"] #gate code, html[data-theme="light"] #gate pre { background: #00000008; border-color: #00000012; }
+  #gate code { padding: 1px 5px; }
+  #gate pre { padding: 10px 12px; overflow: auto; }
+  #gate .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+  #gate button {
+    appearance: none; -webkit-appearance: none; font: inherit;
+    padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid #ffffff2e; background: #ffffff12; color: inherit;
+  }
+  #gate button:hover { background: #ffffff1f; }
+  #gate input {
+    appearance: none; -webkit-appearance: none; font: inherit;
+    padding: 7px 10px; border-radius: 8px; width: 190px;
+    border: 1px solid #ffffff2e; background: #ffffff0f; color: inherit;
+  }
+  #gate .why { font-size: 12px; opacity: .6; margin-top: 12px; }
 </style>
 </head>
 <body>
 <div id="boot">
   <div class="mark">Codex Harness Cloud</div>
   <div class="sub" id="boot-sub">正在连接本地伴生服务…</div>
-  <div class="err" id="boot-err" hidden></div>
 </div>
+
+<div id="gate" hidden></div>
 
 <script>
   // 主题在资产到达前先定下来，避免"先亮后暗"的闪一下
@@ -48,71 +72,223 @@
     if (savedTheme === "light" || savedTheme === "dark") document.documentElement.dataset.theme = savedTheme;
     else document.documentElement.dataset.theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   } catch (e) { /* 隐私模式下 localStorage 可能抛异常，忽略 */ }
+</script>
 
-  window.__CHC_SHELL__ = {
-    protocolVersion: __PROTOCOL_VERSION__,
-    agentVersion: "__AGENT_VERSION__",
-    cdnBase: "__CDN_BASE__",
-  };
+<script>
+(function () {
+  "use strict";
+  var V = "0.1.0";                       // 资产版本戳，只用于缓存击穿
+  var DEFAULT_PORT = 8917;
+  var AGENT_PROBE_MS = 1200;             // 单个候选地址的探测超时
+  var ASSET_PROBE_MS = 1800;             // 云端资产探测超时
+  var READY_TIMEOUT_MS = 8000;           // 资产插进去后多久还没就绪就报错
 
-  (function () {
-    var CDN = "__CDN_BASE__";
-    var LOCAL = "/local-assets";
-    var V = "__ASSET_VERSION__";
-    var sub = document.getElementById("boot-sub");
-    var started = false;
-    var probeTimer = setTimeout(function () { start(LOCAL, "local"); }, 2500);
+  var boot = document.getElementById("boot");
+  var sub = document.getElementById("boot-sub");
+  var gate = document.getElementById("gate");
+  var started = false;
 
-    function start(base, mode) {
-      if (started) return;
-      started = true;
-      clearTimeout(probeTimer);
-      window.__CHC_ASSET_BASE__ = base;
-      if (sub) {
-        sub.textContent = mode === "cloud"
-          ? "正在载入界面…"
-          : "云端资源不可达，已切到本地副本（界面能正常用，但不会自动更新）";
+  function say(text) { if (sub) sub.textContent = text; }
+  function ls(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+  function lsSet(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* 忽略 */ } }
+  function isLocalOrigin(origin) { return /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin || ""); }
+
+  /** 带超时的 fetch。⛔ 没有超时的探测 = 永久卡死，这正是上一版卡在首屏的原因。 */
+  function fetchWithTimeout(url, options, ms) {
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = setTimeout(function () { if (controller) controller.abort(); }, ms);
+    var opts = { cache: "no-store" };
+    if (options) for (var k in options) opts[k] = options[k];
+    if (controller) opts.signal = controller.signal;
+    return fetch(url, opts).then(
+      function (response) { clearTimeout(timer); return response; },
+      function (error) { clearTimeout(timer); throw error; }
+    );
+  }
+
+  /* ── ① 找本地伴生服务 ────────────────────────────────────────────────────
+     同源进来（本机入口）直接用自己；从云端进来才需要探测 127.0.0.1。
+     探测顺序：同源 → 上次成功过的 → 默认端口（http 与 localhost 两种写法）。 */
+  function agentCandidates() {
+    var list = [];
+    var push = function (url) { if (url && list.indexOf(url) < 0) list.push(url.replace(/\/+$/, "")); };
+    if (isLocalOrigin(location.origin)) push(location.origin);
+    push(ls("chc-agent"));
+    push("http://127.0.0.1:" + DEFAULT_PORT);
+    push("http://localhost:" + DEFAULT_PORT);
+    return list;
+  }
+
+  function findAgent() {
+    var candidates = agentCandidates();
+    var index = 0;
+    function next() {
+      if (index >= candidates.length) return Promise.resolve(null);
+      var base = candidates[index++];
+      return fetchWithTimeout(base + "/api/health", null, AGENT_PROBE_MS)
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (info) { lsSet("chc-agent", base); return { base: base, info: info }; })
+        .catch(function () { return next(); });
+    }
+    return next();
+  }
+
+  /* ── ② 选资产基址 ────────────────────────────────────────────────────────
+     能开出 version.json 的就是活的。顺序：服务端指定的云端 → 自己所在目录 → 本地副本。 */
+  function assetCandidates() {
+    var list = [];
+    var push = function (url) { if (url && list.indexOf(url) < 0) list.push(url.replace(/\/+$/, "")); };
+    if (window.__CHC_CDN__) push(window.__CHC_CDN__);
+    if (!isLocalOrigin(location.origin)) push(location.origin + location.pathname.replace(/[^/]*$/, "").replace(/\/+$/, ""));
+    push("/local-assets");
+    return list;
+  }
+
+  function findAssetBase() {
+    var candidates = assetCandidates();
+    var index = 0;
+    function next() {
+      if (index >= candidates.length) return Promise.resolve("");
+      var base = candidates[index++];
+      return fetchWithTimeout(base + "/version.json?t=" + Date.now(), null, ASSET_PROBE_MS)
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function () { return base; })
+        .catch(function () { return next(); });
+    }
+    return next();
+  }
+
+  /* ── ③ 插资产 ─────────────────────────────────────────────────────────── */
+  function mount(assetBase, agentBase) {
+    if (started) return;
+    started = true;
+    window.__CHC_ASSET_BASE__ = assetBase;
+    window.__CHC_AGENT__ = agentBase;
+    window.__CHC_SHELL__ = {
+      protocolVersion: 1,
+      agentVersion: "0.1.0",
+      cdnBase: assetBase,
+      agentBase: agentBase,
+    };
+
+    var link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = assetBase + "/styles.css?v=" + V;
+    document.head.appendChild(link);
+
+    var script = document.createElement("script");
+    script.type = "module";
+    script.src = assetBase + "/app.js?v=" + V;
+    script.onerror = function () {
+      gate.hidden = true;
+      boot.hidden = false;
+      say("");
+      showGate("界面资源加载失败", "资产地址：" + assetBase + " —— 本地副本也读不到。", null);
+    };
+    document.head.appendChild(script);
+
+    // ⛔ 就绪超时：没有它，资源"既没成功也没报错"时页面就永远停在首屏（上一版的实际症状）。
+    setTimeout(function () {
+      if (window.__chcReady) return;
+      boot.hidden = true;
+      showGate(
+        "界面没有渲染出来",
+        "资源地址 " + assetBase + " 已连通，但界面脚本没有完成初始化。刷新一次通常就好；若反复出现请把这条消息截图反馈。",
+        function (box) { replay(box); }
+      );
+    }, READY_TIMEOUT_MS);
+  }
+
+  /* ── ④ 出错时给人看得懂的话，而不是一直转 ─────────────────────────────── */
+  function showGate(title, detail, extra) {
+    boot.hidden = true;
+    gate.hidden = false;
+    gate.innerHTML = "";
+
+    var h1 = document.createElement("h1");
+    h1.textContent = title;
+    var p = document.createElement("p");
+    p.textContent = detail;
+    gate.appendChild(h1);
+    gate.appendChild(p);
+
+    var code = document.createElement("pre");
+    code.textContent = "cd cloud\nnpm run start        # 真引擎（需要本机有 codex 引擎）\nnpm run start:mock    # 演示模式，不需要模型 key";
+    gate.appendChild(code);
+
+    var note = document.createElement("p");
+    note.style.margin = "14px 0 0";
+    note.textContent = "启动后控制台会打印一条带配对码的链接，点开即完成配对；也可以把配对码填在下面。";
+    gate.appendChild(note);
+
+    var row = document.createElement("div");
+    row.className = "row";
+    var input = document.createElement("input");
+    input.placeholder = "配对码（8 位十六进制）";
+    input.setAttribute("aria-label", "配对码");
+    var pairBtn = document.createElement("button");
+    pairBtn.textContent = "配对并进入";
+    var retryBtn = document.createElement("button");
+    retryBtn.textContent = "重试连接";
+    row.appendChild(input);
+    row.appendChild(pairBtn);
+    row.appendChild(retryBtn);
+    gate.appendChild(row);
+
+    var why = document.createElement("p");
+    why.className = "why";
+    why.textContent = "排查：本机伴生服务只监听 127.0.0.1，所以必须在这台电脑上启动；" +
+      "若浏览器装了拦截本地请求的扩展，请放行。";
+    gate.appendChild(why);
+
+    pairBtn.onclick = function () {
+      var code = (input.value || "").trim().toLowerCase();
+      if (!code) { input.focus(); return; }
+      location.search = "?pair=" + encodeURIComponent(code);
+    };
+    retryBtn.onclick = function () { replay(gate); };
+    input.addEventListener("keydown", function (event) { if (event.key === "Enter") pairBtn.click(); });
+    input.focus();
+  }
+
+  /** 重跑一遍选址（"重试连接"按钮与超时兜底共用）。 */
+  function replay(box) {
+    started = false;
+    box.hidden = true;
+    boot.hidden = false;
+    say("正在连接本地伴生服务…");
+    probeAndMount();
+  }
+
+  function probeAndMount() {
+    say("正在寻找本地伴生服务…");
+    findAgent().then(function (agent) {
+      if (!agent) {
+        showGate(
+          "没找到本地伴生服务",
+          "界面在云端，干活的身子在你电脑上 —— 现在这台电脑上没有检测到它。请先在「这台电脑」上启动它：",
+          null
+        );
+        return;
       }
-
-      var link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = base + "/styles.css?v=" + V;
-      document.head.appendChild(link);
-
-      var script = document.createElement("script");
-      script.type = "module";
-      script.src = base + "/app.js?v=" + V;
-      // 兜底仍保留（选了云端却抓不下来时改走本地），但它不再是**主**判定路径
-      script.onerror = function () {
-        if (base === LOCAL) {
-          var err = document.getElementById("boot-err");
-          if (err) { err.hidden = false; err.textContent = "界面资源加载失败：连本地副本都读不到。请确认伴生服务在运行。"; }
+      say("已连接本机伴生服务，正在载入界面…");
+      return findAssetBase().then(function (base) {
+        if (!base) {
+          showGate("界面资源拿不到", "云端与本地副本都没能读到 version.json，请检查网络后重试。", null);
           return;
         }
-        started = false;
-        start(LOCAL, "local");
-      };
-      document.head.appendChild(script);
+        mount(base, agent.base);
+      });
+    }).catch(function (error) {
+      showGate("连接失败", String(error && error.message ? error.message : error), null);
+    });
+  }
 
-      // 脚本"卡住"（既没成功也没报错）时也给一次本地机会，避免永久停在首屏
-      setTimeout(function () {
-        if (!window.__chcReady && base !== LOCAL) { started = false; start(LOCAL, "local"); }
-      }, 6000);
-    }
+  window.__chcHideBoot = function () { boot.hidden = true; };
+  window.__chcRetry = function () { replay(gate); };
 
-    // ⛔ 选址探测只问一个**极小**的 version.json：用 fetch 是因为它的失败是明确可判的
-    //   （浏览器不会"假装成功"），而 <link>/<script> 的 error 事件会漏。
-    fetch(CDN + "/version.json?t=" + Date.now(), { cache: "no-store" })
-      .then(function (response) { if (!response.ok) throw new Error("HTTP " + response.status); return response.json(); })
-      .then(function () { start(CDN, "cloud"); })
-      .catch(function () { start(LOCAL, "local"); });
-  })();
-
-  // 供 app.js 在就绪后调：把外壳自带的首屏提示收掉
-  window.__chcHideBoot = function () {
-    var boot = document.getElementById("boot");
-    if (boot) boot.hidden = true;
-  };
+  probeAndMount();
+})();
 </script>
 </body>
 </html>

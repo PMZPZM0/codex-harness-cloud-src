@@ -126,6 +126,19 @@ async function main() {
     );
   }
 
+  // SHOT_SIMPLE=1：只加载 + 等指定毫秒 + 拍一张就退（看"服务没起"这类静态现场用）
+  if (process.env.SHOT_SIMPLE) {
+    await win.loadURL(URL_TARGET);
+    await sleep(Number(process.env.SHOT_SIMPLE) || 7000);
+    report.probe.body = await win.webContents.executeJavaScript(`document.body.innerText.slice(0, 400)`);
+    report.probe.gateVisible = await win.webContents.executeJavaScript(`!document.getElementById("gate").hidden`);
+    await shot(win, `${LABEL}-state-${WIDTH}`);
+    log(`[shot] 现场文本：\n${report.probe.body}`);
+    fs.writeFileSync(path.join(OUT_DIR, `${LABEL}-report.json`), JSON.stringify(report, null, 2));
+    app.quit();
+    return;
+  }
+
   try {
     await win.loadURL(URL_TARGET);
     await waitForJs(win, "window.__chcReady === true", 15_000, "外壳与客户端就绪（__chcReady）");
@@ -151,10 +164,9 @@ async function main() {
   report.probe.appColumns = await win.webContents.executeJavaScript(`getComputedStyle(document.querySelector(".app")).gridTemplateColumns`);
   report.probe.buttonAppearance = await win.webContents.executeJavaScript(`getComputedStyle(document.querySelector(".btn")).appearance`);
   // 资产到底从哪儿来的：云端还是本地回落（两条路都得能跑）
-  report.probe.assetBase = await win.webContents.executeJavaScript(`(() => {
-    const s = [...document.querySelectorAll('script')].find((el) => el.src && el.src.endsWith('.js') && el.type === 'module');
-    return s ? new URL(s.src).origin + new URL(s.src).pathname.replace(/\\/app\\.js$/, "") : "";
-  })()`);
+  // 资产到底从哪儿来的：外壳选址的结果（云端 / 本地副本）
+  report.probe.assetBase = await win.webContents.executeJavaScript(`window.__CHC_ASSET_BASE__ || "(未设置)"`);
+  report.probe.agentBase = await win.webContents.executeJavaScript(`window.__CHC_AGENT__ || "(未设置)"`);
   await shot(win, `${LABEL}-01-ready-${WIDTH}`);
 
   // 发一条消息，走完"询问卡 → 审批卡 → 流式正文"
