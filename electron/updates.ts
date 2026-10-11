@@ -16,10 +16,30 @@ import path from "node:path";
 import https from "node:https";
 import { shell } from "electron";
 import { URL } from "node:url";
+import { mirrorCandidates } from "./gh-mirror";
 
 /** GitHub 开源仓库（唯一更新源，走 Releases API） */
 export const GITHUB_REPO = "PMZPZM0/codex-harness-desktop";
 export const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+export const GITHUB_RELEASES_LIST_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 云助手（同一仓库的**第二条产品线**）—— 更新源必须与桌面版分开（10-11 用户报「助手
+ * 抓到桌面版的更新了」）：
+ *   桌面版：tag `v*`、资产 `Codex.Harness.Desktop-*`
+ *   云助手：tag `cloud-v*`、资产 `CodexHarnessAssistant-*`
+ * `/releases/latest` 只认最高版本 ⇒ 助手（0.0.1 线）会看到 v0.0.38 直接报"有新版"，
+ * 装了就把助手换成桌面版。**助手因此走 releases 列表 + tag 前缀过滤**，永不碰 latest。
+ * ══════════════════════════════════════════════════════════════════════════ */
+export const ASSISTANT_TAG_PREFIX = "cloud-v";
+export const ASSISTANT_ASSET_PREFIX = "CodexHarnessAssistant-";
+export const ASSISTANT_CHANNEL = "assistant";
+
+/** 助手运行时判定：headless 入口（助手形态，含打包后的应用）在最早期打这个标记。
+ *  桌面窗口形态不设 ⇒ 桌面版逻辑一行不变。 */
+export function isAssistantRuntime(): boolean {
+  return process.env.HARNESS_ASSISTANT === "1";
+}
 
 /** 订阅通道（固定 stable） */
 export const UPDATE_CHANNEL = "stable";
@@ -123,6 +143,12 @@ export async function checkLatestUpdate(
   platform: NodeJS.Platform = process.platform,
   arch = process.arch,
 ): Promise<LatestInfo> {
+  // ⛔ 助手与桌面版共用一个仓 ⇒ 更新源必须按产品线分开（10-11 用户报「助手抓到了桌面版的更新」）：
+  //   助手走 `cloud-v*` tag + `CodexHarnessAssistant-*` 资产，永不碰 /releases/latest
+  //   （latest 只认最高版本，助手 0.0.1 线会看到 v0.0.38，装完就把助手换成桌面版）。
+  if (isAssistantRuntime()) {
+    return checkAssistantUpdate(currentVersion, platform, arch);
+  }
   const res = await requestJson(GITHUB_RELEASES_API);
   if (res.status < 200 || res.status >= 300) {
     throw new Error(`HTTP ${res.status}`);
@@ -167,10 +193,81 @@ export async function checkLatestUpdate(
   };
 }
 
+/**
+ * 云助手专用更新检查（10-11）：**只认 `cloud-v*` tag + `CodexHarnessAssistant-*` 资产**。
+ *
+ * 为什么不能复用 /releases/latest：latest 是全仓最高版本，助手（0.0.1 线）会看到
+ * 桌面版的 v0.0.38 并把它当"新版本"——装了就把助手换成桌面版（同仓不同产品线的典型串味）。
+ * 因此这里拉 releases **列表**按前缀过滤；网络同样走国内镜像序（gh-proxy → ghfast → 直连）。
+ */
+export async function checkAssistantUpdate(
+  currentVersion: string,
+  platform: NodeJS.Platform = process.platform,
+  arch = process.arch,
+): Promise<LatestInfo> {
+  let lastError: unknown = new Error("no_candidate");
+  let releases: any[] | null = null;
+  for (const candidate of mirrorCandidates(GITHUB_RELEASES_LIST_API)) {
+    try {
+      const res = await requestJson(candidate);
+      if (res.status < 200 || res.status >= 300) {
+        lastError = new Error(`HTTP ${res.status}`);
+        continue;
+      }
+      const parsed = JSON.parse(res.body) as unknown;
+      if (Array.isArray(parsed)) releases = parsed;
+      else releases = [(parsed as any)?.payload ?? parsed];
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!releases) throw lastError instanceof Error ? lastError : new Error(String(lastError));
+
+  // 最新优先：列表本身按时间倒序，取第一个命中前缀且非草稿/预发布的
+  const hit = releases.find(
+    (r: any) => String(r?.tag_name ?? "").startsWith(ASSISTANT_TAG_PREFIX) && !r?.draft && !r?.prerelease,
+  );
+  if (!hit?.tag_name) {
+    return { hasUpdate: false, reason: "no_assistant_release_yet", channel: ASSISTANT_CHANNEL, version: currentVersion };
+  }
+  const version = String(hit.tag_name).slice(ASSISTANT_TAG_PREFIX.length);
+  if (compareVersions(version, currentVersion) <= 0) {
+    return { hasUpdate: false, reason: "up_to_date", channel: ASSISTANT_CHANNEL, version };
+  }
+  const assets: { name: string; browser_download_url: string; size?: number }[] = Array.isArray(hit.assets) ? hit.assets : [];
+  let match: { name: string; browser_download_url: string; size?: number } | undefined;
+  if (platform === "darwin") {
+    match = assets.find(
+      (a) => a.name.startsWith(ASSISTANT_ASSET_PREFIX) && a.name.endsWith(".zip") && a.name.includes(arch),
+    );
+  } else {
+    match = assets.find((a) => a.name.startsWith(ASSISTANT_ASSET_PREFIX) && a.name.endsWith(".exe"));
+  }
+  if (!match) {
+    return { hasUpdate: false, reason: "no_asset_for_platform", channel: ASSISTANT_CHANNEL, version };
+  }
+  return {
+    hasUpdate: true,
+    reason: "available",
+    channel: ASSISTANT_CHANNEL,
+    version,
+    filename: match.name,
+    size: match.size,
+    changelog: hit.body?.slice(0, 2000) || "",
+    downloadUrl: match.browser_download_url,
+  };
+}
+
 export type DownloadProgress = (info: {
   receivedBytes: number;
   totalBytes: number;
   percent: number;
+  /** ⛔ 10-11 新增：平均速率（窗口 3s，样本不足时 0）与剩余秒数（速率 0 时 null）——
+   *   UI 据此显示「12.4 MB/s · 剩 2 分 08 秒」；不给假数字是硬要求。 */
+  speedBytesPerSec?: number;
+  etaSeconds?: number | null;
+  elapsedMs?: number;
 }) => void;
 
 export async function downloadUpdate(
@@ -178,6 +275,8 @@ export async function downloadUpdate(
   destPath: string,
   onProgress?: DownloadProgress,
   expectedSha256?: string,
+  signal?: AbortSignal,
+  startByte = 0,
 ): Promise<{ path: string; bytes: number }> {
   // ⛔ 09-16 实测：GitHub 的 `browser_download_url` **不是**资源本身，而是 302 到
   //    `release-assets.githubusercontent.com`（带签名的临时地址）。这里过去是裸 https.request +
@@ -198,7 +297,12 @@ export async function downloadUpdate(
           hostname: parsed.hostname,
           port: parsed.port || 443,
           path: parsed.pathname + parsed.search,
-          headers: { "User-Agent": "CodexHarness/0.1" },
+          // ⛔ 10-11 断点续传：.part 已有内容时带 Range 从断点续（206）；服务端不支持（200）
+          //   就退化成整包重下（下面按响应码决定 append 还是 truncate）。
+          headers: {
+            "User-Agent": "CodexHarness/0.1",
+            ...(startByte > 0 ? { Range: `bytes=${startByte}-` } : {}),
+          },
         },
         (res) => {
           const status = res.statusCode ?? 0;
@@ -224,24 +328,58 @@ export async function downloadUpdate(
             reject(new Error(`HTTP ${status}`));
             return;
           }
-          const total = parseInt(String(res.headers["content-length"] ?? "0"), 10) || 0;
-          const out = createWriteStream(destPath);
-          let received = 0;
+          const resumed = status === 206 && startByte > 0;
+          const contentLength = parseInt(String(res.headers["content-length"] ?? "0"), 10) || 0;
+          const total = resumed ? startByte + contentLength : contentLength;
+          const out = createWriteStream(destPath, resumed ? { flags: "a" } : { flags: "w" });
+          let received = resumed ? startByte : 0;
+          // ⛔ 速度/剩余时间（10-11 用户要「进度反馈」）：窗口取最近 3 秒的样本算平均速率，
+          //   起步阶段样本不足时 speed=0/eta=null，UI 显示「正在建立连接…」，不给假数字。
+          const window: { at: number; bytes: number }[] = [];
+          const startedAt = Date.now();
+          let aborted = false;
+          const onAbort = () => {
+            aborted = true;
+            try { req.destroy(); } catch { /* 已结束 */ }
+            try { out.destroy(); } catch { /* 已结束 */ }
+          };
+          if (signal) {
+            if (signal.aborted) { onAbort(); reject(new Error("已取消下载")); return; }
+            signal.addEventListener("abort", onAbort, { once: true });
+          }
           res.on("data", (chunk: Buffer) => {
             received += chunk.length;
             if (onProgress) {
+              const now = Date.now();
+              window.push({ at: now, bytes: received });
+              while (window.length > 2 && now - window[0].at > 3000) window.shift();
+              const first = window[0];
+              const spanSec = first ? (now - first.at) / 1000 : 0;
+              const speed = spanSec > 0.4 ? Math.max(0, Math.round((received - first.bytes) / spanSec)) : 0;
+              const etaSec = total && speed > 0 ? Math.max(0, Math.round((total - received) / speed)) : null;
               onProgress({
                 receivedBytes: received,
                 totalBytes: total,
                 percent: total ? received / total : 0,
+                speedBytesPerSec: speed,
+                etaSeconds: etaSec,
+                elapsedMs: now - startedAt,
               });
             }
           });
+          res.on("error", (error) => {
+            if (aborted) { reject(new Error("已取消下载")); return; }
+            reject(error);
+          });
+          out.on("error", (error) => {
+            if (aborted) { reject(new Error("已取消下载")); return; }
+            reject(error);
+          });
           res.pipe(out);
           out.on("finish", () => {
-            out.close(() => resolve({ path: destPath, bytes: received }));
+            if (signal) signal.removeEventListener("abort", onAbort);
+            out.close(() => (aborted ? reject(new Error("已取消下载")) : resolve({ path: destPath, bytes: received })));
           });
-          out.on("error", reject);
         }
       );
       req.on("error", reject);

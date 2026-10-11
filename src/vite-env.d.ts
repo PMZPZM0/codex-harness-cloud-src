@@ -1036,6 +1036,16 @@ interface Window {
     cloudToolsDownload(name: string): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
     /* 云版预留（真实现）：工具下载进度 */
     cloudToolsProgress(name: string): Promise<{ running: boolean; bytes: number; total: number; error: string | null }>;
+    /* 更新：静默检查（后台同一套逻辑：断网跳过 / 失败退避 5min→15min→1h→6h / 下载中不并发），不弹错误 */
+    checkUpdateSilent(): Promise<{ ok: boolean; state: unknown }>;
+    /* 更新：读当前状态机（相位/进度/速度/剩余/更新说明/稍后安装版本/是否电池供电） */
+    updateStateRead(): Promise<{ ok: boolean; state: { phase: string; percent: number; receivedBytes: number; totalBytes: number; speedBytesPerSec: number; etaSeconds: number | null; version?: string; changelog?: string; error?: string; deferredVersion?: string; onBattery?: boolean; product?: string } }>;
+    /* 更新：取消下载（AbortController 中断；.part 保留，下次同版本 Range 续传） */
+    cancelUpdateDownload(): Promise<{ ok: boolean }>;
+    /* 更新：稍后安装（记住已校验安装包与版本，落 userData/updates-state.json，下次启动提示） */
+    deferUpdateInstall(): Promise<{ ok: boolean; deferredPath?: string; deferredVersion?: string; error?: string }>;
+    /* 更新：跳过此版本（同版本不再提示；持久化） */
+    skipUpdateVersion(version: string): Promise<{ ok: boolean; skippedVersion?: string; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
@@ -1186,6 +1196,8 @@ interface Window {
 
     /** 订阅下载进度（0~1），返回取消订阅函数 */
     updateOnProgress(callback: (percent: number) => void): () => void;
+    /** 更新状态机推送（10-11 自动更新，手写桥）：主进程 updates:state 事件 */
+    onUpdateState(callback: (state: { phase: string; percent: number; receivedBytes: number; totalBytes: number; speedBytesPerSec: number; etaSeconds: number | null; version?: string; changelog?: string; filename?: string; error?: string; deferredVersion?: string; onBattery?: boolean; product?: string; channel?: string }) => void): () => void;
 
 
   };
