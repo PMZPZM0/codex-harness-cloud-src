@@ -1,0 +1,39 @@
+# Codex Harness Assistant · 云版助手打包配置（10-11）
+# 与桌面版 electron-builder 配置并列，互不影响：
+#   桌面版：electron-builder --win nsis（release.yml，main 入口）
+#   云助手：electron-builder --config electron-builder.assistant.yml（release-cloud.yml，headless 入口）
+#
+# ⛔ 发布形态（用户定稿）：**精简包 + 工具链按需下载** —— 不带 resources/tools extraResources，
+#   Node/Python/rg 首次启动时由 cloud:tools/* 按需拉取；引擎二进制仍在包内（codex-* vendor 走 asarUnpack）。
+appId: com.codexharness.assistant
+productName: Codex Harness Assistant
+npmRebuild: false
+beforePack: scripts/before-pack.cjs
+directories:
+  output: release-cloud
+files:
+  - dist/**
+  - dist-electron/**
+  - electron/ipc-channels.manifest.json
+  - electron/preload.ts
+  - electron/composition.json
+  - package.json
+  - "!dist-electron/**/*.tsbuildinfo"
+asarUnpack:
+  - node_modules/@openai/codex-*/vendor/**
+  - node_modules/@lydell/node-pty/**
+  - node_modules/sherpa-onnx-*/**
+  - node_modules/koffi/**
+  - node_modules/@koromix/**
+win:
+  target:
+    - nsis
+  icon: build/icon.ico
+mac:
+  target:
+    - zip
+  icon: build/icon.ico
+  category: public.app-category.developer-tools
+nsis:
+  oneClick: true
+  runAfterFinish: true

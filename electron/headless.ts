@@ -651,7 +651,10 @@ if (popoutHandler) {
     const threadId = String(args[0] ?? "");
     try {
       const url = `http://127.0.0.1:${PORT}/?popout=${encodeURIComponent(threadId)}`;
-      nodeSpawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+      // ⛔ mac 适配：cmd /c start 是 Windows 专属；darwin 用 open，其余 xdg-open
+      const openCmd = process.platform === "win32" ? "cmd" : process.platform === "darwin" ? "open" : "xdg-open";
+      const openArgs = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+      nodeSpawn(openCmd, openArgs, { detached: true, stdio: "ignore", windowsHide: true }).unref();
       console.log(`[headless] 独立窗口 → 浏览器标签页 ${url}`);
     } catch (error) { console.error("[headless] 弹浏览器独立窗口失败：", error); }
     return result;
