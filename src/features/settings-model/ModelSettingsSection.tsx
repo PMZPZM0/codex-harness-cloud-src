@@ -13,6 +13,7 @@ import { FieldHelp } from "../../features/auth";
 import { UpstreamProtocol } from "../../hooks/useModelProviders";
 import { ModelIdInput } from "../../components/ModelIdInput";
 import { matchModelSpec } from "../../lib/model-specs";
+import { FreeGatewayRecommendCard } from "../free-gateway";
 
 export type ModelSettingsSectionProps = { autoCompactRatio: any; setAutoCompactRatio: any; setNotice: any; providersList: any; pptokenCardOff: any; editingProvider: any; setCustomDraft: any; setEditingProvider: any; uniqueModelCount: any; customModel: any; setPptokenCardOff: any; setProviderEnabled: any; currentProvider: any; probingProvider: any; probeActiveProvider: any; providerAutoOpenRef: any; customDraft: any; savingSettings: any; openAppConfirm: any; removeProvider: any; LOCAL_MODEL_PRESETS: any; showApiKey: any; setShowApiKey: any; probeProvider: any; saveCustomDraft: any; switchingModel: any; probeOneModel: any; openModelEditor: any; providerStatus: any; showToast: any; saveCustomModel: any; modelEditor: any; setModelEditor: any; targetProviderHint: any; applyModelIdInput: any; modelSuggestions: any; saveModelEditor: any };
 
@@ -102,6 +103,28 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           失败会弹带排查清单的中文提示，认证类错误保留供应商原文。 */}
                       {customModel && <button className="add-provider-btn" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>{probingProvider === "test" ? <Spinner /> : <RefreshCw size={13} />}测试当前供应商</button>}
                       <button className="add-provider-btn" onClick={() => { providerAutoOpenRef.current = true; setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); }}><Plus size={13} />添加供应商</button>
+                      {/* 免费模型网关推荐卡（free-gateway 域，10-12）：第三方开源侧车，⛔ 免责声明是契约（守卫 12c）——
+                          自包含组件（本地 state + SettingsDialog），不占 bag；注册走既有 custom-model:save。 */}
+                      <FreeGatewayRecommendCard
+                        setNotice={setNotice}
+                        registered={providersList.some((p: any) => p.provider === "free-gateway")}
+                        onSelect={() => {
+                          const fg = providersList.find((p: any) => p.provider === "free-gateway");
+                          if (fg) { setEditingProvider("free-gateway"); setCustomDraft({ provider: "free-gateway", name: fg.name, model: fg.model, baseUrl: fg.baseUrl, contextWindow: String(fg.contextWindow ?? 128000), wireApi: "responses" as const, apiKey: "", models: fg.models ?? [], enabled: fg.enabled !== false }); }
+                        }}
+                        onRegistered={() => {
+                          // 注册成功：选中供应商（右侧出模型清单）+ 自动启用（其他供应商自动关闭）→ 用户点保存重启
+                          setEditingProvider("free-gateway");
+                          setCustomDraft({ provider: "free-gateway", name: "免费模型网关", model: "", baseUrl: "http://127.0.0.1:18900/v1", contextWindow: "128000", wireApi: "responses" as const, apiKey: "", models: [], enabled: true });
+                          void window.codex.listCustomModels().then(({ providers }: any) => {
+                            const fg = providers.find((p: any) => p.provider === "free-gateway");
+                            if (fg) setCustomDraft({ provider: "free-gateway", name: fg.name, model: fg.model, baseUrl: fg.baseUrl, contextWindow: String(fg.contextWindow ?? 128000), wireApi: "responses" as const, apiKey: "", models: fg.models ?? [], enabled: true });
+                          });
+                          if (setProviderEnabled) setProviderEnabled("free-gateway", true);
+                          (window as any).__refreshProviders?.();
+                        }}
+                        onUninstalled={() => removeProvider("free-gateway")}
+                      />
                     </div>
                     <div className="provider-form">
                       <div className="provider-detail-head">

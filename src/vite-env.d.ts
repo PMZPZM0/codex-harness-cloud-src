@@ -884,6 +884,8 @@ interface Window {
     /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */
     revealInFolder(path: string): Promise<{ ok: boolean }>;
     readModel(path: string): Promise<{ data: Uint8Array; size: number }>;
+    /* P1（10-11）：把本地 HTML/URL 动画在本地渲成 MP4 —— Chromium 抓帧 + 运行时自带 MP4 编码器，零 ffmpeg 依赖；源须为 http(s) 或可信根内 .html */
+    htmlVideoRender(input: { source?: string; seconds?: number; fps?: number; width?: number; height?: number; outPath?: string }): Promise<any>;
     /* 图像工坊读通道（image-lab 域，10-09）：渲染层浮层预览拉图片字节；路径闸 = resolveImagePath（可信根 + 图片扩展名 + 128MB），与修图通道共用同一道闸 */
     readImage(path: string): Promise<{ data: Uint8Array; size: number }>;
     /* 生图执行端（10-09 从 agents:dispatch-call 拆出）：**唯一需要生图插件凭证的**通道（读 builtin-plugins.json 的 image 段 → 打外部网关）。调用时弹「图像工坊」浮层，完成自动收起。⛔ 与 image-lab:edit 分属两条通道 —— 用户明确要求「生成和编辑的 IPC 彻底分开」 */
@@ -992,6 +994,20 @@ interface Window {
     pollConfigSave(input: { intervalMs?: number; timeoutMs?: number; maxRetry?: number }): Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>;
     /* 10-09 用户在界面上按「中止」→ 主进程的 wait 循环停下（任务本身不会被撤销） */
     pollAbort(input: { taskId: string }): Promise<{ ok: boolean; aborted: boolean }>;
+    /* 免费模型网关（free-gateway 域，10-12）：第三方开源侧车服务的状态。⛔ 免责：上游与本项目开发者无关，渠道合规性与可用性由使用者自担 */
+    freeGatewayStatus(): Promise<{ downloaded: boolean; version: string; running: boolean; port: number; forwardKey: string; hasForwardKey: boolean; adminUrl: string; stage: string | null; stageError: string | null; lastStartError: string | null; dlBytes: number; dlTotal: number }>;
+    /* 免费模型网关：从 gh 镜像下载上游仓库 zip 并用随包 7za 解压到 userData/free-gateway/app */
+    freeGatewayDownload(input: { force?: boolean }): Promise<{ ok: boolean; version: string; already?: boolean }>;
+    /* 免费模型网关：用随包 node 启动 standalone 网关（OFM_HOME 指向 userData/free-gateway/data），等 /health 就绪 */
+    freeGatewayStart(): Promise<{ ok: boolean; port: number; hasForwardKey: boolean }>;
+    /* 免费模型网关：停掉本应用拉起的侧车进程 */
+    freeGatewayStop(): Promise<{ ok: boolean }>;
+    /* 免费模型网关：返回管理台地址（启动期捕获的一次性登录链接优先） */
+    freeGatewayOpenAdmin(): Promise<{ url: string; port: number }>;
+    /* 免费模型网关：主进程带 forwardKey 拉 /v1/models（⛔ 渲染层 fetch 会被 CORS 拦） */
+    freeGatewayModels(): Promise<{ models: string[] }>;
+    /* 免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除） */
+    freeGatewayUninstall(): Promise<{ ok: boolean }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
