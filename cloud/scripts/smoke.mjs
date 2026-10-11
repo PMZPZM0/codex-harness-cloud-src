@@ -251,8 +251,16 @@ try {
   const shell = await fetch(`${BASE}/`);
   const shellHtml = await shell.text();
   check("GET / 返回外壳（200）", shell.status === 200);
-  check("外壳已注入云端资产地址（服务端替换占位符，前端不写死 CDN）",
-    !shellHtml.includes("__CDN_BASE__") && shellHtml.includes("https://ppz123.asia/cloud"));
+  // ⛔ 这条断言 10-11 跟着设计改过一次，别改回去：
+  //   旧设计是"文件里写 __CDN_BASE__ 占位符、由服务端替换"，而同一份文件还要被云端原样托管当入口 ——
+  //   云端没人替换 ⇒ fetch("__CDN_BASE__/version.json") 必然失败 ⇒ **首屏永远转**（真实事故）。
+  //   现在：文件里没有占位符（外壳自己算地址），服务端只**注入**一个可选覆盖项。
+  //   所以断言也换了：认"注入的覆盖项"，并且**引号位置**不许再出现占位符字面量
+  //   （注释里提到 `__CDN_BASE__` 是允许的，所以不能简单粗暴地 includes）。
+  check("外壳注入了云端资产地址（window.__CHC_CDN__，可选覆盖）",
+    shellHtml.includes(`window.__CHC_CDN__ = "https://ppz123.asia/cloud"`));
+  check("外壳在引号位置没有残留模板占位符（云端原样托管也必须能自己跑）",
+    !/["']__[A-Z_]+__["']/.test(shellHtml), (shellHtml.match(/["']__[A-Z_]+__["']/g) || []).join(","));
   check("外壳声明 no-store（否则用户会被钉在旧资产上）", /no-store/i.test(shell.headers.get("cache-control") || ""));
   const localAsset = await fetch(`${BASE}/local-assets/app.js`);
   check("本地副本可服务（/local-assets/app.js → 200）", localAsset.status === 200);

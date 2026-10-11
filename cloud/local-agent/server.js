@@ -125,13 +125,17 @@ const RPC_ALLOW = new Set([
 
 function shellHtml() {
   const file = path.join(WEB_DIR, "index.html");
-  let html = fs.readFileSync(file, "utf8");
-  html = html
-    .replaceAll("__CDN_BASE__", cfg.cdnBase)
-    .replaceAll("__PROTOCOL_VERSION__", String(cfg.protocolVersion))
-    .replaceAll("__AGENT_VERSION__", "0.1.0")
-    .replaceAll("__ASSET_VERSION__", "0.1.0");
-  return html;
+  const html = fs.readFileSync(file, "utf8");
+  /**
+   * ⛔⛔ 只**注入**一个全局覆盖项，不再替换文件里的占位符。
+   *   原来的写法（replaceAll("__CDN_BASE__", …)）意味着这个文件**只在本地服务下发时才是完整的** ——
+   *   而同一份文件也会被原样托管到云端当入口（https://ppz123.asia/cloud/），
+   *   那时占位符没人换，`fetch("__CDN_BASE__/version.json")` 必然失败、回落 /local-assets 又 404，
+   *   页面就永远停在首屏（真实事故）。现在文件里没有占位符，外壳自己算地址；
+   *   这里的注入只是"告诉它云端在哪"（可选覆盖，缺了也能跑）。
+   */
+  const inject = `  <script>window.__CHC_CDN__ = ${JSON.stringify(cfg.cdnBase)};</script>\n`;
+  return html.replace("</head>", `${inject}</head>`);
 }
 
 const MIME = {

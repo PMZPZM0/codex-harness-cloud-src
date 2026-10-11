@@ -130,6 +130,10 @@ function corsHeaders(origin, allowedOrigins) {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type, x-harness-client",
+    // ⛔ 云端页面（https://…）要去连本机回环时，Chrome 会先发一条**私有网络访问预检**
+    //   （OPTIONS + Access-Control-Request-Private-Network: true），不回这个头它就把真实请求拦下。
+    //   不加这个头的症状是"云端入口打开后一切正常，但怎么都连不上本机"。
+    "Access-Control-Allow-Private-Network": "true",
     "Access-Control-Max-Age": "600",
     Vary: "Origin",
   };

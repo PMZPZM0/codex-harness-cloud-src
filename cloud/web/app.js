@@ -75,13 +75,23 @@ function timeLabel(ms) {
  *   x-harness-client —— 让请求变成"非简单请求"，浏览器强制先发 CORS 预检，
  *     预检不通过真实请求根本发不出去。这是挡住"任意网页打本机回环"的关键。
  */
+/**
+ * ⛔ 请求必须打到**发现到的**伴生服务地址，不能用相对路径：
+ *   这个页面可能来自云端（https://ppz123.asia/cloud/），那时 `/api/...` 会打到云端自己，
+ *   而云端没有这些接口。地址由外壳探测后放在 window.__CHC_AGENT__（同源进来自动等于本站）。
+ */
+function agentBase() {
+  const raw = window.__CHC_AGENT__ || location.origin;
+  return String(raw).replace(/\/+$/, "");
+}
+
 async function api(path, { method = "GET", body, auth = true } = {}) {
   const headers = { "x-harness-client": CLIENT_NAME };
   if (auth && state.token) headers.Authorization = `Bearer ${state.token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   let response;
   try {
-    response = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    response = await fetch(agentBase() + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch (error) {
     throw new Error(`本地伴生服务不可达（${error.message}）`);
   }
@@ -110,7 +120,7 @@ async function streamEvents() {
   let backoff = 800;
   while (!controller.signal.aborted) {
     try {
-      const response = await fetch("/api/events", {
+      const response = await fetch(agentBase() + "/api/events", {
         headers: {
           Authorization: `Bearer ${state.token}`,
           "x-harness-client": CLIENT_NAME,
