@@ -303,6 +303,18 @@ export async function bootApp() {
       console.warn("custom-model API key decrypt failed, starting without key:", error);
     }
   }
+  // 云版/headless 兜底（10-11）：safeStorage 密文可能解不开（无头环境/换机拷贝的 userData），
+  // 而引擎对 env_key 是**存在性**校验（上游鉴权由统一通道桥自己管）⇒ 允许显式注入：
+  //   ① env HARNESS_CLOUD_API_KEY；② userData/api-key.txt（明文，0600，用户自己放）。
+  // 顺序：env > 文件 > 解密结果；只在当前 key 为空时补位，不覆盖已解出的真 key。
+  if (!server.hasApiKey()) {
+    const fallback = process.env.HARNESS_CLOUD_API_KEY
+      || (() => { try { return readFileSync(path.join(app.getPath("userData"), "api-key.txt"), "utf8").trim(); } catch { return ""; } })();
+    if (fallback) {
+      server.setApiKey(fallback);
+      console.log("[boot] 使用兜底 API key（env HARNESS_CLOUD_API_KEY 或 userData/api-key.txt）");
+    }
+  }
   protocol.handle("harness-image", async (request) => {
     let imagePath = new URL(request.url).searchParams.get("path");
     if (!imagePath) return new Response("Missing path", { status: 400 });

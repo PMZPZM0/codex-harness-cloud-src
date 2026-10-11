@@ -19,8 +19,9 @@
 import electron from "electron";
 import { app, ipcMain } from "electron";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
 
 // ⛔ 本机 GPU 进程必崩（exit_code=-1073741819），崩 9 次后整个进程 FATAL 退出 ——
@@ -75,6 +76,138 @@ app.on("browser-window-created", (_event: unknown, win: { hide: () => void; setS
   };
 });
 
+/* ── ②b 对话框桥：浏览器点不到原生弹窗 ⇒ 预置答案队列 ─────────────────────
+   真实路径全部保留：shim 先在浏览器里要一个路径 → POST /__dialog 进队列 → 再走
+   真通道（dialog:directory 等）⇒ main 侧 showOpenDialog 消费队首答案，trustPicked
+   （登记可信根）等域内语义照常执行。⛔ 队列空时**不弹原生框**（无头没人点会永久
+   挂起），直接返回 canceled —— UI 表现为「取消」，与用户关掉弹窗同形。 */
+const dialogAnswers: Array<{ canceled: boolean; filePaths: string[] }> = [];
+type DialogModule = {
+  showOpenDialog: (...a: unknown[]) => Promise<{ canceled: boolean; filePaths: string[] }>;
+  showSaveDialog: (...a: unknown[]) => Promise<{ canceled: boolean; filePath?: string }>;
+};
+const electronDialog = (electron as { dialog?: DialogModule }).dialog;
+if (electronDialog) {
+  try {
+    const wrapOpen = (...a: unknown[]) => {
+      const next = dialogAnswers.shift();
+      if (next) { console.log(`[headless] 对话框桥：消费预置答案 ${JSON.stringify(next.filePaths)}`); return Promise.resolve(next); }
+      console.log("[headless] 对话框桥：无预置答案（浏览器端应先 POST /__dialog）→ canceled");
+      return Promise.resolve({ canceled: true, filePaths: [] });
+    };
+    const wrapSave = (...a: unknown[]) => {
+      const next = dialogAnswers.shift();
+      if (next) return Promise.resolve({ canceled: false, filePath: next.filePaths[0] });
+      console.log("[headless] 对话框桥：另存为无预置答案 → canceled");
+      return Promise.resolve({ canceled: true, filePath: undefined });
+    };
+    // ⛔ electron 模块方法一般可赋值（ipcMain.handle 同例）；defineProperty 兜一层。
+    try { electronDialog.showOpenDialog = wrapOpen; electronDialog.showSaveDialog = wrapSave; }
+    catch {
+      Object.defineProperty(electronDialog, "showOpenDialog", { value: wrapOpen, configurable: true });
+      Object.defineProperty(electronDialog, "showSaveDialog", { value: wrapSave, configurable: true });
+    }
+    // 自证接线：包装真的挂上去了（防止「赋值被静默忽略」的自洽假绿）
+    if (electronDialog.showOpenDialog !== wrapOpen) console.error("[headless] ⛔ 对话框包装未生效——原生弹窗将挂起，请检查 electron.dialog 可写性");
+  } catch (error) { console.error("[headless] 对话框桥初始化失败：", error); }
+} else {
+  console.error("[headless] ⛔ electron.dialog 不可用，对话框桥未接线");
+}
+
+/* ── ②c 云版配对与鉴权（与伴生服务同语义、同落盘）──────────────────────────
+   home = HARNESS_CLOUD_HOME（默认 ~/.codex-harness-cloud），token/users.json 与
+   伴生服务**共用** ⇒ --add-user 签发的个人码两边通用。四道闸与 local-agent/auth.js
+   同源：Bearer（不用 Cookie）/ Origin 白名单 / 预检强制 / 常量时间比较。桥的全部
+   状态通道（/__ipc /__events /__upload /__dialog）都要过 token；/api/health、
+   /api/pair 与静态资产除外 —— 配对就是为了换 token。 */
+const CHC_HOME = process.env.HARNESS_CLOUD_HOME || join(homedir(), ".codex-harness-cloud");
+type ChcUser = { name: string; code: string; token: string; createdAt: number };
+function loadChcUsers(): ChcUser[] {
+  try {
+    const parsed = JSON.parse(readFileSync(join(CHC_HOME, "users.json"), "utf8")) as unknown;
+    return Array.isArray(parsed) ? (parsed as ChcUser[]) : [];
+  } catch { return []; }
+}
+function persistChcUsers(users: ChcUser[]): void {
+  mkdirSync(CHC_HOME, { recursive: true });
+  writeFileSync(join(CHC_HOME, "users.json"), JSON.stringify(users, null, 2), { mode: 0o600 });
+}
+const chcTokenFile = join(CHC_HOME, "token");
+let ownerToken = "";
+try { ownerToken = readFileSync(chcTokenFile, "utf8").trim(); } catch { /* 首次运行 */ }
+if (!ownerToken) {
+  ownerToken = randomBytes(32).toString("hex");
+  mkdirSync(CHC_HOME, { recursive: true });
+  writeFileSync(chcTokenFile, ownerToken, { mode: 0o600 });
+}
+function safeEq(a: string, b: string): boolean {
+  const left = Buffer.from(String(a || ""), "utf8");
+  const right = Buffer.from(String(b || ""), "utf8");
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+function whoByToken(presented: string, users: ChcUser[]): string | null {
+  if (presented && safeEq(presented, ownerToken)) return "owner";
+  for (const user of users) if (safeEq(presented, user.token)) return user.name;
+  return null;
+}
+/* ⛔ --add-user 必须在起服务 / 进 main 之前处理：签发完就退出，不占端口。 */
+const addUserIndex = process.argv.indexOf("--add-user");
+if (addUserIndex >= 0) {
+  const name = String(process.argv[addUserIndex + 1] || "").trim();
+  try {
+    if (!name) throw new Error("用户名不能为空");
+    const users = loadChcUsers();
+    if (users.some((u) => u.name === name)) throw new Error(`用户「${name}」已存在`);
+    const user: ChcUser = { name, code: randomBytes(4).toString("hex"), token: randomBytes(24).toString("hex"), createdAt: Date.now() };
+    users.push(user);
+    persistChcUsers(users);
+    process.stdout.write(`\n  用户「${user.name}」的配对码：${user.code}\n  （唯一一次显示，请交给本人；token 已落盘）\n\n`);
+  } catch (error) {
+    process.stderr.write(`[add-user] ${(error as Error).message}\n`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+const allowedOrigins = (() => {
+  const list = [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`, "https://ppz123.asia", "https://www.ppz123.asia"];
+  try {
+    const saved = JSON.parse(readFileSync(join(CHC_HOME, "config.json"), "utf8")) as { allowedOrigins?: unknown };
+    if (Array.isArray(saved.allowedOrigins)) {
+      for (const entry of saved.allowedOrigins) if (typeof entry === "string" && !list.includes(entry)) list.push(entry);
+    }
+  } catch { /* 没有伴生配置就只放本机 + 站点 */ }
+  return list;
+})();
+function originAllowed(origin: string | undefined): boolean {
+  if (!origin) return true;   // 无 Origin = 非浏览器发起（curl / 服务自测）
+  return allowedOrigins.includes(origin);
+}
+function corsFor(origin: string | undefined): Record<string, string> {
+  if (!origin || !originAllowed(origin)) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, x-harness-client",
+    // ⛔ 云端页面连本机回环时 Chrome 发私有网络预检，缺这个头会被拦（auth.js 同款）
+    "Access-Control-Allow-Private-Network": "true",
+    "Access-Control-Max-Age": "600",
+    Vary: "Origin",
+  };
+}
+function tokenOf(req: IncomingMessage, url: URL): string {
+  const header = String(req.headers.authorization || "");
+  if (header.startsWith("Bearer ")) return header.slice(7).trim();
+  return String(url.searchParams.get("t") || "");
+}
+function bridgeAuthOk(req: IncomingMessage, url: URL): boolean {
+  if (!originAllowed(req.headers.origin)) return false;
+  return Boolean(whoByToken(tokenOf(req, url), loadChcUsers()));
+}
+const PAIR_MAX_TRIES = 10;
+const PAIR_LOCK_MS = 60_000;
+let pairTries = 0;
+let pairLockedUntil = 0;
+
 /* ── ③ shim 生成：manifest(441 invoke) + preload.ts(24 事件桥) ────────────── */
 type ManifestEntry = { name: string; channel: string; paramsDecl: string | null; invokeArgs: string | null };
 type OnEntry = { name: string; channel: string };
@@ -115,8 +248,54 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
     if (!set) return;
     for (var fn of set) { try { fn(payload.payload); } catch (e) { console.error("[shim] listener", payload.event, e); } }
   }
+  function tok() { try { return localStorage.getItem("chc-token") || ""; } catch (e) { return ""; } }
+  function authHeaders(extra) {
+    var h = extra || {};
+    var t = tok();
+    if (t) h["Authorization"] = "Bearer " + t;
+    return h;
+  }
+  function showPairBox() {
+    if (document.getElementById("__chc-pair")) return;
+    var box = document.createElement("div");
+    box.id = "__chc-pair";
+    box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:99999";
+    var card = document.createElement("div");
+    card.style.cssText = "background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:360px;width:90%;font-family:system-ui,sans-serif;text-align:center";
+    var head = document.createElement("div"); head.textContent = "连接这台电脑的助手";
+    head.style.cssText = "font-size:15px;font-weight:600;margin-bottom:6px";
+    var tip = document.createElement("div");
+    tip.textContent = "输入个人配对码（助手控制台 --add-user 名字 签发）；或在 ppz123.asia 登录后连接。";
+    tip.style.cssText = "font-size:12.5px;color:#666;line-height:1.6;margin-bottom:12px";
+    var input = document.createElement("input");
+    input.placeholder = "8 位配对码"; input.maxLength = 8; input.autocomplete = "off";
+    input.style.cssText = "width:100%;box-sizing:border-box;padding:8px 10px;font-size:14px;letter-spacing:4px;text-align:center;border:1px solid #ccc;border-radius:8px;margin-bottom:10px";
+    var btn = document.createElement("button"); btn.textContent = "连接";
+    btn.style.cssText = "width:100%;padding:9px 0;background:#185fa5;color:#fff;border:none;border-radius:8px;font-size:13.5px;cursor:pointer";
+    var st = document.createElement("div"); st.style.cssText = "font-size:12px;color:#a32d2d;margin-top:8px;min-height:16px";
+    btn.onclick = function () {
+      var code = (input.value || "").trim().toLowerCase();
+      if (!code) { st.textContent = "请输入配对码"; return; }
+      btn.disabled = true; st.style.color = "#666"; st.textContent = "正在连接…";
+      fetch("/api/pair", { method: "POST", headers: { "Content-Type": "application/json", "x-harness-client": "web" }, body: JSON.stringify({ code: code }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j || !j.ok) {
+            st.textContent = j && j.error === "mismatch" ? "配对码不对" : j && j.error === "locked" ? "尝试过多，锁定 1 分钟" : "失败：" + ((j && j.error) || "未知");
+            st.style.color = "#a32d2d"; btn.disabled = false; return;
+          }
+          try { localStorage.setItem("chc-token", j.token); } catch (e) { /* 忽略 */ }
+          location.reload();
+        })
+        .catch(function () { st.textContent = "网络错误"; btn.disabled = false; });
+    };
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") btn.click(); });
+    card.appendChild(head); card.appendChild(tip); card.appendChild(input); card.appendChild(btn); card.appendChild(st);
+    box.appendChild(card); document.body.appendChild(box);
+    input.focus();
+  }
   function connect() {
-    var es = new EventSource("/__events");
+    var es = new EventSource("/__events?t=" + encodeURIComponent(tok()));
     es.onmessage = function (m) { try { emit(JSON.parse(m.data)); } catch (e) { /* 忽略坏帧 */ } };
     es.onerror = function () { es.close(); setTimeout(connect, 1200); };   // 断线重连
   }
@@ -128,9 +307,12 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
       pending[id] = { resolve: resolve, reject: reject };
       fetch("/__ipc", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ id: id, channel: channel, args: args }),
-      }).then(function (r) { return r.json(); }).then(function (body) {
+      }).then(function (r) {
+        if (r.status === 401) { showPairBox(); throw new Error("未配对（401）"); }
+        return r.json();
+      }).then(function (body) {
         var entry = pending[id]; if (!entry) return;
         delete pending[id];
         if (body.ok) entry.resolve(body.result);
@@ -158,7 +340,7 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
         var tooBig = files.find(function (f) { return f.size > 2 * 1024 * 1024; });
         if (tooBig) { input.remove(); alert("图片「" + tooBig.name + "」超过 2MB 限制"); resolve([]); return; }
         Promise.all(files.map(function (f) {
-          return fetch("/__upload", { method: "POST", headers: { "Content-Type": "application/octet-stream", "x-file-name": encodeURIComponent(f.name) }, body: f })
+          return fetch("/__upload", { method: "POST", headers: authHeaders({ "Content-Type": "application/octet-stream", "x-file-name": encodeURIComponent(f.name) }), body: f })
             .then(function (r) { return r.json(); })
             .then(function (j) { if (!j.ok) throw new Error(j.error || "上传失败"); return j.path; });
         })).then(function (paths) { input.remove(); resolve(paths); })
@@ -196,6 +378,26 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
   }
   codex.chooseImages = function () { return pickFiles("image/*", true, true); };
   codex.chooseFiles = function () { return pickFiles("*/*", true, false); };
+
+  /* ⛔ 浏览器点不到原生目录弹窗：先 prompt 要路径 → POST /__dialog 预置答案 →
+     再调真通道（dialog:directory / directory-at）—— main 侧消费答案、trustPicked
+     登记可信根等真实语义照常执行。取消（空串/Esc）返回 null，与桌面版同形。 */
+  function pickDirectory(startPath, useAt) {
+    // 队列已有预置答案（如自动化/E2E 直接 POST 过来）→ 跳过 prompt 直接走真通道
+    return fetch("/__dialog", { headers: authHeaders() }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && j.ok && j.queued > 0) return invoke(useAt ? "dialog:directory-at" : "dialog:directory", useAt ? [startPath] : []);
+      var p = window.prompt(startPath ? ("输入目录的绝对路径（起始：" + startPath + "）：") : "输入工作区目录的绝对路径：", startPath || "");
+      if (p === null) return null;
+      p = String(p).trim();
+      if (!p) return null;
+      return fetch("/__dialog", { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ paths: [p] }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j2) { if (!j2.ok) throw new Error(j2.error || "预置失败"); return invoke(useAt ? "dialog:directory-at" : "dialog:directory", useAt ? [startPath] : []); });
+    }).then(function (path) { return path == null ? null : path; })
+      .catch(function (e) { console.error("[shim] chooseDirectory", e); return null; });
+  }
+  codex.chooseDirectory = function () { return pickDirectory("", false); };
+  codex.chooseDirectoryAt = function (startPath) { return pickDirectory(startPath || "", true); };
 
   window.codex = codex;
   window.__chcReady = true;   // 界面桥就位（外壳超时兜底读它）
@@ -248,16 +450,58 @@ function shellHtml(shimJs: string, assetBase: string) {
       .replace(/style-src 'self'/g, `style-src 'self' ${cloudOrigin}`);
   }
   const cdnMark = `<script>window.__CHC_CDN__ = ${JSON.stringify(assetBase)};</script>\n`;
-  return rewritten.replace("</head>", `${cdnMark}<script>${shimJs}</script>\n</head>`);
+  // 云端登录门的 token 交接：/#t=<token>（fragment 不进服务器日志）→ localStorage → 抹掉 hash
+  const handoff = `<script>(function(){var m=/^t=([0-9a-f]{16,})$/.exec(location.hash.slice(1));if(m){try{localStorage.setItem("chc-token",m[1])}catch(e){}history.replaceState(null,"",location.pathname+location.search)}})();</script>\n`;
+  return rewritten.replace("</head>", `${cdnMark}${handoff}<script>${shimJs}</script>\n</head>`);
 }
 
 function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   const p = url.pathname;
+  const origin = req.headers.origin;
+
+  // CORS 预检：只放行白名单 Origin（第三方页面连不上本机回环的第一道闸）
+  if (req.method === "OPTIONS") {
+    const headers = corsFor(origin);
+    if (!headers["Access-Control-Allow-Origin"]) { res.writeHead(403).end(); return; }
+    res.writeHead(204, headers).end();
+    return;
+  }
+  const cors = corsFor(origin);
+  const deny = (status: number, body: unknown) => {
+    res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...cors }).end(JSON.stringify(body));
+  };
+
+  // 云版门面（登录门探测 + 配对换 token；协议与伴生服务一致 ⇒ 门零改动可用）
+  if (p === "/api/health") {
+    deny(200, { ok: true, product: "codex-harness-cloud", protocolVersion: 1, mode: "real-ui" });
+    return;
+  }
+  if (p === "/api/pair" && req.method === "POST") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; if (raw.length > 64 * 1024) req.destroy(); });
+    req.on("end", () => {
+      let code = "";
+      try { code = String((JSON.parse(raw) as { code?: unknown }).code || "").trim().toLowerCase(); } catch { deny(400, { ok: false, error: "bad-json" }); return; }
+      if (Date.now() < pairLockedUntil) { deny(403, { ok: false, error: "locked" }); return; }
+      pairTries += 1;
+      if (pairTries >= PAIR_MAX_TRIES) { pairLockedUntil = Date.now() + PAIR_LOCK_MS; pairTries = 0; console.log("[pair] 用户码连续错误过多，锁定 60 秒"); deny(403, { ok: false, error: "locked" }); return; }
+      const hit = loadChcUsers().find((user) => safeEq(code, user.code));
+      if (!hit) { deny(403, { ok: false, error: "mismatch" }); return; }
+      pairTries = 0;
+      console.log(`[pair] 用户「${hit.name}」配对成功（真界面助手）`);
+      deny(200, { ok: true, token: hit.token, account: { userId: hit.name, name: hit.name }, protocolVersion: 1 });
+    });
+    return;
+  }
+
+  // ⛔ /__* 状态通道逐一上 token 闸（静态外壳不挡 —— 它要自己消费 #t / 弹配对框）
 
   // ⛔ 传图通道（用户定调：限 2M）。浏览器 <input type=file> → 这里落盘 →
   //   返回本地路径，渲染层/引擎拿到的与桌面版选图**同形**（都是本地路径）。
   if (p === "/__upload" && req.method === "POST") {
+    if (!bridgeAuthOk(req, url)) { deny(401, { ok: false, error: "unauthorized" }); return; }
     const declared = Number(req.headers["content-length"] || 0);
     if (declared > 2 * 1024 * 1024) {
       res.writeHead(413, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: false, error: "图片超过 2MB 限制" }));
@@ -277,7 +521,36 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     return;
   }
 
+  // ⛔ 对话框桥（浏览器点不到原生弹窗）：预置答案进队列，main 侧 showOpenDialog/
+  //   showSaveDialog 消费队首。paths 数组 = 一次多选；空队列时对话框按「取消」处理。
+  if (p === "/__dialog" && req.method === "POST") {
+    if (!bridgeAuthOk(req, url)) { deny(401, { ok: false, error: "unauthorized" }); return; }
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; if (raw.length > 1024 * 1024) req.destroy(); });
+    req.on("end", () => {
+      try {
+        const body = JSON.parse(raw) as { paths?: unknown };
+        const paths = Array.isArray(body.paths) ? body.paths.map((x) => String(x)).filter(Boolean) : [];
+        if (!paths.length) {
+          res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: false, error: "paths 不能为空" }));
+          return;
+        }
+        dialogAnswers.push({ canceled: false, filePaths: paths });
+        res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: true, queued: dialogAnswers.length }));
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: false, error: "bad json" }));
+      }
+    });
+    return;
+  }
+  if (p === "/__dialog" && req.method === "GET") {
+    if (!bridgeAuthOk(req, url)) { deny(401, { ok: false, error: "unauthorized" }); return; }
+    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: true, queued: dialogAnswers.length }));
+    return;
+  }
+
   if (p === "/__events") {
+    if (!bridgeAuthOk(req, url)) { deny(401, { ok: false, error: "unauthorized" }); return; }
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
     res.write(`data: ${JSON.stringify({ event: "__hello", payload: { at: Date.now() } })}\n\n`);
     sseClients.add(res);
@@ -286,6 +559,7 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
   }
 
   if (p === "/__ipc" && req.method === "POST") {
+    if (!bridgeAuthOk(req, url)) { deny(401, { ok: false, error: "unauthorized" }); return; }
     let raw = "";
     req.on("data", (chunk) => { raw += chunk; if (raw.length > 8 * 1024 * 1024) req.destroy(); });
     req.on("end", async () => {
