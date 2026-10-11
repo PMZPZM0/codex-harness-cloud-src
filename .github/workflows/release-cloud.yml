@@ -5,7 +5,7 @@ name: Release Cloud Assistant
 # 同名 Release。跨仓发布需要私有仓配 secret `CLOUD_RELEASE_TOKEN`（有 codex-harness-desktop
 # contents:write 权限的 PAT）—— 与 PPcode 的 PPCODE_RELEASE_TOKEN 同一模式。
 #
-# ⛔ 版本号：tag 必须是 cloud-vX.Y.Z；构建时用 -c.extraMetadata 把包版本与主入口钉死
+# ⛔ 版本号：tag 必须是 cloud-vX.Y.Z；包版本与主入口在 electron-builder.assistant.yml 的 extraMetadata 里钉死
 #   （仓库 package.json 版本属于桌面版发布线，两者互不污染）。
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
         run: npm run build
 
       - name: Package assistant (NSIS)
-        run: npx electron-builder --win nsis --config electron-builder.assistant.yml --publish never -c.extraMetadata.main=dist-electron/headless.js -c.extraMetadata.version=0.0.1
+        run: npx electron-builder --win nsis --config electron-builder.assistant.yml --publish never
         env:
           # 精简包形态：随包自动化工具链（nuphus/playwright）不内置 —— before-pack 的官方逃生阀
           AUTOMATION_ZIP_OPTIONAL: "1"
@@ -77,7 +77,7 @@ jobs:
         run: npm run build
 
       - name: Package assistant (mac zip)
-        run: npx electron-builder --mac zip --config electron-builder.assistant.yml --publish never -c.extraMetadata.main=dist-electron/headless.js -c.extraMetadata.version=0.0.1
+        run: npx electron-builder --mac zip --config electron-builder.assistant.yml --publish never
         env:
           AUTOMATION_ZIP_OPTIONAL: "1"
           CODEBUDDY_SAFE_DELETE_ENABLED: "0"
