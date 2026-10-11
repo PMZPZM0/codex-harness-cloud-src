@@ -470,6 +470,10 @@
 .account-menu-error { padding: 6px 12px; font-size: 11px; color: #dc2626; background: rgba(220, 38, 38, 0.08); border-radius: 6px; margin: 4px 6px; }
 .account-menu-success { display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; color: var(--accent); }
 .account-menu-changelog { padding: 6px 12px; font-size: 11px; color: var(--muted); white-space: pre-wrap; max-height: 96px; overflow: auto; background: var(--panel-2); border-radius: 6px; margin: 0 6px 4px; line-height: 1.4; }
+/* 更新进度条 + 提示（10-11 自动更新）：只在「检查更新」子页里出现，用主题变量不吃暗色 */
+.account-menu-progress { height: 6px; border-radius: 3px; background: var(--panel-2); margin: 8px 12px 6px; overflow: hidden; }
+.account-menu-progress-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width .18s linear; }
+.account-menu-hint { padding: 4px 12px; font-size: 11px; color: var(--warn, #d97706); margin: 0 6px 4px; }
 .account-menu-item.primary { color: var(--accent); }
 .account-menu-item.primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .account-menu-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; margin-left: 4px; flex: none; animation: account-menu-dot-pulse 1.6s ease-in-out infinite; }

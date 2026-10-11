@@ -141,6 +141,9 @@ import {
   Video,
   Bell,
   CheckCheck,
+  /* 更新面板（10-11 自动更新）：稍后安装 / 跳过版本（X 与 RefreshCw 已在上方导入） */
+  Clock,
+  CircleSlash,
 } from "lucide-react";
 import { basename } from "../../../lib/basename";
 import { copyTextToClipboard } from "../../../lib/clipboard";
@@ -232,6 +235,10 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     updateError,
     updateInfo,
     updateProgress,
+    updateState,
+    runUpdateCancel,
+    runUpdateDefer,
+    runUpdateSkip,
     userAvatar,
     username,
     viewTab,
@@ -583,23 +590,66 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                       <span>{updateChecking ? "检查中…" : "检查更新"}</span>
                     </button>
                     {updateError ? <div className="account-menu-error">{updateError}</div> : null}
-                    {updateInfo && !updateInfo.hasUpdate ? (
-                      <div className="account-menu-success">
-                        <CircleCheck size={14} /><span>已是最新版本</span>
-                      </div>
-                    ) : null}
-                    {updateInfo?.hasUpdate ? <>
-                      <div className="account-menu-sep" />
-                      <div className="account-menu-section">
-                        <div className="account-menu-row"><span className="account-menu-label">新版本</span><span className="account-menu-value mono">v{updateInfo.version}</span></div>
-                        {updateInfo.size ? <div className="account-menu-row"><span className="account-menu-label">大小</span><span className="account-menu-value">{((updateInfo.size / 1024 / 1024) || 0).toFixed(1)} MB</span></div> : null}
-                      </div>
-                      {updateInfo.changelog ? <div className="account-menu-changelog">{updateInfo.changelog}</div> : null}
-                      <button className="account-menu-item primary" onClick={() => void runUpdateDownload()} disabled={updateDownloading}>
-                        <Download size={15} className={updateDownloading ? "pulse" : ""} />
-                        <span>{updateDownloading ? (updateProgress > 0 ? `下载中 ${Math.round(updateProgress * 100)}%` : "下载中…") : "立即更新"}</span>
-                      </button>
-                    </> : null}
+                    {/* ═══ 更新面板（10-11 状态机驱动）═══
+                        相位与所有数字都来自主进程 `updates:state`（单一真相源），渲染层不自己推断：
+                        idle/checking → 已是最新 / 检查中；available → 版本+说明+立即更新/跳过；
+                        downloading → 进度条+已下载/总量+速度+剩余+取消；
+                        downloaded → 立即安装/稍后安装；error → 错误+重试。 */}
+                    {(() => {
+                      const st = updateState;
+                      const mb = (n: number) => (n / 1024 / 1024).toFixed(1);
+                      const eta = st.etaSeconds != null
+                        ? (st.etaSeconds >= 60 ? `${Math.round(st.etaSeconds / 60)} 分 ${String(st.etaSeconds % 60).padStart(2, "0")} 秒` : `${Math.max(1, Math.round(st.etaSeconds))} 秒`)
+                        : null;
+                      const speed = st.speedBytesPerSec > 0 ? `${mb(st.speedBytesPerSec)} MB/s` : null;
+                      const version = st.version || updateInfo?.version;
+                      const changelog = st.changelog || updateInfo?.changelog;
+                      if (st.phase === "downloading") {
+                        return <>
+                          <div className="account-menu-progress"><div className="account-menu-progress-fill" style={{ width: `${Math.round((st.percent || 0) * 100)}%` }} /></div>
+                          <div className="account-menu-row">
+                            <span className="account-menu-label">下载中 {Math.round((st.percent || 0) * 100)}%</span>
+                            <span className="account-menu-value mono">{st.totalBytes ? `${mb(st.receivedBytes)} / ${mb(st.totalBytes)} MB` : `${mb(st.receivedBytes)} MB`}</span>
+                          </div>
+                          <div className="account-menu-row">
+                            <span className="account-menu-label">{speed ? "速度" : "正在建立连接…"}</span>
+                            <span className="account-menu-value">{speed ? <>{speed}{eta ? ` · 剩 ${eta}` : ""}</> : "—"}</span>
+                          </div>
+                          <button className="account-menu-item" onClick={() => void runUpdateCancel()}><X size={15} /><span>取消下载（已下部分保留续传）</span></button>
+                        </>;
+                      }
+                      if (st.phase === "downloaded") {
+                        return <>
+                          <div className="account-menu-success"><CircleCheck size={14} /><span>v{version} 已下载并校验通过</span></div>
+                          {st.onBattery ? <div className="account-menu-hint">当前在电池供电，安装时请插电</div> : null}
+                          <button className="account-menu-item primary" onClick={() => void runUpdateDownload()}><Download size={15} /><span>立即重启安装</span></button>
+                          <button className="account-menu-item" onClick={() => void runUpdateDefer()}><Clock size={15} /><span>稍后安装</span></button>
+                        </>;
+                      }
+                      if (st.phase === "available" && version) {
+                        return <>
+                          <div className="account-menu-sep" />
+                          <div className="account-menu-section">
+                            <div className="account-menu-row"><span className="account-menu-label">新版本</span><span className="account-menu-value mono">v{version}</span></div>
+                            {updateInfo?.size ? <div className="account-menu-row"><span className="account-menu-label">大小</span><span className="account-menu-value">{mb(updateInfo.size)} MB</span></div> : null}
+                          </div>
+                          {changelog ? <div className="account-menu-changelog">{changelog}</div> : null}
+                          <button className="account-menu-item primary" onClick={() => void runUpdateDownload()} disabled={updateDownloading}>
+                            <Download size={15} className={updateDownloading ? "pulse" : ""} />
+                            <span>立即更新</span>
+                          </button>
+                          <button className="account-menu-item" onClick={() => void runUpdateSkip()}><CircleSlash size={15} /><span>跳过此版本</span></button>
+                        </>;
+                      }
+                      if (st.phase === "error") {
+                        return <button className="account-menu-item" onClick={() => void runUpdateCheck()}><RefreshCw size={15} /><span>检查失败，重试</span></button>;
+                      }
+                      return updateInfo && !updateInfo.hasUpdate ? (
+                        <div className="account-menu-success">
+                          <CircleCheck size={14} /><span>已是最新版本{st.deferredVersion ? `（v${st.deferredVersion} 待安装）` : ""}</span>
+                        </div>
+                      ) : null;
+                    })()}
                     <div className="account-menu-sep" />
                     <button className="account-menu-item" title="打开发布中心反馈页（自动携带版本与系统信息）" onClick={openFeedbackPage}><MessageSquare size={15} /><span>遇到问题？去反馈</span><ExternalLink size={13} className="account-menu-arrow" /></button>
                   </>}

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 463,
+  "count": 468,
   "channels": [
     {
       "name": "request",
@@ -4601,6 +4601,56 @@
       "invokeArgs": "name",
       "cast": null,
       "note": "云版预留（真实现）：工具下载进度"
+    },
+    {
+      "name": "checkUpdateSilent",
+      "channel": "updates:check-silent",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; state: unknown }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "更新：静默检查（后台同一套逻辑：断网跳过 / 失败退避 5min→15min→1h→6h / 下载中不并发），不弹错误"
+    },
+    {
+      "name": "updateStateRead",
+      "channel": "updates:state-read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; state: { phase: string; percent: number; receivedBytes: number; totalBytes: number; speedBytesPerSec: number; etaSeconds: number | null; version?: string; changelog?: string; error?: string; deferredVersion?: string; onBattery?: boolean; product?: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "更新：读当前状态机（相位/进度/速度/剩余/更新说明/稍后安装版本/是否电池供电）"
+    },
+    {
+      "name": "cancelUpdateDownload",
+      "channel": "updates:cancel-download",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "更新：取消下载（AbortController 中断；.part 保留，下次同版本 Range 续传）"
+    },
+    {
+      "name": "deferUpdateInstall",
+      "channel": "updates:defer-install",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; deferredPath?: string; deferredVersion?: string; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "更新：稍后安装（记住已校验安装包与版本，落 userData/updates-state.json，下次启动提示）"
+    },
+    {
+      "name": "skipUpdateVersion",
+      "channel": "updates:skip-version",
+      "paramsImpl": "version: string",
+      "paramsDecl": "version: string",
+      "returns": "Promise<{ ok: boolean; skippedVersion?: string; error?: string }>",
+      "invokeArgs": "version",
+      "cast": null,
+      "note": "更新：跳过此版本（同版本不再提示；持久化）"
     }
   ]
 }
