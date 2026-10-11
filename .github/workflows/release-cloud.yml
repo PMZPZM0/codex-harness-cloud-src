@@ -5,7 +5,7 @@ name: Release Cloud Assistant
 # 同名 Release。跨仓发布需要私有仓配 secret `CLOUD_RELEASE_TOKEN`（有 codex-harness-desktop
 # contents:write 权限的 PAT）—— 与 PPcode 的 PPCODE_RELEASE_TOKEN 同一模式。
 #
-# ⛔ 版本号：tag 必须是 cloud-vX.Y.Z，构建时用 extraMetadata 把包版本钉成 X.Y.Z
+# ⛔ 版本号：tag 必须是 cloud-vX.Y.Z；构建时用 -c.extraMetadata 把包版本与主入口钉死
 #   （仓库 package.json 版本属于桌面版发布线，两者互不污染）。
 on:
   push:
@@ -41,23 +41,26 @@ jobs:
         run: npm run build
 
       - name: Package assistant (NSIS)
-        run: env:/n          AUTOMATION_ZIP_OPTIONAL: "1"
-        npx electron-builder --win nsis --config electron-builder.assistant.yml --publish never
+        run: npx electron-builder --win nsis --config electron-builder.assistant.yml --publish never -c.extraMetadata.main=dist-electron/headless.js -c.extraMetadata.version=0.0.1
         env:
-          # 包版本钉成助手自己的版本线（不随桌面版 package.json 走）
-          EB_EXTRA_METADATA: '{"main":"dist-electron/headless.js","version":"0.0.1"}'
+          # 精简包形态：随包自动化工具链（nuphus/playwright）不内置 —— before-pack 的官方逃生阀
+          AUTOMATION_ZIP_OPTIONAL: "1"
+          CODEBUDDY_SAFE_DELETE_ENABLED: "0"
 
       - uses: actions/upload-artifact@v4
         with:
           name: cloud-win-x64
-          path: |
-            release-cloud/*.exe
+          path: release-cloud/*.exe
           if-no-files-found: error
 
   build-mac:
     strategy:
       matrix:
-        runner: [macos-latest, macos-13]   # arm64 + x64
+        include:
+          - runner: macos-latest
+            arch: arm64
+          - runner: macos-13
+            arch: x64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -74,14 +77,15 @@ jobs:
         run: npm run build
 
       - name: Package assistant (mac zip)
-        run: env:/n          AUTOMATION_ZIP_OPTIONAL: "1"
-        npx electron-builder --mac zip --config electron-builder.assistant.yml --publish never -c.extraMetadata.main=dist-electron/headless.js -c.extraMetadata.version=0.0.1
+        run: npx electron-builder --mac zip --config electron-builder.assistant.yml --publish never -c.extraMetadata.main=dist-electron/headless.js -c.extraMetadata.version=0.0.1
+        env:
+          AUTOMATION_ZIP_OPTIONAL: "1"
+          CODEBUDDY_SAFE_DELETE_ENABLED: "0"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cloud-mac-${{ matrix.runner == 'macos-latest' && 'arm64' || 'x64' }}
-          path: |
-            release-cloud/*.zip
+          name: cloud-mac-${{ matrix.arch }}
+          path: release-cloud/*.zip
           if-no-files-found: error
 
   publish:
