@@ -62,10 +62,9 @@ if [ -n "$DRY_RUN" ]; then
   exit 0
 fi
 
-ssh "$REMOTE_HOST" "sudo mkdir -p $REMOTE_DIR && sudo chown -R \$USER:\$USER $REMOTE_DIR"
-rsync -avz --delete \
-  --exclude '.DS_Store' \
-  "$STAGE/" "${REMOTE_HOST}:${REMOTE_DIR}/"
+ssh "$REMOTE_HOST" "sudo rm -rf $REMOTE_DIR && sudo mkdir -p $REMOTE_DIR && sudo chown -R \$USER:\$USER $REMOTE_DIR"
+# ⛔ Git Bash(Windows) 没有 rsync：tar 管道传输，"清空重建"等效 rsync --delete
+tar -C "$STAGE" -cf - . | ssh "$REMOTE_HOST" "tar -xf - -C $REMOTE_DIR"
 
 echo "[deploy-app] 验证（公网真实路径）"
 for path in version.json index.html; do
