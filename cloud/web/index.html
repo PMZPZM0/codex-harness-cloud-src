@@ -264,7 +264,7 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
           lsSet("chc-session", res.j.token);
           if (res.j.account && res.j.account.role === "admin") lsSet("chc-role", "admin"); else try { localStorage.removeItem("chc-role"); } catch (e) { /* 忽略 */ }
           status.textContent = "登录成功";
-          renderPairing(agentBase, presetPair);
+          afterAccount(presetPair);
         })
         .catch(function (error) {
           status.textContent = "账号服务不可达（" + (error && error.message ? error.message : "网络") + "）";
@@ -374,24 +374,25 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
     input.focus();
   }
 
-  /** connector 模式的主流程：找到本机助手 → 账号步 → 配对步。 */
+  /** connector 模式的主流程。
+     ⛔ 账号步**永远在最前**：注册/登录是"网站的身份"，跟本机助手开没开没关系 ——
+     上一版先找助手、找不到就直接进旧版提示卡，用户连注册入口都看不到（真实投诉）。
+     顺序：账号（有会话就跳过）→ 找本机助手 → 配对。 */
   function runConnector() {
+    var preset = new URLSearchParams(location.search).get("pair");
+    accountFetch("/me").then(function (res) {
+      if (res.ok && res.j && res.j.ok) afterAccount(preset);
+      else renderAccount(preset);
+    }).catch(function () { renderAccount(preset); });
+  }
+
+  /** 账号就绪后：找本机助手 → 配对步；找不到就给"启动指引"（可重试）。 */
+  function afterAccount(preset) {
     say("正在寻找本机助手…");
+    boot.hidden = false; login.hidden = true;
     findAgent().then(function (agent) {
-      if (!agent) {
-        showGate(
-          "没找到本机助手",
-          "干活的助手跑在这台电脑上 —— 现在没有检测到它。请在这台电脑上启动 Codex Harness 助手：",
-          null
-        );
-        return;
-      }
-      var preset = new URLSearchParams(location.search).get("pair");
-      // 已有云端会话且有效 → 直接进配对步；否则先账号
-      accountFetch("/me").then(function (res) {
-        if (res.ok && res.j && res.j.ok) renderPairing(agent.base, preset);
-        else renderAccount(agent.base, preset);
-      }).catch(function () { renderAccount(agent.base, preset); });
+      if (!agent) { showAssistantGate(); return; }
+      renderPairing(agent.base, preset);
     }).catch(function (error) {
       showGate("连接失败", String(error && error.message ? error.message : error), null);
     });
@@ -476,50 +477,50 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
     gate.appendChild(h1);
     gate.appendChild(p);
 
-    var code = document.createElement("pre");
-    code.textContent = "cd cloud\nnpm run start        # 真引擎（需要本机有 codex 引擎）\nnpm run start:mock    # 演示模式，不需要模型 key";
-    gate.appendChild(code);
-
-    var note = document.createElement("p");
-    note.style.margin = "14px 0 0";
-    note.textContent = "启动后控制台会打印一条带配对码的链接，点开即完成配对；也可以把配对码填在下面。";
-    gate.appendChild(note);
-
     var row = document.createElement("div");
     row.className = "row";
-    var input = document.createElement("input");
-    input.placeholder = "配对码（8 位十六进制）";
-    input.setAttribute("aria-label", "配对码");
-    var pairBtn = document.createElement("button");
-    pairBtn.textContent = "配对并进入";
     var retryBtn = document.createElement("button");
-    retryBtn.textContent = "重试连接";
-    row.appendChild(input);
-    row.appendChild(pairBtn);
+    retryBtn.textContent = "重新检测";
+    retryBtn.onclick = function () { replay(gate); };
     row.appendChild(retryBtn);
+    var dl = document.createElement("button");
+    dl.textContent = "去下载桌面助手";
+    dl.onclick = function () { window.open("https://dl.ppz123.asia", "_blank"); };
+    row.appendChild(dl);
     gate.appendChild(row);
 
     var why = document.createElement("p");
     why.className = "why";
-    why.textContent = "排查：本机伴生服务只监听 127.0.0.1，所以必须在这台电脑上启动；" +
+    why.textContent = "排查：桌面助手只监听本机 127.0.0.1，必须在这台电脑上启动；" +
       "若浏览器装了拦截本地请求的扩展，请放行。";
     gate.appendChild(why);
-
-    pairBtn.onclick = function () {
-      var code = (input.value || "").trim().toLowerCase();
-      if (!code) { input.focus(); return; }
-      location.search = "?pair=" + encodeURIComponent(code);
-    };
-    retryBtn.onclick = function () { replay(gate); };
-    input.addEventListener("keydown", function (event) { if (event.key === "Enter") pairBtn.click(); });
-    input.focus();
   }
 
-  /** 重跑一遍选址（"重试连接"按钮与超时兜底共用）。 */
+  /** 本机助手没在运行的引导（终用户版：没有人该看到 npm 命令）。 */
+  function showAssistantGate() {
+    showGate(
+      "先启动这台电脑上的助手",
+      "你的账号已就绪。干活的助手跑在这台电脑上 —— 现在没有检测到它。\n" +
+      "已安装过：双击桌面上的「Codex Harness Cloud」图标启动，然后点下面的重新检测。\n" +
+      "还没安装：点「去下载桌面助手」。",
+      null
+    );
+  }
+
+  /** 重跑一遍（"重新检测"按钮与超时兜底共用）。⛔ 分流：
+      connector 的重试回账号/配对流程 —— 走 probeAndMount 会把完整界面绕过登录门直接挂上。 */
   function replay(box) {
     started = false;
     box.hidden = true;
     boot.hidden = false;
+    if (MODE === "connector") {
+      say("正在寻找本机助手…");
+      accountFetch("/me").then(function (res) {
+        if (res.ok && res.j && res.j.ok) afterAccount(null);
+        else renderAccount(null);
+      }).catch(function () { renderAccount(null); });
+      return;
+    }
     say("正在连接本地伴生服务…");
     probeAndMount();
   }
