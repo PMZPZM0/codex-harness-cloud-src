@@ -203,11 +203,36 @@ class MockEngine extends EventEmitter {
       },
     });
 
-    // ⑥ 流式正文
+    // ⑥ 流式正文：带真实 Markdown（标题 / 列表 / 代码块 / 引用）——
+    //    Web 端的 .markdown 渲染与复制按钮要靠它才能在走查图里被验证
     this.notify("item/started", { threadId, turnId, item: { id: item("msg"), type: "agentMessage", text: "" } });
     const answer = decision === "accept"
-      ? `已按你选的「${answerLabels(askResult)}」范围处理：预检跑完，没有新增红灯。`
-      : `你拒绝了那次命令执行，我把结论按现有信息给出：范围是「${answerLabels(askResult)}」，未执行验证命令。`;
+      ? [
+        `已按你选的「${answerLabels(askResult)}」范围处理：预检跑完，**没有新增红灯**。`,
+        "",
+        "## 结果",
+        "",
+        "- 环境类失败 **19 项**，与已知基线一致（沙箱封锁子进程 / 缺 python）",
+        "- 尾部补跑的三项全部通过：bag-types / dead-imports / require-paths",
+        "- 产物已重建，界面刷新即可看到",
+        "",
+        "```bash",
+        "npm run check        # 19 项环境基线失败，无新增红",
+        "node scripts/check-bag-types.mjs   # Bag 1392 / 1392，0 mismatch",
+        "```",
+        "",
+        "> 提示：云端版与桌面版共用同一套协议；回包形状全部照 schema 抄，两边行为一致。",
+      ].join("\n")
+      : [
+        `你拒绝了那次命令执行，我把结论按现有信息给出：范围是「${answerLabels(askResult)}」。`,
+        "",
+        "## 现状",
+        "",
+        "- 未执行任何验证命令",
+        "- 结论基于既有信息，**未经实测**",
+        "",
+        "需要我再跑一次时，重新发起即可 —— 审批卡会再次弹出。",
+      ].join("\n");
     for (const chunk of chunkText(answer, 6)) {
       await this.sleep(Math.max(30, STEP_MS / 4));
       this.notify("item/agentMessage/delta", { threadId, turnId, itemId: item("msg"), delta: chunk });
