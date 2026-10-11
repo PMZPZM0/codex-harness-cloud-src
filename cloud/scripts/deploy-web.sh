@@ -38,8 +38,11 @@ fi
 ssh "$REMOTE_HOST" "sudo mkdir -p $REMOTE_DIR && sudo chown -R \$USER:\$USER $REMOTE_DIR"
 
 # --delete：让"远端 == 本地 web/"，删掉上一版残留的文件（否则旧 chunk 会一直挂在 CDN 路径下）
+# ⛔ 必须排除 app/：真界面资产（deploy-app.sh 发布链）也住在同一远端目录下，
+#   不排除的话这边一发版就把整个 /cloud/app/ 删光（桌面助手全部回落本地副本）。
 rsync -avz --delete $DRY_RUN \
   --exclude '.DS_Store' \
+  --exclude 'app/' \
   "$LOCAL_DIR/" "${REMOTE_HOST}:${REMOTE_DIR}/"
 
 echo "[deploy] 验证（公网，走 Cloudflare/Caddy 的真实路径）"

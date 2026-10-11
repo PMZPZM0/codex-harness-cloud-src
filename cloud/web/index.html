@@ -363,13 +363,24 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
 
     var why = document.createElement("p");
     why.className = "why";
-    why.textContent = "没有个人配对码？找这台电脑的主人签发一个（助手控制台：--add-user 你的名字）。" +
-      "登录后本机会记住这台设备，下次从本机界面直接进。";
-
+    why.innerHTML = "配对码在哪？三句话说明白：<br>" +
+      "① 这是<b>你自己的电脑</b>：在桌面助手的命令行执行 <b>--add-user 你的名字</b>，它会打出 8 位配对码（每人一个，长期有效）；<br>" +
+      "② 这是<b>别人的电脑</b>：让机主执行上面命令，把打出来的码发给你；<br>" +
+      "③ 填进上面输入框点「连接我的电脑」——本机会记住这台设备，下次直接进，不再输码。";
+    var guideToggle = document.createElement("a");
+    guideToggle.textContent = " ▸ 展开说明";
+    guideToggle.style.cssText = "cursor:pointer;color:inherit;text-decoration:underline;font-size:12px";
+    guideToggle.onclick = function () {
+      var open = why.style.display !== "none";
+      why.style.display = open ? "none" : "";
+      guideToggle.textContent = open ? " ▸ 展开说明" : " ▾ 收起说明";
+    };
+    why.style.display = "none";
     login.appendChild(label);
     login.appendChild(input);
     login.appendChild(go);
     login.appendChild(status);
+    login.appendChild(guideToggle);
     login.appendChild(why);
     input.focus();
   }
