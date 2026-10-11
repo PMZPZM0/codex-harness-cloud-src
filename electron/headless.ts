@@ -30,6 +30,11 @@ app.commandLine.appendSwitch("in-process-gpu");
 app.commandLine.appendSwitch("no-sandbox");
 app.disableHardwareAcceleration();
 
+/* ⛔ 助手运行时标记（10-11）：更新源按产品线分开——助手只认 `cloud-v*` tag 与
+ *   `CodexHarnessAssistant-*` 资产，绝不跟桌面版的 `v*` 串（同一仓库两条产品线）。
+ *   必须在 require("./main") 之前打：域模块加载时就会读它。 */
+process.env.HARNESS_ASSISTANT = "1";
+
 const PORT = Number(process.env.HARNESS_HEADLESS_PORT || 8917);
 const DIST_DIR = process.env.HARNESS_DIST_DIR || join(__dirname, "..", "dist");
 const MANIFEST_FILE = join(__dirname, "..", "electron", "ipc-channels.manifest.json");
