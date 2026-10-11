@@ -1,0 +1,12 @@
+# 生成物：协议 schema 参照物（用 `npm run schema` 从引擎自产，不进版本库）
+.schema/
+
+# 走查用的隔离运行时（截图台的临时 userData / token）
+.shot-home/
+
+# 本地伴生服务的运行时状态（默认落在 ~/.codex-harness-cloud，这里兜一层防误提交）
+*.log
+
+# 走查台的中间产物（截图留着当验收证据，日志/探针报告是临时的）
+docs/shots/*-log.txt
+docs/shots/*-report.json

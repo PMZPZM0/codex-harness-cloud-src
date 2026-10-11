@@ -1,0 +1,16 @@
+{
+  "name": "codex-harness-cloud",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Codex Harness 云端版：云端只放界面资源（更新免重装），本地伴生服务负责数据与执行",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node local-agent/server.js",
+    "start:mock": "node local-agent/server.js --mock --open",
+    "schema": "node scripts/fetch-schemas.mjs",
+    "smoke": "node scripts/fetch-schemas.mjs && node scripts/smoke.mjs",
+    "deploy:web": "bash scripts/deploy-web.sh"
+  }
+}
