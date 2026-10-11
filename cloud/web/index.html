@@ -55,6 +55,38 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
     border: 1px solid #ffffff2e; background: #ffffff0f; color: inherit;
   }
   #gate .why { font-size: 12px; opacity: .6; margin-top: 12px; }
+
+  /* ── 登录门（connector 模式：网页只负责连接本地，界面由本机提供）──────────── */
+  #login {
+    max-width: 400px; margin: 9vh auto 0; padding: 28px 28px 22px;
+    border-radius: 14px; border: 1px solid #ffffff1f; background: #ffffff0a;
+  }
+  html[data-theme="light"] #login { border-color: #00000014; background: #00000005; }
+  #login .brand { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+  #login .brand em { font-style: normal; font-weight: 400; font-size: 12px; opacity: .6; margin-left: 6px; }
+  #login .desc { font-size: 12.5px; opacity: .75; margin: 0 0 16px; line-height: 1.7; }
+  #login label { display: block; font-size: 12px; opacity: .8; margin-bottom: 6px; }
+  #login .code {
+    appearance: none; -webkit-appearance: none; font: inherit;
+    width: 100%; padding: 9px 11px; border-radius: 8px;
+    border: 1px solid #ffffff2e; background: #ffffff0f; color: inherit;
+    font-family: ui-monospace, Consolas, monospace; letter-spacing: .12em; font-size: 15px;
+  }
+  html[data-theme="light"] #login .code { border-color: #0000002e; background: #00000008; }
+  #login .code:focus { outline: 0; border-color: #2f6bdd; }
+  html[data-theme="light"] #login .code:focus { border-color: #2f6bdd; }
+  #login .go {
+    appearance: none; -webkit-appearance: none; font: inherit;
+    width: 100%; margin-top: 12px; padding: 9px 0; border-radius: 8px; cursor: pointer;
+    border: 0; background: #1a7f37; color: #fff; font-weight: 600; font-size: 13.5px;
+  }
+  html[data-theme="light"] #login .go { background: #1a7f37; color: #fff; }
+  #login .go:hover { filter: brightness(1.08); }
+  #login .go:disabled { opacity: .55; cursor: default; }
+  #login .status { font-size: 12px; margin: 10px 0 0; min-height: 18px; }
+  #login .status.warn { color: #f0a35c; }
+  #login .status.bad { color: #ec7a70; }
+  #login .why { font-size: 11.5px; opacity: .55; margin-top: 14px; line-height: 1.7; }
 </style>
 </head>
 <body>
@@ -62,6 +94,8 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
   <div class="mark">Codex Harness Cloud</div>
   <div class="sub" id="boot-sub">正在连接本地伴生服务…</div>
 </div>
+
+<div id="login" hidden></div>
 
 <div id="gate" hidden></div>
 
@@ -86,7 +120,14 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
   var boot = document.getElementById("boot");
   var sub = document.getElementById("boot-sub");
   var gate = document.getElementById("gate");
+  var login = document.getElementById("login");
   var started = false;
+
+  /* ── 模式判定 ──────────────────────────────────────────────────────────────
+     ⛔ 由服务端注入 __CHC_MODE__（本机下发 = "full"）。云端原样托管拿不到注入
+        ⇒ connector：网页**只负责连接本地** —— 渲染登录门，配对成功后把人送到
+        本机伴生服务的界面（界面本身由桌面助手提供，网页不装、不仿）。 */
+  var MODE = window.__CHC_MODE__ === "full" ? "full" : "connector";
 
   function say(text) { if (sub) sub.textContent = text; }
   function ls(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
@@ -131,6 +172,112 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
         .catch(function () { return next(); });
     }
     return next();
+  }
+
+  /* ── ②' 登录门（仅 connector 模式）────────────────────────────────────────
+     个人配对码：由机主 `--add-user 名字` 签发，一人一个、长期有效。
+     配对成功 → 把 token 经 URL **fragment**（#t=…，不进服务器日志）带到本机界面，
+     本机外壳收下后立即抹掉。网页到这里就交差了 —— 界面是本机的，不是云端的。 */
+  function renderLogin(agentBase) {
+    boot.hidden = true;
+    gate.hidden = true;
+    login.hidden = false;
+    login.innerHTML = "";
+
+    var brand = document.createElement("div");
+    brand.className = "brand";
+    brand.appendChild(document.createTextNode("Codex Harness"));
+    var em = document.createElement("em"); em.textContent = "Cloud";
+    brand.appendChild(em);
+
+    var desc = document.createElement("p");
+    desc.className = "desc";
+    desc.textContent = "登录到这台电脑上的助手。干活的界面由你本机的 Codex Harness 桌面助手提供 —— 网页只负责安全地连上它。";
+
+    var label = document.createElement("label");
+    label.textContent = "个人配对码";
+    label.setAttribute("for", "login-code");
+
+    var input = document.createElement("input");
+    input.className = "code"; input.id = "login-code";
+    input.placeholder = "8 位十六进制"; input.maxLength = 8;
+    input.autocomplete = "off"; input.spellcheck = false;
+    input.setAttribute("aria-label", "个人配对码");
+
+    var status = document.createElement("p");
+    status.className = "status";
+
+    var go = document.createElement("button");
+    go.className = "go"; go.textContent = "连接我的电脑";
+    go.onclick = function () {
+      var code = (input.value || "").trim().toLowerCase();
+      if (!code) { status.textContent = "请填入个人配对码"; status.className = "status warn"; input.focus(); return; }
+      go.disabled = true; input.disabled = true;
+      status.textContent = "正在连接…"; status.className = "status";
+      fetchWithTimeout(agentBase + "/api/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-harness-client": "web" },
+        body: JSON.stringify({ code: code }),
+      }, AGENT_PROBE_MS * 2).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok || !res.j || !res.j.ok || !res.j.token) {
+            var reason = res.j && res.j.error;
+            var text = reason === "mismatch" ? "配对码不对，请核对后重试"
+              : reason === "locked" ? "尝试次数过多，已临时锁定 —— 约 1 分钟后再试"
+              : reason === "expired" ? "配对码已过期" : "连接失败（" + (reason || "未知") + "）";
+            status.textContent = text; status.className = "status bad";
+            go.disabled = false; input.disabled = false; input.select();
+            return;
+          }
+          status.textContent = "已连接，正在进入界面…";
+          // token 走 #fragment：不进服务器日志；本机外壳收下后立刻抹掉
+          window.location.href = agentBase + "/#t=" + encodeURIComponent(res.j.token);
+        })
+        .catch(function (error) {
+          status.textContent = "本机服务不可达（" + (error && error.message ? error.message : "网络") + "）";
+          status.className = "status bad";
+          go.disabled = false; input.disabled = false;
+        });
+    };
+    input.addEventListener("keydown", function (event) { if (event.key === "Enter") go.click(); });
+
+    var why = document.createElement("p");
+    why.className = "why";
+    why.textContent = "没有个人配对码？找这台电脑的主人签发一个（助手控制台：--add-user 你的名字）。" +
+      "登录后本机会记住这台设备，下次从本机界面直接进。";
+
+    login.appendChild(brand);
+    login.appendChild(desc);
+    login.appendChild(label);
+    login.appendChild(input);
+    login.appendChild(go);
+    login.appendChild(status);
+    login.appendChild(why);
+    input.focus();
+  }
+
+  /** connector 模式的主流程：找到本机服务 → 登录门（不再载入云端界面）。 */
+  function runConnector() {
+    say("正在寻找本机助手…");
+    findAgent().then(function (agent) {
+      if (!agent) {
+        showGate(
+          "没找到本机助手",
+          "干活的助手跑在这台电脑上 —— 现在没有检测到它。请在这台电脑上启动 Codex Harness 助手：",
+          null
+        );
+        return;
+      }
+      // 带 ?pair= 进来（旧链接 / 控制台点开）：自动填入
+      var preset = new URLSearchParams(location.search).get("pair");
+      renderLogin(agent.base);
+      if (preset) {
+        var input = document.getElementById("login-code");
+        if (input) { input.value = preset.toLowerCase(); input.focus(); }
+      }
+    }).catch(function (error) {
+      showGate("连接失败", String(error && error.message ? error.message : error), null);
+    });
   }
 
   /* ── ② 选资产基址 ────────────────────────────────────────────────────────
@@ -287,7 +434,8 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
   window.__chcHideBoot = function () { boot.hidden = true; };
   window.__chcRetry = function () { replay(gate); };
 
-  probeAndMount();
+  if (MODE === "connector") runConnector();
+  else probeAndMount();
 })();
 </script>
 </body>

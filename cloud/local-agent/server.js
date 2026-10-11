@@ -19,7 +19,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const config = require("./config");
-const { Pairing, authorize, corsHeaders, PAIR_CODE_TTL_MS } = require("./auth");
+const { Pairing, UserRegistry, authorize, corsHeaders, safeEqual, PAIR_CODE_TTL_MS } = require("./auth");
 const { EngineAdapter } = require("./engine");
 const { MockEngine } = require("./mock-engine");
 
@@ -28,6 +28,33 @@ const USE_MOCK = argv.includes("--mock");
 const OPEN_BROWSER = argv.includes("--open");
 
 const cfg = config.load();
+
+/* ── 多用户：机主给每个使用者签发独立的个人配对码 ────────────────────────────
+   `--add-user 名字`（或 CodexHarnessCloud.exe --add-user 名字）：生成 8 位个人码 +
+   该用户专属 token，**只显示这一次**；用户拿个人码在登录页长期使用（可反复配对）。
+   云端存储按账号隔离的挂点就是这个 userId —— 现在只做身份，不存任何用户数据。 */
+const ADD_USER = (() => {
+  const index = argv.indexOf("--add-user");
+  return index >= 0 ? String(argv[index + 1] || "").trim() : "";
+})();
+if (ADD_USER) {
+  const registry0 = new UserRegistry(config.homeDir(cfg), () => {});
+  try {
+    const user = registry0.add(ADD_USER);
+    process.stdout.write(`\n  用户「${user.name}」的配对码：${user.code}\n  （这是唯一一次显示，请立刻交给本人；token 已落盘，无需再记）\n\n`);
+    process.exit(0);
+  } catch (error) {
+    process.stderr.write(`[add-user] ${error.message}\n`);
+    process.exit(1);
+  }
+}
+
+/** token → 用户身份："owner" | 用户名 | null。所有 authorize 调用共用这一份。 */
+const registry = new UserRegistry(config.homeDir(cfg), (line) => log(line));
+const matchToken = (presented) => {
+  try { if (presented && safeEqual(presented, cfg.token)) return "owner"; } catch { /* 比较失败 = 不匹配 */ }
+  return registry.userByToken(presented);
+};
 /**
  * web 资源目录。⛔ 允许被环境变量覆盖：
  *   打进单文件 exe（Node SEA）时资源是**内嵌**的，启动时解到磁盘再指过来。
@@ -139,7 +166,12 @@ function shellHtml() {
    *   页面就永远停在首屏（真实事故）。现在文件里没有占位符，外壳自己算地址；
    *   这里的注入只是"告诉它云端在哪"（可选覆盖，缺了也能跑）。
    */
-  const inject = `  <script>window.__CHC_CDN__ = ${JSON.stringify(cfg.cdnBase)};</script>\n`;
+  // ⛔ 双模式标记：本机下发 = "full"（载入完整界面 app.js）；
+  //   云端原样托管时没有这个标记 = "connector"（只渲染登录门 —— 网页只负责连接本地，
+  //   界面由本机伴生服务提供）。判定必须由**服务端注入**，不能让文件自己猜：
+  //   location.origin 判断会把"云端页面"和"本机页面"混在一起。
+  const inject = `  <script>window.__CHC_CDN__ = ${JSON.stringify(cfg.cdnBase)};\n`
+    + `      window.__CHC_MODE__ = "full";</script>\n`;
   return html.replace("</head>", `${inject}</head>`);
 }
 
@@ -202,6 +234,8 @@ const server = http.createServer(async (req, res) => {
 
   if (p === "/api/handshake") {
     const presented = String(req.headers.authorization || "").startsWith("Bearer ");
+    // 账号身份跟着 token 走（没带 token 就是匿名 —— 只影响 account 字段，能力探测不受限）
+    const who = presented ? matchToken(String(req.headers.authorization).slice(7).trim()) : null;
     sendJson(req, res, 200, {
       ok: true,
       product: "codex-harness-cloud",
@@ -209,6 +243,9 @@ const server = http.createServer(async (req, res) => {
       agentVersion: "0.1.0",
       mock: USE_MOCK,
       engine: { ...engine.status, binary: USE_MOCK ? "(mock)" : cfg.engine.binary || null },
+      /** ⛔ 云端存储的**预留位**：现在只声明能力位，不实现任何上传。
+          将来开通时这里变成 { enabled: true, quotaBytes, plan } 并新增 /api/storage/*。 */
+      account: { userId: who || null, name: who || null, cloudStorage: { enabled: false, reserved: true } },
       capabilities: {
         paired: presented,
         engineAvailable: USE_MOCK || Boolean(cfg.engine.binary),
@@ -216,6 +253,7 @@ const server = http.createServer(async (req, res) => {
         /** 界面资源地址由服务端下发 ⇒ 前端不写死 CDN，换 CDN 只改本地配置 */
         cdnBase: cfg.cdnBase,
         pairingTtlMs: PAIR_CODE_TTL_MS,
+        multiUser: true,
         attachments: false,
       },
     });
@@ -223,24 +261,49 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 配对：唯一不需要 token 的写接口（它就是为了换 token）。仍要过 Origin + 自定义头两道闸。
+  // ⛔ 两种码，语义不同：
+  //   owner 开机码 —— 一次性、5 分钟过期（控制台打印）；
+  //   用户个人码   —— 长期有效、可反复配对，换到的是**该用户自己的 token**。
   if (p === "/api/pair" && method === "POST") {
-    const denied = authorize(req, { token: cfg.token, allowedOrigins, requireToken: false, mutating: true });
+    const denied = authorize(req, { token: cfg.token, matchToken, allowedOrigins, requireToken: false, mutating: true });
     if (denied) return sendJson(req, res, denied.status, denied.body);
     let body;
     try { body = await readBody(req); } catch (error) { return sendJson(req, res, 400, { ok: false, error: error.message }); }
-    const result = pairing.redeem(String(body.code || "").trim().toLowerCase());
-    if (!result.ok) {
-      log(`[pair] 配对失败：${result.reason}`);
-      return sendJson(req, res, 403, { ok: false, error: result.reason });
+    const code = String(body.code || "").trim().toLowerCase();
+
+    const ownerResult = pairing.redeem(code);
+    if (ownerResult.ok) {
+      log("[pair] 配对成功（owner），已下发 token");
+      sendJson(req, res, 200, { ok: true, token: cfg.token, account: { userId: "owner", name: "owner" }, protocolVersion: cfg.protocolVersion });
+      return;
     }
-    log("[pair] 配对成功，已下发 token");
-    sendJson(req, res, 200, { ok: true, token: cfg.token, protocolVersion: cfg.protocolVersion });
+
+    const userResult = registry.redeem(code);
+    if (userResult.ok) {
+      const user = userResult.user;
+      log(`[pair] 用户「${user.name}」配对成功`);
+      sendJson(req, res, 200, {
+        ok: true,
+        token: user.token,
+        account: { userId: user.name, name: user.name, cloudStorage: { enabled: false } },
+        protocolVersion: cfg.protocolVersion,
+      });
+      return;
+    }
+
+    // ⛔ reason 归并：owner 侧更具体的失败原因（no-code/expired/too-many-tries）优先 ——
+    //   否则重放一次性码会报成用户表的 "mismatch"，测试与排障都会被带偏。
+    const reason = ownerResult.reason === "too-many-tries" || userResult.reason === "locked" ? "locked"
+      : ownerResult.reason !== "mismatch" ? ownerResult.reason
+      : userResult.reason;
+    log(`[pair] 配对失败：${reason}`);
+    sendJson(req, res, 403, { ok: false, error: reason });
     return;
   }
 
   // ── 以下全部需要 token ───────────────────────────────────────────────────
   if (p === "/api/events") {
-    const denied = authorize(req, { token: cfg.token, allowedOrigins });
+    const denied = authorize(req, { token: cfg.token, matchToken, allowedOrigins });
     if (denied) return sendJson(req, res, denied.status, denied.body);
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -268,7 +331,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (p === "/api/rpc" && method === "POST") {
-    const denied = authorize(req, { token: cfg.token, allowedOrigins, mutating: true });
+    const denied = authorize(req, { token: cfg.token, matchToken, allowedOrigins, mutating: true });
     if (denied) return sendJson(req, res, denied.status, denied.body);
     let body;
     try { body = await readBody(req); } catch (error) { return sendJson(req, res, 400, { ok: false, error: error.message }); }
@@ -285,7 +348,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (p === "/api/respond" && method === "POST") {
-    const denied = authorize(req, { token: cfg.token, allowedOrigins, mutating: true });
+    const denied = authorize(req, { token: cfg.token, matchToken, allowedOrigins, mutating: true });
     if (denied) return sendJson(req, res, denied.status, denied.body);
     let body;
     try { body = await readBody(req); } catch (error) { return sendJson(req, res, 400, { ok: false, error: error.message }); }
