@@ -1,12 +1,17 @@
 name: Release Cloud Assistant
 
 # 云版助手发版：推 `cloud-v*` tag 触发（与桌面版 release.yml 的 `v*` 触发互不干扰）。
-# 双端构建（Windows NSIS + macOS zip）→ 发布到**公开仓** PMZPZM0/codex-harness-desktop 的
-# 同名 Release。跨仓发布需要私有仓配 secret `CLOUD_RELEASE_TOKEN`（有 codex-harness-desktop
-# contents:write 权限的 PAT）—— 与 PPcode 的 PPCODE_RELEASE_TOKEN 同一模式。
+# 双端构建（Windows NSIS + macOS zip ×2 架构）→ **各任务直接上传到公开仓
+# PMZPZM0/codex-harness-desktop 的同名 Release**。
 #
-# ⛔ 版本号：tag 必须是 cloud-vX.Y.Z；包版本与主入口在 electron-builder.assistant.yml 的 extraMetadata 里钉死
-#   （仓库 package.json 版本属于桌面版发布线，两者互不污染）。
+# ⛔⛔ 为什么不用 artifact 中转（10-11 实测踩坑）：GitHub Actions artifact 存储配额
+#   （免费账户 500MB，一次三端就是 ~2GB）打满后上传直接失败，且**配额 6-12 小时才重算**
+#   —— 删掉旧 artifact 也救不了当次运行（历史已挂两轮）。Release 资产不受该配额限制，
+#   所以让每个构建任务拿 CLOUD_RELEASE_TOKEN 直接 gh release upload，不经过 artifact。
+# ⛔ 跨仓发布需要私有仓配 secret `CLOUD_RELEASE_TOKEN`（对 codex-harness-desktop 有
+#   contents:write 权限的 PAT）—— 与 PPcode 的 PPCODE_RELEASE_TOKEN 同一模式。
+# ⛔ 版本号：tag 必须是 cloud-vX.Y.Z；包版本与主入口在 electron-builder.assistant.yml 的
+#   extraMetadata 里钉死（仓库 package.json 版本属于桌面版发布线，两者互不污染）。
 on:
   push:
     tags:
@@ -16,12 +21,14 @@ on:
 permissions:
   contents: read
 
+# 上传串行化：三个任务同时往同一个 Release 塞资产会撞车
 concurrency:
-  group: release-cloud-${{ github.ref }}
+  group: release-cloud-upload
   cancel-in-progress: false
 
 env:
   ASSISTANT_VERSION: "0.0.1"
+  PUBLIC_REPO: PMZPZM0/codex-harness-desktop
 
 jobs:
   build-win:
@@ -47,11 +54,27 @@ jobs:
           AUTOMATION_ZIP_OPTIONAL: "1"
           CODEBUDDY_SAFE_DELETE_ENABLED: "0"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cloud-win-x64
-          path: release-cloud/*.exe
-          if-no-files-found: error
+      - name: 上传 Windows 安装包到公开仓 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.CLOUD_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${ASSISTANT_VERSION}"
+          TAG="cloud-v${VERSION}"
+          NOTES="docs/releases/${TAG}.md"
+          if [ ! -f "${NOTES}" ]; then echo "::error::缺少更新说明 ${NOTES}"; exit 1; fi
+          ASSET=$(find release-cloud -maxdepth 1 -type f -name "*.exe" | head -1)
+          [ -n "${ASSET}" ] || { echo "::error::没找到 exe 产物"; exit 1; }
+          NAME="CodexHarnessAssistant-${VERSION}-win-x64-setup.exe"
+          sha256sum "${ASSET}" | tee "sha256-${NAME}.txt"
+          if gh release view "${TAG}" --repo "${PUBLIC_REPO}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" --repo "${PUBLIC_REPO}" --notes-file "${NOTES}"
+          else
+            gh release create "${TAG}" --repo "${PUBLIC_REPO}" --title "Codex Harness Assistant ${VERSION}" --notes-file "${NOTES}"
+          fi
+          cp "${ASSET}" "${NAME}"
+          gh release upload "${TAG}" "${NAME}" "sha256-${NAME}.txt" --repo "${PUBLIC_REPO}" --clobber
 
   build-mac:
     strategy:
@@ -82,74 +105,26 @@ jobs:
           AUTOMATION_ZIP_OPTIONAL: "1"
           CODEBUDDY_SAFE_DELETE_ENABLED: "0"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cloud-mac-${{ matrix.arch }}
-          path: release-cloud/*.zip
-          if-no-files-found: error
-
-  publish:
-    needs: [build-win, build-mac]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: 校验 tag 与版本 + 组装资产（规范化命名）
-        shell: bash
-        env:
-          VERSION: ${{ env.ASSISTANT_VERSION }}
-        run: |
-          set -euo pipefail
-          if [ "${GITHUB_REF_NAME}" != "cloud-v${VERSION}" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} 与助手版本 ${VERSION} 不一致——改 ASSISTANT_VERSION 或用对应 tag"
-            exit 1
-          fi
-          mkdir -p dist-assets
-          pick() {
-            local dir="$1" pattern="$2" out="$3"
-            local found=()
-            while IFS= read -r file; do found+=("$file"); done < <(find "$dir" -type f -name "$pattern" | sort)
-            if [ "${#found[@]}" -ne 1 ]; then
-              echo "::error::${dir} 下匹配 ${pattern} 的文件有 ${#found[@]} 个（应恰好 1 个）"
-              printf '  %s\n' "${found[@]}"
-              exit 1
-            fi
-            cp "${found[0]}" "dist-assets/${out}"
-          }
-          pick artifacts/cloud-win-x64   '*.exe' "CodexHarnessAssistant-${VERSION}-win-x64-setup.exe"
-          pick artifacts/cloud-mac-arm64 '*.zip' "CodexHarnessAssistant-${VERSION}-arm64-mac.zip"
-          pick artifacts/cloud-mac-x64   '*.zip' "CodexHarnessAssistant-${VERSION}-x64-mac.zip"
-          echo "=== 待发布资产 ==="
-          (cd dist-assets && sha256sum ./* | tee ../assets-sha256.txt && ls -l)
-
-      - name: 发布到公开仓 PMZPZM0/codex-harness-desktop（cloud-v0.0.1 Release）
+      - name: 上传 macOS 包到公开仓 Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.CLOUD_RELEASE_TOKEN }}
-          VERSION: ${{ env.ASSISTANT_VERSION }}
         run: |
           set -euo pipefail
-          REPO="PMZPZM0/codex-harness-desktop"
+          VERSION="${ASSISTANT_VERSION}"
           TAG="cloud-v${VERSION}"
-          NOTES="docs/releases/cloud-v${VERSION}.md"
-          if [ ! -f "${NOTES}" ]; then
-            echo "::error::缺少更新说明 ${NOTES}"
-            exit 1
+          NOTES="docs/releases/${TAG}.md"
+          ASSET=$(find release-cloud -maxdepth 1 -type f -name "*.zip" | head -1)
+          [ -n "${ASSET}" ] || { echo "::error::没找到 zip 产物"; exit 1; }
+          NAME="CodexHarnessAssistant-${VERSION}-${{ matrix.arch }}-mac.zip"
+          sha256sum "${ASSET}" | tee "sha256-${NAME}.txt"
+          # Release 可能还没建（win 任务先跑完会建）—— 没建就等一手再建
+          for i in $(seq 1 12); do
+            gh release view "${TAG}" --repo "${PUBLIC_REPO}" >/dev/null 2>&1 && break
+            echo "等待 Release ${TAG} 被创建…（${i}/12）"; sleep 20
+          done
+          if ! gh release view "${TAG}" --repo "${PUBLIC_REPO}" >/dev/null 2>&1; then
+            gh release create "${TAG}" --repo "${PUBLIC_REPO}" --title "Codex Harness Assistant ${VERSION}" --notes-file "${NOTES}"
           fi
-          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
-            echo "release ${TAG} 已存在 → 更新资产与说明（可重跑）"
-            gh release edit "${TAG}" --repo "${REPO}" --notes-file "${NOTES}"
-          else
-            gh release create "${TAG}" --repo "${REPO}" --title "Codex Harness Assistant ${VERSION}" --notes-file "${NOTES}"
-          fi
-          gh release upload "${TAG}" dist-assets/* --repo "${REPO}" --clobber
-          if [ "$(gh release view "${TAG}" --repo "${REPO}" --json isDraft --jq '.isDraft')" = "true" ]; then
-            gh release edit "${TAG}" --repo "${REPO}" --draft=false
-          fi
-          echo "=== 线上资产核对 ==="
-          gh release view "${TAG}" --repo "${REPO}" --json url,assets \
-            --jq '.url, (.assets[] | "  \(.name)  \(.size) B")'
+          cp "${ASSET}" "${NAME}"
+          gh release upload "${TAG}" "${NAME}" "sha256-${NAME}.txt" --repo "${PUBLIC_REPO}" --clobber
