@@ -15,6 +15,25 @@
 
 ## 快速开始
 
+### 方式一：装成桌面应用（推荐，给最终用户）
+
+```bash
+cd cloud
+npm run build:exe     # 打成单个 exe（内嵌全部代码与界面资源，约 83MB）
+npm run install-app   # 复制到 %LOCALAPPDATA%\CodexHarnessCloud + 建桌面/开始菜单快捷方式
+npm run install-app -- -Startup    # 顺带开机自启
+```
+
+装完**桌面上就有「Codex Harness Cloud」图标**：双击 = 起本机伴生服务 → 自动打开浏览器 → 进界面。
+那台机器**不需要装 Node**（exe 里自带了运行时）。关掉最小化的那个窗口 = 停止本机服务。
+
+⛔ 两个 Windows 上的坑（都踩过，脚本里已处理，改脚本时别丢）：
+- **`.ps1` 必须存成带 BOM 的 UTF-8**：PowerShell 5.1 对没有 BOM 的 UTF-8 会按 ANSI 解码，
+  中文全变乱码 ⇒ 解析直接失败（报的错还完全指不到"编码"上）。
+- 本机执行策略可能是 `Restricted` ⇒ 必须用 `-ExecutionPolicy Bypass` 跑（`npm run install-app` 已带）。
+
+### 方式二：开发时直接跑（看日志方便）
+
 ```bash
 cd cloud
 
@@ -30,16 +49,24 @@ npm run start          # 真引擎：需要本机有 codex 引擎（找不到时
 | 入口 | 地址 | 说明 |
 |---|---|---|
 | **云端**（推荐，记这一个就行） | `https://ppz123.asia/cloud/` | 直接敲网址。页面会**自动探测**本机 `127.0.0.1:8917` |
-| 本机 | `http://127.0.0.1:8917/` | 由伴生服务下发，同源、最省事（控制台会打印） |
+| 本机 | `http://127.0.0.1:8917/` | 由伴生服务下发，同源、最省事（快捷方式/控制台都会打开它） |
 
 两个入口的**界面是同一份文件**（云端那份原样托管，本机那份由服务端多注入一行"云端在哪"）。
 没找到本机伴生服务时，云端入口会给一张**说清楚怎么启动**的卡片，而不是一直转圈。
+
+### ⚠️ 同一份会话目录只能有一个引擎
+
+本助手默认用你自己的 `~/.codex`（这样**会话、记忆、登录态都是你原来那些**，不是另起一份）。
+代价是：**桌面版开着的时候，它自己的引擎也占着这份目录**，此时助手里的引擎会起不来
+（引擎侧报的是 sqlite state runtime 初始化失败）。要用助手就先把桌面版关掉，或反过来。
 
 ## 命令
 
 | 命令 | 作用 |
 |---|---|
 | `npm run start` / `start:mock` | 起本地伴生服务（真引擎 / 假引擎） |
+| `npm run build:exe` | 打成单个 exe（Node SEA：内嵌代码 + 界面资源，目标机器不需要 Node） |
+| `npm run install-app` | 装到 `%LOCALAPPDATA%` 并建桌面/开始菜单快捷方式（`-- -Startup` 顺带开机自启） |
 | `npm run smoke` | 端到端自测（假引擎，走完整协议 + 断言），**改完必跑** |
 | `npm run schema` | 从引擎自产协议 schema（`.schema/`，自测的**独立参照物**） |
 | `npm run shot` | 界面走查：拉起服务 + 无头渲染逐步操作 + 截图（产物在 `docs/shots/`） |
@@ -122,6 +149,10 @@ ppz123.asia, www.ppz123.asia {
 
 | 症状 | 真因 |
 |---|---|
+| 双击了 exe，浏览器没开 / 报 `ERR_UNKNOWN_BUILTIN_MODULE` | SEA 里的 `require` 是**内嵌的那个**，只认内置模块与内嵌资源，`require("D:\\…\\server.js")` 直接抛错 ⇒ 要 `createRequire(该文件路径)` 拿一个正常作用域的 require |
+| `.ps1` 报一堆莫名其妙的语法错、中文变乱码 | PowerShell 5.1 把**没有 BOM 的 UTF-8** 按 ANSI 解码 ⇒ 脚本必须存成 **UTF-8 with BOM** |
+| `.ps1` 报"在此系统上禁止运行脚本" | 执行策略是 `Restricted` ⇒ 用 `-ExecutionPolicy Bypass` |
+| 快捷方式的图标是 Node 的绿三角 | `postject` 只注入 blob、**不管图标**；换图标要另外用 `rcedit --set-icon` |
 | 打开云端网址**一直停在"正在连接本地伴生服务…"** | 外壳里写着 `__CDN_BASE__` 之类的占位符，而**只有本机服务端会替换**；云端原样托管就没得换 ⇒ 探测必然失败。⇒ **能被云端原样托管的文件必须自己就能跑**；服务端只能"注入可选覆盖项"，不能当唯一拼装方 |
 | 同上，而且**永远不报错** | 首屏没有超时。任何"探测/加载"都必须带超时并把话说清楚，否则失败就是永久转圈 |
 | 云端入口打开一切正常，但**怎么都连不上本机** | Chrome 的**私有网络访问预检**：云端页面连 `127.0.0.1` 会先发 `OPTIONS` + `Access-Control-Request-Private-Network: true`，服务端必须回 `Access-Control-Allow-Private-Network: true` |

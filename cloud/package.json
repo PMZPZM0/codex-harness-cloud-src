@@ -11,6 +11,8 @@
     "start:mock": "node local-agent/server.js --mock --open",
     "schema": "node scripts/fetch-schemas.mjs",
     "smoke": "node scripts/fetch-schemas.mjs && node scripts/smoke.mjs",
-    "deploy:web": "bash scripts/deploy-web.sh"
+    "deploy:web": "bash scripts/deploy-web.sh",
+    "build:exe": "node launcher/build-exe.mjs",
+    "install-app": "powershell -ExecutionPolicy Bypass -NoProfile -File launcher/install-shortcuts.ps1"
   }
 }

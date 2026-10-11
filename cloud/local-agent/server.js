@@ -28,7 +28,12 @@ const USE_MOCK = argv.includes("--mock");
 const OPEN_BROWSER = argv.includes("--open");
 
 const cfg = config.load();
-const WEB_DIR = path.resolve(__dirname, "..", "web");
+/**
+ * web 资源目录。⛔ 允许被环境变量覆盖：
+ *   打进单文件 exe（Node SEA）时资源是**内嵌**的，启动时解到磁盘再指过来。
+ *   默认仍是源码旁的 cloud/web。
+ */
+const WEB_DIR = path.resolve(process.env.HARNESS_CLOUD_WEB_DIR || path.join(__dirname, "..", "web"));
 const BODY_LIMIT = 512 * 1024;
 
 // ── 日志：只写文件，且**绝不写 token / 配对码** ────────────────────────────────
@@ -318,6 +323,41 @@ const server = http.createServer(async (req, res) => {
   }
 
   res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("not found");
+});
+
+/**
+ * 端口被占用时的处理：**先问是不是自己已经在跑**。
+ * ⛔ 为什么必须有：用户双击图标两次、或者开机自启 + 手动打开 —— 很常见。
+ *   如果这里直接抛 EADDRINUSE，第二次点击就是一个报错窗口，看起来像"坏了"。
+ *   是自己人（/api/health 认出 product）就只把浏览器打开、安静退出；
+ *   是别的程序占着端口才真的报错，并把端口号说清楚。
+ */
+server.on("error", async (error) => {
+  if (error.code !== "EADDRINUSE") {
+    log(`[boot] 监听失败：${error.message}`);
+    process.stdout.write(`\n  监听 ${cfg.port} 失败：${error.message}\n\n`);
+    process.exit(1);
+    return;
+  }
+  const base = `http://127.0.0.1:${cfg.port}`;
+  let product = "";
+  try {
+    const response = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(2500) });
+    product = String(((await response.json()) || {}).product || "");
+  } catch { /* 拿不到就当它不是我们 */ }
+  if (product === "codex-harness-cloud") {
+    log(`[boot] ${cfg.port} 上已经有一个本机伴生服务在跑，本次只打开界面。`);
+    process.stdout.write(`\n  本机伴生服务已经在运行（${base}），直接打开界面。\n\n`);
+    openBrowser(base + "/");
+    process.exit(0);
+    return;
+  }
+  log(`[boot] 端口 ${cfg.port} 被别的程序占用了`);
+  process.stdout.write(
+    `\n  端口 ${cfg.port} 被别的程序占用，本机伴生服务起不来。\n` +
+    `  换端口：设置环境变量 HARNESS_CLOUD_PORT=其他端口 再启动。\n\n`
+  );
+  process.exit(1);
 });
 
 server.listen(cfg.port, "127.0.0.1", async () => {
