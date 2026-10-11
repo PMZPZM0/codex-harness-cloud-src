@@ -1,59 +1,129 @@
 /**
- * 壁纸层（wallpaper 域，2026-10-05）：挂在 `.timeline-wrap` 内、聊天区透出的程序化背景。
+ * 壁纸层（wallpaper 域，2026-10-05）：铺满全应用、聊天区透出的程序化背景。
  * ⛔ 三条铁律：
  *   ① pointer-events: none + z-index: -1 —— 纯视觉层，永不挡交互（守卫钉住）；
- *   ② 动效库（tsparticles / vanta）**整块懒加载** —— 首次选对应模式才拉 chunk，主包零开销；
- *   ③ 动效引擎失败必须静默降级（vanta 对 three 版本敏感，炸了就退回无背景，不许白屏/弹错）。
+ *   ② 动效引擎**整块懒加载**（tsparticles ~1MB）—— 首次选对应模式才拉 chunk，主包零开销；
+ *   ③ 动效引擎失败必须静默降级（炸了就退回无背景，不许白屏/弹错）。
  */
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { localImageUrl } from "../../lib/image-src.mjs";
 import { isPresetImage, patternMask, presetById, readWallpaper, saveWallpaper, subscribeWallpaper } from "../../lib/wallpaper.mjs";
 
-type WallpaperConfig = { mode: string; pattern: string; opacity: number; image: string };
+type WallpaperConfig = { mode: string; pattern: string; opacity: number; starScale: number; image: string };
 
-// ⛔ 两个动效引擎都必须是 lazy chunk：tsparticles（引擎+插件 ~1MB）、vanta+three（~700KB）
+// ⛔ tsparticles 必须是 lazy chunk（引擎+插件 ~1MB），不许静态进主包
 const ParticlesPane = lazy(() => import("./ParticlesPane"));
-
-/** vanta（MIT，tengbao/vanta）：NET 效果；⛔ vanta 对 three 版本敏感 ——
- *  整个初始化包 try/catch，失败静默降级成空层（宁可没壁纸不许白屏/报错弹窗）。 */
-function VantaPane() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let disposed = false;
-    let effect: { destroy: () => void } | null = null;
-    void (async () => {
-      try {
-        const THREE = await import("three");
-        (window as unknown as { THREE: unknown }).THREE = THREE;
-        const net = (await import("vanta/dist/vanta.net.min.js")).default;
-        if (disposed || !ref.current) return;
-        effect = net({
-          el: ref.current,
-          THREE,
-          mouseControls: { touch: false, mouse: true },
-          // 主题主色转 hex（vanta 只吃具体色值）；ponytail: 挂载时取一次，运行中换主题不跟随
-          color: (getComputedStyle(document.documentElement).getPropertyValue("--accent").trim().match(/^#[0-9a-fA-F]{3,8}$/) ?? ["#7a9e7e"])[0],
-          // ⛔ vanta 不支持透明背景（实测渲染成黑底、跟浅色主题打架）—— 背景色取主题 --bg
-          backgroundColor: (getComputedStyle(document.documentElement).getPropertyValue("--bg").trim().match(/^#[0-9a-fA-F]{3,8}$/) ?? ["#f6f6f4"])[0],
-          maxDistance: 22,
-          spacing: 18,
-        }) as { destroy: () => void };
-      } catch {
-        if (!disposed) setFailed(true);
-      }
-    })();
-    return () => {
-      disposed = true;
-      try { effect?.destroy(); } catch { /* 已销毁 */ }
-    };
-  }, []);
-  if (failed) return null;
-  return <div ref={ref} className="wallpaper-vanta" />;
-}
 
 function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** 主题 token 转 hex（canvas 只吃具体色值，不吃 CSS 变量）。 */
+function readHex(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : fallback;
+}
+
+/** 星野（点阵）—— 替代原 vanta「3D 背景」。
+ *
+ *  ⛔ 用户 10-11 定稿：「**黑夜→星空；白天→动态点；点之间不要连线**」，紧接着追加
+ *    「**都要动态星空、跟着鼠标动，不是静态的**」。而 vanta NET 的形态就是"点 + 连线"（网），
+ *    只调参调不出"无连线的点阵" ⇒ **vanta/three 整体退役**，改这里自绘 2D canvas：
+ *    零依赖、零连线，点/星的大小、明灭与**鼠标视差**完全可控。
+ *
+ *  两档同一套点阵，只换配色与明灭：深色主题 = 浅色星（带缓慢明灭），浅色主题 = 深色点（稳定可见）；
+ *  颜色取 `--text`，并监听 `data-theme` 重绘。
+ *  运动 = **鼠标视差（近层位移大、远层位移小 ⇒ 纵深）+ 缓速自主漂移**，鼠标不动时也不静止。 */
+function StarfieldPane({ scale }: { scale: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  // 主题变化 ⇒ 递增 key 重绘（canvas 已按旧主题着色，重画是唯一可靠的跟随方式）
+  const [themeKey, setThemeKey] = useState(0);
+  useEffect(() => {
+    const ob = new MutationObserver(() => setThemeKey((n) => n + 1));
+    ob.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => ob.disconnect();
+  }, []);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    let raf = 0;
+    let disposed = false;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dark = document.documentElement.dataset.theme === "dark";
+    const color = readHex("--text", dark ? "#ececea" : "#1b1b1a");
+    const motion = !prefersReducedMotion();
+    // 鼠标视差：目标值来自指针位置（归一化 −1..1），实际值缓动追随 —— 直接跟随会"跳"
+    let targetX = 0;
+    let targetY = 0;
+    let curX = 0;
+    let curY = 0;
+    const onMove = (e: MouseEvent) => {
+      targetX = (e.clientX / window.innerWidth) * 2 - 1;
+      targetY = (e.clientY / window.innerHeight) * 2 - 1;
+    };
+    if (motion) window.addEventListener("mousemove", onMove, { passive: true });
+    let stars: { x: number; y: number; r: number; a: number; p: number; d: number }[] = [];
+    const seed = () => {
+      // ⛔ 密度按**面积**自适应（换窗口/换屏自动跟上），再乘设置页的「比例」(20%~300%，100 是默认)：
+      //    10-11 用户报「星空太差了、太少了」—— 首版 1280×800 才 51 颗；改后深色约 1000 颗、浅色约 650 颗。
+      const n = Math.max(120, Math.min(3000, Math.round(((canvas.width * canvas.height) / (dark ? 1000 : 1600)) * (scale / 100))));
+      stars = Array.from({ length: n }, () => {
+        // 约 8% 是"亮星"：又大又亮，其余是背景细星 —— 有层次才像星空
+        const bright = Math.random() < 0.08;
+        return {
+          x: Math.random(),
+          y: Math.random(),
+          r: bright
+            ? (dark ? 1.6 : 1.4) + Math.random() * 1.1
+            : (dark ? 0.45 : 0.7) + Math.random() * 1.05,
+          a: bright
+            ? (dark ? 0.75 : 0.42) + Math.random() * 0.25
+            : (dark ? 0.3 : 0.16) + Math.random() * (dark ? 0.45 : 0.22),
+          p: Math.random() * Math.PI * 2,
+          // 纵深：越"近"的点视差位移越大（0.35 远层 ~ 1 近层）
+          d: 0.35 + Math.random() * 0.65,
+        };
+      });
+    };
+    const resize = () => {
+      canvas.width = Math.max(1, Math.round(canvas.clientWidth * dpr));
+      canvas.height = Math.max(1, Math.round(canvas.clientHeight * dpr));
+      seed();
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
+    const paint = (t: number) => {
+      const w = canvas.width;
+      const h = canvas.height;
+      curX += (targetX - curX) * 0.06;
+      curY += (targetY - curY) * 0.06;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = color;
+      for (const s of stars) {
+        // 深色 = 星：亮度缓慢明灭；浅色 = 点：稳定可见
+        const alpha = dark ? s.a * (0.6 + 0.4 * Math.sin(t / 900 + s.p)) : s.a;
+        ctx.globalAlpha = Math.max(0.05, Math.min(1, alpha));
+        const px = (Math.sin(t / 2600 + s.p) * 3 + curX * 30 * s.d) * dpr;
+        const py = (Math.cos(t / 3100 + s.p) * 3 + curY * 30 * s.d) * dpr;
+        ctx.beginPath();
+        ctx.arc(s.x * w + px, s.y * h + py, s.r * dpr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      if (motion && !disposed) raf = requestAnimationFrame(paint);
+    };
+    paint(0);
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      window.removeEventListener("mousemove", onMove);
+    };
+  }, [themeKey, scale]);
+  return <canvas ref={ref} className="wallpaper-stars" aria-hidden />;
 }
 
 export function WallpaperLayer() {
@@ -73,9 +143,9 @@ export function WallpaperLayer() {
   }, [cfg.mode]);
   useEffect(() => () => { delete document.documentElement.dataset.wallpaper; }, []);
   if (cfg.mode === "off") return null;
-  // ⛔ 减动效偏好下，粒子/3D 一律退回静态图案（accessibility 基本盘）
-  const mode = (cfg.mode === "particles" || cfg.mode === "vanta") && prefersReducedMotion() ? "pattern" : cfg.mode;
-  /* ⛔ 浓度只作用于图案（装饰层）：粒子/3D 有自己的强度语义；自定义图/精选渐变是完整壁纸
+  // ⛔ 减动效偏好下，粒子/星野一律退回静态图案（accessibility 基本盘）
+  const mode = (cfg.mode === "particles" || cfg.mode === "stars") && prefersReducedMotion() ? "pattern" : cfg.mode;
+  /* ⛔ 浓度只作用于图案（装饰层）：粒子/星野有自己的强度语义；自定义图/精选渐变是完整壁纸
      —— 被 12% 层透明度压住 = 全部隐身（10-05 用户实测「切了全没反应」的真凶之二）。 */
   const opacity = mode === "pattern" ? cfg.opacity / 100 : 1;
   const preset = isPresetImage(cfg.image) ? presetById(cfg.image.slice("preset:".length)) : null;
@@ -88,7 +158,7 @@ export function WallpaperLayer() {
         />
       )}
       {mode === "particles" && <Suspense fallback={null}><ParticlesPane /></Suspense>}
-      {mode === "vanta" && <VantaPane />}
+      {mode === "stars" && <StarfieldPane scale={cfg.starScale} />}
       {mode === "custom" && preset && <div className="wallpaper-custom wallpaper-preset" style={{ backgroundImage: preset.css }} />}
       {mode === "custom" && !preset && cfg.image && (
         <div className="wallpaper-custom" style={{ backgroundImage: `url("${localImageUrl(cfg.image)}")` }} />

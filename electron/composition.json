@@ -597,11 +597,25 @@
       "config": null
     },
     {
+      "id": "free-gateway",
+      "enabled": true,
+      "file": "features/free-gateway-ipc.ts",
+      "export": "freeGatewayFeature",
+      "config": null
+    },
+    {
       "id": "whatsnew",
       "enabled": true,
       "file": "features/whats-new-ipc.ts",
       "export": "whatsNewFeature",
       "config": null
-    }
+    },
+  {
+    "id": "html-video",
+    "enabled": true,
+    "file": "features/html-video-ipc.ts",
+    "export": "htmlVideoFeature",
+    "config": null
+  }
   ]
 }
