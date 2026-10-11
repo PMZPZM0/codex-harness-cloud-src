@@ -35,6 +35,18 @@ const DIST_DIR = process.env.HARNESS_DIST_DIR || join(__dirname, "..", "dist");
 const MANIFEST_FILE = join(__dirname, "..", "electron", "ipc-channels.manifest.json");
 const PRELOAD_FILE = join(__dirname, "..", "electron", "preload.ts");
 
+/* ⛔ app.getAppPath 修正：`electron dist-electron/headless.js` 启动时 getAppPath = dist-electron
+   （主脚本所在目录），window-factory 的 loadFile(app.getAppPath()/dist/index.html) 与独立窗口
+   全部 404（实测 ERR_FILE_NOT_FOUND）。改写为仓库根 = 桌面版 `electron .` 的同款路径。 */
+try {
+  const appLike = app as unknown as { getAppPath: () => string };
+  const fixed = join(__dirname, "..");
+  const patch = () => { appLike.getAppPath = () => fixed; };
+  patch();
+  if (appLike.getAppPath() !== fixed) { Object.defineProperty(app, "getAppPath", { value: () => fixed, configurable: true }); }
+  console.log(`[headless] appPath 已校正 → ${appLike.getAppPath()}`);
+} catch (error) { console.error("[headless] appPath 校正失败：", error); }
+
 /* ── ① 包 ipcMain：捕获全部通道 handler（在 main 的域模块注册前）──────────── */
 const invokeHandlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
 const onHandlers = new Map<string, (event: unknown, ...args: unknown[]) => void>();
@@ -624,3 +636,26 @@ createServer((req, res) => route(req, res, shimJs)).listen(PORT, "127.0.0.1", ()
 
 // 真 main.ts：86 个域 / 真引擎 / 全部业务。⛔ 必须最后 require。
 require("./main");
+
+/* ── ⑥ 独立窗口的无头形态：弹到用户的浏览器 ───────────────────────────────
+   桌面版「独立窗口」= 新开一个 Electron 窗口；无头下窗口永远隐藏，浏览器用户
+   什么都看不到（实测 bug）。改为：真实通道照常执行（保留 popout 登记/事件路由），
+   然后**在用户默认浏览器里弹独立标签页** http://127.0.0.1:8917/?popout=<threadId>
+   —— 同一套 dist + 同一份 shim，浏览器标签页就是无头版的"独立窗口"。
+   ⛔ 必须在 require("./main") 之后包（handler 由域模块注册）。 */
+import { spawn as nodeSpawn } from "node:child_process";
+const popoutHandler = invokeHandlers.get("window:popout-thread");
+if (popoutHandler) {
+  invokeHandlers.set("window:popout-thread", async (event, ...args) => {
+    const result = await popoutHandler(event, ...args);
+    const threadId = String(args[0] ?? "");
+    try {
+      const url = `http://127.0.0.1:${PORT}/?popout=${encodeURIComponent(threadId)}`;
+      nodeSpawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+      console.log(`[headless] 独立窗口 → 浏览器标签页 ${url}`);
+    } catch (error) { console.error("[headless] 弹浏览器独立窗口失败：", error); }
+    return result;
+  });
+} else {
+  console.error("[headless] ⛔ window:popout-thread 无 handler，独立窗口桥未接线");
+}
