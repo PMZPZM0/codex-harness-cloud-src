@@ -20,6 +20,36 @@ export function usePart02c2(bag: Bag) {
     return () => { off?.(); };
   }, []);
 
+  /* ═══ 更新状态机（10-11 云助手自动更新）═════════════════════════════════════
+   * 单一真相源在主进程：启动拉一次快照，之后订阅 updates:state。
+   * 后台静默检查命中新版本时（phase=available 且之前不是）弹一次**非阻塞** toast，
+   * 不打断正在跑的回合；下载中不给 toast（面板里有进度条）。
+   */
+  const [updateState, setUpdateState] = useState<Bag["updateState"]>({
+    phase: "idle", percent: 0, receivedBytes: 0, totalBytes: 0, speedBytesPerSec: 0, etaSeconds: null,
+  });
+  bag.updateState = updateState as typeof bag.updateState;
+  bag.setUpdateState = setUpdateState as typeof bag.setUpdateState;
+
+  useEffect(() => {
+    let disposed = false;
+    let lastPhase = "idle";
+    // 启动快照（补上「应用刚启动就有稍后安装包要提示」的场景）
+    void window.codex.updateStateRead?.().then((r) => {
+      if (!disposed && r?.ok && r.state) setUpdateState(r.state as never);
+    }).catch(() => undefined);
+    const off = window.codex.onUpdateState?.((next) => {
+      if (disposed) return;
+      setUpdateState(next as never);
+      // available：静默检查发现新版本 → 只提示一次，不打扰
+      if (next.phase === "available" && lastPhase !== "available" && next.version) {
+        bag.showToast?.(`新版本 v${next.version} 可用`, "account");
+      }
+      lastPhase = next.phase;
+    });
+    return () => { disposed = true; off?.(); };
+  }, []);
+
   const runUpdateCheck = async () => {
     bag.setUpdateChecking(true);
     bag.setUpdateError("");
@@ -65,6 +95,30 @@ bag.runUpdateCheck = runUpdateCheck as typeof bag.runUpdateCheck;
     }
   };
 bag.runUpdateDownload = runUpdateDownload as typeof bag.runUpdateDownload;
+
+  /* 取消下载（AbortSignal 在主进程；.part 保留，下次同版本续传） */
+  const runUpdateCancel = async () => {
+    try { await window.codex.cancelUpdateDownload?.(); } catch { /* 忽略 */ }
+  };
+  bag.runUpdateCancel = runUpdateCancel as typeof bag.runUpdateCancel;
+
+  /* 稍后安装：记住已校验的安装包，下次打开设置提示 */
+  const runUpdateDefer = async () => {
+    try {
+      const r = await window.codex.deferUpdateInstall?.();
+      if (r?.ok) bag.showToast?.("已记下：下次启动继续提示安装", "account");
+    } catch { /* 忽略 */ }
+  };
+  bag.runUpdateDefer = runUpdateDefer as typeof bag.runUpdateDefer;
+
+  /* 跳过此版本：同版本不再提示（持久化） */
+  const runUpdateSkip = async () => {
+    const version = bag.updateState.version || bag.updateInfo?.version || "";
+    if (!version) return;
+    await window.codex.skipUpdateVersion?.(version);
+    bag.showToast?.(`已跳过 v${version}`, "account");
+  };
+  bag.runUpdateSkip = runUpdateSkip as typeof bag.runUpdateSkip;
 
   // 打开网站反馈页：带上当前版本与系统信息（管理员可据此复现）
   // 发布站 09-15 起不再分发安装包，只负责应用介绍与问题反馈——反馈页地址保持不变
@@ -196,5 +250,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, runUpdateDownload, runUpdateCancel, runUpdateDefer, runUpdateSkip, updateState, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }

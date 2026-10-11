@@ -698,6 +698,16 @@ contextBridge.exposeInMainWorld("codex", {
   cloudToolsDownload: (name: string) => __ipc("cloud:tools/download", 1, [name]),
   /* 云版预留（真实现）：工具下载进度 */
   cloudToolsProgress: (name: string) => __ipc("cloud:tools/progress", 1, [name]),
+  /* 更新：静默检查（后台同一套逻辑：断网跳过 / 失败退避 5min→15min→1h→6h / 下载中不并发），不弹错误 */
+  checkUpdateSilent: () => __ipc("updates:check-silent", 0, []),
+  /* 更新：读当前状态机（相位/进度/速度/剩余/更新说明/稍后安装版本/是否电池供电） */
+  updateStateRead: () => __ipc("updates:state-read", 0, []),
+  /* 更新：取消下载（AbortController 中断；.part 保留，下次同版本 Range 续传） */
+  cancelUpdateDownload: () => __ipc("updates:cancel-download", 0, []),
+  /* 更新：稍后安装（记住已校验安装包与版本，落 userData/updates-state.json，下次启动提示） */
+  deferUpdateInstall: () => __ipc("updates:defer-install", 0, []),
+  /* 更新：跳过此版本（同版本不再提示；持久化） */
+  skipUpdateVersion: (version: string) => __ipc("updates:skip-version", 1, [version]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
@@ -743,6 +753,10 @@ onConnectorOAuth: (listener: (event: unknown) => void) =>
   updateOnProgress: (callback: (percent: number) => void) => {
     __on("updates:download-progress", callback, (callback) => (_event: unknown, percent: number) => callback(percent));
   },
+  /* 更新状态机推送（10-11 云助手自动更新）：主进程每次相位变化推一次。
+     载荷与 updates:state-read 一致（单一真相源在主进程），渲染层只渲染、不自己推断。 */
+  onUpdateState: (listener: (state: { phase: string; percent: number; receivedBytes: number; totalBytes: number; speedBytesPerSec: number; etaSeconds: number | null; version?: string; changelog?: string; filename?: string; error?: string; deferredVersion?: string; onBattery?: boolean; product?: string; channel?: string }) => void) =>
+    __on("updates:state", listener, (listener) => (_e: Electron.IpcRendererEvent, payload: unknown) => listener(payload as never)),
 onSshData: (listener: (payload: { data: string }) => void) =>
     __on("ssh:data", listener, (listener) => (_event: Electron.IpcRendererEvent, payload: { data: string }) => listener(payload)),
 onSshExit: (listener: (payload: { code?: number; signal?: string; error?: string }) => void) =>
