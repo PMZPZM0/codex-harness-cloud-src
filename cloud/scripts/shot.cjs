@@ -65,6 +65,11 @@ async function waitForJs(win, expression, timeoutMs = 12_000, label = expression
 }
 
 async function shot(win, name) {
+  // ⛔ 连抓两帧取第二帧：主题切换这类大范围重绘后，capturePage 可能返回**上一态的
+  //   陈旧合成帧**（实测 06 图全暗、DOM 探针却已是 light + 计算值全对）。第一帧消费掉
+  //   强制合成器出新帧，第二帧才是当前态。
+  await win.webContents.capturePage();
+  await sleep(120);
   const image = await win.webContents.capturePage();
   const file = path.join(OUT_DIR, `${name}.png`);
   fs.writeFileSync(file, image.toPNG());
@@ -147,6 +152,11 @@ async function main() {
     throw error;
   }
   await sleep(500);
+  // 欢迎引导（空状态）：只有"一条消息都没有"时可见 —— 就绪后、发送前的这一拍拍下来
+  report.probe.welcomeSeen = await win.webContents.executeJavaScript(
+    `document.querySelector("#chc-welcome") && !document.querySelector("#chc-welcome").hidden`);
+  report.probe.welcomeChips = await win.webContents.executeJavaScript(
+    `document.querySelectorAll("#chc-welcome .chip").length`);
 
   report.probe.status = await win.webContents.executeJavaScript(`document.querySelector("#chc-status")?.textContent || ""`);
   report.probe.note = await win.webContents.executeJavaScript(`document.querySelector("#chc-note")?.textContent || ""`);
@@ -230,14 +240,33 @@ async function main() {
   })()`);
   await waitForJs(win, "!document.querySelector('#chc-stop') || document.querySelector('#chc-stop').hidden", 15_000, "回合结束");
   await sleep(400);
+  // 滚到底再拍：Markdown 回答（标题/代码块/复制脚注）在流的末尾 —— 不滚它就不入镜
+  await win.webContents.executeJavaScript(`document.querySelector("#chc-scroll").scrollTop = 1e9`);
+  await sleep(400);
   await shot(win, `${LABEL}-05-done-${WIDTH}`);
   report.probe.agentText = await win.webContents.executeJavaScript(`[...document.querySelectorAll(".msg.agent .bubble")].map((b) => b.textContent).join(" | ")`);
+  // Markdown 渲染与复制（本轮"界面充实"的核心增量）：代码块要带语言标签与复制按钮
+  report.probe.mdPre = await win.webContents.executeJavaScript(
+    `document.querySelectorAll("#chc-stream .markdown .codeblock pre").length`);
+  report.probe.mdCodeCopy = await win.webContents.executeJavaScript(
+    `document.querySelectorAll("#chc-stream [data-copy-code]").length`);
+  report.probe.msgCopy = await win.webContents.executeJavaScript(
+    `document.querySelectorAll("#chc-stream .msg-foot .copy-btn").length`);
+  // 收尾态：回合结束后「停止」必须隐藏、提示必须复位（残留"正在运行"就是真 bug）
+  report.probe.stopHiddenAfterTurn = await win.webContents.executeJavaScript(
+    `document.querySelector("#chc-stop")?.hidden ?? true`);
+  report.probe.hintAfterTurn = await win.webContents.executeJavaScript(
+    `document.querySelector("#chc-hint")?.textContent || ""`);
+  report.probe.mdHeading = await win.webContents.executeJavaScript(
+    `document.querySelector("#chc-stream .markdown h3")?.textContent || ""`);
   report.probe.resolvedCards = await win.webContents.executeJavaScript(`document.querySelectorAll("#chc-stream .card.resolved").length`);
   report.probe.threadCount = await win.webContents.executeJavaScript(`document.querySelectorAll(".thread-item").length`);
 
   // 暗色（应用启动时就是暗色，这里只验切换按钮有效）
   await click(win, "#chc-theme");
-  await sleep(400);
+  // ⛔ 等 800ms：主题切换有 160ms 的变量过渡，截早了会拍到"半亮半暗"的中间帧
+  //   （实测 06 图里侧栏当前项还停在暗色底）。顺带把 --dur-theme 也走完。
+  await sleep(800);
   await shot(win, `${LABEL}-06-theme-${WIDTH}`);
   report.probe.theme = await win.webContents.executeJavaScript(`document.documentElement.dataset.theme`);
 

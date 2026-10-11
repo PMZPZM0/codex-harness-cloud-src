@@ -68,6 +68,102 @@ function timeLabel(ms) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/* ── Markdown 渲染 ────────────────────────────────────────────────────────── */
+/**
+ * 模型回复是 Markdown，纯文本 pre-wrap 糊成一团 —— 桌面版有完整的 .markdown 渲染，
+ * 云版必须同款，不然一眼就是两个产品（10-11 用户：「界面太简单了，就一个对话框」）。
+ *
+ * ⛔ 文件头的铁律仍然有效：**先整体转义、再生成 HTML**。所有插值都过 escapeHtml，
+ *   fenced 代码块经 <code>textContent 通道落地，没有一条原始字符串绕过转义。
+ *   另外链接只放行 http(s): 协议 —— `javascript:` 之类直接降级成纯文本。
+ */
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]
+  ));
+}
+
+function inlineMd(raw) {
+  let out = escapeHtml(raw);
+  out = out.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  out = out.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/(^|[\s(])\*([^*\n]+)\*(?=$|[\s.,;:!?)])/g, "$1<em>$2</em>");
+  // 链接：只放行 http(s)（escapeHtml 已把引号变实体，href 里不可能逃出属性边界）
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  return out;
+}
+
+function codeBlockHtml(block) {
+  const lang = block.lang ? escapeHtml(block.lang) : "";
+  return `<div class="codeblock"><div class="codeblock-head"><span>${lang || "code"}</span>`
+    + `<button type="button" class="copy-btn" data-copy-code>复制</button></div>`
+    + `<pre><code>${escapeHtml(block.code)}</code></pre></div>`;
+}
+
+function mdRender(text) {
+  let src = String(text || "").replace(/\r\n/g, "\n");
+  // fenced 代码块先摘出来（含**未闭合**的围栏 —— 流式渲染中途必然出现半截代码块，
+  // 按"到结尾"处理，闭合后自然归位）
+  const blocks = [];
+  src = src.replace(/```([\w+#-]*)[^\S\n]*\n?([\s\S]*?)(?:```|$)/g, (_m, lang, code) => {
+    blocks.push({ lang, code: code.replace(/\n$/, "") });
+    return `\u0000B${blocks.length - 1}\u0000`;
+  });
+
+  const lines = src.split("\n");
+  let html = "";
+  let list = null;            // { tag, items }
+  let para = [];
+  let quote = null;           // { lines }
+  const flushPara = () => { if (para.length) { html += `<p>${para.map(inlineMd).join("<br>")}</p>`; para = []; } };
+  const flushList = () => { if (list) { html += `<${list.tag}>${list.items.map((i) => `<li>${inlineMd(i)}</li>`).join("")}</${list.tag}>`; list = null; } };
+  const flushQuote = () => { if (quote) { html += `<blockquote><p>${quote.lines.map(inlineMd).join("<br>")}</p></blockquote>`; quote = null; } };
+  const flushAll = () => { flushPara(); flushList(); flushQuote(); };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    const fence = /^\u0000B(\d+)\u0000$/.exec(line.trim());
+    if (fence) { flushAll(); html += codeBlockHtml(blocks[Number(fence[1])]); continue; }
+    if (!line.trim()) { flushAll(); continue; }
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (heading) { flushAll(); html += `<h3>${inlineMd(heading[2])}</h3>`; continue; }
+    if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { flushAll(); html += "<hr>"; continue; }
+    const q = /^\s*>\s?(.*)$/.exec(line);
+    if (q) { flushPara(); flushList(); (quote = quote || { lines: [] }).lines.push(q[1]); continue; }
+    const ul = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (ul) { flushPara(); flushQuote(); if (!list || list.tag !== "ul") { flushList(); list = { tag: "ul", items: [] }; } list.items.push(ul[1]); continue; }
+    const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    if (ol) { flushPara(); flushQuote(); if (!list || list.tag !== "ol") { flushList(); list = { tag: "ol", items: [] }; } list.items.push(ol[1]); continue; }
+    flushList(); flushQuote();
+    para.push(line);
+  }
+  flushAll();
+  return html;
+}
+
+async function copyText(text, button) {
+  const value = String(text || "");
+  let ok = false;
+  try { await navigator.clipboard.writeText(value); ok = true; } catch { /* 非安全上下文 / 无权限 → 走兜底 */ }
+  if (!ok) {
+    // 兜底：临时 textarea + execCommand（http:// 环境下 clipboard API 不可用）
+    const helper = document.createElement("textarea");
+    helper.value = value;
+    helper.style.position = "fixed"; helper.style.opacity = "0";
+    document.body.append(helper);
+    helper.select();
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    helper.remove();
+  }
+  if (button) {
+    button.classList.toggle("copied", ok);
+    const label = button.textContent;
+    button.textContent = ok ? "已复制" : "复制失败";
+    setTimeout(() => { button.classList.remove("copied"); button.textContent = label; }, 1400);
+  }
+}
+
 /* ── API 层 ───────────────────────────────────────────────────────────────── */
 /**
  * ⛔ 两个头都不能省：
@@ -288,7 +384,7 @@ function startItem(item) {
   const type = String(item.type || "");
   if (type === "userMessage") {
     const node = h("div", { class: "msg user" },
-      h("div", { class: "who", text: "你" }),
+      h("div", { class: "who" }, h("span", { text: "你" }), h("span", { class: "time", text: timeLabel(Date.now()) })),
       h("div", { class: "bubble", text: textOfUserInput(item.content) }),
     );
     state.items.set(id, { el: node, type });
@@ -296,8 +392,11 @@ function startItem(item) {
     return;
   }
   if (type === "agentMessage") {
-    const body = h("div", { class: "bubble" });
-    const node = h("div", { class: "msg agent" }, h("div", { class: "who", text: "Codex" }), body);
+    const body = h("div", { class: "bubble markdown" });
+    const node = h("div", { class: "msg agent" },
+      h("div", { class: "who" }, h("span", { text: "Codex" }), h("span", { class: "time", text: timeLabel(Date.now()) })),
+      body,
+    );
     state.items.set(id, { el: node, type, text: String(item.text || ""), body });
     streamAppend(node);
     return;
@@ -327,7 +426,21 @@ function completeItem(item) {
   if (!entry) return;
   if (type === "agentMessage" && entry.body) {
     const text = String(item.text || "");
-    if (text && entry.body.textContent !== text) entry.body.textContent = text;
+    if (text && entry.text !== text) {
+      entry.text = text;
+      entry.body.innerHTML = mdRender(text);
+    }
+    // 回合完成：补一条「复制」脚注（只加一次）。Markdown 的排版好看是一半，
+    // 能一键把原文带走才是正文的价值 —— 用户是要拿去用的，不是只来看的。
+    if (!entry.el.querySelector(".msg-foot")) {
+      const raw = entry.text;
+      entry.el.append(h("div", { class: "msg-foot" },
+        h("button", {
+          type: "button", class: "copy-btn", text: "复制正文",
+          onclick: (event) => copyText(raw, event.currentTarget),
+        }),
+      ));
+    }
     return;
   }
   if (type === "reasoning") {
@@ -357,7 +470,7 @@ function appendDelta(itemId, delta) {
     if (!entry) return;
   }
   entry.text = (entry.text || "") + delta;
-  if (entry.body) entry.body.textContent = entry.text;
+  if (entry.body) entry.body.innerHTML = mdRender(entry.text);
   else entry.el.textContent = entry.text;
 }
 
@@ -551,8 +664,15 @@ let dom = null;
 function buildDom() {
   const railList = h("div", { class: "rail-list", id: "chc-threads" });
   const streamInner = h("div", { class: "stream-inner", id: "chc-stream" });
-  const stream = h("div", { class: "stream", id: "chc-scroll", onclick: () => { if (window.innerWidth <= 720) document.querySelector(".app").classList.remove("rail-open"); } }, streamInner);
+  const jumpBtn = h("button", {
+    type: "button", class: "jump-btn", id: "chc-jump", title: "回到底部", "aria-label": "回到底部", text: "↓",
+    onclick: () => { dom.stream.scrollTop = dom.stream.scrollHeight; },
+  });
+  const welcome = buildWelcome();
+  // ⛔ welcome 必须真的挂进流里（上一版就漏了这一行 —— 探针 welcomeSeen 恒 null 才发现）
+  const stream = h("div", { class: "stream", id: "chc-scroll", onclick: () => { if (window.innerWidth <= 720) document.querySelector(".app").classList.remove("rail-open"); } }, welcome, streamInner);
   const title = h("div", { class: "title", text: "新会话", id: "chc-title" });
+  const titleMeta = h("span", { class: "title-meta", id: "chc-title-meta", text: "" });
   const pills = h("div", { class: "pill", id: "chc-status" }, h("span", { class: "dot" }), h("span", { text: "连接中" }));
   const composerRow = h("div", { class: "composer-row" });
   const hint = h("div", { class: "hint", id: "chc-hint", text: "" });
@@ -573,14 +693,14 @@ function buildDom() {
     newBtn, railList, railEmpty, railFoot,
   );
 
-  const topbar = h("div", { class: "topbar" }, railToggle, title, h("div", { class: "spacer" }), pills, themeBtn);
-  const main = h("div", { class: "main" }, topbar, stream, h("div", { class: "composer" }, h("div", { class: "composer-inner" }, textarea, composerRow)));
+  const topbar = h("div", { class: "topbar" }, railToggle, title, titleMeta, h("div", { class: "spacer" }), pills, themeBtn);
+  const main = h("div", { class: "main" }, topbar, stream, jumpBtn, h("div", { class: "composer" }, h("div", { class: "composer-inner" }, textarea, composerRow)));
   const app = h("div", { class: "app" }, rail, main);
   // 配对 / 错误面板作为浮层挂上去
   const overlay = h("div", { hidden: true });
   document.body.append(app, overlay);
 
-  dom = { app, overlay, rail, railList, railEmpty, railFoot, railToggle, stream, streamInner, title, pills, textarea, sendBtn, stopBtn, hint, newBtn, themeBtn };
+  dom = { app, overlay, rail, railList, railEmpty, railFoot, railToggle, stream, streamInner, welcome, title, titleMeta, pills, textarea, sendBtn, stopBtn, hint, newBtn, themeBtn, jumpBtn };
 
   newBtn.addEventListener("click", () => createThread());
   sendBtn.addEventListener("click", () => send());
@@ -591,6 +711,87 @@ function buildDom() {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); send(); }
   });
   textarea.addEventListener("input", autoGrow);
+  // 回到底部浮标：往下滚离底 >300px 才出现
+  stream.addEventListener("scroll", () => {
+    const el = dom.stream;
+    dom.jumpBtn.classList.toggle("show", el.scrollHeight - el.scrollTop - el.clientHeight > 300);
+  }, { passive: true });
+  // 代码块「复制」是 innerHTML 里的按钮（每次流式重渲染都会重建）⇒ 只能用事件委托
+  streamInner.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-copy-code]");
+    if (!button) return;
+    const code = button.closest(".codeblock")?.querySelector("code");
+    if (code) copyText(code.textContent, button);
+  });
+  syncEmpty();
+}
+
+/* ── 空状态（欢迎引导）────────────────────────────────────────────────────────
+   ⛔ 空状态规范：说清「这是什么 / 为什么空 / 用户能做什么」，并给**可点**的第一步。
+   光杆聊天框就是 10-11 用户抱怨的「啥都没有，这有啥用」。 */
+function buildWelcome() {
+  const chips = [
+    "帮我看看这个项目的结构，给出改进建议",
+    "运行 npm run check，把失败项按类别总结一遍",
+    "把设置页「个性化」的分组重排一下，统一间距",
+    "解释一下 cloud/local-agent 的鉴权设计，以及为什么这样防 CSRF",
+  ];
+  const grid = h("div", { class: "welcome-feats" },
+    h("div", { class: "feat" },
+      h("span", { class: "feat-ico", text: "⚙️" }),
+      h("span", { class: "feat-name", text: "真引擎，真执行" }),
+      h("span", { class: "feat-desc", text: "跑的是你本机的 Codex 引擎：能改文件、跑命令、查资料，和桌面版同一套能力。" }),
+    ),
+    h("div", { class: "feat" },
+      h("span", { class: "feat-ico", text: "🔒" }),
+      h("span", { class: "feat-name", text: "数据不出本机" }),
+      h("span", { class: "feat-desc", text: "会话、凭据、文件全留在这台电脑上；网页只是遥控器，刷新即最新版。" }),
+    ),
+    h("div", { class: "feat" },
+      h("span", { class: "feat-ico", text: "🛡️" }),
+      h("span", { class: "feat-name", text: "敏感操作你说了算" }),
+      h("span", { class: "feat-desc", text: "执行命令、改文件前会弹出确认卡；你拒绝的操作不会执行。" }),
+    ),
+  );
+  const chipRow = h("div", { class: "chips" });
+  for (const text of chips) {
+    chipRow.append(h("button", {
+      type: "button", class: "chip", text,
+      onclick: () => {
+        dom.textarea.value = text;
+        autoGrow();
+        dom.textarea.focus();
+      },
+    }));
+  }
+  const engineLine = h("div", { class: "welcome-engine", id: "chc-welcome-engine", text: "" });
+  const panel = h("div", { class: "welcome", id: "chc-welcome", hidden: true },
+    h("div", { class: "welcome-hero" },
+      h("div", { class: "hi", text: "开始一个会话" }),
+      h("div", { class: "sub", text: "这是你本机 Codex 引擎的网页入口 —— 和桌面版同一个引擎、同一份会话记录。下面点一条，或直接在输入框说你的需求。" }),
+    ),
+    grid,
+    h("div", { class: "welcome-start" },
+      h("div", { class: "label", text: "试一试（点击填入输入框）" }),
+      chipRow,
+      engineLine,
+    ),
+  );
+  return panel;
+}
+
+/** 空状态可见性：一条消息都没有时才展示（随每次追加/清空调用）。 */
+function syncEmpty() {
+  if (!dom || !dom.welcome) return;
+  const empty = dom.streamInner.children.length === 0;
+  dom.welcome.hidden = !empty;
+  if (empty) {
+    const engine = state.server.engine || {};
+    const ok = state.connected && engine.status === "ready";
+    dom.welcome.querySelector("#chc-welcome-engine").innerHTML = ok
+      ? `引擎状态：<span class="ok">就绪</span>${state.server.mock ? "（演示模式，假引擎）" : ""} · 请求只发往本机 ${escapeHtml(agentBase())}`
+      : "引擎状态：连接中…";
+  }
 }
 
 function autoGrow() {
@@ -599,7 +800,10 @@ function autoGrow() {
   el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
 }
 
-function streamAppend(node) { dom.streamInner.append(node); }
+function streamAppend(node) {
+  dom.streamInner.append(node);
+  syncEmpty();
+}
 
 /** 贴底：只在用户本来就在底部时跟随 —— 否则用户往上翻历史会被新消息拽下来。 */
 let stickQueued = false;
@@ -624,6 +828,7 @@ function render() {
   renderTitle();
   renderPills();
   renderComposer();
+  syncEmpty();
 }
 
 function renderPills() {
@@ -663,6 +868,8 @@ function renderThreads() {
 function renderTitle() {
   const thread = state.threads.find((t) => t.id === state.activeThreadId);
   dom.title.textContent = thread ? (thread.name || thread.id) : "新会话";
+  // 会话元信息：id 与最近活动时间（小字、可省略）—— 光一个标题看不出"这是哪个会话"
+  dom.titleMeta.textContent = thread ? `${shortId(thread.id)}${thread.updatedAt ? ` · ${timeLabel(thread.updatedAt)}` : ""}` : "";
 }
 
 function renderComposer() {
@@ -707,9 +914,16 @@ function renderPairing() {
 
 /* ── 主题 ─────────────────────────────────────────────────────────────────── */
 function toggleTheme() {
-  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
+  // ⛔ 摘过渡再翻：实测 Chromium 里「var() 驱动的 background + transition」在运行时
+  //   翻转 data-theme 后会**卡在旧值**（color 正常更新、background 900ms 后仍是暗色
+  //   rgb(44,44,43)，fresh load 则一切正常）—— 走查台的 06 图连拍三次都复现。
+  //   桌面版 src/lib/visual-switch.ts 干的是同一件事：主题切换期间把过渡类摘掉。
+  const root = document.documentElement;
+  root.classList.add("theme-switching");
+  const next = root.dataset.theme === "dark" ? "light" : "dark";
+  root.dataset.theme = next;
   try { localStorage.setItem(LS.theme, next); } catch { /* 忽略 */ }
+  setTimeout(() => root.classList.remove("theme-switching"), 320);
 }
 
 /* ── 动作 ─────────────────────────────────────────────────────────────────── */
@@ -760,6 +974,7 @@ async function createThread() {
   state.pending.forEach((entry) => entry.settle(declineResultFor(entry.method), "已切换会话"));
   state.pending.clear();
   render();
+  syncEmpty();
   return state.activeThreadId;
 }
 
@@ -775,6 +990,7 @@ async function openThread(threadId) {
   clear(dom.streamInner);
   state.items.clear();
   render();
+  syncEmpty();
 }
 
 async function send() {
