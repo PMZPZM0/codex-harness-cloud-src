@@ -20,6 +20,7 @@ import electron from "electron";
 import { app, ipcMain } from "electron";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, extname, join, normalize } from "node:path";
 
 // ⛔ 本机 GPU 进程必崩（exit_code=-1073741819），崩 9 次后整个进程 FATAL 退出 ——
@@ -143,6 +144,29 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
   }
 
   var codex = {};
+  /* ⛔ 浏览器没有原生文件对话框 ⇒ 选图改写为 <input type=file> + 上传（≤2MB，
+     服务端同样硬卡）。返回本地路径，与桌面版选图同形；预览用的自定义协议在
+     浏览器没有对应物，预览可能不显示（发送不受影响）—— 下一阶段接 HTTP 文件读。 */
+  function pickFiles(accept, multiple, isImage) {
+    return new Promise(function (resolve) {
+      var input = document.createElement("input");
+      input.type = "file"; input.accept = accept; input.multiple = !!multiple; input.style.display = "none";
+      document.body.appendChild(input);
+      input.onchange = function () {
+        var files = Array.prototype.slice.call(input.files || []);
+        if (!files.length) { input.remove(); resolve([]); return; }
+        var tooBig = files.find(function (f) { return f.size > 2 * 1024 * 1024; });
+        if (tooBig) { input.remove(); alert("图片「" + tooBig.name + "」超过 2MB 限制"); resolve([]); return; }
+        Promise.all(files.map(function (f) {
+          return fetch("/__upload", { method: "POST", headers: { "Content-Type": "application/octet-stream", "x-file-name": encodeURIComponent(f.name) }, body: f })
+            .then(function (r) { return r.json(); })
+            .then(function (j) { if (!j.ok) throw new Error(j.error || "上传失败"); return j.path; });
+        })).then(function (paths) { input.remove(); resolve(paths); })
+          .catch(function (e) { input.remove(); alert("上传失败：" + (e && e.message || e)); resolve([]); });
+      };
+      input.click();
+    });
+  }
   var CHANNELS = ${JSON.stringify(manifest.channels.map((c) => ({ name: c.name, channel: c.channel, invokeArgs: c.invokeArgs, defaults: parseDefaults(c.paramsDecl) })))};
   for (var entry of CHANNELS) {
     (function (entry) {
@@ -170,6 +194,9 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
   for (var ev of EVENTS) {
     (function (ev) { codex[ev.name] = function (listener) { return subscribe(ev.channel, listener); }; })(ev);
   }
+  codex.chooseImages = function () { return pickFiles("image/*", true, true); };
+  codex.chooseFiles = function () { return pickFiles("*/*", true, false); };
+
   window.codex = codex;
   window.__chcReady = true;   // 界面桥就位（外壳超时兜底读它）
 })();
@@ -196,15 +223,59 @@ function serveFile(res: ServerResponse, file: string) {
   res.end(body);
 }
 
-/** index.html 注入 shim：manifest 内联（必须同步就位，渲染层模块加载前 window.codex 就要存在） */
-function shellHtml(shimJs: string) {
+/* ── 云端选址（与登录门同一铁律：前置探测，不用 <link> 的 error 回退）────────
+   跟随服务器更新的机制：真界面资产在 https://…/cloud/app/（version.json 带
+   manifestSha256）。本机指纹与云端**一致**才用云端（协议匹配 = 可安全更新）；
+   不一致或云端不可达 → 本地 dist 兜底。⇒ 站长重新传 /cloud/app/ = 全体用户刷新即新。 */
+const CLOUD_APP_BASE = process.env.HARNESS_CLOUD_APP_BASE || "https://ppz123.asia/cloud/app";
+const localManifestSha = (() => {
+  try { return createHash("sha256").update(readFileSync(MANIFEST_FILE)).digest("hex").slice(0, 16); } catch { return ""; }
+})();
+
+function shellHtml(shimJs: string, assetBase: string) {
+  // ⛔ 本地 index.html 的资源是相对路径（./assets/...）——用云端资产时必须改写基址。
+  //   注入 <base> 会影响相对链接（icon 等），这里直接把 ./ 前缀替换成资产基址。
   const html = readFileSync(join(DIST_DIR, "index.html"), "utf8");
-  return html.replace("</head>", `<script>${shimJs}</script>\n</head>`);
+  const isCloud = assetBase !== "/__local";
+  let rewritten = isCloud ? html.replace(/(src|href)="\.\//g, `$1="${assetBase}/`) : html;
+  if (isCloud) {
+    // ⛔ dist 自带 CSP（script-src 'self' …）会把跨源的云端资产全拦掉（实测：界面全空）。
+    //   资产在云端时，把站点 Origin 加进 script/style 两个白名单 —— 放行的只有
+    //   站长自己的服务器，不是放开任意外域。
+    const cloudOrigin = new URL(assetBase).origin;
+    rewritten = rewritten
+      .replace(/script-src 'self'/g, `script-src 'self' ${cloudOrigin}`)
+      .replace(/style-src 'self'/g, `style-src 'self' ${cloudOrigin}`);
+  }
+  const cdnMark = `<script>window.__CHC_CDN__ = ${JSON.stringify(assetBase)};</script>\n`;
+  return rewritten.replace("</head>", `${cdnMark}<script>${shimJs}</script>\n</head>`);
 }
 
 function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   const p = url.pathname;
+
+  // ⛔ 传图通道（用户定调：限 2M）。浏览器 <input type=file> → 这里落盘 →
+  //   返回本地路径，渲染层/引擎拿到的与桌面版选图**同形**（都是本地路径）。
+  if (p === "/__upload" && req.method === "POST") {
+    const declared = Number(req.headers["content-length"] || 0);
+    if (declared > 2 * 1024 * 1024) {
+      res.writeHead(413, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: false, error: "图片超过 2MB 限制" }));
+      return;
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (chunk: Buffer) => { size += chunk.length; if (size > 2 * 1024 * 1024) { res.writeHead(413, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: false, error: "图片超过 2MB 限制" })); req.destroy(); } else chunks.push(chunk); });
+    req.on("end", () => {
+      const filename = String(req.headers["x-file-name"] || "image.png").replace(/[\\/:*?"<>|]/g, "_").slice(-80) || "image.png";
+      const dir = join(app.getPath("userData"), "pasted-web");
+      require("node:fs").mkdirSync(dir, { recursive: true });
+      const target = join(dir, `${Date.now()}-${filename}`);
+      require("node:fs").writeFileSync(target, Buffer.concat(chunks));
+      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: true, path: target }));
+    });
+    return;
+  }
 
   if (p === "/__events") {
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
@@ -250,7 +321,7 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
   if (!file.startsWith(normalize(DIST_DIR))) { res.writeHead(403).end(); return; }
   if (!existsSync(file) || statSync(file).isDirectory()) file = join(DIST_DIR, "index.html");
   if (file.endsWith("index.html")) {
-    res.writeHead(200, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" }).end(shellHtml(shimJs));
+    res.writeHead(200, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" }).end(shellHtml(shimJs, assetBaseCache));
     return;
   }
   serveFile(res, file);
@@ -260,6 +331,34 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
 const manifest = JSON.parse(readFileSync(MANIFEST_FILE, "utf8"));
 const onChannels = parseOnChannels(readFileSync(PRELOAD_FILE, "utf8"));
 const shimJs = buildShim(manifest, onChannels);
+
+/* 云端选址：每 60s 重探一次 ⇒ 站长更新 /cloud/app/ 后，用户**下一次刷新页面**即新版，
+   无需动本机任何东西。探测条件：version.json 可达 + protocolVersion 一致 +
+   manifestSha256 与本机一致（UI 与主进程协议必须同源，否则本地兜底）。 */
+let assetBaseCache = "/__local";
+function probeAssetBase(): void {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  fetch(`${CLOUD_APP_BASE}/version.json?t=${Date.now()}`, { signal: controller.signal, cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    .then((meta: { protocolVersion?: number; manifestSha256?: string }) => {
+      clearTimeout(timer);
+      if (Number(meta.protocolVersion) === 1 && meta.manifestSha256 === localManifestSha) {
+        if (assetBaseCache !== CLOUD_APP_BASE) console.log(`[headless] 界面资产切到云端 ${CLOUD_APP_BASE}（跟随服务器更新）`);
+        assetBaseCache = CLOUD_APP_BASE;
+      } else {
+        if (assetBaseCache !== "/__local") console.log(`[headless] 云端 UI 协议不匹配（远端 ${meta.manifestSha256} vs 本机 ${localManifestSha}）→ 本地兜底`);
+        assetBaseCache = "/__local";
+      }
+    })
+    .catch(() => {
+      clearTimeout(timer);
+      if (assetBaseCache !== "/__local") console.log("[headless] 云端不可达 → 本地兜底");
+      assetBaseCache = "/__local";
+    });
+}
+probeAssetBase();
+setInterval(probeAssetBase, 60_000);
 
 createServer((req, res) => route(req, res, shimJs)).listen(PORT, "127.0.0.1", () => {
   console.log(`[headless] 桥与界面就绪 http://127.0.0.1:${PORT}（dist=${DIST_DIR}，invoke=${manifest.channels.length}，events=${onChannels.length}）`);
