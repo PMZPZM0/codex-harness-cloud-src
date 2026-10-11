@@ -18,6 +18,12 @@ directories:
 files:
   - dist/**
   - dist-electron/**
+  # ⛔ 运行期 require 的 .mjs（headless→boot→delegate→dispatch-rpc→video-gen 会 require
+  #   ../../src/lib/*.mjs；漏了安装后启动即崩：Cannot find module '../src/lib/video-providers.mjs'）
+  - src/lib/*.mjs
+  - build/tray.png
+  - build/trayTemplate.png
+  - build/trayTemplate@2x.png
   - electron/ipc-channels.manifest.json
   - electron/preload.ts
   - electron/composition.json
@@ -42,3 +48,5 @@ mac:
 nsis:
   oneClick: true
   runAfterFinish: true
+  # ⛔ 覆盖安装前强杀运行中的助手（托盘应用关不掉 ⇒ 安装器直接卡死，见 build/installer.nsh）
+  include: build/installer.nsh
