@@ -36,7 +36,8 @@ win:
 mac:
   target:
     - zip
-  icon: build/icon.ico
+  # ⛔ mac 只认 .png/.svg/.icns（CI 实证：给 .ico 报 "Unsupported input format"）
+  icon: build/icon.png
   category: public.app-category.developer-tools
 nsis:
   oneClick: true
