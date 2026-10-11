@@ -1,0 +1,7 @@
+{
+  "product": "codex-harness-cloud",
+  "assetVersion": "0.1.0",
+  "protocolVersion": 1,
+  "builtAt": "2026-10-11",
+  "note": "界面资源版本戳。本地伴生服务的外壳靠它判断云端资产在不在（拿不到就整份回落到本地副本）。换界面时请同时更新这里与 package.json 的 version。"
+}
