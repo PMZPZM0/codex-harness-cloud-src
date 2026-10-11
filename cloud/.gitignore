@@ -10,3 +10,7 @@
 # 走查台的中间产物（截图留着当验收证据，日志/探针报告是临时的）
 docs/shots/*-log.txt
 docs/shots/*-report.json
+
+# exe 打包产物与中间件（`npm run build:exe` 随时可重建，不进版本库）
+launcher/dist/
+launcher/.build/
