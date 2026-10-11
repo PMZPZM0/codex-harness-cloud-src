@@ -14,3 +14,6 @@ docs/shots/*-report.json
 # exe 打包产物与中间件（`npm run build:exe` 随时可重建，不进版本库）
 launcher/dist/
 launcher/.build/
+
+# 无头真主进程的运行时 home（独立 userData，防与桌面版单实例/引擎打架）
+.headless-home/
