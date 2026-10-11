@@ -66,8 +66,17 @@ function broadcast(event: WSEvent) {
    实测两层全试过）⇒ 无法在构造层面替换。兜底：监听 app 的 browser-window-created ——
    每个窗口（主窗 / 宠物 / 弹出 / 截图遮罩）创建时立即隐藏 + 摘任务栏 + 包一层
    webContents.send（全部主→渲染事件由此广播给浏览器 SSE）。 */
-app.on("browser-window-created", (_event: unknown, win: { hide: () => void; setSkipTaskbar: (v: boolean) => void; webContents: { send: (channel: string, ...args: unknown[]) => void } }) => {
+app.on("browser-window-created", (_event: unknown, win: { hide: () => void; setSkipTaskbar: (v: boolean) => void; show: () => void; showInactive: () => void; maximize: () => void; restore: () => void; focus: () => void; webContents: { send: (channel: string, ...args: unknown[]) => void } }) => {
   try { win.hide(); win.setSkipTaskbar(true); } catch { /* 忽略 */ }
+  // ⛔ 只在创建时 hide 不够：window-factory 的 ready-to-show/托盘路径会再 show()（实测：白屏自愈页
+  //   顶到用户屏幕上）。无头助手的窗口**永远不可见** ⇒ show/focus 一并短路。
+  try {
+    win.show = () => undefined;
+    win.showInactive = () => undefined;
+    win.maximize = () => undefined;
+    win.restore = () => undefined;
+    win.focus = () => undefined;
+  } catch { /* 忽略 */ }
   const wc = win.webContents;
   const origSend = wc.send.bind(wc);
   wc.send = (channel: string, ...args: unknown[]) => {
