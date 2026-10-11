@@ -5,9 +5,13 @@
 #
 # ⛔ 发布形态（用户定稿）：**精简包 + 工具链按需下载** —— 不带 resources/tools extraResources，
 #   Node/Python/rg 首次启动时由 cloud:tools/* 按需拉取；引擎二进制仍在包内（codex-* vendor 走 asarUnpack）。
+# ⛔ extraMetadata：main 钉成无头入口；version 用助手自己的版本线（不随桌面版 package.json 走）。
 appId: com.codexharness.assistant
 productName: Codex Harness Assistant
 npmRebuild: false
+extraMetadata:
+  main: dist-electron/headless.js
+  version: 0.0.1
 beforePack: scripts/before-pack.cjs
 directories:
   output: release-cloud
