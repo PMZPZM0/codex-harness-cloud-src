@@ -149,6 +149,11 @@ export class CodexServer extends EventEmitter {
     this.apiKey = value;
   }
 
+  /** 云版/headless 兜底判断：当前是否已有非空 key（boot 用它决定要不要补位）。 */
+  hasApiKey() {
+    return this.apiKey.length > 0;
+  }
+
   setExternalEnv(value: Record<string, string>) {
     this.externalEnv = value;
   }
