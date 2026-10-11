@@ -87,6 +87,19 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
   #login .status.warn { color: #f0a35c; }
   #login .status.bad { color: #ec7a70; }
   #login .why { font-size: 11.5px; opacity: .55; margin-top: 14px; line-height: 1.7; }
+
+  /* 账号步（登录/注册）与步骤指示 */
+  #login .steps { display: flex; gap: 6px; margin-bottom: 14px; font-size: 11px; }
+  #login .steps .st { padding: 3px 9px; border-radius: 999px; border: 1px solid #ffffff1f; opacity: .55; }
+  #login .steps .st.on { border-color: #4c8df6; opacity: 1; color: #7cabf8; }
+  html[data-theme="light"] #login .steps .st { border-color: #00000014; }
+  #login .alt { margin-top: 10px; font-size: 12px; text-align: center; }
+  #login .alt a { color: #7cabf8; cursor: pointer; text-decoration: underline; }
+  html[data-theme="light"] #login .alt a { color: #2f6bdd; }
+  #login .acct { font-size: 12px; opacity: .7; margin: -6px 0 14px; }
+  #login .acct b { color: inherit; opacity: 1; }
+  #login .out { font-size: 11.5px; margin-top: 12px; text-align: right; }
+  #login .out a { cursor: pointer; text-decoration: underline; opacity: .7; }
 </style>
 </head>
 <body>
@@ -175,38 +188,146 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
   }
 
   /* ── ②' 登录门（仅 connector 模式）────────────────────────────────────────
-     个人配对码：由机主 `--add-user 名字` 签发，一人一个、长期有效。
+     两步：① 账号（站长服务器注册/登录，防滥用）② 个人配对码（绑定这台电脑的助手）。
      配对成功 → 把 token 经 URL **fragment**（#t=…，不进服务器日志）带到本机界面，
      本机外壳收下后立即抹掉。网页到这里就交差了 —— 界面是本机的，不是云端的。 */
-  function renderLogin(agentBase) {
-    boot.hidden = true;
-    gate.hidden = true;
-    login.hidden = false;
+  var ACCOUNT_BASE = "/cloud-api";   // 站长服务器上的账号服务（Caddy 反代到 127.0.0.1:8091）
+
+  function accountFetch(path, opts, ms) {
+    var headers = { "Content-Type": "application/json" };
+    var session = ls("chc-session");
+    if (session) headers.Authorization = "Bearer " + session;
+    if (opts && opts.headers) for (var k in opts.headers) headers[k] = opts.headers[k];
+    return fetchWithTimeout(ACCOUNT_BASE + path, {
+      method: (opts && opts.method) || "GET",
+      headers: headers,
+      body: opts && opts.body ? JSON.stringify(opts.body) : undefined,
+    }, ms || AGENT_PROBE_MS * 2).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
+    });
+  }
+
+  function stepBar(current) {
+    var bar = document.createElement("div");
+    bar.className = "steps";
+    var one = document.createElement("span"); one.className = "st" + (current === 1 ? " on" : ""); one.textContent = "① 账号";
+    var two = document.createElement("span"); two.className = "st" + (current === 2 ? " on" : ""); two.textContent = "② 连接电脑";
+    bar.appendChild(one); bar.appendChild(two);
+    return bar;
+  }
+
+  function renderAccount(agentBase, presetPair) {
+    boot.hidden = true; gate.hidden = true; login.hidden = false;
     login.innerHTML = "";
+    login.appendChild(stepBar(1));
 
-    var brand = document.createElement("div");
-    brand.className = "brand";
+    var brand = document.createElement("div"); brand.className = "brand";
     brand.appendChild(document.createTextNode("Codex Harness"));
-    var em = document.createElement("em"); em.textContent = "Cloud";
-    brand.appendChild(em);
+    var em = document.createElement("em"); em.textContent = "Cloud"; brand.appendChild(em);
 
-    var desc = document.createElement("p");
-    desc.className = "desc";
-    desc.textContent = "登录到这台电脑上的助手。干活的界面由你本机的 Codex Harness 桌面助手提供 —— 网页只负责安全地连上它。";
+    var mode = { v: "login" };   // login | register
+    var userInput = document.createElement("input");
+    userInput.className = "code"; userInput.id = "acct-user";
+    userInput.placeholder = "用户名（3~24 位字母数字）"; userInput.autocomplete = "username"; userInput.maxLength = 24;
+    userInput.style.letterSpacing = "0"; userInput.style.fontSize = "13.5px"; userInput.style.fontFamily = "inherit";
+    var passInput = document.createElement("input");
+    passInput.className = "code"; passInput.id = "acct-pass"; passInput.type = "password";
+    passInput.placeholder = "密码（至少 8 位）"; passInput.autocomplete = "current-password";
+    passInput.style.letterSpacing = "0"; passInput.style.fontSize = "13.5px";
+
+    var status = document.createElement("p"); status.className = "status";
+    var go = document.createElement("button");
+    go.className = "go"; go.textContent = "登录";
+    var alt = document.createElement("p"); alt.className = "alt";
+
+    function renderMode() {
+      go.textContent = mode.v === "login" ? "登录" : "注册新账号";
+      alt.innerHTML = "";
+      var link = document.createElement("a");
+      link.textContent = mode.v === "login" ? "没有账号？注册一个" : "已有账号？去登录";
+      link.onclick = function () { mode.v = mode.v === "login" ? "register" : "login"; status.textContent = ""; renderMode(); };
+      alt.appendChild(link);
+      passInput.setAttribute("autocomplete", mode.v === "login" ? "current-password" : "new-password");
+    }
+    function submit() {
+      var username = (userInput.value || "").trim();
+      var password = passInput.value || "";
+      if (!username || !password) { status.textContent = "请填用户名和密码"; status.className = "status warn"; return; }
+      go.disabled = true; status.textContent = mode.v === "login" ? "正在登录…" : "正在注册…"; status.className = "status";
+      accountFetch(mode.v === "login" ? "/login" : "/register", { method: "POST", body: { username: username, password: password } })
+        .then(function (res) {
+          if (!res.ok || !res.j || !res.j.ok || !res.j.token) {
+            status.textContent = (res.j && res.j.error) || "失败（" + res.status + "）";
+            status.className = "status bad"; go.disabled = false;
+            return;
+          }
+          lsSet("chc-session", res.j.token);
+          if (res.j.account && res.j.account.role === "admin") lsSet("chc-role", "admin"); else try { localStorage.removeItem("chc-role"); } catch (e) { /* 忽略 */ }
+          status.textContent = "登录成功";
+          renderPairing(agentBase, presetPair);
+        })
+        .catch(function (error) {
+          status.textContent = "账号服务不可达（" + (error && error.message ? error.message : "网络") + "）";
+          status.className = "status bad"; go.disabled = false;
+        });
+    }
+    go.onclick = submit;
+    userInput.addEventListener("keydown", function (e) { if (e.key === "Enter") passInput.focus(); });
+    passInput.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
+
+    login.appendChild(brand);
+    var desc = document.createElement("p"); desc.className = "desc";
+    desc.textContent = "登录你的账号。数据与执行都在各自电脑上，账号只用于访问管理与防滥用。";
+    login.appendChild(desc);
+    login.appendChild(userInput);
+    login.appendChild(document.createElement("br"));
+    login.appendChild(passInput);
+    login.appendChild(go);
+    login.appendChild(status);
+    login.appendChild(alt);
+    renderMode();
+    userInput.focus();
+  }
+
+  function renderPairing(agentBase, presetPair) {
+    boot.hidden = true; gate.hidden = true; login.hidden = false;
+    login.innerHTML = "";
+    login.appendChild(stepBar(2));
+    // 已登录身份 + 退出
+    var who = ls("chc-session");
+    if (who) {
+      accountFetch("/me").then(function (res) {
+        if (!res.ok) return;
+        var acct = document.createElement("p"); acct.className = "acct";
+        acct.appendChild(document.createTextNode("当前账号："));
+        var b = document.createElement("b"); b.textContent = res.j.account.username;
+        acct.appendChild(b);
+        if (res.j.account.role === "admin") {
+          var adminLink = document.createElement("a"); adminLink.textContent = "（用户管理）";
+          adminLink.style.marginLeft = "6px"; adminLink.style.cursor = "pointer"; adminLink.style.textDecoration = "underline";
+          adminLink.onclick = function () { window.open("admin.html", "_blank"); };
+          acct.appendChild(adminLink);
+        }
+        login.appendChild(acct);
+        var out = document.createElement("p"); out.className = "out";
+        var outLink = document.createElement("a"); outLink.textContent = "退出登录";
+        outLink.onclick = function () {
+          accountFetch("/logout", { method: "POST" }).catch(function () { /* 忽略 */ });
+          try { localStorage.removeItem("chc-session"); } catch (e) { /* 忽略 */ }
+          renderAccount(agentBase);
+        };
+        out.appendChild(outLink); login.appendChild(out);
+      }).catch(function () { /* 身份拿不到也不挡配对 */ });
+    }
 
     var label = document.createElement("label");
-    label.textContent = "个人配对码";
-    label.setAttribute("for", "login-code");
-
+    label.textContent = "个人配对码"; label.setAttribute("for", "login-code");
     var input = document.createElement("input");
     input.className = "code"; input.id = "login-code";
     input.placeholder = "8 位十六进制"; input.maxLength = 8;
     input.autocomplete = "off"; input.spellcheck = false;
-    input.setAttribute("aria-label", "个人配对码");
-
-    var status = document.createElement("p");
-    status.className = "status";
-
+    if (presetPair) input.value = String(presetPair).toLowerCase();
+    var status = document.createElement("p"); status.className = "status";
     var go = document.createElement("button");
     go.className = "go"; go.textContent = "连接我的电脑";
     go.onclick = function () {
@@ -230,7 +351,6 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
             return;
           }
           status.textContent = "已连接，正在进入界面…";
-          // token 走 #fragment：不进服务器日志；本机外壳收下后立刻抹掉
           window.location.href = agentBase + "/#t=" + encodeURIComponent(res.j.token);
         })
         .catch(function (error) {
@@ -246,8 +366,6 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
     why.textContent = "没有个人配对码？找这台电脑的主人签发一个（助手控制台：--add-user 你的名字）。" +
       "登录后本机会记住这台设备，下次从本机界面直接进。";
 
-    login.appendChild(brand);
-    login.appendChild(desc);
     login.appendChild(label);
     login.appendChild(input);
     login.appendChild(go);
@@ -256,7 +374,7 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
     input.focus();
   }
 
-  /** connector 模式的主流程：找到本机服务 → 登录门（不再载入云端界面）。 */
+  /** connector 模式的主流程：找到本机助手 → 账号步 → 配对步。 */
   function runConnector() {
     say("正在寻找本机助手…");
     findAgent().then(function (agent) {
@@ -268,13 +386,12 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
         );
         return;
       }
-      // 带 ?pair= 进来（旧链接 / 控制台点开）：自动填入
       var preset = new URLSearchParams(location.search).get("pair");
-      renderLogin(agent.base);
-      if (preset) {
-        var input = document.getElementById("login-code");
-        if (input) { input.value = preset.toLowerCase(); input.focus(); }
-      }
+      // 已有云端会话且有效 → 直接进配对步；否则先账号
+      accountFetch("/me").then(function (res) {
+        if (res.ok && res.j && res.j.ok) renderPairing(agent.base, preset);
+        else renderAccount(agent.base, preset);
+      }).catch(function () { renderAccount(agent.base, preset); });
     }).catch(function (error) {
       showGate("连接失败", String(error && error.message ? error.message : error), null);
     });

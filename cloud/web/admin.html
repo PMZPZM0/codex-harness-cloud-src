@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark light" />
+<title>用户管理 · Codex Harness Cloud</title>
+<!-- ⛔ 自足页：只依赖本文件与 /cloud-api/*，云端原样托管即可用（外壳双模式的同一铁律）。 -->
+<style>
+  :root { color-scheme: dark; }
+  html[data-theme="light"] { color-scheme: light; }
+  html, body { margin: 0; min-height: 100%; background: #1b1b1a; color: #ececea; font: 13px/1.6 Inter, "Segoe UI", system-ui, "Microsoft YaHei", sans-serif; }
+  html[data-theme="light"] body { background: #fff; color: #23231f; }
+  button, input { appearance: none; -webkit-appearance: none; font: inherit; }
+  .wrap { max-width: 860px; margin: 40px auto; padding: 0 16px; }
+  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .head h1 { font-size: 16px; margin: 0; flex: 1; }
+  .head .who { font-size: 12px; opacity: .7; }
+  .card { border: 1px solid #ffffff1f; background: #ffffff0a; border-radius: 12px; padding: 18px 20px; }
+  html[data-theme="light"] .card { border-color: #00000014; background: #00000005; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; color: #a6a6a1; font-weight: 500; padding: 6px 8px; border-bottom: 1px solid #ffffff1f; font-size: 11.5px; }
+  html[data-theme="light"] th { border-color: #00000014; }
+  td { padding: 8px; border-bottom: 1px solid #ffffff10; vertical-align: top; }
+  html[data-theme="light"] td { border-color: #00000010; }
+  td .name { font-weight: 600; }
+  td .ops { display: flex; gap: 6px; flex-wrap: wrap; }
+  button.act { padding: 3px 10px; border-radius: 6px; border: 1px solid #ffffff2e; background: #ffffff12; color: inherit; cursor: pointer; font-size: 11.5px; }
+  html[data-theme="light"] button.act { border-color: #0000002e; background: #00000008; }
+  button.act:hover { background: #ffffff1f; }
+  html[data-theme="light"] button.act:hover { background: #00000012; }
+  button.act.danger { color: #ec7a70; border-color: #ec7a7055; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; border: 1px solid #ffffff2e; }
+  html[data-theme="light"] .tag { border-color: #0000002e; }
+  .tag.admin { color: #f0a35c; }
+  .tag.off { color: #ec7a70; }
+  .tag.on { color: #58c085; }
+  .status { min-height: 18px; font-size: 12.5px; margin: 10px 0 0; }
+  .status.bad { color: #ec7a70; }
+  .status.ok { color: #58c085; }
+  dialog { border: 1px solid #ffffff2e; border-radius: 12px; background: #222221; color: inherit; padding: 20px; min-width: 320px; }
+  html[data-theme="light"] dialog { background: #fff; border-color: #0000002e; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  dialog input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid #ffffff2e; background: #ffffff0f; color: inherit; margin: 6px 0 12px; font-family: ui-monospace, Consolas, monospace; }
+  html[data-theme="light"] dialog input { border-color: #0000002e; background: #00000008; }
+  dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+  a { color: #7cabf8; }
+  html[data-theme="light"] a { color: #2f6bdd; }
+  .hint { font-size: 11.5px; opacity: .55; margin-top: 14px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>用户管理 · Codex Harness Cloud</h1>
+    <span class="who" id="who"></span>
+    <button class="act" id="logout">退出</button>
+  </div>
+
+  <div class="card" id="gate">
+    <div id="gate-body">
+      <p style="margin:0 0 12px">管理员登录后才能管理用户。</p>
+      <label style="display:block;font-size:12px;opacity:.8;margin-bottom:4px">用户名</label>
+      <input id="u" autocomplete="username" style="width:240px;display:block;padding:8px 10px;border-radius:8px;border:1px solid #ffffff2e;background:#ffffff0f;color:inherit;font-family:inherit" />
+      <label style="display:block;font-size:12px;opacity:.8;margin:10px 0 4px">密码</label>
+      <input id="p" type="password" autocomplete="current-password" style="width:240px;display:block;padding:8px 10px;border-radius:8px;border:1px solid #ffffff2e;background:#ffffff0f;color:inherit;font-family:inherit" />
+      <button class="act" id="go" style="margin-top:12px;padding:7px 16px">登录</button>
+      <p class="status" id="gate-status"></p>
+    </div>
+  </div>
+
+  <div class="card" id="panel" hidden>
+    <table>
+      <thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>最近登录</th><th>操作</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="status" id="status"></p>
+    <p class="hint">
+      · 停用 = 立即踢下线并禁止登录（会话与配对 token 都失效）；删除 = 连同账号一起移除，不可恢复。<br>
+      · 这里的账号只管**网站访问身份**；用户电脑上的助手与配对码不受影响。
+    </p>
+  </div>
+</div>
+
+<dialog id="dlg">
+  <form method="dialog" onsubmit="return false">
+    <div id="dlg-title" style="font-weight:600;margin-bottom:10px"></div>
+    <div id="dlg-body"></div>
+    <div class="row">
+      <button class="act" id="dlg-cancel">取消</button>
+      <button class="act" id="dlg-ok" style="border-color:#4c8df6;color:#7cabf8">确定</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  "use strict";
+  var API = "/cloud-api";
+  var session = null;
+  try { session = localStorage.getItem("chc-session"); } catch (e) { /* 忽略 */ }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var statusEl = $("status");
+  function say(text, cls) { statusEl.textContent = text; statusEl.className = "status" + (cls ? " " + cls : ""); }
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = { "Content-Type": "application/json" };
+    if (session) headers.Authorization = "Bearer " + session;
+    return fetch(API + path, { method: opts.method || "GET", headers: headers, body: opts.body ? JSON.stringify(opts.body) : undefined })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); });
+  }
+  function fmtTime(ms) { if (!ms) return "—"; var d = new Date(ms); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0") + " " + String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"); }
+
+  /* 简易确认弹窗（返回 Promise<boolean>） */
+  function confirmBox(title, message, inputPlaceholder) {
+    return new Promise(function (resolve) {
+      var dlg = $("dlg");
+      $("dlg-title").textContent = title;
+      var body = $("dlg-body"); body.innerHTML = "";
+      var msg = document.createElement("p"); msg.style.margin = "0 0 10px"; msg.textContent = message; body.appendChild(msg);
+      var input = null;
+      if (inputPlaceholder !== undefined) {
+        input = document.createElement("input"); input.placeholder = inputPlaceholder; body.appendChild(input);
+      }
+      var done = false;
+      $("dlg-cancel").onclick = function () { done = true; dlg.close(); resolve(null); };
+      $("dlg-ok").onclick = function () {
+        if (done) return; done = true;
+        dlg.close(); resolve(input ? input.value : true);
+      };
+      dlg.addEventListener("close", function () { if (!done) { done = true; resolve(null); } }, { once: true });
+      dlg.showModal();
+      if (input) input.focus();
+    });
+  }
+
+  function render(users, me) {
+    var rows = $("rows"); rows.innerHTML = "";
+    for (var i = users.length - 1; i >= 0; i--) {
+      (function (u) {
+        var tr = document.createElement("tr");
+        var td1 = document.createElement("td");
+        td1.appendChild(Object.assign(document.createElement("span"), { className: "name", textContent: u.username }));
+        tr.appendChild(td1);
+        var td2 = document.createElement("td");
+        td2.appendChild(Object.assign(document.createElement("span"), { className: "tag" + (u.role === "admin" ? " admin" : ""), textContent: u.role === "admin" ? "管理员" : "用户" }));
+        tr.appendChild(td2);
+        var td3 = document.createElement("td");
+        td3.appendChild(Object.assign(document.createElement("span"), { className: "tag " + (u.disabled ? "off" : "on"), textContent: u.disabled ? "已停用" : "正常" }));
+        tr.appendChild(td3);
+        var td4 = document.createElement("td"); td4.textContent = fmtTime(u.lastLogin); tr.appendChild(td4);
+        var td5 = document.createElement("td"); td5.className = "ops";
+        var toggle = document.createElement("button");
+        toggle.className = "act"; toggle.textContent = u.disabled ? "启用" : "停用";
+        toggle.onclick = function () {
+          confirmBox(u.disabled ? "启用账号" : "停用账号", "确定要" + (u.disabled ? "启用" : "停用") + "「" + u.username + "」吗？" + (u.disabled ? "" : "该用户会立即被踢下线且无法登录。")).then(function (ok) {
+            if (!ok) return;
+            api("/admin/users/" + encodeURIComponent(u.username) + "/" + (u.disabled ? "enable" : "disable"), { method: "POST" })
+              .then(function (r) { if (r.ok) { say("已" + (u.disabled ? "启用" : "停用") + " " + u.username, "ok"); load(); } else say(r.j && r.j.error || "失败", "bad"); });
+          });
+        };
+        td5.appendChild(toggle);
+        var reset = document.createElement("button");
+        reset.className = "act"; reset.textContent = "重置密码";
+        reset.onclick = function () {
+          confirmBox("重置密码", "给「" + u.username + "」设置一个新密码（至少 8 位）：", "新密码").then(function (pw) {
+            if (!pw) return;
+            api("/admin/users/" + encodeURIComponent(u.username) + "/reset-password", { method: "POST", body: { password: pw } })
+              .then(function (r) { if (r.ok) { say("已重置 " + u.username + " 的密码", "ok"); } else say(r.j && r.j.error || "失败", "bad"); });
+          });
+        };
+        td5.appendChild(reset);
+        var del = document.createElement("button");
+        del.className = "act danger"; del.textContent = "删除";
+        del.onclick = function () {
+          confirmBox("删除账号", "⚠ 不可恢复：确定删除「" + u.username + "」？").then(function (ok) {
+            if (!ok) return;
+            api("/admin/users/" + encodeURIComponent(u.username) + "/delete", { method: "POST" })
+              .then(function (r) { if (r.ok) { say("已删除 " + u.username, "ok"); load(); } else say(r.j && r.j.error || "失败", "bad"); });
+          });
+        };
+        td5.appendChild(del);
+        tr.appendChild(td5);
+        rows.appendChild(tr);
+      })(users[i]);
+    }
+    $("who").textContent = "管理员：" + me;
+  }
+
+  function load() {
+    api("/admin/users").then(function (r) {
+      if (r.status === 401 || r.status === 403) { showGate("会话已过期，请重新登录"); return; }
+      if (!r.ok) { say(r.j && r.j.error || "加载失败", "bad"); return; }
+      api("/me").then(function (m) {
+        $("panel").hidden = false; $("gate").hidden = true;
+        render(r.j.users || [], m.j && m.j.account ? m.j.account.username : "?");
+      });
+    });
+  }
+
+  function showGate(message) {
+    try { localStorage.removeItem("chc-session"); } catch (e) { /* 忽略 */ }
+    session = null;
+    $("panel").hidden = true; $("gate").hidden = false;
+    $("gate-status").textContent = message || "";
+  }
+
+  $("go").onclick = function () {
+    var u = $("u").value.trim(), p = $("p").value;
+    if (!u || !p) { $("gate-status").textContent = "请填用户名和密码"; return; }
+    $("gate-status").textContent = "登录中…";
+    api("/login", { method: "POST", body: { username: u, password: p } }).then(function (r) {
+      if (!r.ok || !r.j.ok) { $("gate-status").textContent = r.j && r.j.error || "登录失败"; return; }
+      if (r.j.account.role !== "admin") { $("gate-status").textContent = "该账号不是管理员"; return; }
+      session = r.j.token;
+      try { localStorage.setItem("chc-session", session); } catch (e) { /* 忽略 */ }
+      load();
+    }).catch(function () { $("gate-status").textContent = "账号服务不可达"; });
+  };
+  $("p").addEventListener("keydown", function (e) { if (e.key === "Enter") $("go").click(); });
+  $("logout").onclick = function () {
+    api("/logout", { method: "POST" }).catch(function () { /* 忽略 */ });
+    showGate("已退出");
+  };
+
+  // 进页先拿会话试一次
+  if (session) {
+    api("/me").then(function (r) {
+      if (r.ok && r.j.ok && r.j.account.role === "admin") load();
+      else showGate("该账号不是管理员");
+    }).catch(function () { showGate("账号服务不可达"); });
+  } else showGate("");
+})();
+</script>
+</body>
+</html>
