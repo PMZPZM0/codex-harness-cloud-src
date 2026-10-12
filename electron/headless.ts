@@ -335,6 +335,19 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
   }
   connect();
 
+  // ⛔⛔ 未配对就**立刻**弹配对框，不等第一次 invoke 401（10-12 用户实测）：
+  //   新手打开页面时渲染层可能还没发出任何 invoke ⇒ 界面上什么都不出现，
+  //   用户既看不到配对框也不知道该干嘛（"配对窗口也没有"）。
+  //   shim 注入在 </head> 前 ⇒ body 可能还没解析，必须等 DOMContentLoaded。
+  function pairIfNeeded() {
+    if (!tok()) showPairBox();
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", pairIfNeeded);
+  } else {
+    pairIfNeeded();
+  }
+
   function invoke(channel, args) {
     return new Promise(function (resolve, reject) {
       var id = String(nextId++);
