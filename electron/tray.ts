@@ -19,6 +19,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { isAssistantRuntime } from "./updates";
 import { openInBrowser, assistantUrl } from "./open-browser";
+import { showAssistantWindow } from "./assistant-window";
 
 export type AppTrayDeps = {
   /** 主窗口（可能尚未创建 / 已销毁 ⇒ 调用方每次都现取） */
@@ -74,13 +75,15 @@ export function buildAppTrayMenu(deps: AppTrayDeps): MenuItemConstructorOptions[
         else deps.showMainWindow();
       },
     },
-    // 仅助手形态出现：把本地界面（含配对框）弹到默认浏览器
+    // 仅助手形态出现：把本地界面（含配对框）带到前台（应用窗口，不再是浏览器标签页）
     ...(assistant
       ? [
           {
             label: "打开助手界面",
             click: () => {
-              if (!openInBrowser(assistantUrl())) deps.showMainWindow();
+              void showAssistantWindow().then((ok) => {
+                if (!ok) openInBrowser(assistantUrl());
+              });
             },
           },
         ]
