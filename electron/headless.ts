@@ -23,6 +23,8 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
+import { openInBrowser, assistantUrl } from "./open-browser";
+import { getAssistantWindow, isAssistantWindowPending, showAssistantWindow } from "./assistant-window";
 
 // ⛔ 本机 GPU 进程必崩（exit_code=-1073741819），崩 9 次后整个进程 FATAL 退出 ——
 //   与走查台同一配方，必须在 app 就绪**之前**挂上。
@@ -34,6 +36,20 @@ app.disableHardwareAcceleration();
  *   `CodexHarnessAssistant-*` 资产，绝不跟桌面版的 `v*` 串（同一仓库两条产品线）。
  *   必须在 require("./main") 之前打：域模块加载时就会读它。 */
 process.env.HARNESS_ASSISTANT = "1";
+
+/* ⛔⛔ 与桌面版**彻底拆开**（10-12 用户：「全部拆开——禁止共享数据目录和安装目录」）
+ *   事故根因：助手包内 package.json 的 name/productName 与桌面版相同 ⇒
+ *     ① 同一个 userData（`%APPDATA%/codex-harness-desktop`）⇒ **同一个单实例锁**：
+ *        两者不能同时运行，后启动的静默退出（"幽灵应用"）；
+ *     ② AUMID 相同（main.ts 写死 com.codexharness.desktop）⇒ **任务栏分组与托盘图标身份相同**，
+ *        互相顶掉（"任务栏没有、托盘也没有"）。
+ *   ⇒ 在 require("./main") 之前钉死独立数据目录（走 resolveStartupUserData 的 env 分支，
+ *     与 data-dir.ts 的优先级一致）与独立 AUMID。安装目录的隔离在打包侧
+ *     （electron-builder.assistant.yml 的 extraMetadata.name + nsis.installDirectoryName）。 */
+if (!process.env.CODEX_HARNESS_USER_DATA) {
+  process.env.CODEX_HARNESS_USER_DATA = join(app.getPath("appData"), "codex-assistant");
+}
+try { app.setAppUserModelId("com.codexharness.assistant"); } catch { /* 非 win 平台忽略 */ }
 
 const PORT = Number(process.env.HARNESS_HEADLESS_PORT || 8917);
 const DIST_DIR = process.env.HARNESS_DIST_DIR || join(__dirname, "..", "dist");
@@ -81,9 +97,27 @@ function broadcast(event: WSEvent) {
 
 /* ⛔ electron 模块的 BrowserWindow 属性是**只读 getter**（赋值/defineProperty 都被拒，
    实测两层全试过）⇒ 无法在构造层面替换。兜底：监听 app 的 browser-window-created ——
-   每个窗口（主窗 / 宠物 / 弹出 / 截图遮罩）创建时立即隐藏 + 摘任务栏 + 包一层
-   webContents.send（全部主→渲染事件由此广播给浏览器 SSE）。 */
+   每个窗口创建时包一层 webContents.send（全部主→渲染事件由此广播给浏览器 SSE）。
+
+   10-12 用户定调（"配对走浏览器一次就行，后面要像正常应用一样启动"）：
+   助手**自己管一个可见主窗口**（加载 http://127.0.0.1:PORT/，含 shim ⇒ 配对框就在窗口里），
+   桌面版 window-factory 的主窗 / 宠物 / 弹出 / 截图遮罩**仍旧隐藏 + 摘任务栏 + 短路 show**。
+   区分办法：创建助手窗前置 `pendingAssistantWindow` 旗（browser-window-created 在
+   `new BrowserWindow()` 内**同步**触发，晚于构造返回，所以必须用旗而不是事后比对）。 */
+
 app.on("browser-window-created", (_event: unknown, win: { hide: () => void; setSkipTaskbar: (v: boolean) => void; show: () => void; showInactive: () => void; maximize: () => void; restore: () => void; focus: () => void; webContents: { send: (channel: string, ...args: unknown[]) => void } }) => {
+  if (isAssistantWindowPending()) {
+    // 助手主窗口：保持可见与任务栏，只包事件广播（与隐藏窗口同一套广播，别处不套）
+    try {
+      const wc = win.webContents;
+      const origSend = wc.send.bind(wc);
+      wc.send = (channel: string, ...args: unknown[]) => {
+        broadcast({ event: channel, payload: args.length <= 1 ? args[0] : args });
+        return origSend(channel, ...args);
+      };
+    } catch { /* 忽略 */ }
+    return;
+  }
   try { win.hide(); win.setSkipTaskbar(true); } catch { /* 忽略 */ }
   // ⛔ 只在创建时 hide 不够：window-factory 的 ready-to-show/托盘路径会再 show()（实测：白屏自愈页
   //   顶到用户屏幕上）。无头助手的窗口**永远不可见** ⇒ show/focus 一并短路。
@@ -119,19 +153,35 @@ if (electronDialog) {
   try {
     const origOpen = electronDialog.showOpenDialog.bind(electronDialog);
     const origSave = electronDialog.showSaveDialog.bind(electronDialog);
-    // 域层传 (window, options) 或 (options)：统一剥出 options 再调原生（不依赖隐藏窗口）
+    // 域层传 (window, options) 或 (options)：统一剥出 options。
+    // ⛔⛔ 父窗口必须换成**助手自己的可见窗口**（10-12 用户报「云助手没有本地项目地址」）：
+    //   域层传进来的 mainWindow 在助手形态下是 null（助手不再创建桌面版主窗），而此前几版
+    //   那个被藏起来的主窗当父窗口时，Windows 会把模态对话框一起"藏"掉 ⇒ 点「选择项目地址」
+    //   什么都不弹。改成挂到 assistant-window 上（可见窗口）⇒ 对话框正常出现在窗口前面。
     const optsOf = (a: unknown[]) => (a.length >= 2 ? a[1] : a[0]);
+    const parentOf = () => {
+      const w = getAssistantWindow();
+      return w ? (w as unknown as never) : null;
+    };
+    const callOpen = (opts: unknown) => {
+      const parent = parentOf();
+      return parent ? origOpen(parent, opts as never) : origOpen(opts as never);
+    };
+    const callSave = (opts: unknown) => {
+      const parent = parentOf();
+      return parent ? origSave(parent, opts as never) : origSave(opts as never);
+    };
     const wrapOpen = (...a: unknown[]) => {
       const next = dialogAnswers.shift();
       if (next) { console.log(`[headless] 对话框桥：消费预置答案 ${JSON.stringify(next.filePaths)}`); return Promise.resolve(next); }
-      if (DIALOG_MODE === "native") return origOpen(optsOf(a) as never);
+      if (DIALOG_MODE === "native") return callOpen(optsOf(a));
       console.log("[headless] 对话框桥：cancel 模式无预置答案 → canceled");
       return Promise.resolve({ canceled: true, filePaths: [] });
     };
     const wrapSave = (...a: unknown[]) => {
       const next = dialogAnswers.shift();
       if (next) return Promise.resolve({ canceled: false, filePath: next.filePaths[0] });
-      if (DIALOG_MODE === "native") return origSave(optsOf(a) as never);
+      if (DIALOG_MODE === "native") return callSave(optsOf(a));
       return Promise.resolve({ canceled: true, filePath: undefined });
     };
     // ⛔ electron 模块方法一般可赋值（ipcMain.handle 同例）；defineProperty 兜一层。
@@ -238,6 +288,11 @@ function bridgeAuthOk(req: IncomingMessage, url: URL): boolean {
 }
 const PAIR_MAX_TRIES = 10;
 const PAIR_LOCK_MS = 60_000;
+// 界面内一键签发（/api/issue-code）的限流：60 秒窗口内最多 3 次
+const ISSUE_MAX = 3;
+const ISSUE_WINDOW_MS = 60_000;
+let issueWindow = 0;
+let issueLockedUntil = 0;
 let pairTries = 0;
 let pairLockedUntil = 0;
 
@@ -298,14 +353,34 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
     var head = document.createElement("div"); head.textContent = "连接这台电脑的助手";
     head.style.cssText = "font-size:15px;font-weight:600;margin-bottom:6px";
     var tip = document.createElement("div");
-    tip.textContent = "输入个人配对码（助手控制台 --add-user 名字 签发）；或在 ppz123.asia 登录后连接。";
+    tip.textContent = "第一次用这台电脑？点下面「在本机签发一个配对码」，生成后会自动填入 —— 不用命令行。";
     tip.style.cssText = "font-size:12.5px;color:#666;line-height:1.6;margin-bottom:12px";
     var input = document.createElement("input");
     input.placeholder = "8 位配对码"; input.maxLength = 8; input.autocomplete = "off";
     input.style.cssText = "width:100%;box-sizing:border-box;padding:8px 10px;font-size:14px;letter-spacing:4px;text-align:center;border:1px solid #ccc;border-radius:8px;margin-bottom:10px";
+    var issue = document.createElement("button"); issue.textContent = "在本机签发一个配对码";
+    issue.style.cssText = "width:100%;padding:8px 0;background:#fff;color:#185fa5;border:1px solid #185fa5;border-radius:8px;font-size:13px;cursor:pointer;margin-bottom:8px";
     var btn = document.createElement("button"); btn.textContent = "连接";
     btn.style.cssText = "width:100%;padding:9px 0;background:#185fa5;color:#fff;border:none;border-radius:8px;font-size:13.5px;cursor:pointer";
     var st = document.createElement("div"); st.style.cssText = "font-size:12px;color:#a32d2d;margin-top:8px;min-height:16px";
+    // 一键签发：调本机 /api/issue-code，拿到码自动填进输入框（随后点「连接」即可）
+    issue.onclick = function () {
+      issue.disabled = true; st.style.color = "#666"; st.textContent = "正在签发…";
+      fetch("/api/issue-code", { method: "POST", headers: { "Content-Type": "application/json", "x-harness-client": "web" }, body: JSON.stringify({}) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j || !j.ok) {
+            st.textContent = j && j.error === "too_many" ? "签发太频繁，请等一分钟" : "签发失败：" + ((j && j.error) || "未知");
+            st.style.color = "#a32d2d"; issue.disabled = false; return;
+          }
+          input.value = j.code;
+          st.style.color = "#2f7d32";
+          st.textContent = "已为「" + j.name + "」签发，点「连接」即可";
+          issue.disabled = false;
+          btn.focus();
+        })
+        .catch(function () { st.textContent = "网络错误"; issue.disabled = false; });
+    };
     btn.onclick = function () {
       var code = (input.value || "").trim().toLowerCase();
       if (!code) { st.textContent = "请输入配对码"; return; }
@@ -323,16 +398,68 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
         .catch(function () { st.textContent = "网络错误"; btn.disabled = false; });
     };
     input.addEventListener("keydown", function (e) { if (e.key === "Enter") btn.click(); });
-    card.appendChild(head); card.appendChild(tip); card.appendChild(input); card.appendChild(btn); card.appendChild(st);
+    card.appendChild(head); card.appendChild(tip); card.appendChild(issue); card.appendChild(input); card.appendChild(btn); card.appendChild(st);
     box.appendChild(card); document.body.appendChild(box);
     input.focus();
   }
+  // ⛔ 助手品牌覆盖（10-12 用户：「左上角 logo 改成 Codex Assistant，颜色也换一种，方便区分」）
+  //   云助手与桌面版**共用同一份界面**（同一套 dist）⇒ 只能在运行期改：把侧栏品牌名换成
+  //   "Codex Assistant"，并把图标换成青绿色内联 SVG（桌面版是蓝色 PNG）。
+  //   live 渲染会被 React 重渲染覆盖 ⇒ 用 MutationObserver 守着重新打标。
+  var ASSISTANT_BRAND = "Codex Assistant";
+  var ASSISTANT_LOGO =
+    "data:image/svg+xml;charset=utf-8," +
+    encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0' +
+        '" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A78BFA"/><stop offset=".55" stop-color="#7C' +
+        '3AED"/><stop offset="1" stop-color="#3B1D8F"/></linearGradient><radialGradient id="w" cx=".5" cy' +
+        '=".5" r=".5"><stop offset="0" stop-color="#FFE9C2" stop-opacity=".5"/><stop offset="1" stop-colo' +
+        'r="#FFE9C2" stop-opacity="0"/></radialGradient></defs><rect width="512" height="512" rx="116" fi' +
+        'll="url(#g)"/><circle cx="362" cy="150" r="84" fill="url(#w)"/><path d="M148 196 L300 256 L148 3' +
+        '16" fill="none" stroke="#FFFFFF" stroke-width="58" stroke-linecap="round" stroke-linejoin="round' +
+        '"/><path d="M330 330 L414 330" fill="none" stroke="#FFFFFF" stroke-opacity=".55" stroke-width="2' +
+        '4" stroke-linecap="round"/><path d="M362 96 L370 134 L408 142 L370 150 L362 188 L354 150 L316 14' +
+        '2 L354 134 Z" fill="#FFD66B"/></svg>'
+    );
+  function applyAssistantBrand() {
+    try {
+      var name = document.querySelector(".brand-row .brand-name");
+      if (name && name.textContent !== ASSISTANT_BRAND) name.textContent = ASSISTANT_BRAND;
+      var logo = document.querySelector("img.ch-logo-img");
+      if (logo && logo.getAttribute("src") !== ASSISTANT_LOGO) logo.setAttribute("src", ASSISTANT_LOGO);
+    } catch (e) { /* 忽略 */ }
+  }
+  var brandObserver = null;
+  function watchAssistantBrand() {
+    applyAssistantBrand();
+    if (brandObserver || typeof MutationObserver === "undefined") return;
+    brandObserver = new MutationObserver(function () { applyAssistantBrand(); });
+    brandObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
   function connect() {
     var es = new EventSource("/__events?t=" + encodeURIComponent(tok()));
     es.onmessage = function (m) { try { emit(JSON.parse(m.data)); } catch (e) { /* 忽略坏帧 */ } };
     es.onerror = function () { es.close(); setTimeout(connect, 1200); };   // 断线重连
   }
   connect();
+
+  // ⛔⛔ 未配对就**立刻**弹配对框，不等第一次 invoke 401（10-12 用户实测）：
+  //   新手打开页面时渲染层可能还没发出任何 invoke ⇒ 界面上什么都不出现，
+  //   用户既看不到配对框也不知道该干嘛（"配对窗口也没有"）。
+  //   shim 注入在 </head> 前 ⇒ body 可能还没解析，必须等 DOMContentLoaded。
+  function pairIfNeeded() {
+    if (!tok()) showPairBox();
+  }
+  function onReady() {
+    watchAssistantBrand();
+    pairIfNeeded();
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", onReady);
+  } else {
+    onReady();
+  }
 
   function invoke(channel, args) {
     return new Promise(function (resolve, reject) {
@@ -497,6 +624,41 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     return;
   }
 
+  // ── 本机签发配对码（10-12 用户：「配对码从哪里来 / 新手都不知道咋用」）──────────
+  // 此前唯一入口是命令行 `--add-user`（普通用户不会用）。现在配对框里一键签发：
+  //   名称可选，留空则自动叫「本机用户」。签发即返回，界面上直接展示/填入。
+  // ⛔ 为什么这个端点**不过 token 闸**：未配对时本来就没有 token，一上闸就死锁。
+  //   信任边界说明：服务只绑 127.0.0.1 ⇒ 能调它的只有本机进程，而本机进程本来就能直接读
+  //   users.json / 跑 --add-user，所以不额外暴露。仍加限流（60 秒窗口内 3 次）防脚本刷。
+  if (p === "/api/issue-code" && req.method === "POST") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    if (Date.now() < issueLockedUntil) { deny(429, { ok: false, error: "too_many", retryAfterMs: issueLockedUntil - Date.now() }); return; }
+    issueWindow += 1;
+    if (issueWindow > ISSUE_MAX) { issueLockedUntil = Date.now() + ISSUE_WINDOW_MS; issueWindow = 0; console.log("[issue] 签发过于频繁，锁定 60 秒"); deny(429, { ok: false, error: "too_many" }); return; }
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; if (raw.length > 4 * 1024) req.destroy(); });
+    req.on("end", () => {
+      let name = "";
+      try { name = String((JSON.parse(raw || "{}") as { name?: unknown }).name || "").trim().slice(0, 32); } catch { /* 空 body 也可 */ }
+      if (!name) name = `本机用户-${randomBytes(2).toString("hex")}`;
+      try {
+        const users = loadChcUsers();
+        // 同名则复用（重新签发一把新码，旧的作废）——避免点两次生成两个"本机用户"
+        const idx = users.findIndex((u) => u.name === name);
+        const user: ChcUser = { name, code: randomBytes(4).toString("hex"), token: randomBytes(24).toString("hex"), createdAt: Date.now() };
+        if (idx >= 0) users[idx] = user;
+        else users.push(user);
+        persistChcUsers(users);
+        console.log(`[issue] 已签发配对码：用户「${name}」（界面内一键签发）`);
+        deny(200, { ok: true, code: user.code, name: user.name });
+      } catch (error) {
+        console.error("[issue] 签发失败：", error);
+        deny(500, { ok: false, error: "issue_failed" });
+      }
+    });
+    return;
+  }
+
   // ⛔ /__* 状态通道逐一上 token 闸（静态外壳不挡 —— 它要自己消费 #t / 弹配对框）
 
   // ⛔ 传图通道（用户定调：限 2M）。浏览器 <input type=file> → 这里落盘 →
@@ -647,23 +809,34 @@ require("./main");
    什么都看不到（实测 bug）。改为：真实通道照常执行（保留 popout 登记/事件路由），
    然后**在用户默认浏览器里弹独立标签页** http://127.0.0.1:8917/?popout=<threadId>
    —— 同一套 dist + 同一份 shim，浏览器标签页就是无头版的"独立窗口"。
-   ⛔ 必须在 require("./main") 之后包（handler 由域模块注册）。 */
-import { spawn as nodeSpawn } from "node:child_process";
+   ⛔ 必须在 require("./main") 之后包（handler 由域模块注册）。
+   弹浏览器动作收敛到 electron/open-browser.ts（启动自动弹 / 托盘项共用同一份实现）。 */
 const popoutHandler = invokeHandlers.get("window:popout-thread");
 if (popoutHandler) {
   invokeHandlers.set("window:popout-thread", async (event, ...args) => {
     const result = await popoutHandler(event, ...args);
     const threadId = String(args[0] ?? "");
-    try {
-      const url = `http://127.0.0.1:${PORT}/?popout=${encodeURIComponent(threadId)}`;
-      // ⛔ mac 适配：cmd /c start 是 Windows 专属；darwin 用 open，其余 xdg-open
-      const openCmd = process.platform === "win32" ? "cmd" : process.platform === "darwin" ? "open" : "xdg-open";
-      const openArgs = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-      nodeSpawn(openCmd, openArgs, { detached: true, stdio: "ignore", windowsHide: true }).unref();
-      console.log(`[headless] 独立窗口 → 浏览器标签页 ${url}`);
-    } catch (error) { console.error("[headless] 弹浏览器独立窗口失败：", error); }
+    const url = `http://127.0.0.1:${PORT}/?popout=${encodeURIComponent(threadId)}`;
+    if (openInBrowser(url)) console.log(`[headless] 独立窗口 → 浏览器标签页 ${url}`);
     return result;
   });
 } else {
   console.error("[headless] ⛔ window:popout-thread 无 handler，独立窗口桥未接线");
+}
+
+/* ── ⑦ 启动后把界面递给用户（10-12 两次迭代）────────────────────────────────
+   0.0.2 症状：装完「什么都不出现」（无可见窗口 + 没人开浏览器 + 托盘没有入口）。
+   0.0.3 症状（用户反馈）："打开主界面就是浏览器，只有配对那一下该用浏览器吧？"
+   ⇒ 定稿：**助手自己开一个可见的应用窗口**（加载 http://127.0.0.1:PORT/，含 shim ⇒
+   配对框就在窗口里，首次配对也在窗口内完成，不用碰浏览器）；任务栏有图标、关窗只是
+   隐藏（服务继续给浏览器 / 手机用）。浏览器打开仍旧可用（同一地址），只是不再是主形态。
+   ⛔ 窗口创建失败（极端环境）才兜底弹浏览器 —— 别让用户面前又什么都没有。 */
+if (process.env.HARNESS_ASSISTANT === "1") {
+  // 延迟一拍：等 main.ts 的引擎/托盘把首屏数据备好，窗口加载出来就有内容（而不是白屏转圈）
+  setTimeout(() => {
+    void showAssistantWindow().then((ok) => {
+      if (ok) console.log("[headless] 助手启动 → 已开应用窗口");
+      else if (openInBrowser(assistantUrl())) console.log(`[headless] 窗口创建失败 → 兜底弹浏览器 ${assistantUrl()}`);
+    });
+  }, 1500);
 }

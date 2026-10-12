@@ -17,6 +17,10 @@
 import { app, nativeImage, Menu, Tray, shell, type BrowserWindow, type MenuItemConstructorOptions } from "electron";
 import path from "node:path";
 import { existsSync } from "node:fs";
+import { isAssistantRuntime } from "./updates";
+import { openInBrowser, assistantUrl } from "./open-browser";
+import { showAssistantWindow } from "./assistant-window";
+import { findBuildAsset } from "./app-icon";
 
 export type AppTrayDeps = {
   /** 主窗口（可能尚未创建 / 已销毁 ⇒ 调用方每次都现取） */
@@ -38,10 +42,14 @@ export type AppTrayDeps = {
 
 let tray: Tray | null = null;
 
-/** 托盘图标路径：dev 下 `app.getAppPath()` = 仓库根，打包后 = app.asar 根（两处都有 build/，见 package.json.files）。 */
+/** 托盘图标路径：打包后 `app.getAppPath()` = app.asar 根（build/tray*.png 在 files 白名单里）。
+ *  ⛔⛔ dev 下不能只认 appPath（10-12 用户实证「托盘是默认原子」）：快捷方式传的是入口脚本
+ *  绝对路径 ⇒ appPath = dist-electron ⇒ appPath/build/tray.png 不存在 ⇒ Tray 拿到空图。
+ *  解析走 app-icon.ts 唯一真相源（多源兜底）；末位保留旧路径作兜底占位（行为同旧版）。 */
 export function trayIconPath(): string {
   // macOS 用「模板图」（文件名须以 Template 结尾，Electron 会自动带上 @2x）；其余平台用彩色图。
-  return path.join(app.getAppPath(), "build", process.platform === "darwin" ? "trayTemplate.png" : "tray.png");
+  const name = process.platform === "darwin" ? "trayTemplate.png" : "tray.png";
+  return findBuildAsset(name) ?? path.join(app.getAppPath(), "build", name);
 }
 
 /** 主窗口当前是不是"已经在用户眼前"（可见且聚焦）。没聚焦时点托盘应把窗口带上来，而不是又把它藏掉。 */
@@ -61,6 +69,9 @@ export function buildAppTrayMenu(deps: AppTrayDeps): MenuItemConstructorOptions[
   const visible = alive && (win as BrowserWindow).isVisible();
   const running = deps.activeTurnCount();
   const closeToTray = deps.readCloseToTray();
+  // 助手（headless）形态：主窗口永远隐藏 ⇒「显示主窗口」点了也没用，界面在浏览器里
+  // （10-12 实测 0.0.2：用户装完看不到任何界面，托盘也没有入口，只能自己猜 8917）。
+  const assistant = isAssistantRuntime();
   return [
     {
       label: visible ? "隐藏主窗口" : "显示主窗口",
@@ -69,6 +80,19 @@ export function buildAppTrayMenu(deps: AppTrayDeps): MenuItemConstructorOptions[
         else deps.showMainWindow();
       },
     },
+    // 仅助手形态出现：把本地界面（含配对框）带到前台（应用窗口，不再是浏览器标签页）
+    ...(assistant
+      ? [
+          {
+            label: "打开助手界面",
+            click: () => {
+              void showAssistantWindow().then((ok) => {
+                if (!ok) openInBrowser(assistantUrl());
+              });
+            },
+          },
+        ]
+      : []),
     {
       // 实时状态行：数字每回合都在变，所以这行**只读**（enabled:false 会被系统画成灰字，这里用 label 表达）
       label: running > 0 ? `运行中：${running} 个任务` : "空闲",
@@ -94,7 +118,8 @@ export function buildAppTrayMenu(deps: AppTrayDeps): MenuItemConstructorOptions[
       },
     },
     { type: "separator" },
-    { label: "退出 Codex Harness Desktop", click: () => deps.quit() },
+    // 退出项按形态取名（助手线叫 Codex Assistant，桌面版叫 Codex Harness Desktop）
+    { label: assistant ? "退出 Codex Assistant" : "退出 Codex Harness Desktop", click: () => deps.quit() },
   ];
 }
 
@@ -110,7 +135,8 @@ export function createAppTray(deps: AppTrayDeps): Tray {
     image.setTemplateImage(true);
   }
   tray = new Tray(image);
-  tray.setToolTip(`Codex Harness Desktop ${app.getVersion()}`);
+  // ⛔ 品牌名跟形态走（10-12 用户把助手全面改名 Codex Assistant；托盘悬停还顶着桌面版名）
+  tray.setToolTip(`${isAssistantRuntime() ? "Codex Assistant" : "Codex Harness Desktop"} ${app.getVersion()}`);
 
   if (process.platform === "darwin") {
     // macOS 约定：点菜单栏图标 = 展开它的菜单（不做"点一下藏窗口"，那在 mac 上很反直觉）
