@@ -20,9 +20,12 @@ type AssistantWin = {
   focus: () => void;
   hide: () => void;
   isDestroyed: () => boolean;
+  setTitle: (t: string) => void;
   loadURL: (url: string) => Promise<void>;
   on: (event: string, cb: (e?: { preventDefault: () => void }) => void) => void;
 };
+
+const WINDOW_TITLE = "Codex Harness Assistant";
 
 let pending = false;
 let win: AssistantWin | null = null;
@@ -47,7 +50,7 @@ export async function createAssistantWindow(): Promise<boolean> {
       height: 860,
       minWidth: 960,
       minHeight: 640,
-      title: "Codex Harness Assistant",
+      title: WINDOW_TITLE,
       show: true,
       autoHideMenuBar: true,
       backgroundColor: "#f7f7f5",
@@ -59,6 +62,11 @@ export async function createAssistantWindow(): Promise<boolean> {
   }
   pending = false;
   const w = created as unknown as AssistantWin;
+  // ⛔ 标题必须钉住：页面 HTML 的 <title> 是桌面版那套（"Codex Harness" / "…Desktop"），
+  //   加载后 Electron 默认会用它覆盖窗口标题（10-12 实测：助手窗口顶着桌面版的名字）。
+  //   page-title-updated 里 preventDefault ⇒ 标题恒为 WINDOW_TITLE。
+  w.on("page-title-updated", (e) => e?.preventDefault());
+  w.setTitle(WINDOW_TITLE);
   // 关窗只隐藏（保服务）；closed 后清引用，下次 show 时重建
   w.on("close", (e) => {
     e?.preventDefault();
