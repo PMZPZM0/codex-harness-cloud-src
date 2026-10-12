@@ -17,6 +17,8 @@
 import { app, nativeImage, Menu, Tray, shell, type BrowserWindow, type MenuItemConstructorOptions } from "electron";
 import path from "node:path";
 import { existsSync } from "node:fs";
+import { isAssistantRuntime } from "./updates";
+import { openInBrowser, assistantUrl } from "./open-browser";
 
 export type AppTrayDeps = {
   /** 主窗口（可能尚未创建 / 已销毁 ⇒ 调用方每次都现取） */
@@ -61,6 +63,9 @@ export function buildAppTrayMenu(deps: AppTrayDeps): MenuItemConstructorOptions[
   const visible = alive && (win as BrowserWindow).isVisible();
   const running = deps.activeTurnCount();
   const closeToTray = deps.readCloseToTray();
+  // 助手（headless）形态：主窗口永远隐藏 ⇒「显示主窗口」点了也没用，界面在浏览器里
+  // （10-12 实测 0.0.2：用户装完看不到任何界面，托盘也没有入口，只能自己猜 8917）。
+  const assistant = isAssistantRuntime();
   return [
     {
       label: visible ? "隐藏主窗口" : "显示主窗口",
@@ -69,6 +74,17 @@ export function buildAppTrayMenu(deps: AppTrayDeps): MenuItemConstructorOptions[
         else deps.showMainWindow();
       },
     },
+    // 仅助手形态出现：把本地界面（含配对框）弹到默认浏览器
+    ...(assistant
+      ? [
+          {
+            label: "打开助手界面",
+            click: () => {
+              if (!openInBrowser(assistantUrl())) deps.showMainWindow();
+            },
+          },
+        ]
+      : []),
     {
       // 实时状态行：数字每回合都在变，所以这行**只读**（enabled:false 会被系统画成灰字，这里用 label 表达）
       label: running > 0 ? `运行中：${running} 个任务` : "空闲",
