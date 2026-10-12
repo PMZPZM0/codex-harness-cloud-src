@@ -258,6 +258,11 @@ function bridgeAuthOk(req: IncomingMessage, url: URL): boolean {
 }
 const PAIR_MAX_TRIES = 10;
 const PAIR_LOCK_MS = 60_000;
+// 界面内一键签发（/api/issue-code）的限流：60 秒窗口内最多 3 次
+const ISSUE_MAX = 3;
+const ISSUE_WINDOW_MS = 60_000;
+let issueWindow = 0;
+let issueLockedUntil = 0;
 let pairTries = 0;
 let pairLockedUntil = 0;
 
@@ -318,14 +323,34 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
     var head = document.createElement("div"); head.textContent = "连接这台电脑的助手";
     head.style.cssText = "font-size:15px;font-weight:600;margin-bottom:6px";
     var tip = document.createElement("div");
-    tip.textContent = "输入个人配对码（助手控制台 --add-user 名字 签发）；或在 ppz123.asia 登录后连接。";
+    tip.textContent = "第一次用这台电脑？点下面「在本机签发一个配对码」，生成后会自动填入 —— 不用命令行。";
     tip.style.cssText = "font-size:12.5px;color:#666;line-height:1.6;margin-bottom:12px";
     var input = document.createElement("input");
     input.placeholder = "8 位配对码"; input.maxLength = 8; input.autocomplete = "off";
     input.style.cssText = "width:100%;box-sizing:border-box;padding:8px 10px;font-size:14px;letter-spacing:4px;text-align:center;border:1px solid #ccc;border-radius:8px;margin-bottom:10px";
+    var issue = document.createElement("button"); issue.textContent = "在本机签发一个配对码";
+    issue.style.cssText = "width:100%;padding:8px 0;background:#fff;color:#185fa5;border:1px solid #185fa5;border-radius:8px;font-size:13px;cursor:pointer;margin-bottom:8px";
     var btn = document.createElement("button"); btn.textContent = "连接";
     btn.style.cssText = "width:100%;padding:9px 0;background:#185fa5;color:#fff;border:none;border-radius:8px;font-size:13.5px;cursor:pointer";
     var st = document.createElement("div"); st.style.cssText = "font-size:12px;color:#a32d2d;margin-top:8px;min-height:16px";
+    // 一键签发：调本机 /api/issue-code，拿到码自动填进输入框（随后点「连接」即可）
+    issue.onclick = function () {
+      issue.disabled = true; st.style.color = "#666"; st.textContent = "正在签发…";
+      fetch("/api/issue-code", { method: "POST", headers: { "Content-Type": "application/json", "x-harness-client": "web" }, body: JSON.stringify({}) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j || !j.ok) {
+            st.textContent = j && j.error === "too_many" ? "签发太频繁，请等一分钟" : "签发失败：" + ((j && j.error) || "未知");
+            st.style.color = "#a32d2d"; issue.disabled = false; return;
+          }
+          input.value = j.code;
+          st.style.color = "#2f7d32";
+          st.textContent = "已为「" + j.name + "」签发，点「连接」即可";
+          issue.disabled = false;
+          btn.focus();
+        })
+        .catch(function () { st.textContent = "网络错误"; issue.disabled = false; });
+    };
     btn.onclick = function () {
       var code = (input.value || "").trim().toLowerCase();
       if (!code) { st.textContent = "请输入配对码"; return; }
@@ -343,7 +368,7 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
         .catch(function () { st.textContent = "网络错误"; btn.disabled = false; });
     };
     input.addEventListener("keydown", function (e) { if (e.key === "Enter") btn.click(); });
-    card.appendChild(head); card.appendChild(tip); card.appendChild(input); card.appendChild(btn); card.appendChild(st);
+    card.appendChild(head); card.appendChild(tip); card.appendChild(issue); card.appendChild(input); card.appendChild(btn); card.appendChild(st);
     box.appendChild(card); document.body.appendChild(box);
     input.focus();
   }
@@ -526,6 +551,41 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
       pairTries = 0;
       console.log(`[pair] 用户「${hit.name}」配对成功（真界面助手）`);
       deny(200, { ok: true, token: hit.token, account: { userId: hit.name, name: hit.name }, protocolVersion: 1 });
+    });
+    return;
+  }
+
+  // ── 本机签发配对码（10-12 用户：「配对码从哪里来 / 新手都不知道咋用」）──────────
+  // 此前唯一入口是命令行 `--add-user`（普通用户不会用）。现在配对框里一键签发：
+  //   名称可选，留空则自动叫「本机用户」。签发即返回，界面上直接展示/填入。
+  // ⛔ 为什么这个端点**不过 token 闸**：未配对时本来就没有 token，一上闸就死锁。
+  //   信任边界说明：服务只绑 127.0.0.1 ⇒ 能调它的只有本机进程，而本机进程本来就能直接读
+  //   users.json / 跑 --add-user，所以不额外暴露。仍加限流（60 秒窗口内 3 次）防脚本刷。
+  if (p === "/api/issue-code" && req.method === "POST") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    if (Date.now() < issueLockedUntil) { deny(429, { ok: false, error: "too_many", retryAfterMs: issueLockedUntil - Date.now() }); return; }
+    issueWindow += 1;
+    if (issueWindow > ISSUE_MAX) { issueLockedUntil = Date.now() + ISSUE_WINDOW_MS; issueWindow = 0; console.log("[issue] 签发过于频繁，锁定 60 秒"); deny(429, { ok: false, error: "too_many" }); return; }
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; if (raw.length > 4 * 1024) req.destroy(); });
+    req.on("end", () => {
+      let name = "";
+      try { name = String((JSON.parse(raw || "{}") as { name?: unknown }).name || "").trim().slice(0, 32); } catch { /* 空 body 也可 */ }
+      if (!name) name = `本机用户-${randomBytes(2).toString("hex")}`;
+      try {
+        const users = loadChcUsers();
+        // 同名则复用（重新签发一把新码，旧的作废）——避免点两次生成两个"本机用户"
+        const idx = users.findIndex((u) => u.name === name);
+        const user: ChcUser = { name, code: randomBytes(4).toString("hex"), token: randomBytes(24).toString("hex"), createdAt: Date.now() };
+        if (idx >= 0) users[idx] = user;
+        else users.push(user);
+        persistChcUsers(users);
+        console.log(`[issue] 已签发配对码：用户「${name}」（界面内一键签发）`);
+        deny(200, { ok: true, code: user.code, name: user.name });
+      } catch (error) {
+        console.error("[issue] 签发失败：", error);
+        deny(500, { ok: false, error: "issue_failed" });
+      }
     });
     return;
   }
