@@ -23,12 +23,18 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
+import { openInBrowser, assistantUrl } from "./open-browser";
 
 // ⛔ 本机 GPU 进程必崩（exit_code=-1073741819），崩 9 次后整个进程 FATAL 退出 ——
 //   与走查台同一配方，必须在 app 就绪**之前**挂上。
 app.commandLine.appendSwitch("in-process-gpu");
 app.commandLine.appendSwitch("no-sandbox");
 app.disableHardwareAcceleration();
+
+/* ⛔ 助手运行时标记（10-11）：更新源按产品线分开——助手只认 `cloud-v*` tag 与
+ *   `CodexHarnessAssistant-*` 资产，绝不跟桌面版的 `v*` 串（同一仓库两条产品线）。
+ *   必须在 require("./main") 之前打：域模块加载时就会读它。 */
+process.env.HARNESS_ASSISTANT = "1";
 
 const PORT = Number(process.env.HARNESS_HEADLESS_PORT || 8917);
 const DIST_DIR = process.env.HARNESS_DIST_DIR || join(__dirname, "..", "dist");
@@ -642,23 +648,28 @@ require("./main");
    什么都看不到（实测 bug）。改为：真实通道照常执行（保留 popout 登记/事件路由），
    然后**在用户默认浏览器里弹独立标签页** http://127.0.0.1:8917/?popout=<threadId>
    —— 同一套 dist + 同一份 shim，浏览器标签页就是无头版的"独立窗口"。
-   ⛔ 必须在 require("./main") 之后包（handler 由域模块注册）。 */
-import { spawn as nodeSpawn } from "node:child_process";
+   ⛔ 必须在 require("./main") 之后包（handler 由域模块注册）。
+   弹浏览器动作收敛到 electron/open-browser.ts（启动自动弹 / 托盘项共用同一份实现）。 */
 const popoutHandler = invokeHandlers.get("window:popout-thread");
 if (popoutHandler) {
   invokeHandlers.set("window:popout-thread", async (event, ...args) => {
     const result = await popoutHandler(event, ...args);
     const threadId = String(args[0] ?? "");
-    try {
-      const url = `http://127.0.0.1:${PORT}/?popout=${encodeURIComponent(threadId)}`;
-      // ⛔ mac 适配：cmd /c start 是 Windows 专属；darwin 用 open，其余 xdg-open
-      const openCmd = process.platform === "win32" ? "cmd" : process.platform === "darwin" ? "open" : "xdg-open";
-      const openArgs = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-      nodeSpawn(openCmd, openArgs, { detached: true, stdio: "ignore", windowsHide: true }).unref();
-      console.log(`[headless] 独立窗口 → 浏览器标签页 ${url}`);
-    } catch (error) { console.error("[headless] 弹浏览器独立窗口失败：", error); }
+    const url = `http://127.0.0.1:${PORT}/?popout=${encodeURIComponent(threadId)}`;
+    if (openInBrowser(url)) console.log(`[headless] 独立窗口 → 浏览器标签页 ${url}`);
     return result;
   });
 } else {
   console.error("[headless] ⛔ window:popout-thread 无 handler，独立窗口桥未接线");
+}
+
+/* ── ⑦ 启动后把界面递给用户（10-12 修：0.0.2 装完「什么都不出现」）─────────────
+   助手是 headless 形态：没有可见窗口（窗口永远隐藏），启动链路里若没有人主动开浏览器，
+   用户面前就什么都没有 —— 服务在跑、托盘在，但看不到界面也更看不到配对框。
+   ⛔ 只对助手形态生效（HARNESS_ASSISTANT 由本文件开头打下）；桌面版窗口形态不受影响。 */
+if (process.env.HARNESS_ASSISTANT === "1") {
+  // 延迟一拍：等 main.ts 的引擎/托盘把首屏数据备好，浏览器进来就有内容（而不是白屏转圈）
+  setTimeout(() => {
+    if (openInBrowser(assistantUrl())) console.log(`[headless] 助手启动 → 已弹浏览器 ${assistantUrl()}`);
+  }, 1500);
 }
