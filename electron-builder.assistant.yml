@@ -11,7 +11,7 @@ productName: Codex Harness Assistant
 npmRebuild: false
 extraMetadata:
   main: dist-electron/headless.js
-  version: 0.0.2
+  version: 0.0.3
 beforePack: scripts/before-pack.cjs
 directories:
   output: release-cloud
