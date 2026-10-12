@@ -24,13 +24,22 @@ export const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/
 export const GITHUB_RELEASES_LIST_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
 
 /* ══════════════════════════════════════════════════════════════════════════
- * 云助手（同一仓库的**第二条产品线**）—— 更新源必须与桌面版分开（10-11 用户报「助手
- * 抓到桌面版的更新了」）：
- *   桌面版：tag `v*`、资产 `Codex.Harness.Desktop-*`
- *   云助手：tag `cloud-v*`、资产 `CodexHarnessAssistant-*`
- * `/releases/latest` 只认最高版本 ⇒ 助手（0.0.1 线）会看到 v0.0.38 直接报"有新版"，
- * 装了就把助手换成桌面版。**助手因此走 releases 列表 + tag 前缀过滤**，永不碰 latest。
+ * 云助手（**独立仓** `codex-harness-cloud-src`，10-12）—— 更新源与桌面版彻底分开：
+ *   桌面版：仓 `codex-harness-desktop`、tag `v*`、资产 `Codex.Harness.Desktop-*`
+ *   云助手：仓 `codex-harness-cloud-src`、tag `cloud-v*`、资产 `CodexHarnessAssistant-*`
+ *
+ * ⛔⛔ **为什么助手要独立仓（10-12，私有仓 Actions 分钟耗尽事件的延伸）**：
+ *   此前助手把包装到**桌面版那个仓**里发布，靠 tag 前缀做产品线隔离。代价有两个：
+ *   ① 两条产品线共用一个仓 ⇒ 任何一边的发布/撤版都会互相牵连；
+ *   ② **私有仓的 Actions 分钟是计费的**，额度用尽时作业会**秒失败且拿不到 runner**
+ *      （`runner=(未分配)` + `步骤数=0`），表现为「推了 tag 却什么都没发生」——
+ *      10-12 的 v0.1.3 就是这样静默失败的。**公开仓的 Actions 分钟免费**。
+ *   现在助手源码仓 `codex-harness-cloud-src` 已转公开 ⇒ 自己构建、自己发布，桌面版仓零牵连。
+ *   ⛔ tag 前缀 `cloud-v*` 与资产前缀 `CodexHarnessAssistant-*` **仍然保留**：
+ *      一个仓里可能同时存在历史 `cloud-v*` 与将来的 `v*`，前缀是第二道保险。
  * ══════════════════════════════════════════════════════════════════════════ */
+export const ASSISTANT_REPO = "PMZPZM0/codex-harness-cloud-src";
+export const ASSISTANT_RELEASES_LIST_API = `https://api.github.com/repos/${ASSISTANT_REPO}/releases`;
 export const ASSISTANT_TAG_PREFIX = "cloud-v";
 export const ASSISTANT_ASSET_PREFIX = "CodexHarnessAssistant-";
 export const ASSISTANT_CHANNEL = "assistant";
@@ -199,6 +208,8 @@ export async function checkLatestUpdate(
  * 为什么不能复用 /releases/latest：latest 是全仓最高版本，助手（0.0.1 线）会看到
  * 桌面版的 v0.0.38 并把它当"新版本"——装了就把助手换成桌面版（同仓不同产品线的典型串味）。
  * 因此这里拉 releases **列表**按前缀过滤；网络同样走国内镜像序（gh-proxy → ghfast → 直连）。
+ * ⛔ 10-12：列表源已改为**助手自己的公开仓** `codex-harness-cloud-src`（`ASSISTANT_REPO`），
+ *   tag 前缀 `cloud-v*` 与资产前缀仍保留作第二道保险。
  */
 export async function checkAssistantUpdate(
   currentVersion: string,
@@ -207,7 +218,11 @@ export async function checkAssistantUpdate(
 ): Promise<LatestInfo> {
   let lastError: unknown = new Error("no_candidate");
   let releases: any[] | null = null;
-  for (const candidate of mirrorCandidates(GITHUB_RELEASES_LIST_API)) {
+  /* ⛔ 10-12：列表源从「桌面版那个仓」换成**助手自己的公开仓** `codex-harness-cloud-src`
+     （见 ASSISTANT_REPO 的注释：独立仓才能各自吃免费 Actions 分钟）。
+     镜像序不变（gh-proxy → ghfast → 直连）：助手仓已公开 ⇒ 匿名可读 ⇒ 镜像能用，
+     这正是「必须走国内镜像」成立的前提（私有仓镜像读不到，只能直连）。 */
+  for (const candidate of mirrorCandidates(ASSISTANT_RELEASES_LIST_API)) {
     try {
       const res = await requestJson(candidate);
       if (res.status < 200 || res.status >= 300) {
