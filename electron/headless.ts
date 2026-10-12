@@ -24,6 +24,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
 import { openInBrowser, assistantUrl } from "./open-browser";
+import { isAssistantWindowPending, showAssistantWindow } from "./assistant-window";
 
 // ⛔ 本机 GPU 进程必崩（exit_code=-1073741819），崩 9 次后整个进程 FATAL 退出 ——
 //   与走查台同一配方，必须在 app 就绪**之前**挂上。
@@ -82,9 +83,27 @@ function broadcast(event: WSEvent) {
 
 /* ⛔ electron 模块的 BrowserWindow 属性是**只读 getter**（赋值/defineProperty 都被拒，
    实测两层全试过）⇒ 无法在构造层面替换。兜底：监听 app 的 browser-window-created ——
-   每个窗口（主窗 / 宠物 / 弹出 / 截图遮罩）创建时立即隐藏 + 摘任务栏 + 包一层
-   webContents.send（全部主→渲染事件由此广播给浏览器 SSE）。 */
+   每个窗口创建时包一层 webContents.send（全部主→渲染事件由此广播给浏览器 SSE）。
+
+   10-12 用户定调（"配对走浏览器一次就行，后面要像正常应用一样启动"）：
+   助手**自己管一个可见主窗口**（加载 http://127.0.0.1:PORT/，含 shim ⇒ 配对框就在窗口里），
+   桌面版 window-factory 的主窗 / 宠物 / 弹出 / 截图遮罩**仍旧隐藏 + 摘任务栏 + 短路 show**。
+   区分办法：创建助手窗前置 `pendingAssistantWindow` 旗（browser-window-created 在
+   `new BrowserWindow()` 内**同步**触发，晚于构造返回，所以必须用旗而不是事后比对）。 */
+
 app.on("browser-window-created", (_event: unknown, win: { hide: () => void; setSkipTaskbar: (v: boolean) => void; show: () => void; showInactive: () => void; maximize: () => void; restore: () => void; focus: () => void; webContents: { send: (channel: string, ...args: unknown[]) => void } }) => {
+  if (isAssistantWindowPending()) {
+    // 助手主窗口：保持可见与任务栏，只包事件广播（与隐藏窗口同一套广播，别处不套）
+    try {
+      const wc = win.webContents;
+      const origSend = wc.send.bind(wc);
+      wc.send = (channel: string, ...args: unknown[]) => {
+        broadcast({ event: channel, payload: args.length <= 1 ? args[0] : args });
+        return origSend(channel, ...args);
+      };
+    } catch { /* 忽略 */ }
+    return;
+  }
   try { win.hide(); win.setSkipTaskbar(true); } catch { /* 忽略 */ }
   // ⛔ 只在创建时 hide 不够：window-factory 的 ready-to-show/托盘路径会再 show()（实测：白屏自愈页
   //   顶到用户屏幕上）。无头助手的窗口**永远不可见** ⇒ show/focus 一并短路。
@@ -676,13 +695,19 @@ if (popoutHandler) {
   console.error("[headless] ⛔ window:popout-thread 无 handler，独立窗口桥未接线");
 }
 
-/* ── ⑦ 启动后把界面递给用户（10-12 修：0.0.2 装完「什么都不出现」）─────────────
-   助手是 headless 形态：没有可见窗口（窗口永远隐藏），启动链路里若没有人主动开浏览器，
-   用户面前就什么都没有 —— 服务在跑、托盘在，但看不到界面也更看不到配对框。
-   ⛔ 只对助手形态生效（HARNESS_ASSISTANT 由本文件开头打下）；桌面版窗口形态不受影响。 */
+/* ── ⑦ 启动后把界面递给用户（10-12 两次迭代）────────────────────────────────
+   0.0.2 症状：装完「什么都不出现」（无可见窗口 + 没人开浏览器 + 托盘没有入口）。
+   0.0.3 症状（用户反馈）："打开主界面就是浏览器，只有配对那一下该用浏览器吧？"
+   ⇒ 定稿：**助手自己开一个可见的应用窗口**（加载 http://127.0.0.1:PORT/，含 shim ⇒
+   配对框就在窗口里，首次配对也在窗口内完成，不用碰浏览器）；任务栏有图标、关窗只是
+   隐藏（服务继续给浏览器 / 手机用）。浏览器打开仍旧可用（同一地址），只是不再是主形态。
+   ⛔ 窗口创建失败（极端环境）才兜底弹浏览器 —— 别让用户面前又什么都没有。 */
 if (process.env.HARNESS_ASSISTANT === "1") {
-  // 延迟一拍：等 main.ts 的引擎/托盘把首屏数据备好，浏览器进来就有内容（而不是白屏转圈）
+  // 延迟一拍：等 main.ts 的引擎/托盘把首屏数据备好，窗口加载出来就有内容（而不是白屏转圈）
   setTimeout(() => {
-    if (openInBrowser(assistantUrl())) console.log(`[headless] 助手启动 → 已弹浏览器 ${assistantUrl()}`);
+    void showAssistantWindow().then((ok) => {
+      if (ok) console.log("[headless] 助手启动 → 已开应用窗口");
+      else if (openInBrowser(assistantUrl())) console.log(`[headless] 窗口创建失败 → 兜底弹浏览器 ${assistantUrl()}`);
+    });
   }, 1500);
 }
