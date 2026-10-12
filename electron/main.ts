@@ -192,7 +192,14 @@ process.nextTick(mountEnabledDomains);
    失效后不是"没有图标"而是"被 exe 图标顶掉 + 窗口图标失效"—— 这就是图标反复掉的真根因。
    ⇒ 打包版由 electron-builder NSIS 写入规范快捷方式（AUMID 可解析），保留设置；
      dev 不设，让 Windows 走窗口图标那条路（window-factory 已把 icon 锚在 app.getAppPath()/build/icon.ico）。 */
-if (app.isPackaged) app.setAppUserModelId("com.codexharness.desktop");
+// ⛔ 10-12 事故：这里原先写死桌面版 AUMID，而助手形态也是 require 本文件 ⇒ 助手被设成
+//   **桌面版的任务栏/托盘身份** ⇒ 两者图标互相顶掉（"任务栏没有、托盘也没有"）。
+//   AUMID 决定 Windows 的任务栏分组与托盘图标归属，两条产品线必须各用各的。
+if (app.isPackaged) {
+  app.setAppUserModelId(
+    process.env.HARNESS_ASSISTANT === "1" ? "com.codexharness.assistant" : "com.codexharness.desktop",
+  );
+}
 
 if (process.env.CODEX_HARNESS_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.CODEX_HARNESS_DEBUG_PORT);
 

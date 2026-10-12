@@ -6,12 +6,22 @@
 # ⛔ 发布形态（用户定稿）：**精简包 + 工具链按需下载** —— 不带 resources/tools extraResources，
 #   Node/Python/rg 首次启动时由 cloud:tools/* 按需拉取；引擎二进制仍在包内（codex-* vendor 走 asarUnpack）。
 # ⛔ extraMetadata：main 钉成无头入口；version 用助手自己的版本线（不随桌面版 package.json 走）。
+# ⛔⛔ 10-12 用户定调「全部拆开 —— 禁止共享数据目录和安装目录」：
+#   助手包内 package.json 的 name/productName 必须**独立于桌面版**，否则：
+#     ① userData 同名 ⇒ 同一个单实例锁 ⇒ 两者不能同时运行（"幽灵应用"）；
+#     ② 安装目录同名 ⇒ NSIS 默认落到同一个 Programs\codex-harness-desktop，互相覆盖；
+#     ③ AUMID 同名 ⇒ 任务栏分组 / 托盘图标互相顶掉。
+#   name 决定 Electron 的 app.name（userData 目录名）与 NSIS 默认安装目录名。
 appId: com.codexharness.assistant
-productName: Codex Harness Assistant
+productName: Codex Assistant
 npmRebuild: false
 extraMetadata:
   main: dist-electron/headless.js
-  version: 0.0.1
+  version: 0.0.6
+  # ⛔ 这两行是「拆开」的关键：name → 独立 userData（%APPDATA%/codex-harness-assistant）
+  #   + 独立安装目录（%LOCALAPPDATA%/Programs/codex-harness-assistant）；productName → 窗口/快捷方式名
+  name: codex-assistant
+  productName: Codex Assistant
 beforePack: scripts/before-pack.cjs
 directories:
   output: release-cloud
@@ -48,5 +58,10 @@ mac:
 nsis:
   oneClick: true
   runAfterFinish: true
+  # ⛔ 显式钉死安装目录/快捷方式名，别依赖默认推导（默认取 package.json 的 name，
+  #   而助手包此前 name 与桌面版相同 ⇒ 装到同一个 Programs 目录里互相覆盖）
+  installDirectoryName: CodexAssistant
+  shortcutName: Codex Assistant
+  uninstallDisplayName: Codex Assistant
   # ⛔ 覆盖安装前强杀运行中的助手（托盘应用关不掉 ⇒ 安装器直接卡死，见 build/installer.nsh）
   include: build/installer.nsh

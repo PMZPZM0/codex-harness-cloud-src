@@ -10,8 +10,11 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { BrowserWindow, app, dialog, shell } from "electron";
+import { isAssistantRuntime } from "../updates";
+import { showAssistantWindow } from "../assistant-window";
 import { existsSync } from "node:fs";
 import { applyRoundedCorners } from "../win-rounded-corners";
+import { resolveWindowIcon } from "../app-icon";
 import { popoutBusWindows, registerBusWindow, unregisterBusWindow } from "../features/window-bus";
 import { flushBootTiming, markBoot } from "../boot-timing";
 import { installContextMenu } from "../main/10-window-menu";
@@ -19,6 +22,16 @@ import { closeToTrayEnabled, engineActiveTurnIds, notifyPopoutClosed, popoutThre
 import { closePetWindow } from "./pet-window";
 import { mutableState } from "../main";
 export function createWindow() {
+  // ⛔⛔ 助手形态（headless）：**根本不创建桌面版主窗**。
+  //   10-12 幽灵窗口事故：此前助手形态照样创建主窗、靠「创建后 hide + 短路 win.show/focus」按住它，
+  //   一旦有别的路径把它叫出来（second-instance → showMainWindow、托盘「显示主窗口」）就露出来，
+  //   而它的任务栏标志早被摘掉 ⇒ **窗口在、任务栏没有**的幽灵形态；再叠加助手自己的可见窗口
+  //   就成了"两层窗口"。**不可见性必须由「压根不创建」保证，不能靠创建后按住。**
+  //   助手的界面统一由 electron/assistant-window.ts 自管（加载 http://127.0.0.1:PORT/）。
+  if (isAssistantRuntime()) {
+    void showAssistantWindow();
+    return;
+  }
   // Windows 任务栏图标必须用 .ico 才可靠（PNG 会被 electron.exe 默认图标顶掉）；
   // ⛔ 资源定位锚在 app.getAppPath()（dev = 仓库根 / 打包 = app.asar 根），**不要用 __dirname**：
   //    features/ 下的 __dirname 是 dist-electron/features，`..` 会落到 dist-electron 里
@@ -31,15 +44,10 @@ export function createWindow() {
   //    ⇒ 窗口图标失效 ⇒ dev 下没有 AUMID 兜底 ⇒ 任务栏回退 Electron 原子图标。
   //    ⇒ 依次尝试 appPath / execPath 上溯 / cwd，**取第一个真实存在的**；都对才放弃。
   const iconName = process.platform === "win32" ? "icon.ico" : "icon.png";
-  const iconCandidates = [
-    path.join(app.getAppPath(), "build", iconName),
-    // execPath 上溯（dev: node_modules/electron/dist/electron.exe → 仓库根 / electron 子目录）
-    path.resolve(path.dirname(process.execPath), "..", "..", "..", "..", "build", iconName),
-    path.resolve(path.dirname(process.execPath), "..", "..", "..", "build", iconName),
-    // 进程 cwd（dev 从仓库根启动时命中）
-    path.join(process.cwd(), "build", iconName),
-  ];
-  const windowIcon = iconCandidates.find((candidate) => existsSync(candidate)) ?? iconCandidates[0];
+  // ⛔ 图标链路真相源 = ../app-icon.ts（10-12 抽出）：dev 从快捷方式启动时 appPath = 入口脚本
+  //    所在目录（dist-electron），下面这条单一路径必空 ⇒ 任务栏回退 Electron 默认原子（用户实证）。
+  //    多源兜底（appPath / __dirname 上溯 / execPath 上溯 / cwd）收在那一个模块里。
+  const windowIcon = resolveWindowIcon() ?? path.join(app.getAppPath(), "build", iconName);
   mutableState.mainWindow = new BrowserWindow({
     // 默认桌面尺寸要容纳展开侧栏和完整输入工具栏；小屏仍由响应式布局处理。
     width: 1280,
@@ -193,6 +201,11 @@ export function createWindow() {
  * ⛔ 三处都别自己写 `mainWindow?.show()`：窗口被销毁后它只是 no-op，用户点了「显示主窗口」却什么都没发生。
  */
 export function showMainWindow() {
+  // 助手形态没有「桌面版主窗」⇒ 一律指向助手窗口（second-instance / 托盘「显示主窗口」都会走到这）
+  if (isAssistantRuntime()) {
+    void showAssistantWindow();
+    return;
+  }
   const win = mutableState.mainWindow;
   if (!win || win.isDestroyed()) {
     createWindow();
