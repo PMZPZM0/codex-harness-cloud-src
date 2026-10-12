@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ASSISTANT_VERSION: "0.0.3"
+  ASSISTANT_VERSION: "0.0.4"
   PUBLIC_REPO: PMZPZM0/codex-harness-desktop
 
 jobs:
