@@ -67,7 +67,12 @@ jobs:
           ASSET=$(find release-cloud -maxdepth 1 -type f -name "*.exe" | head -1)
           [ -n "${ASSET}" ] || { echo "::error::没找到 exe 产物"; exit 1; }
           NAME="CodexHarnessAssistant-${VERSION}-win-x64-setup.exe"
-          sha256sum "${ASSET}" | tee "sha256-${NAME}.txt"
+          # ⛔ macOS 没有 GNU sha256sum（自带 shasum）：arm64 runner 上 command not found / exit 127
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${ASSET}" | tee "sha256-${NAME}.txt"
+          else
+            shasum -a 256 "${ASSET}" | tee "sha256-${NAME}.txt"
+          fi
           if gh release view "${TAG}" --repo "${PUBLIC_REPO}" >/dev/null 2>&1; then
             gh release edit "${TAG}" --repo "${PUBLIC_REPO}" --notes-file "${NOTES}"
           else
@@ -117,7 +122,12 @@ jobs:
           ASSET=$(find release-cloud -maxdepth 1 -type f -name "*.zip" | head -1)
           [ -n "${ASSET}" ] || { echo "::error::没找到 zip 产物"; exit 1; }
           NAME="CodexHarnessAssistant-${VERSION}-${{ matrix.arch }}-mac.zip"
-          sha256sum "${ASSET}" | tee "sha256-${NAME}.txt"
+          # ⛔ macOS 没有 GNU sha256sum（自带 shasum）：arm64 runner 上 command not found / exit 127
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${ASSET}" | tee "sha256-${NAME}.txt"
+          else
+            shasum -a 256 "${ASSET}" | tee "sha256-${NAME}.txt"
+          fi
           # Release 可能还没建（win 任务先跑完会建）—— 没建就等一手再建
           for i in $(seq 1 12); do
             gh release view "${TAG}" --repo "${PUBLIC_REPO}" >/dev/null 2>&1 && break
