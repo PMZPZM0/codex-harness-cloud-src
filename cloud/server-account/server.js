@@ -177,6 +177,24 @@ function redeemDeviceCode(code) {
   persist();
   return { ok: true, claimed: true, username: device.username, name: device.name, id: deviceIdOf(deviceCodeHash(raw)), token: deviceTokenOf(raw) };
 }
+/** 凭设备 token 找设备（tokenHash 反查；db.devices 的键是 code+token 的组合哈希）。 */
+function findDeviceByToken(token) {
+  const hash = crypto.createHash("sha256").update(String(token || "")).digest("hex");
+  for (const device of Object.values(db.devices)) if (device.tokenHash === hash) return device;
+  return null;
+}
+/** 更新通道元数据（服务器管理员维护的 updates.json；没有就视为已最新）。 */
+function readUpdateMeta() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(path.dirname(DATA_FILE), "updates.json"), "utf8"));
+    return {
+      available: Boolean(raw.available),
+      latest: String(raw.latest || ""),
+      url: String(raw.url || ""),
+      notes: String(raw.notes || ""),
+    };
+  } catch { return { available: false, latest: "", url: "", notes: "" }; }
+}
 /** 吊销：删除设备（token 随之失效）。 */
 function revokeDevice(username, id) {
   for (const [hash, device] of Object.entries(db.devices)) {
@@ -330,6 +348,29 @@ const server = http.createServer(async (req, res) => {
       return gone ? send(200, { ok: true }) : send(404, { ok: false, error: "设备不存在" });
     }
 
+    /* ── ⑤ 设备令牌通道：心跳（账号状态轮询用）+ 更新检查 ───────────────────── */
+    if (p === "/device/heartbeat" && req.method === "POST") {
+      const header = String(req.headers.authorization || "");
+      const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+      const device = findDeviceByToken(token);
+      if (!device) return send(401, { ok: false, error: "unauthorized" });
+      const user = db.users.find((u) => u.username === device.username);
+      if (!user || user.disabled) return send(403, { ok: false, error: "account-disabled" });
+      device.lastSeen = Date.now();
+      persist();
+      return send(200, { ok: true, account: user.username });
+    }
+    if (p === "/device/update/check" && req.method === "POST") {
+      const header = String(req.headers.authorization || "");
+      const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+      const device = findDeviceByToken(token);
+      if (!device) return send(401, { ok: false, error: "unauthorized" });
+      const user = db.users.find((u) => u.username === device.username);
+      if (!user || user.disabled) return send(403, { ok: false, error: "account-disabled" });
+      device.lastSeen = Date.now();
+      persist();
+      return send(200, { ok: true, ...readUpdateMeta() });
+    }
     if (p === "/me" && req.method === "GET") {
       if (!me) return send(401, { ok: false, error: "unauthorized" });
       return send(200, { ok: true, account: publicView(me) });

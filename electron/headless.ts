@@ -864,7 +864,52 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     deny(200, { ok: true });
     return;
   }
-  /* 配对卡「取消并退出」：X = 退出的同款语义（走完整退出链，主窗守卫放行）。 */
+  /* ── ④ 账号状态轮询（架构 §6.4）：已绑定后每 60s 用**设备令牌**问一次 /me ───────────
+   账号被停用 / 设备被解绑 ⇒ 服务器 401/403 ⇒ 本机摘除绑定 + 清设备令牌
+   ⇒ 界面下一次请求 401 ⇒ 回 /pair（闸重判）—— 运行期闭环，不等用户投诉。
+   ⛔ 失败放行：服务不可达不误杀（本地能力照常）。 */
+function pollAccountStatus(): void {
+  if (!GATED) return;
+  const deviceToken = readDeviceToken();
+  if (!deviceToken) return;
+  void (async () => {
+    try {
+      const r = await fetch(`${ACCOUNTS_BASE}/device/heartbeat`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${deviceToken}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (r.status === 401 || r.status === 403) {
+        persistAccountBindings({ owner: "", users: {} });
+        try { rmSync(deviceTokenFile, { force: true }); } catch { /* 忽略 */ }
+        console.log("[cloud] 账号已失效（停用/解绑）⇒ 已摘除本地绑定，界面下次请求将回到配对页");
+      }
+    } catch { /* 服务不可达：放行（本地能力不受影响） */ }
+  })();
+}
+setInterval(pollAccountStatus, 60_000);
+
+/* ── ⑤ 设备令牌更新通道（架构 §9.5）：本机带**设备令牌**问服务器要版本信息 ────── */
+if (p === "/api/cloud-update-check" && req.method === "GET") {
+  if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+  const deviceToken = readDeviceToken();
+  if (!GATED || !deviceToken) { deny(404, { ok: false, error: "no-device-token" }); return; }
+  void (async () => {
+    try {
+      const r = await fetch(`${ACCOUNTS_BASE}/device/update/check`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${deviceToken}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      const meta = await r.json().catch(() => null);
+      if (!r.ok || !meta?.ok) { deny(502, { ok: false, error: "update-check-failed" }); return; }
+      deny(200, { ok: true, available: Boolean(meta.available), latest: String(meta.latest || ""), url: String(meta.url || ""), notes: String(meta.notes || "") });
+    } catch {
+      deny(502, { ok: false, error: "accounts-unreachable" });
+    }
+  })();
+  return;
+}
   if (p === "/api/app-quit" && req.method === "POST") {
     if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
     mutableState.closeConfirmed = true;
@@ -991,13 +1036,20 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     if (!claimCode) { deny(404, { ok: false, error: "not-claimed" }); return; }
     void (async () => {
       try {
-        const check = await fetch(`${ACCOUNTS_BASE}/device/claim-status?code=${encodeURIComponent(claimCode)}`, { signal: AbortSignal.timeout(8000) });
-        const meta = (await check.json().catch(() => null)) as { ok?: boolean; claimed?: boolean; username?: unknown } | null;
-        if (!check.ok || !meta?.ok || !meta.claimed) { deny(404, { ok: false, error: "not-claimed" }); return; }
-        const username = String(meta.username || "");
-        /* 双保险：轮询若还没跑到，这里顺手完成绑定 */
-        bindSeat("owner", username);
-        deny(200, { ok: true, token: ownerToken, account: username });
+        /* ⛔ 已绑定 ⇒ 本机早就完成过认领（accounts.json 有主）⇒ **直接发本地令牌**：
+           浏览器/新窗口只是来取会话的，不该被"码没被认领过"卡死（用户实测：机器已绑定，
+           配对页永远停在"等待浏览器授权"）。码的真相源校验只对**未绑定**态做
+           （防编造的码提前换令牌）。 */
+        const bound = boundAccounts();
+        if (bound.length === 0) {
+          const check = await fetch(`${ACCOUNTS_BASE}/device/claim-status?code=${encodeURIComponent(claimCode)}`, { signal: AbortSignal.timeout(8000) });
+          const meta = (await check.json().catch(() => null)) as { ok?: boolean; claimed?: boolean; username?: unknown } | null;
+          if (!check.ok || !meta?.ok || !meta.claimed) { deny(404, { ok: false, error: "not-claimed" }); return; }
+          bindSeat("owner", String(meta.username || ""));
+        } else if (!accountOf("owner")) {
+          bindSeat("owner", bound[0]);
+        }
+        deny(200, { ok: true, token: ownerToken, account: accountOf("owner") || bound[0] || "" });
       } catch {
         deny(502, { ok: false, error: "accounts-unreachable" });
       }
