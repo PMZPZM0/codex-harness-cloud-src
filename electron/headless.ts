@@ -551,6 +551,33 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
     if (t) h["Authorization"] = "Bearer " + t;
     return h;
   }
+  // ⛔ 助手品牌覆盖（10-12 用户：「左上角 logo 改成 Codex Assistant，颜色也换一种，方便区分」）
+  //   云助手与桌面版**共用同一份界面**（同一套 dist）⇒ 只能在运行期改：把侧栏品牌名换成
+  //   "Codex Assistant"，并把图标换成青绿色内联 SVG（桌面版是蓝色 PNG）。
+  //   live 渲染会被 React 重渲染覆盖 ⇒ 用 MutationObserver 守着重新打标。
+  var ASSISTANT_BRAND = "Codex Assistant";
+  var ASSISTANT_LOGO =
+    "data:image/svg+xml;charset=utf-8," +
+    encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0' +
+        '" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A78BFA"/><stop offset=".55" stop-color="#7C' +
+        '3AED"/><stop offset="1" stop-color="#3B1D8F"/></linearGradient><radialGradient id="w" cx=".5" cy' +
+        '=".5" r=".5"><stop offset="0" stop-color="#FFE9C2" stop-opacity=".5"/><stop offset="1" stop-colo' +
+        'r="#FFE9C2" stop-opacity="0"/></radialGradient></defs><rect width="512" height="512" rx="116" fi' +
+        'll="url(#g)"/><circle cx="362" cy="150" r="84" fill="url(#w)"/><path d="M148 196 L300 256 L148 3' +
+        '16" fill="none" stroke="#FFFFFF" stroke-width="58" stroke-linecap="round" stroke-linejoin="round' +
+        '"/><path d="M330 330 L414 330" fill="none" stroke="#FFFFFF" stroke-opacity=".55" stroke-width="2' +
+        '4" stroke-linecap="round"/><path d="M362 96 L370 134 L408 142 L370 150 L362 188 L354 150 L316 14' +
+        '2 L354 134 Z" fill="#FFD66B"/></svg>'
+    );
+  function applyAssistantBrand() {
+    try {
+      var name = document.querySelector(".brand-row .brand-name");
+      if (name && name.textContent !== ASSISTANT_BRAND) name.textContent = ASSISTANT_BRAND;
+      var logo = document.querySelector("img.ch-logo-img");
+      if (logo && logo.getAttribute("src") !== ASSISTANT_LOGO) logo.setAttribute("src", ASSISTANT_LOGO);
+    } catch (e) { /* 忽略 */ }
+  }
   var brandObserver = null;
   function watchAssistantBrand() {
     applyAssistantBrand();
