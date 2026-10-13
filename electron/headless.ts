@@ -554,20 +554,33 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
       /* ⛔ OAuth 式浏览器授权（10-13 晚）：本机只负责**生成配对码 + 等待授权结果**；
          授权动作在系统浏览器里完成（点「打开授权页面」唤起，带 ?claim= 预填本机码）。
          等待期轮询 cloud-state：认领完成（machinePaired）⇒ 刷新进入界面；
-         ⛔ 网页认领后还会 302 回本机 /auth/callback —— 双保险，谁先到都算数。 */
+         ⛔ 网页认领后还会 302 回本机 /auth/callback —— 双保险，谁先到都算数。
+         ⛔ z-index 940：**必须低于关闭确认弹窗（950）** —— 之前用 99999，点 X 时确认弹窗
+            被配对卡整个压住 ⇒ 看不见任何反应 = "叉不掉"（实测投诉）。 */
       var box = document.createElement("div");
       box.id = "__chc-pair";
-      box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:99999";
+      box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:940";
       var card = document.createElement("div");
       card.style.cssText = "background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:400px;width:90%;font-family:system-ui,sans-serif;text-align:center";
       var head = document.createElement("div"); head.textContent = "连接云端账号";
       head.style.cssText = "font-size:15px;font-weight:600;margin-bottom:10px";
+      var codeWrap = document.createElement("div");
+      codeWrap.style.cssText = "display:flex;align-items:center;gap:8px;margin:6px 0 2px";
       var codeRow = document.createElement("div");
       codeRow.textContent = window.__CHC_PAIR_CODE__ || "（刷新本页获取）";
-      codeRow.style.cssText = "font-size:24px;font-weight:700;letter-spacing:.3em;text-indent:.3em;margin:6px 0;padding:12px;background:#f3f4f6;border-radius:10px;font-family:ui-monospace,Consolas,monospace";
+      codeRow.style.cssText = "flex:1;font-size:24px;font-weight:700;letter-spacing:.3em;text-indent:.3em;padding:12px 6px;background:#f3f4f6;border-radius:10px;font-family:ui-monospace,Consolas,monospace";
+      var copyBtn = document.createElement("button"); copyBtn.textContent = "复制";
+      copyBtn.style.cssText = "flex:none;padding:10px 12px;border:1px solid #ccc;background:#fff;border-radius:10px;font-size:12.5px;cursor:pointer";
+      copyBtn.onclick = function () {
+        var code = window.__CHC_PAIR_CODE__ || "";
+        var fin = function () { copyBtn.textContent = "已复制 ✓"; setTimeout(function () { copyBtn.textContent = "复制"; }, 1500); };
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(code).then(fin, fin); }
+        else { var ta = document.createElement("textarea"); ta.value = code; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch (e2) { } document.body.removeChild(ta); fin(); }
+      };
+      codeWrap.appendChild(codeRow); codeWrap.appendChild(copyBtn);
       var cap = document.createElement("div");
       cap.textContent = "本机配对码 · 在网页上认领时填这个";
-      cap.style.cssText = "font-size:11.5px;color:#888;margin:-2px 0 12px";
+      cap.style.cssText = "font-size:11.5px;color:#888;margin:0 0 12px";
       var st = document.createElement("div"); st.id = "__chc-wait";
       st.style.cssText = "font-size:12.5px;color:#555;line-height:1.7;margin-bottom:12px";
       st.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #7c3aed;border-top-color:transparent;animation:__chcspin .8s linear infinite;vertical-align:-3px;margin-right:8px"></span>等待浏览器授权…';
@@ -576,15 +589,22 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
       document.head.appendChild(style);
       var open = document.createElement("button"); open.textContent = "打开授权页面";
       open.style.cssText = "width:100%;padding:10px 0;background:#185fa5;color:#fff;border:none;border-radius:8px;font-size:13.5px;cursor:pointer;margin-bottom:8px";
+      var authUrl = (window.__CHC_WEB_ENTRY__ || "https://ppz123.asia/cloud/") + "?claim=" + (window.__CHC_PAIR_CODE__ || "");
+      var fallback = document.createElement("div");
+      fallback.style.cssText = "display:none;font-size:11.5px;color:#666;line-height:1.7;margin-bottom:8px;word-break:break-all";
+      fallback.innerHTML = '若浏览器没有弹到前面，可复制链接手动打开：<br><b id="__chc-url">' + authUrl + "</b>";
       open.onclick = function () {
-        var url = (window.__CHC_WEB_ENTRY__ || "https://ppz123.asia/cloud/") + "?claim=" + (window.__CHC_PAIR_CODE__ || "");
-        try { window.codex.openExternal(url); } catch (e) { window.open(url, "_blank", "noopener"); }
+        fallback.style.display = "block";
+        try {
+          var p = window.codex.openExternal(authUrl);
+          if (p && p.catch) p.catch(function () { /* 失败时上面的链接兜底 */ });
+        } catch (e) { try { window.open(authUrl, "_blank", "noopener"); } catch (e2) { /* 兜底链接已显示 */ } }
       };
       var cancel = document.createElement("button"); cancel.textContent = "取消";
       cancel.style.cssText = "width:100%;padding:8px 0;background:transparent;color:#666;border:1px solid #ccc;border-radius:8px;font-size:12.5px;cursor:pointer";
       cancel.onclick = function () { location.reload(); };
-      card.appendChild(head); card.appendChild(codeRow); card.appendChild(cap);
-      card.appendChild(st); card.appendChild(open); card.appendChild(cancel);
+      card.appendChild(head); card.appendChild(codeWrap); card.appendChild(cap);
+      card.appendChild(st); card.appendChild(open); card.appendChild(fallback); card.appendChild(cancel);
       box.appendChild(card); document.body.appendChild(box);
       /* 等待轮询：认领完成 ⇒ 本机已绑定 ⇒ 刷新进界面；账号停用 ⇒ 显示失败原因 */
       var waited = 0;
