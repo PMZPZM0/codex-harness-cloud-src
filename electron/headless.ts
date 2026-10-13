@@ -204,6 +204,14 @@ if (electronDialog) {
    状态通道（/__ipc /__events /__upload /__dialog）都要过 token；/api/health、
    /api/pair 与静态资产除外 —— 配对就是为了换 token。 */
 const CHC_HOME = process.env.HARNESS_CLOUD_HOME || join(homedir(), ".codex-harness-cloud");
+/* ── 账号闸（10-13）：**配对必须先有网页账号** ────────────────────────────────
+   与 cloud/local-agent 的账号闸同一套语义（见其 auth.js / server.js 头注），但**两份实现并存**
+   （这里 = Electron 真界面，那里 = 伴生服务 Node 脚本）—— 落盘**共用**同一批文件
+   （token / users.json / accounts.json 都在 HARNESS_CLOUD_HOME），所以两边必须同口径。 */
+const ACCOUNTS_BASE = String(process.env.HARNESS_ACCOUNTS_URL ?? "").replace(/\/+$/, "");
+/** 网页登录门（用户在这里注册并配对）。开闸时本机界面只负责把人送到这里。 */
+const ASSISTANT_WEB_ENTRY = "https://ppz123.asia/cloud/";
+const GATED = ACCOUNTS_BASE.length > 0;
 type ChcUser = { name: string; code: string; token: string; createdAt: number };
 function loadChcUsers(): ChcUser[] {
   try {
@@ -215,8 +223,7 @@ function persistChcUsers(users: ChcUser[]): void {
   mkdirSync(CHC_HOME, { recursive: true });
   writeFileSync(join(CHC_HOME, "users.json"), JSON.stringify(users, null, 2), { mode: 0o600 });
 }
-const chcTokenFile = join(CHC_HOME, "token");
-let ownerToken = "";
+const chcTokenFile = join(CHC_HOME, "token");let ownerToken = "";
 try { ownerToken = readFileSync(chcTokenFile, "utf8").trim(); } catch { /* 首次运行 */ }
 if (!ownerToken) {
   ownerToken = randomBytes(32).toString("hex");
@@ -229,9 +236,17 @@ function safeEq(a: string, b: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 function whoByToken(presented: string, users: ChcUser[]): string | null {
-  if (presented && safeEq(presented, ownerToken)) return "owner";
-  for (const user of users) if (safeEq(presented, user.token)) return user.name;
-  return null;
+  /* ⛔ 开闸时：一个"座位"必须绑定了网页账号才算有效 ——
+     账号被停用 ⇒ 绑定被摘 ⇒ 它所有令牌立刻失效（旧缺口：停用只管新配对）。 */
+  let seat: string | null = null;
+  if (presented && safeEq(presented, ownerToken)) seat = "owner";
+  else {
+    const hit = users.find((user) => safeEq(presented, user.token));
+    if (hit) seat = hit.name;
+  }
+  if (!seat) return null;
+  if (GATED && !accountOf(seat)) return null;
+  return seat;
 }
 /* ⛔ --add-user 必须在起服务 / 进 main 之前处理：签发完就退出，不占端口。 */
 const addUserIndex = process.argv.indexOf("--add-user");
@@ -244,7 +259,10 @@ if (addUserIndex >= 0) {
     const user: ChcUser = { name, code: randomBytes(4).toString("hex"), token: randomBytes(24).toString("hex"), createdAt: Date.now() };
     users.push(user);
     persistChcUsers(users);
-    process.stdout.write(`\n  用户「${user.name}」的配对码：${user.code}\n  （唯一一次显示，请交给本人；token 已落盘）\n\n`);
+    process.stdout.write(`\n  用户「${user.name}」的配对码：${user.code}\n  （唯一一次显示，请交给本人；token 已落盘）\n`);
+    process.stdout.write(process.env.HARNESS_ACCOUNTS_URL
+      ? `  ⛔ 开闸模式：本人还须先在网页注册账号，再用这个码配对：\n     ${ASSISTANT_WEB_ENTRY}\n\n`
+      : `  ⚠️ 独立模式（没配账号服务）：这个码直接配对即可，无需网页账号。\n\n`);
   } catch (error) {
     process.stderr.write(`[add-user] ${(error as Error).message}\n`);
     process.exit(1);
@@ -296,6 +314,115 @@ let issueLockedUntil = 0;
 let pairTries = 0;
 let pairLockedUntil = 0;
 
+/* 账号闸的实现（配置见上方 ACCOUNTS_BASE / GATED / ASSISTANT_WEB_ENTRY）：
+   · 配对成功 ⇒ 座位绑定账号（accounts.json，与伴生服务**同一份文件同一格式**）；
+   · 账号被停用 ⇒ 绑定被摘 ⇒ 令牌立刻失效（轮询，**失败放行**）。 */
+const ACCOUNT_POLL_MS = Math.max(500, Number(process.env.HARNESS_ACCOUNT_POLL_MS || 5 * 60_000));
+
+/* owner 一次性开机码（与 cloud/local-agent 的 Pairing 同口径：5 分钟 / 一次性 / 只打控制台）。
+   ⛔⛔ headless 之前**没有**这条 —— 它的码只能靠 `--add-user` 或界面内一键签发；
+     接入账号闸后，网页配对需要一张"这台机器"的码可填，第一条个人码都没法配 ⇒ 必须补上。
+   「配对码只打在控制台：能看到这行输出的人，才配得上这台机器」——信任模型不变。 */
+const OWNER_PAIR_TTL_MS = 5 * 60_000;
+let ownerPairCode = "";
+let ownerPairIssuedAt = 0;
+function issueOwnerPair(): string {
+  const now = Date.now();
+  if (ownerPairCode && now - ownerPairIssuedAt < OWNER_PAIR_TTL_MS) return ownerPairCode;
+  ownerPairCode = randomBytes(4).toString("hex");
+  ownerPairIssuedAt = now;
+  return ownerPairCode;
+}
+function redeemOwnerPair(candidate: string): { ok: boolean; reason?: string } {
+  if (!ownerPairCode) return { ok: false, reason: "no-code" };
+  if (Date.now() - ownerPairIssuedAt > OWNER_PAIR_TTL_MS) { ownerPairCode = ""; return { ok: false, reason: "expired" }; }
+  if (!safeEq(candidate, ownerPairCode)) return { ok: false, reason: "mismatch" };
+  ownerPairCode = "";   // 一次性：成功即作废，重放无效
+  return { ok: true };
+}
+function printOwnerPairBanner(): void {
+  const code = issueOwnerPair();
+  console.log(`\n  ┌───────────────────────────────────────────────┐`);
+  console.log(`  │  本机配对码： ${code}   （5 分钟内有效，一次性）`);
+  console.log(GATED
+    ? `  │  ⛔ 需先在网页注册账号，再用这个码完成配对：\n  │     ${ASSISTANT_WEB_ENTRY}`
+    : `  │  ⚠️ 独立模式（没配账号服务）：本机界面直接填这个码即可`);
+  console.log(`  └───────────────────────────────────────────────┘\n`);
+}
+type AccountBindingFile = { owner: string; users: Record<string, string> };
+function loadAccountBindings(): AccountBindingFile {
+  try {
+    const parsed = JSON.parse(readFileSync(join(CHC_HOME, "accounts.json"), "utf8")) as Partial<AccountBindingFile>;
+    return {
+      owner: String(parsed.owner || ""),
+      users: parsed.users && typeof parsed.users === "object" ? parsed.users : {},
+    };
+  } catch { return { owner: "", users: {} }; }
+}
+function persistAccountBindings(bindings: AccountBindingFile): void {
+  mkdirSync(CHC_HOME, { recursive: true });
+  writeFileSync(join(CHC_HOME, "accounts.json"), JSON.stringify(bindings, null, 2), { mode: 0o600 });
+}
+function bindSeat(seat: string, username: string): void {
+  const name = String(username || "").trim();
+  if (!seat || !name) return;
+  const bindings = loadAccountBindings();
+  if (seat === "owner") bindings.owner = name; else bindings.users[seat] = name;
+  persistAccountBindings(bindings);
+}
+function accountOf(seat: string): string {
+  const bindings = loadAccountBindings();
+  return seat === "owner" ? bindings.owner : bindings.users[seat] || "";
+}
+function unbindByAccount(username: string): boolean {
+  const bindings = loadAccountBindings();
+  let hit = false;
+  if (username && bindings.owner === username) { bindings.owner = ""; hit = true; }
+  for (const [seat, bound] of Object.entries(bindings.users)) {
+    if (bound === username) { delete bindings.users[seat]; hit = true; }
+  }
+  if (hit) persistAccountBindings(bindings);
+  return hit;
+}
+function boundAccounts(): string[] {
+  const bindings = loadAccountBindings();
+  return [...new Set([bindings.owner, ...Object.values(bindings.users)].filter(Boolean))];
+}
+/** 向账号服务核销票据。⛔ 由本机发起 —— 网页说的登录态不算数。失败**分档**返回。 */
+async function verifyAccountTicket(ticket: string): Promise<{ ok: boolean; username?: string; reason?: string }> {
+  try {
+    const response = await fetch(`${ACCOUNTS_BASE}/pair-ticket/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticket }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; username?: unknown; reason?: unknown };
+    if (!response.ok) return { ok: false, reason: response.status === 429 ? "rate-limited" : "accounts-unreachable" };
+    if (payload && payload.ok && payload.username) return { ok: true, username: String(payload.username) };
+    return { ok: false, reason: String(payload.reason || "unknown") };
+  } catch (error) {
+    console.error(`[account] 账号服务不可达：${(error as Error).message}`);
+    return { ok: false, reason: "accounts-unreachable" };
+  }
+}
+/** 停用轮询（失败放行：账号服务不可达时**不摘绑定**，否则服务一抖所有人当场掉线）。 */
+async function pollAccountStatus(): Promise<void> {
+  if (!GATED) return;
+  const accounts = boundAccounts();
+  if (!accounts.length) return;
+  try {
+    const response = await fetch(`${ACCOUNTS_BASE}/pair-ticket/status?usernames=${encodeURIComponent(accounts.join(","))}`, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return;
+    const payload = (await response.json().catch(() => null)) as { accounts?: Record<string, { disabled?: boolean }> } | null;
+    for (const [username, info] of Object.entries(payload?.accounts || {})) {
+      if (info?.disabled && unbindByAccount(username)) {
+        console.log(`[account] 账号「${username}」已停用或不存在 ⇒ 摘除绑定，其令牌立即失效`);
+      }
+    }
+  } catch { /* 不可达 = 保持现状（失败放行） */ }
+}
+
 /* ── ③ shim 生成：manifest(441 invoke) + preload.ts(24 事件桥) ────────────── */
 type ManifestEntry = { name: string; channel: string; paramsDecl: string | null; invokeArgs: string | null };
 type OnEntry = { name: string; channel: string };
@@ -323,11 +450,14 @@ function parseDefaults(paramsDecl: string | null): unknown[] {
   return defaults;
 }
 
-function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[]): string {
+function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[], accountGate: boolean): string {
+  /* ⛔ 账号闸开关必须**由服务端注入**：shim 跑在浏览器里，自己猜不出（它连配置文件都读不到）。
+     界面的配对卡据此决定"收配对码"还是"指去网页"—— 两个方向必须与主进程一致。 */
+  const gateInject = `window.__CHC_ACCOUNT_GATE__ = ${accountGate ? "true" : "false"};\n`;
   return `/* 自动生成（electron/headless.ts）—— 浏览器端 window.codex，与桌面 preload 同源同形 */
 (function () {
   "use strict";
-  var listeners = {};           // channel → Set<listener>
+  ${gateInject}  var listeners = {};           // channel → Set<listener>
   var nextId = 1;
   var pending = {};             // id → {resolve, reject}
 
@@ -345,6 +475,30 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
   }
   function showPairBox() {
     if (document.getElementById("__chc-pair")) return;
+    /* ⛔ 开闸模式（10-13）：配对的前置条件是**网页账号**，本机界面**不收配对码** ——
+       在这里收码，等于把"必须先注册"从本机侧又绕开了（旧版一键签发 + 填码，全程不碰网页）。
+       这里只负责把人送到网页登录门，配对成功会自动跳回本机界面。
+       ⛔ 开关读的是**服务端注入的 window.__CHC_ACCOUNT_GATE__** ——
+         这段代码跑在浏览器里，主进程的常量在这里不存在。 */
+    if (window.__CHC_ACCOUNT_GATE__ === true) {
+      const box = document.createElement("div");
+      box.id = "__chc-pair";
+      box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:99999";
+      const card = document.createElement("div");
+      card.style.cssText = "background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:400px;width:90%;font-family:system-ui,sans-serif;text-align:center";
+      const head = document.createElement("div"); head.textContent = "先注册账号，再配对";
+      head.style.cssText = "font-size:15px;font-weight:600;margin-bottom:8px";
+      const tip = document.createElement("div");
+      tip.textContent = "配对需要一个网页账号：请到下面这个地址注册或登录，然后用你的配对码完成配对；成功后会自动跳回本机界面。";
+      tip.style.cssText = "font-size:12.5px;color:#666;line-height:1.6;margin-bottom:14px;word-break:break-all";
+      const link = document.createElement("a");
+      link.textContent = ASSISTANT_WEB_ENTRY;
+      link.href = ASSISTANT_WEB_ENTRY;
+      link.style.cssText = "display:block;padding:10px 0;background:#185fa5;color:#fff;border-radius:8px;font-size:13.5px;text-decoration:none";
+      card.appendChild(head); card.appendChild(tip); card.appendChild(link);
+      box.appendChild(card); document.body.appendChild(box);
+      return;
+    }
     var box = document.createElement("div");
     box.id = "__chc-pair";
     box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:99999";
@@ -609,17 +763,46 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
     let raw = "";
     req.on("data", (chunk) => { raw += chunk; if (raw.length > 64 * 1024) req.destroy(); });
-    req.on("end", () => {
+    req.on("end", async () => {
       let code = "";
-      try { code = String((JSON.parse(raw) as { code?: unknown }).code || "").trim().toLowerCase(); } catch { deny(400, { ok: false, error: "bad-json" }); return; }
+      let ticket = "";
+      try {
+        const parsed = JSON.parse(raw) as { code?: unknown; ticket?: unknown };
+        code = String(parsed.code || "").trim().toLowerCase();
+        ticket = String(parsed.ticket || "").trim();
+      } catch { deny(400, { ok: false, error: "bad-json" }); return; }
+
+      /* ⛔⛔ 开闸时**先核销票据、再比码**（与 cloud/local-agent 同口径）：
+         票据不过就直接拒，**不进入码比对** —— 免得拿错误信息探测本机码是否存在；
+         核销由**本机**向账号服务发起，不信网页转述的登录态。 */
+      let account = "";
+      if (GATED) {
+        if (!ticket) { deny(403, { ok: false, error: "ticket-required" }); return; }
+        const verified = await verifyAccountTicket(ticket);
+        if (!verified.ok) { deny(403, { ok: false, error: `ticket-${verified.reason}` }); return; }
+        account = verified.username || "";
+      }
+
+      /* owner 一次性开机码优先（seat=owner，绑到配对者的账号）；然后才是 --add-user 的个人码。 */
+      const ownerPair = redeemOwnerPair(code);
+      if (ownerPair.ok) {
+        pairTries = 0;
+        bindSeat("owner", account);
+        console.log(`[pair] owner 配对成功（真界面助手${account ? ` · 账号 ${account}` : ""}）`);
+        deny(200, { ok: true, token: ownerToken, account: { userId: account || "owner", name: account || "owner", seat: "owner" }, protocolVersion: 1 });
+        return;
+      }
+
       if (Date.now() < pairLockedUntil) { deny(403, { ok: false, error: "locked" }); return; }
       pairTries += 1;
       if (pairTries >= PAIR_MAX_TRIES) { pairLockedUntil = Date.now() + PAIR_LOCK_MS; pairTries = 0; console.log("[pair] 用户码连续错误过多，锁定 60 秒"); deny(403, { ok: false, error: "locked" }); return; }
       const hit = loadChcUsers().find((user) => safeEq(code, user.code));
       if (!hit) { deny(403, { ok: false, error: "mismatch" }); return; }
       pairTries = 0;
-      console.log(`[pair] 用户「${hit.name}」配对成功（真界面助手）`);
-      deny(200, { ok: true, token: hit.token, account: { userId: hit.name, name: hit.name }, protocolVersion: 1 });
+      // 配对成功 ⇒ 座位绑定到账号（对外身份从此是账号 username，不再是本机名字）
+      bindSeat(hit.name, account);
+      console.log(`[pair] 用户「${hit.name}」配对成功（真界面助手${account ? ` · 账号 ${account}` : ""}）`);
+      deny(200, { ok: true, token: hit.token, account: { userId: account || hit.name, name: hit.name, seat: hit.name }, protocolVersion: 1 });
     });
     return;
   }
@@ -632,6 +815,13 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
   //   users.json / 跑 --add-user，所以不额外暴露。仍加限流（60 秒窗口内 3 次）防脚本刷。
   if (p === "/api/issue-code" && req.method === "POST") {
     if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    /* ⛔ 开闸时签发配对码必须**先配对并绑定账号**：未配对的人请去网页注册 ——
+       不加这条，「必须先注册」就能靠界面内一键签发绕开（签发即得码，码即一个座位）。 */
+    if (GATED) {
+      const seat = whoByToken(tokenOf(req, url), loadChcUsers());
+      if (!seat) { deny(401, { ok: false, error: "unauthorized" }); return; }
+      if (!accountOf(seat)) { deny(403, { ok: false, error: "account-not-bound" }); return; }
+    }
     if (Date.now() < issueLockedUntil) { deny(429, { ok: false, error: "too_many", retryAfterMs: issueLockedUntil - Date.now() }); return; }
     issueWindow += 1;
     if (issueWindow > ISSUE_MAX) { issueLockedUntil = Date.now() + ISSUE_WINDOW_MS; issueWindow = 0; console.log("[issue] 签发过于频繁，锁定 60 秒"); deny(429, { ok: false, error: "too_many" }); return; }
@@ -767,7 +957,7 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
 /* ── ⑤ 启动顺序：先起桥，再进真 main（引擎等全部域由它拉起）──────────────── */
 const manifest = JSON.parse(readFileSync(MANIFEST_FILE, "utf8"));
 const onChannels = parseOnChannels(readFileSync(PRELOAD_FILE, "utf8"));
-const shimJs = buildShim(manifest, onChannels);
+const shimJs = buildShim(manifest, onChannels, GATED);
 
 /* 云端选址：每 60s 重探一次 ⇒ 站长更新 /cloud/app/ 后，用户**下一次刷新页面**即新版，
    无需动本机任何东西。探测条件：version.json 可达 + protocolVersion 一致 +
@@ -799,6 +989,12 @@ setInterval(probeAssetBase, 60_000);
 
 createServer((req, res) => route(req, res, shimJs)).listen(PORT, "127.0.0.1", () => {
   console.log(`[headless] 桥与界面就绪 http://127.0.0.1:${PORT}（dist=${DIST_DIR}，invoke=${manifest.channels.length}，events=${onChannels.length}）`);
+  console.log(`[headless] 配对闸：${GATED ? `开 —— 必须先在网页注册账号（${ASSISTANT_WEB_ENTRY}），票据由本机向 ${ACCOUNTS_BASE} 核销` : "关 —— 独立模式（未配置账号服务）：本机码即可配对，无账号校验"}`);
+  // ⛔ 配对码只打在控制台：能看到这行输出的人才配得上这台机器（与伴生服务同一条信任模型）
+  printOwnerPairBanner();
+  // 账号状态轮询：账号被停用后，已签发的令牌也要失效（失败放行，见 pollAccountStatus 头注）
+  setInterval(pollAccountStatus, ACCOUNT_POLL_MS).unref();
+  void pollAccountStatus();
 });
 
 // 真 main.ts：86 个域 / 真引擎 / 全部业务。⛔ 必须最后 require。
