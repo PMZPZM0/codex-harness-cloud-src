@@ -267,6 +267,7 @@ const NPM_PACKAGE_ARTIFACTS: Partial<Record<DevRuntimeId, { dirs: string[]; shim
   nuphus: { dirs: ["node_modules/@nuphus"], shims: ["nuphus-mcp", "nuphus-call"] },
   "playwright-cli": { dirs: ["node_modules/@playwright/cli"], shims: ["playwright-cli"] },
   cloakbrowser: { dirs: ["node_modules/cloakbrowser"], shims: ["cloakbrowser"] },
+  rea: { dirs: ["node_modules/rea-agents"], shims: ["rea", "rea-agents"] },
 };
 
 /** npm 包在某个 npm-global 根下留的 shim（不是包体，删完包体要顺手清掉）。
@@ -553,6 +554,7 @@ const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?:
   // 10-13 统一更新体系纳入：指纹浏览器就是个普通的 npm 包，装在同一套 npm-global 落位里，
   //   installedVersionOf / runNpmInstall 对它完全成立 ⇒ 不需要为它单写一条路径。
   cloakbrowser: { pkg: "cloakbrowser", label: "CloakBrowser 指纹浏览器" },
+  rea: { pkg: "rea-agents", label: "REA 逆向分析" },
 };
 
 /** 单个可更新工具的包名 / 显示名（**唯一真相源**）：自动更新板块从这里取，⛔ 不许另抄一份包名。 */
@@ -873,6 +875,9 @@ export const runtimeFeature = defineFeature<null>({
           await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
         } else if (id === "cloakbrowser") {
           await runNpmInstall(id, "cloakbrowser", "CloakBrowser", downloadSource);
+        } else if (id === "rea") {
+          // REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 更新到 latest。
+          await runNpmInstall(id, "rea-agents", "REA 逆向分析", downloadSource);
         } else if (id === "playwright-browsers") {
           const node = bundledNode();
           const cli = path.join(npmGlobalRoot(), "@playwright", "cli", "node_modules", "playwright", "cli.js");
