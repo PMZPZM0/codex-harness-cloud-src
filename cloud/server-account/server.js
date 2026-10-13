@@ -66,6 +66,52 @@ function sessionUser(req) {
   return user && !user.disabled ? user : null;
 }
 
+/* ── 配对票据（10-13：把「账号」变成配对的前置条件）─────────────────────────
+   背景与边界：账号服务原本只管"网站身份"，与各用户本机的配对链路**毫无连接** ——
+   于是"先在网页注册"只是网页自己的门，从本机侧可以完全绕开（本机 URL + 控制台自动链接）。
+   现在补一层**票据**：网页用账号会话换一张一次性票据 → 用户本机拿它来核销 → 本机凭回执决定放行。
+
+   ⛔ 为什么必须是"本机反向核销"而不是"网页转述"：网页代码完全在用户手里
+      （改 localStorage、直接 curl 本机 127.0.0.1 的接口都行），它说的"我登录了"一文不值。
+      唯一可信的是**账号服务自己给的回执**。
+
+   · 票据 32B 随机、**一次性**、TTL 120 秒、绑定 username；服务端只存 sha256；
+   · 核销即作废（usedAt）⇒ 重放返回 `used`；
+   · 核销时**重新校验账号状态** ⇒ 被停用的账号连新配对都拿不到；
+   · ⛔ 不做服务间共享密钥：**票据本身就是凭证**（32B 随机 + 一次性 + 限速），
+     与它替代的配对码同一信任模型；将来若要更强的机机互信，在这里加 `x-harness-service` 即可。
+   ⛔ 票据绝不写日志（与 token / 配对码 同口径）。 */
+const TICKET_TTL_MS = 120_000;
+if (typeof db.tickets !== "object" || !db.tickets) db.tickets = {};
+function pruneTickets() {
+  const now = Date.now();
+  for (const [hash, entry] of Object.entries(db.tickets)) if (entry.exp < now) delete db.tickets[hash];
+}
+function issueTicket(username) {
+  pruneTickets();
+  const ticket = crypto.randomBytes(32).toString("hex");
+  const exp = Date.now() + TICKET_TTL_MS;
+  db.tickets[crypto.createHash("sha256").update(ticket).digest("hex")] = { username, exp, usedAt: 0 };
+  persist();
+  return { ticket, exp };
+}
+/** 核销：成功即作废。失败原因**分档**（本机侧要据此区分"码错"与"账号问题"，不能混成一句话）。 */
+function verifyTicket(ticket) {
+  pruneTickets();
+  const raw = String(ticket || "").trim();
+  if (!raw) return { ok: false, reason: "unknown" };
+  const hash = crypto.createHash("sha256").update(raw).digest("hex");
+  const found = db.tickets[hash];
+  if (!found) return { ok: false, reason: "unknown" };
+  if (found.usedAt) return { ok: false, reason: "used" };
+  if (found.exp < Date.now()) { delete db.tickets[hash]; persist(); return { ok: false, reason: "expired" }; }
+  const user = db.users.find((u) => u.username === found.username);
+  if (!user || user.disabled) return { ok: false, reason: "account-disabled" };
+  found.usedAt = Date.now();
+  persist();
+  return { ok: true, username: found.username };
+}
+
 /* ── 限速 ────────────────────────────────────────────────────────────────── */
 const buckets = new Map();   // key → { count, resetAt }
 function rateLimit(key, max, windowMs) {
@@ -143,6 +189,38 @@ const server = http.createServer(async (req, res) => {
 
     /* 以下都要会话 */
     const me = sessionUser(req);
+
+    /* 配对票据：网页用账号会话换一张一次性票据（这就是"先注册"落成硬约束的那一步） */
+    if (p === "/pair-ticket" && req.method === "POST") {
+      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      if (!rateLimit(`ticket-ip:${ip}`, 30, 5 * 60_000)) return send(429, { ok: false, error: "请求过于频繁，稍后再试" });
+      const { ticket, exp } = issueTicket(me.username);
+      return send(200, { ok: true, ticket, expiresAt: exp, username: me.username });
+    }
+    /* 核销：**用户本机的伴生服务**调用（非浏览器 ⇒ 无 Origin ⇒ 上面的 Origin 闸放行）。
+       ⛔ 不要求会话：本机没有账号会话，它只有这张票据。 */
+    if (p === "/pair-ticket/verify" && req.method === "POST") {
+      if (!rateLimit(`verify-ip:${ip}`, 60, 5 * 60_000)) return send(429, { ok: false, error: "too-many-requests" });
+      const body = await readBody();
+      const result = verifyTicket(body && body.ticket);
+      return send(200, result.ok
+        ? { ok: true, username: result.username }
+        : { ok: false, reason: result.reason });
+    }
+    /* 账号状态查询：本机侧定时来核销，账号被**停用**后要让已签发的令牌失效
+       （否则"停用"只管得住新配对，管不住已经在用的会话）。 */
+    if (p === "/pair-ticket/status" && req.method === "GET") {
+      if (!rateLimit(`status-ip:${ip}`, 120, 5 * 60_000)) return send(429, { ok: false, error: "too-many-requests" });
+      const names = String(url.searchParams.get("usernames") || "")
+        .split(",").map((s) => s.trim()).filter(Boolean).slice(0, 50);
+      const accounts = {};
+      for (const name of names) {
+        const user = db.users.find((u) => u.username === name);
+        accounts[name] = { exists: Boolean(user), disabled: !user || Boolean(user.disabled) };
+      }
+      return send(200, { ok: true, accounts });
+    }
+
     if (p === "/me" && req.method === "GET") {
       if (!me) return send(401, { ok: false, error: "unauthorized" });
       return send(200, { ok: true, account: publicView(me) });

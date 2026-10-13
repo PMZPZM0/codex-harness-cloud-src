@@ -21,6 +21,13 @@ const PROTOCOL_VERSION = 1;
 const DEFAULT_PORT = 8917;
 /** 云端资产默认地址：发布站的 /cloud/ 路径（Caddy handle_path → /var/www/codex-harness-cloud）。 */
 const DEFAULT_CDN_BASE = "https://ppz123.asia/cloud";
+/**
+ * 账号服务地址（**配对闸的开关**，10-13）。
+ * ⛔ 语义：**非空 = 开闸** —— 任何配对都必须先有网页账号（票据）；本机据此**反向核销**。
+ *   设成空串（`HARNESS_ACCOUNTS_URL=""` 或 config.json 里 `accountsBase: ""`）= **独立模式**：
+ *   退回"只有本机配对码"的旧行为，供自建/离线部署；启动横幅会**大声说明**当前是哪种模式。
+ */
+const DEFAULT_ACCOUNTS_BASE = "https://ppz123.asia/cloud-api";
 
 function homeDir() {
   return process.env.HARNESS_CLOUD_HOME || path.join(os.homedir(), ".codex-harness-cloud");
@@ -92,6 +99,11 @@ function load() {
     port: Number(process.env.HARNESS_CLOUD_PORT || saved.port || DEFAULT_PORT),
     /** 界面资源地址。改这一行 + 重新部署资产 = 换界面，**不需要重装伴生服务**。 */
     cdnBase: String(process.env.HARNESS_CLOUD_CDN || saved.cdnBase || DEFAULT_CDN_BASE).replace(/\/+$/, ""),
+    /**
+     * 账号服务地址；**非空 = 配对必须先有账号**（见文件头 DEFAULT_ACCOUNTS_BASE 的语义说明）。
+     * ⛔ 空串是**显式选择**（`??` 而不是 `||`）：`""` 必须能压住默认值，否则独立模式根本设不出来。
+     */
+    accountsBase: String(process.env.HARNESS_ACCOUNTS_URL ?? saved.accountsBase ?? DEFAULT_ACCOUNTS_BASE).replace(/\/+$/, ""),
     /** 允许直连的浏览器来源（桌面浏览器 + 手机浏览器 + 云端页面）。缺省只放本机。 */
     allowedOrigins: Array.isArray(saved.allowedOrigins) && saved.allowedOrigins.length
       ? saved.allowedOrigins
@@ -119,16 +131,19 @@ function load() {
   config.token = token;
   config.tokenFile = tokenFile;
 
-  // 把可持久化字段写回（端口/CDN 被 CLI 或环境变量改写后要记住）
+  // 把可持久化字段写回（端口/CDN/账号服务被 CLI 或环境变量改写后要记住）
   const persist = {
     port: config.port,
     cdnBase: config.cdnBase,
+    accountsBase: config.accountsBase,
     engine: { binary: config.engine.binary, codexHome: config.engine.codexHome },
   };
-  if (JSON.stringify(saved.port) !== JSON.stringify(persist.port) || saved.cdnBase !== persist.cdnBase) {
+  if (JSON.stringify(saved.port) !== JSON.stringify(persist.port)
+    || saved.cdnBase !== persist.cdnBase
+    || (saved.accountsBase ?? DEFAULT_ACCOUNTS_BASE) !== persist.accountsBase) {
     try { writeFileAtomic(file, `${JSON.stringify(persist, null, 2)}\n`, 0o600); } catch { /* 只读盘就算了 */ }
   }
   return config;
 }
 
-module.exports = { load, homeDir, resolveEngineBinary, PROTOCOL_VERSION, DEFAULT_PORT, DEFAULT_CDN_BASE };
+module.exports = { load, homeDir, resolveEngineBinary, PROTOCOL_VERSION, DEFAULT_PORT, DEFAULT_CDN_BASE, DEFAULT_ACCOUNTS_BASE };

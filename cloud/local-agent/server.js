@@ -19,7 +19,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const config = require("./config");
-const { Pairing, UserRegistry, authorize, corsHeaders, safeEqual, PAIR_CODE_TTL_MS } = require("./auth");
+const { Pairing, UserRegistry, AccountBindings, authorize, corsHeaders, safeEqual, PAIR_CODE_TTL_MS } = require("./auth");
 const { EngineAdapter } = require("./engine");
 const { MockEngine } = require("./mock-engine");
 
@@ -41,7 +41,10 @@ if (ADD_USER) {
   const registry0 = new UserRegistry(config.homeDir(cfg), () => {});
   try {
     const user = registry0.add(ADD_USER);
-    process.stdout.write(`\n  用户「${user.name}」的配对码：${user.code}\n  （这是唯一一次显示，请立刻交给本人；token 已落盘，无需再记）\n\n`);
+    process.stdout.write(`\n  用户「${user.name}」的配对码：${user.code}\n  （这是唯一一次显示，请立刻交给本人；token 已落盘，无需再记）\n`);
+    process.stdout.write(cfg.accountsBase
+      ? `  ⛔ 开闸模式：本人还须先在网页注册账号，再用这个码配对：\n     ${cfg.cdnBase}/\n\n`
+      : `  ⚠️ 独立模式（没配账号服务）：这个码直接配对即可，无需网页账号。\n\n`);
     process.exit(0);
   } catch (error) {
     process.stderr.write(`[add-user] ${error.message}\n`);
@@ -49,11 +52,35 @@ if (ADD_USER) {
   }
 }
 
-/** token → 用户身份："owner" | 用户名 | null。所有 authorize 调用共用这一份。 */
+/** token → 本机"座位"：`"owner"` | 本机用户名 | null。所有 authorize 调用共用这一份。 */
 const registry = new UserRegistry(config.homeDir(cfg), (line) => log(line));
-const matchToken = (presented) => {
+/**
+ * 账号绑定表（10-13）：本机座位 ⇄ 网页账号。见 auth.js 的 AccountBindings 头注。
+ * ⛔ 它是"账号停用/删除要能立刻生效"与"将来按账号做云存储隔离"的**唯一挂点**。
+ */
+const bindings = new AccountBindings(config.homeDir(cfg), (line) => log(line));
+
+/**
+ * 账号闸（10-13）：`cfg.accountsBase` 非空即**开闸** —— 任何配对都必须先有网页账号。
+ *
+ * ⛔ 开闸后的两条硬规则：
+ *   ① 配对必须带**票据**，且票据要由**本机**去账号服务核销（不信网页转述的登录态）；
+ *   ② 一个座位只有绑定了账号才算有效 ⇒ 账号被停用、绑定被摘 ⇒ 它所有令牌**立刻失效**。
+ * 关闸（独立模式）= 改动前的行为，供自建/离线部署；启动横幅会明确说明当前是哪种模式。
+ */
+const GATED = Boolean(cfg.accountsBase);
+/** 账号状态轮询间隔。⛔ 可用环境变量缩短 —— 自测要在这个间隔内验证"停用后令牌失效"，等 5 分钟不现实。 */
+const ACCOUNT_POLL_MS = Math.max(500, Number(process.env.HARNESS_ACCOUNT_POLL_MS || 5 * 60_000));
+
+const seatOf = (presented) => {
   try { if (presented && safeEqual(presented, cfg.token)) return "owner"; } catch { /* 比较失败 = 不匹配 */ }
   return registry.userByToken(presented);
+};
+const matchToken = (presented) => {
+  const seat = seatOf(presented);
+  if (!seat) return null;
+  if (GATED && !bindings.of(seat)) return null;   // 开闸：没绑定账号的座位不算数
+  return seat;
 };
 /**
  * web 资源目录。⛔ 允许被环境变量覆盖：
@@ -100,6 +127,55 @@ try {
 } catch { /* cdnBase 是相对路径就不加 */ }
 
 const pairing = new Pairing(log);
+
+/* ── 账号闸：票据核销 + 状态轮询（10-13）──────────────────────────────────────
+   ⛔ 核心口径：**本机是唯一的核销方**。网页说"我登录了"一文不值 ——
+     网页代码完全在用户手里（改 localStorage、直接 curl 本机 127.0.0.1 的接口都行）。
+     唯一可信的是账号服务自己给的**回执**，所以票据必须由本机反向去核销。
+
+   失败原因**分档**（不能混成一句话）：界面要据此给出完全不同的指引 ——
+   `unknown` 票据无效 / `expired` 票据过期 / `used` 票据已被用过（重放）/
+   `account-disabled` 账号被停用或不存在 / `rate-limited` 请求过频 / `accounts-unreachable` 服务不可达。 */
+async function verifyAccountTicket(ticket) {
+  try {
+    const response = await fetch(`${cfg.accountsBase}/pair-ticket/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticket }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, reason: response.status === 429 ? "rate-limited" : "accounts-unreachable" };
+    if (payload && payload.ok && payload.username) return { ok: true, username: String(payload.username) };
+    return { ok: false, reason: String((payload && payload.reason) || "unknown") };
+  } catch (error) {
+    log(`[pair] 账号服务不可达：${error.message}`);
+    return { ok: false, reason: "accounts-unreachable" };
+  }
+}
+
+/**
+ * 账号状态轮询：把"账号被停用"从**只管新配对**扩到**也管已经在用的人**。
+ * ⛔ 失败放行：账号服务不可达时**不摘绑定** —— 否则站长服务器抖一下所有人都当场掉线，
+ *   那比"停用要等几分钟才生效"严重得多。可用性优先，且这是有意的取舍（写在 README 里）。
+ */
+async function pollAccountStatus() {
+  if (!GATED) return;
+  const accounts = bindings.accounts();
+  if (!accounts.length) return;
+  try {
+    const response = await fetch(`${cfg.accountsBase}/pair-ticket/status?usernames=${encodeURIComponent(accounts.join(","))}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return;
+    const payload = await response.json().catch(() => null);
+    for (const [username, info] of Object.entries((payload && payload.accounts) || {})) {
+      if (info && info.disabled && bindings.unbindByAccount(username)) {
+        log(`[account] 账号「${username}」已停用或不存在 ⇒ 摘除绑定，其令牌立即失效`);
+      }
+    }
+  } catch { /* 不可达 = 保持现状（失败放行） */ }
+}
 
 // ── 路由工具 ────────────────────────────────────────────────────────────────
 function sendJson(req, res, status, body) {
@@ -234,8 +310,11 @@ const server = http.createServer(async (req, res) => {
 
   if (p === "/api/handshake") {
     const presented = String(req.headers.authorization || "").startsWith("Bearer ");
-    // 账号身份跟着 token 走（没带 token 就是匿名 —— 只影响 account 字段，能力探测不受限）
-    const who = presented ? matchToken(String(req.headers.authorization).slice(7).trim()) : null;
+    // 身份跟着 token 走（没带 token 就是匿名 —— 只影响 account 字段，能力探测不受限）
+    const seat = presented ? matchToken(String(req.headers.authorization).slice(7).trim()) : null;
+    /* ⛔ 开闸时对外身份 = **网页账号**（不再是本机取的名字）——
+       本机名字与账号 username 是两套身份，混用会让"停用管不到人"和将来的云存储串户。 */
+    const identity = seat ? (GATED ? bindings.of(seat) : seat) : null;
     sendJson(req, res, 200, {
       ok: true,
       product: "codex-harness-cloud",
@@ -245,15 +324,18 @@ const server = http.createServer(async (req, res) => {
       engine: { ...engine.status, binary: USE_MOCK ? "(mock)" : cfg.engine.binary || null },
       /** ⛔ 云端存储的**预留位**：现在只声明能力位，不实现任何上传。
           将来开通时这里变成 { enabled: true, quotaBytes, plan } 并新增 /api/storage/*。 */
-      account: { userId: who || null, name: who || null, cloudStorage: { enabled: false, reserved: true } },
+      account: { userId: identity || null, name: identity || null, seat: seat || null, cloudStorage: { enabled: false, reserved: true } },
       capabilities: {
-        paired: presented,
+        paired: Boolean(seat),
         engineAvailable: USE_MOCK || Boolean(cfg.engine.binary),
         methods: [...RPC_ALLOW],
         /** 界面资源地址由服务端下发 ⇒ 前端不写死 CDN，换 CDN 只改本地配置 */
         cdnBase: cfg.cdnBase,
         pairingTtlMs: PAIR_CODE_TTL_MS,
         multiUser: true,
+        /** ⛔ 账号闸开关：界面据此决定"配对卡"是**收码**还是**指去网页**（见 web/app.js）。
+            必须是服务端说的 —— 让前端自己猜会出现"本机以为能收码、服务端却要票据"。 */
+        accountGate: GATED,
         attachments: false,
       },
     });
@@ -270,22 +352,47 @@ const server = http.createServer(async (req, res) => {
     let body;
     try { body = await readBody(req); } catch (error) { return sendJson(req, res, 400, { ok: false, error: error.message }); }
     const code = String(body.code || "").trim().toLowerCase();
+    const ticket = String(body.ticket || "").trim();
+
+    /* ⛔⛔ 开闸时**先核销票据、再比码**：
+       ① 顺序有讲究 —— 票据不过就直接拒，**不进入码比对**，免得拿错误信息探测本机码是否存在；
+       ② 核销由**本机**发起（见 verifyAccountTicket 的头注），不信网页转述的登录态。 */
+    let account = "";
+    if (GATED) {
+      if (!ticket) {
+        log("[pair] 拒绝：开闸模式下请求未带配对票据");
+        return sendJson(req, res, 403, { ok: false, error: "ticket-required" });
+      }
+      const verified = await verifyAccountTicket(ticket);
+      if (!verified.ok) {
+        log(`[pair] 拒绝：票据核销未通过（${verified.reason}）`);
+        return sendJson(req, res, 403, { ok: false, error: `ticket-${verified.reason}` });
+      }
+      account = verified.username;
+    }
 
     const ownerResult = pairing.redeem(code);
     if (ownerResult.ok) {
-      log("[pair] 配对成功（owner），已下发 token");
-      sendJson(req, res, 200, { ok: true, token: cfg.token, account: { userId: "owner", name: "owner" }, protocolVersion: cfg.protocolVersion });
+      bindings.bind("owner", account);
+      log(`[pair] 配对成功（owner${account ? ` · 账号 ${account}` : ""}），已下发 token`);
+      sendJson(req, res, 200, {
+        ok: true,
+        token: cfg.token,
+        account: { userId: account || "owner", name: account || "owner", seat: "owner", cloudStorage: { enabled: false } },
+        protocolVersion: cfg.protocolVersion,
+      });
       return;
     }
 
     const userResult = registry.redeem(code);
     if (userResult.ok) {
       const user = userResult.user;
-      log(`[pair] 用户「${user.name}」配对成功`);
+      bindings.bind(user.name, account);
+      log(`[pair] 用户「${user.name}」配对成功${account ? `（账号 ${account}）` : ""}`);
       sendJson(req, res, 200, {
         ok: true,
         token: user.token,
-        account: { userId: user.name, name: user.name, cloudStorage: { enabled: false } },
+        account: { userId: account || user.name, name: account || user.name, seat: user.name, cloudStorage: { enabled: false } },
         protocolVersion: cfg.protocolVersion,
       });
       return;
@@ -429,6 +536,9 @@ server.listen(cfg.port, "127.0.0.1", async () => {
   log(`[boot] 界面资源：${cfg.cdnBase}（不可达时回落到本地副本）`);
   log(`[boot] 引擎：${USE_MOCK ? "mock" : cfg.engine.binary || "未找到 —— 设置 HARNESS_CODEX_BINARY"}`);
   log(`[boot] CODEX_HOME：${cfg.engine.codexHome}`);
+  log(`[boot] 配对闸：${GATED
+    ? `开 —— 必须先有网页账号；票据由本机向 ${cfg.accountsBase} 核销`
+    : "关 —— 独立模式（未配置账号服务）：本机码即可配对，**无账号校验**"}`);
   // 配对码只打在控制台：能看到这行输出的人才配得上这台机器
   printPairBanner(base, pairing.issue());
   /**
@@ -442,7 +552,16 @@ server.listen(cfg.port, "127.0.0.1", async () => {
     if (issuedCount > 1 && Date.now() - lastIssuedAt > 24 * 60 * 60_000) return;   // 长期无人配对就别刷屏
     printPairBanner(base, pairing.issue());
   }, 20_000).unref();
-  if (OPEN_BROWSER) openBrowser(`${base}/?pair=${pairing.code}`);
+  /**
+   * ⛔ 开闸模式下**不再把配对码塞进自动打开的 URL**（10-13）。
+   *   旧行为 `openBrowser(base + "/?pair=" + code)` 等于"双击应用即自动登入" ——
+   *   它是"从本机侧完全绕开网页注册"的最短路径，也是这轮要修的东西本身。
+   *   现在开闸只打开**网页入口**（让用户去注册），配对照样要在那里完成。
+   */
+  if (OPEN_BROWSER) openBrowser(GATED ? `${cfg.cdnBase}/` : `${base}/?pair=${pairing.code}`);
+  // 账号状态轮询：账号被停用后，已签发的令牌也要失效（失败放行，见函数头注）
+  setInterval(pollAccountStatus, ACCOUNT_POLL_MS).unref();
+  void pollAccountStatus();
   if (!USE_MOCK) {
     engine.start().catch((error) => log(`[boot] 引擎启动失败（可稍后在界面上重试）：${error.message}`));
   } else {
@@ -457,7 +576,13 @@ function printPairBanner(base, code) {
   lastIssuedAt = Date.now();
   process.stdout.write(`\n  ┌───────────────────────────────────────────────┐\n`);
   process.stdout.write(`  │  配对码： ${code}   （${Math.round(PAIR_CODE_TTL_MS / 60000)} 分钟内有效，一次性）\n`);
-  process.stdout.write(`  │  打开：   ${base}/?pair=${code}\n`);
+  if (GATED) {
+    process.stdout.write(`  │  ⛔ 需先在网页注册账号，再用这个码完成配对：\n`);
+    process.stdout.write(`  │     ${cfg.cdnBase}/\n`);
+  } else {
+    process.stdout.write(`  │  ⚠️ 独立模式（没配账号服务）：本机码即可配对，无需网页账号\n`);
+    process.stdout.write(`  │  打开：   ${base}/?pair=${code}\n`);
+  }
   process.stdout.write(`  └───────────────────────────────────────────────┘\n\n`);
 }
 
