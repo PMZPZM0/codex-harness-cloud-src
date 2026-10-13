@@ -1090,6 +1090,8 @@ interface Window {
     runAutoUpdateComponent(id: string): Promise<{ id: string; label: string; action: "updated" | "unchanged" | "failed" | "skipped"; before: string; after: string; message: string }>;
     /* 10-13 统一更新体系：一键更新全部组件（手动入口，不按开关过滤 —— 用户点了就是授权）。逐项返回结��，单项失败不影响其余 */
     runAllAutoUpdateComponents(): Promise<{ id: string; label: string; action: "updated" | "unchanged" | "failed" | "skipped"; before: string; after: string; message: string }>[];
+    /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
+    respondCloseConfirm(action: "tray" | "quit" | "cancel", remember: boolean): Promise<{ ok: boolean; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
