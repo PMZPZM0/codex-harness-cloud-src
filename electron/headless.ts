@@ -207,8 +207,20 @@ const CHC_HOME = process.env.HARNESS_CLOUD_HOME || join(homedir(), ".codex-harne
 /* ── 账号闸（10-13）：**配对必须先有网页账号** ────────────────────────────────
    与 cloud/local-agent 的账号闸同一套语义（见其 auth.js / server.js 头注），但**两份实现并存**
    （这里 = Electron 真界面，那里 = 伴生服务 Node 脚本）—— 落盘**共用**同一批文件
-   （token / users.json / accounts.json 都在 HARNESS_CLOUD_HOME），所以两边必须同口径。 */
-const ACCOUNTS_BASE = String(process.env.HARNESS_ACCOUNTS_URL ?? "").replace(/\/+$/, "");
+   （token / users.json / accounts.json 都在 HARNESS_CLOUD_HOME），所以两边必须同口径。
+   ⛔⛔ **默认必须与伴生服务一致（云端）**：这里曾只读环境变量、没给默认 ⇒ 用户平时双击启动
+   （不带任何环境变量）时闸**永远是关的**，而伴生服务那条路却是开的 —— 同一台机器两种口径。
+   解析顺序：env > config.json 的 accountsBase > 默认云端；空串 = 独立模式（显式选择）。 */
+const DEFAULT_ACCOUNTS_BASE = "https://ppz123.asia/cloud-api";
+const ACCOUNTS_BASE = (() => {
+  const fromEnv = process.env.HARNESS_ACCOUNTS_URL;
+  if (fromEnv !== undefined) return String(fromEnv).replace(/\/+$/, "");
+  try {
+    const saved = JSON.parse(readFileSync(join(CHC_HOME, "config.json"), "utf8")) as { accountsBase?: unknown };
+    if (typeof saved.accountsBase === "string") return saved.accountsBase.replace(/\/+$/, "");
+  } catch { /* 没有配置文件就走默认 */ }
+  return DEFAULT_ACCOUNTS_BASE;
+})();
 /** 网页登录门（用户在这里注册并配对）。开闸时本机界面只负责把人送到这里。 */
 const ASSISTANT_WEB_ENTRY = "https://ppz123.asia/cloud/";
 const GATED = ACCOUNTS_BASE.length > 0;
@@ -756,6 +768,12 @@ function serveFile(res: ServerResponse, file: string) {
   res.writeHead(200, { "Content-Type": MIME[extname(file)] || "application/octet-stream", "Cache-Control": "no-store" });
   res.end(body);
 }
+
+/* 二次启动（用户再点一次快捷方式）⇒ **带出助手窗口**（10-13 用户："关闭应用没有办法重启应用"）：
+   main.ts 的 second-instance 只调 showMainWindow() —— 无头形态下主窗口是隐藏的，
+   用户看到的是"什么都没发生"，真正的界面在助手窗口里 ⇒ 这里补一个把助手窗口带起来的。
+   （双击快捷方式 = 唤回界面；真正退出走托盘右键「退出"。） */
+app.on("second-instance", () => { void showAssistantWindow(); });
 
 /* ── 云端选址（与登录门同一铁律：前置探测，不用 <link> 的 error 回退）────────
    跟随服务器更新的机制：真界面资产在 https://…/cloud/app/（version.json 带
