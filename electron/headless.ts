@@ -514,8 +514,12 @@ function parseDefaults(paramsDecl: string | null): unknown[] {
 
 function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[], accountGate: boolean): string {
   /* ⛔ 账号闸开关必须**由服务端注入**：shim 跑在浏览器里，自己猜不出（它连配置文件都读不到）。
-     界面的配对卡据此决定"收配对码"还是"指去网页"—— 两个方向必须与主进程一致。 */
-  const gateInject = `window.__CHC_ACCOUNT_GATE__ = ${accountGate ? "true" : "false"};\n`;
+     界面的配对卡据此决定"收配对码"还是"指去网页"—— 两个方向必须与主进程一致。
+     ⛔ 同理：网页入口与本机配对码也要注入 —— 配对卡跑在浏览器里，
+        引用主进程常量会直接 ReferenceError（卡片整个画不出来，实测踩过）。 */
+  const gateInject = `window.__CHC_ACCOUNT_GATE__ = ${accountGate ? "true" : "false"};\n`
+    + `window.__CHC_WEB_ENTRY__ = ${JSON.stringify(ASSISTANT_WEB_ENTRY)};\n`
+    + `window.__CHC_PAIR_CODE__ = ${JSON.stringify(issueOwnerPair())};\n`;
   return `/* 自动生成（electron/headless.ts）—— 浏览器端 window.codex，与桌面 preload 同源同形 */
 (function () {
   "use strict";
@@ -550,14 +554,18 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
       card.style.cssText = "background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:400px;width:90%;font-family:system-ui,sans-serif;text-align:center";
       const head = document.createElement("div"); head.textContent = "先注册账号，再配对";
       head.style.cssText = "font-size:15px;font-weight:600;margin-bottom:8px";
+      /* ⛔ 本机配对码直接画在卡片里 —— 以前只打在控制台，云助手常以隐藏控制台方式跑，用户读不到码 */
+      const codeRow = document.createElement("div");
+      codeRow.textContent = "本机配对码：" + (window.__CHC_PAIR_CODE__ || "（刷新本页获取）");
+      codeRow.style.cssText = "font-size:20px;font-weight:700;letter-spacing:4px;margin:10px 0;padding:10px;background:#f3f4f6;border-radius:8px";
       const tip = document.createElement("div");
-      tip.textContent = "配对需要一个网页账号：请到下面这个地址注册或登录，然后用你的配对码完成配对；成功后会自动跳回本机界面。";
+      tip.textContent = "① 打开下面这个网页，注册或登录你的账号；② 把上面的本机配对码填进去点「认领」；③ 认领后本机会自动进入界面。若提示码已过期，刷新本页换新码。";
       tip.style.cssText = "font-size:12.5px;color:#666;line-height:1.6;margin-bottom:14px;word-break:break-all";
       const link = document.createElement("a");
-      link.textContent = ASSISTANT_WEB_ENTRY;
-      link.href = ASSISTANT_WEB_ENTRY;
-      link.style.cssText = "display:block;padding:10px 0;background:#185fa5;color:#fff;border-radius:8px;font-size:13.5px;text-decoration:none";
-      card.appendChild(head); card.appendChild(tip); card.appendChild(link);
+      link.textContent = window.__CHC_WEB_ENTRY__ || "";
+      link.href = window.__CHC_WEB_ENTRY__ || "";
+      link.style.cssText = "display:block;padding:10px 0;background:#185fa5;color:#fff;border-radius:8px;font-size:13.5px;text-decoration:none;word-break:break-all";
+      card.appendChild(head); card.appendChild(codeRow); card.appendChild(tip); card.appendChild(link);
       box.appendChild(card); document.body.appendChild(box);
       return;
     }
@@ -800,9 +808,13 @@ function shellHtml(shimJs: string, assetBase: string) {
       .replace(/style-src 'self'/g, `style-src 'self' ${cloudOrigin}`);
   }
   const cdnMark = `<script>window.__CHC_CDN__ = ${JSON.stringify(assetBase)};</script>\n`;
+  /* 配对码注入（10-13）：**直接显示在应用内的配对卡里** ——
+     ⛔ 以前只打在控制台，而云助手常以隐藏/重定向控制台方式跑 ⇒ 用户根本读不到码，
+     网页认领那一步就卡死。窗口里能看到的人 = 在这台机器前的人，信任模型不变。 */
+  const pairMark = `<script>window.__CHC_PAIR_CODE__ = ${JSON.stringify(issueOwnerPair())};</script>\n`;
   // 云端登录门的 token 交接：/#t=<token>（fragment 不进服务器日志）→ localStorage → 抹掉 hash
   const handoff = `<script>(function(){var m=/^t=([0-9a-f]{16,})$/.exec(location.hash.slice(1));if(m){try{localStorage.setItem("chc-token",m[1])}catch(e){}history.replaceState(null,"",location.pathname+location.search)}})();</script>\n`;
-  return rewritten.replace("</head>", `${cdnMark}${handoff}<script>${shimJs}</script>\n</head>`);
+  return rewritten.replace("</head>", `${cdnMark}${pairMark}${handoff}<script>${shimJs}</script>\n</head>`);
 }
 
 function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
