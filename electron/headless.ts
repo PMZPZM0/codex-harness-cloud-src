@@ -729,8 +729,23 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
   function pairIfNeeded() {
     if (!tok()) showPairBox();
   }
+  /* ⛔ 自愈（10-14 用户实测"断开后一直卡启动页"）：**闸开着 + 本地有令牌 + 机器却未配对**
+     = 失配的旧令牌（断开/服务端解绑/账号停用留下的）—— 外壳会带着它启动，全部 401。
+     开机自检一次：失配 ⇒ 清令牌并重载，按未配对重新走（sessionStorage 防循环，只做一次）。 */
+  function healStaleToken() {
+    fetch("/api/cloud-state", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (s) {
+      if (!s || s.machinePaired !== false) return;   // 已配对/状态拿不到 ⇒ 不动
+      var hasTok = false;
+      try { hasTok = !!localStorage.getItem("chc-token"); } catch (e) { /* 忽略 */ }
+      if (!hasTok) return;
+      if (sessionStorage.getItem("__chc_heal")) return;
+      try { sessionStorage.setItem("__chc_heal", "1"); localStorage.removeItem("chc-token"); } catch (e) { return; }
+      location.reload();
+    }).catch(function () { /* 状态拿不到就不动 */ });
+  }
   function onReady() {
     watchAssistantBrand();
+    healStaleToken();
     pairIfNeeded();
   }
   if (document.readyState === "loading") {
