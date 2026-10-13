@@ -1,8 +1,8 @@
 {
-  "name": "codex-harness-desktop",
+  "name": "codex-assistant",
   "version": "0.0.38",
   "private": true,
-  "description": "Independent desktop harness for OpenAI Codex",
+  "description": "Codex Assistant — cloud-connected local assistant (independent product; NOT Codex Harness Desktop)",
   "main": "dist-electron/main.js",
   "scripts": {
     "accept": "node scripts/accept.mjs",
@@ -266,5 +266,6 @@
         "AppImage"
       ]
     }
-  }
+  },
+  "productName": "Codex Assistant"
 }
