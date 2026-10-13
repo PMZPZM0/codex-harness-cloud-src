@@ -574,7 +574,7 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
            真退出（不弹确认框）⇒ 这里不再需要给 950 让位，直接压过启动图。 */
       box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10001";
       var splashes = document.querySelectorAll(".boot-splash");
-      for (var si = 0; si < splashes.length; si++) (splashes[si] as HTMLElement).style.display = "none";
+      for (var si = 0; si < splashes.length; si++) splashes[si].style.display = "none";
       var card = document.createElement("div");
       card.style.cssText = "background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:400px;width:90%;font-family:system-ui,sans-serif;text-align:center";
       var head = document.createElement("div"); head.textContent = "连接云端账号";
