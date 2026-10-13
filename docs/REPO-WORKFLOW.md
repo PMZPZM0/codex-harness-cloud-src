@@ -1,38 +1,49 @@
-# 仓库拓扑与协作流程（Codex Harness Desktop ↔ PPcode）
+# 仓库拓扑与协作流程（Codex Harness Desktop ↔ PPcode ↔ 云助手）
 
 > 本文档是**多仓协作的唯一上手入口**：仓库拓扑、核心功能更新后的同步流程、GitHub 推送规范、
-> PPcode 发版全流程。步骤全部经过实跑验证（2026-10-10），按本文操作即可，无需额外口头说明。
+> PPcode 发版全流程。步骤全部经过实跑验证（2026-10-10；拓扑 10-13 随「源码合入发布仓」重构更新，
+> 同日补入云助手仓与「改动必须同轮同步全部三仓」硬规则），按本文操作即可，无需额外口头说明。
 > ⛔ 两仓的 `AGENTS.md` 是**逐字节镜像** —— 改任何一边必须同内容同步另一边（含本文档的指针行）。
 
-## 一、仓库拓扑（先搞清四个"仓"）
+## 一、仓库拓扑（先搞清这几个"仓"）
 
 | 本地路径 | GitHub 仓库 | 可见性 | 角色 |
 |---|---|---|---|
 | `D:\Codex Harness Desktop` | `PMZPZM0/codex-harness-desktop` | 私有 | **主应用**（Codex Harness Desktop）源码；主应用自身的发版也在这里（tag → 本仓 CI → 本仓 Release） |
-| `D:\PPcode` | `PMZPZM0/ppcode-src` | 私有 | **PPcode 产品**源码（与主仓同构的副本，品牌不同） |
-| —— | `PMZPZM0/PPcode` | **公开** | PPcode **发布仓**：只放 README + Releases。⛔ 应用内「检查更新」匿名拉它的 `/releases/latest`，所以它必须公开 —— **公开就不能放源码**，源码只在 ppcode-src |
-| —— | 远端凭据 | — | 两仓远端都是 **SSH deploy key：只能推代码与 tag**。建 Release / 传资产只能在 Actions 里做（本机无 gh CLI、无 API token） |
+| `D:\PPcode` | **`PMZPZM0/PPcode`（origin，唯一远端）** | 公开 | **PPcode 产品：源码 + 发布页合一**（10-12 重构 `9b58ee0 源码合入发布仓`）。应用内「检查更新」匿名拉它的 `/releases/latest`；CI 的 `PUBLISH_REPO` 也指向本仓（发布 = 本仓 Release，无跨仓 token） |
+| `D:\Codex Assistant` | **`PMZPZM0/codex-harness-cloud-src`（remote 名 `cloud`）** | 公开 | **云助手**：headless 跑真 `main.ts`、浏览器渲染桌面版 dist（登录门 + admin）。⛔ 与桌面版**彻底拆开**（独立 userData / AUMID / 安装目录 / 助手形态不建主窗）。⛔ 本仓 `origin` 历史遗留指向**桌面版仓** —— 推代码一律 `git push cloud main`，推 origin 会污染主线 |
+| —— | ~~`PMZPZM0/ppcode-src`~~ | **已删除**（2026-10-13 用户告知「PPCode 换 GitHub 仓库了」） | 旧私有源仓，⛔ 别再推 —— `git remote -v` 核对远端是 `PMZPZM0/PPcode` 再推 |
+| —— | 远端凭据 | — | 三仓远端都是 **SSH deploy key：只能推代码与 tag**。建 Release / 传资产只能在 Actions 里做（本机无 gh CLI、无 API token） |
 
 关键事实（都有代码锚点，别凭记忆）：
 
 - PPcode 应用内更新源：`electron/update-source.ts` → `DEFAULT_UPDATE_REPO = "PMZPZM0/PPcode"`
   （匿名拉 `/releases/latest`）。
 - 主应用更新源：`electron/updates.ts` → `GITHUB_REPO = "PMZPZM0/codex-harness-desktop"`。
+- **两仓更新链的网络都走国内镜像优先**（10-11）：`electron/gh-mirror.ts` 是镜像表单一真相源
+  （gh-proxy → ghfast → 直连，10-11 实测 gh-proxy API/资产均通、ghfast API 已 403 只当下载通道、
+  直连兜底）；安装包完整性靠 asset.digest 的 sha256 强制比对（镜像篡改包体在校验处被删）。
+  ⛔ 带令牌的请求绝不过镜像（令牌泄露面）。守卫 12e。
 - 两仓 `.gitignore` 都忽略 `.workbuddy/`（含密临时文件、AI 记忆永不入库）。
 - PPcode 与主仓的差异是**有意的品牌差异**，同步时按 §二.3 的例外清单处理，⛔ 不要"顺手统一"。
 
-## 二、核心功能更新后的同步流程（主仓 → ppcode-src）
+## 二、核心功能更新后的同步流程（主仓 → PPcode / 云助手 两个副本仓）
 
-方向恒定：**主仓是开发主线，ppcode-src 是接收方**（反向需求 = 先在主仓实现再同步）。
+方向恒定：**主仓是开发主线，两个副本仓是接收方**（反向需求 = 先在主仓实现再同步）。
+⛔⛔ **一轮功能改动必须同轮同步到两个副本仓并各自推送**（2026-10-13 用户令）——
+只改主仓就收尾 = 这一轮工作**未完成**。两仓流程完全同构，差异只有两点：
+云助手推 **`cloud`**（⛔ 它的 `origin` 指向桌面版仓，推错就污染主线）；
+副本侧生成物一律**各仓自己**跑 `gen:ipc` / `gen:domains`，⛔ 不套主仓产物。
 
 ```
 主仓改动（check 绿 + 已提交）
 → ① 找上次同步点 → ② 生成补丁 → ③ 逐文件预检 → ④ 应用（品牌文件手工）
-→ ⑤ ppcode 侧验证（tsc + 守卫 + check）→ ⑥ 提交 fix/feat(sync) → ⑦ 两仓推 origin
+→ ⑤ 副本侧验证（build + 受影响守卫 + check-preflight）→ ⑥ 提交 feat(sync) → ⑦ 三仓推各自远端
 ```
 
-1. **找上次同步点**：`cd /d/PPcode && git log --grep="同步主仓" -1` —— 提交信息里写的
-   `同步主仓 X..Y` 的 **Y** 就是上次同步点（主仓 commit）。
+1. **找上次同步点**：`cd /d/PPcode && git log --grep="自桌面版" -1`（云助手同理：
+   `cd "/d/Codex Assistant" && git log --grep="自桌面版" -1`）—— 提交信息里写的
+   「自桌面版 X..Y」的 **Y** 就是上次同步点（主仓 commit）。
 2. **生成补丁**（主仓）：
    `git diff <上次同步点>..HEAD > .workbuddy/tmp/sync-ppcodeN.patch`
    （临时产物一律放 `.workbuddy/tmp/`，它已 gitignore，永不入库）。
@@ -58,7 +69,8 @@
 6. **提交**：`feat(sync)/fix(sync): 同步原版<主题>`，正文写明：同步区间（主仓 X..Y）、
    文件数与"全部直接套 / 哪些手工"、副本差异、判据（tsc / check / 守卫计数）。
    ⛔ 提交信息含反引号或 `$(` 时必须 `Write` 落盘 + `git commit -F`（bash 会当命令替换）。
-7. **两仓都推**：`git push origin main`（见 §三）。
+7. **三仓都推**：主仓与 PPcode 用 `git push origin main`；云助手用 `git push cloud main`
+   （⛔ 云助手的 `origin` 指向桌面版仓，推它 = 污染主线）。见 §三。
 
 ### 同步时的已知坑位清单（每条都真实踩过）
 
@@ -128,8 +140,8 @@ git push origin vX.Y.Z        # ⛔⛔ 只有 tag 触发 release.yml
 1. 核对 `GITHUB_REF_NAME == v${package.json.version}`，不一致 **error 退出**；
 2. `docs/releases/vX.Y.Z.md` 不存在 ⇒ **error 退出**；
 3. `mac` job（build-mac.yml：arm64 + x64 双芯片）+ `win` job（build-win.yml）并行构建；
-4. `publish` job（needs 两者）：用 `secrets.PPCODE_RELEASE_TOKEN` **跨仓**发布到
-   `PUBLISH_REPO = PMZPZM0/PPcode`；
+4. `publish` job（needs 两者）：用 `secrets.PPCODE_RELEASE_TOKEN` 发布到
+   `PUBLISH_REPO = PMZPZM0/PPcode`（源码合入后 = **本仓 Release**，2026-10-13 拓扑对齐）；
    - release 已存在 → `gh release edit --notes-file`（覆盖重发；⛔ 只 `upload` 不换正文）+ 资产 `--clobber`；
    - **草稿转正兜底**：`isDraft=true` 时 `gh release edit --draft=false`
      （⛔ 删远端 tag 会让同名 release 退回草稿态，匿名不可见、更新器永远收不到 —— 能 bump 就别删 tag）；
@@ -152,7 +164,7 @@ curl -sIL -o /dev/null -w '%{http_code}\n' https://github.com/PMZPZM0/PPcode/rel
 ### 4.6 secret 管理
 
 `PPCODE_RELEASE_TOKEN` = 只授 `PMZPZM0/PPcode` **contents:write** 的 fine-grained PAT，
-配在 **ppcode-src 仓的 Actions secrets**。token 轮换时必须同步更新该 secret
+配在 **PPcode 仓的 Actions secrets**。token 轮换时必须同步更新该 secret
 （网页：Settings → Secrets and variables → Actions）。
 
 ### 4.7 主应用（Codex Harness Desktop）的发版
@@ -165,4 +177,4 @@ curl -sIL -o /dev/null -w '%{http_code}\n' https://github.com/PMZPZM0/PPcode/rel
 ## 五、发版后收尾
 
 - 当日记忆（`.workbuddy/memory/YYYY-MM-DD.md`）+ `logs/` 结论档案；
-- ppcode-src 的同步/发版提交信息里**始终写明主仓区间与判据** —— 下一次同步的起点靠它找（§二.1）。
+- PPcode 的同步/发版提交信息里**始终写明主仓区间与判据** —— 下一次同步的起点靠它找（§二.1）。
