@@ -3,6 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { Fragment, useState } from "react";
+import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { hk } from "../../../lib/hk";
 import {
   AlertTriangle,
@@ -658,6 +659,10 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               <button className="account-icon ic-cyan" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); void loadPairStates(); }}><Smartphone size={15} /></button>
               <button className="sidebar-settings ic-blue" title="设置" onClick={() => { setSettingsPage("appearance"); setSettingsOpen(true); setMobileNav(false); }}><Settings size={16} /></button>
             </div>
+            {/* ⛔ 10-13 关闭确认弹窗（应用内卡片，替代原生系统框）：自包含组件（自己订阅
+                close-confirm:ask / 自己回包），主进程关窗守卫 preventDefault 后推事件到这里。
+                它 portal 到 body ⇒ 放在 aside 里的位置不影响定位。 */}
+            <CloseConfirmDialog />
           </aside>
   );
 }
