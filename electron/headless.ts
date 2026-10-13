@@ -551,33 +551,49 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
        ⛔ 开关读的是**服务端注入的 window.__CHC_ACCOUNT_GATE__** ——
          这段代码跑在浏览器里，主进程的常量在这里不存在。 */
     if (window.__CHC_ACCOUNT_GATE__ === true) {
-      const box = document.createElement("div");
+      /* ⛔ OAuth 式浏览器授权（10-13 晚）：本机只负责**生成配对码 + 等待授权结果**；
+         授权动作在系统浏览器里完成（点「打开授权页面」唤起，带 ?claim= 预填本机码）。
+         等待期轮询 cloud-state：认领完成（machinePaired）⇒ 刷新进入界面；
+         ⛔ 网页认领后还会 302 回本机 /auth/callback —— 双保险，谁先到都算数。 */
+      var box = document.createElement("div");
       box.id = "__chc-pair";
       box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:99999";
-      const card = document.createElement("div");
+      var card = document.createElement("div");
       card.style.cssText = "background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:400px;width:90%;font-family:system-ui,sans-serif;text-align:center";
-      const head = document.createElement("div"); head.textContent = "先注册账号，再配对";
-      head.style.cssText = "font-size:15px;font-weight:600;margin-bottom:8px";
-      /* ⛔ 本机配对码直接画在卡片里 —— 以前只打在控制台，云助手常以隐藏控制台方式跑，用户读不到码 */
-      const codeRow = document.createElement("div");
-      codeRow.textContent = "本机配对码：" + (window.__CHC_PAIR_CODE__ || "（刷新本页获取）");
-      codeRow.style.cssText = "font-size:20px;font-weight:700;letter-spacing:4px;margin:10px 0;padding:10px;background:#f3f4f6;border-radius:8px";
-      const tip = document.createElement("div");
-      tip.textContent = "① 打开下面这个网页，注册或登录你的账号；② 把上面的本机配对码填进去点「认领」；③ 认领后本机会自动进入界面。若提示码已过期，刷新本页换新码。";
-      tip.style.cssText = "font-size:12.5px;color:#666;line-height:1.6;margin-bottom:14px;word-break:break-all";
-      const link = document.createElement("a");
-      link.textContent = window.__CHC_WEB_ENTRY__ || "";
-      link.href = window.__CHC_WEB_ENTRY__ || "";
-      link.style.cssText = "display:block;padding:10px 0;background:#185fa5;color:#fff;border-radius:8px;font-size:13.5px;text-decoration:none;word-break:break-all";
-      /* ⛔ 必须**在系统浏览器里打开**，绝不能让助手窗口自己导航过去 ——
-         旧版点了链接会把本窗口带去网页，用户注册完回来本地界面就没了（实测投诉："返回都没有"）。
-         openExternal 走系统默认浏览器，助手窗口原地不动，认领后自动进入。 */
-      link.onclick = function (e) {
-        e.preventDefault();
-        try { window.codex.openExternal(window.__CHC_WEB_ENTRY__); } catch (e2) { /* 忽略 */ }
+      var head = document.createElement("div"); head.textContent = "连接云端账号";
+      head.style.cssText = "font-size:15px;font-weight:600;margin-bottom:10px";
+      var codeRow = document.createElement("div");
+      codeRow.textContent = window.__CHC_PAIR_CODE__ || "（刷新本页获取）";
+      codeRow.style.cssText = "font-size:24px;font-weight:700;letter-spacing:.3em;text-indent:.3em;margin:6px 0;padding:12px;background:#f3f4f6;border-radius:10px;font-family:ui-monospace,Consolas,monospace";
+      var cap = document.createElement("div");
+      cap.textContent = "本机配对码 · 在网页上认领时填这个";
+      cap.style.cssText = "font-size:11.5px;color:#888;margin:-2px 0 12px";
+      var st = document.createElement("div"); st.id = "__chc-wait";
+      st.style.cssText = "font-size:12.5px;color:#555;line-height:1.7;margin-bottom:12px";
+      st.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #7c3aed;border-top-color:transparent;animation:__chcspin .8s linear infinite;vertical-align:-3px;margin-right:8px"></span>等待浏览器授权…';
+      var style = document.createElement("style");
+      style.textContent = "@keyframes __chcspin{to{transform:rotate(360deg)}}";
+      document.head.appendChild(style);
+      var open = document.createElement("button"); open.textContent = "打开授权页面";
+      open.style.cssText = "width:100%;padding:10px 0;background:#185fa5;color:#fff;border:none;border-radius:8px;font-size:13.5px;cursor:pointer;margin-bottom:8px";
+      open.onclick = function () {
+        var url = (window.__CHC_WEB_ENTRY__ || "https://ppz123.asia/cloud/") + "?claim=" + (window.__CHC_PAIR_CODE__ || "");
+        try { window.codex.openExternal(url); } catch (e) { window.open(url, "_blank", "noopener"); }
       };
-      card.appendChild(head); card.appendChild(codeRow); card.appendChild(tip); card.appendChild(link);
+      var cancel = document.createElement("button"); cancel.textContent = "取消";
+      cancel.style.cssText = "width:100%;padding:8px 0;background:transparent;color:#666;border:1px solid #ccc;border-radius:8px;font-size:12.5px;cursor:pointer";
+      cancel.onclick = function () { location.reload(); };
+      card.appendChild(head); card.appendChild(codeRow); card.appendChild(cap);
+      card.appendChild(st); card.appendChild(open); card.appendChild(cancel);
       box.appendChild(card); document.body.appendChild(box);
+      /* 等待轮询：认领完成 ⇒ 本机已绑定 ⇒ 刷新进界面；账号停用 ⇒ 显示失败原因 */
+      var waited = 0;
+      var timer = setInterval(function () {
+        fetch("/api/cloud-state", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (s) {
+          if (s && s.machinePaired) { clearInterval(timer); location.reload(); }
+          else if ((waited += 2000) > 180000) { clearInterval(timer); st.textContent = "等待超时：网页上还没有完成认领。可点「打开授权页面」重试。"; }
+        }).catch(function () { /* 瞬时失败继续等 */ });
+      }, 2000);
       return;
     }
     var box = document.createElement("div");
@@ -972,6 +988,61 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     try { rmSync(deviceTokenFile, { force: true }); } catch { /* 忽略 */ }
     console.log("[cloud] 已断开云端连接（清空账号绑定与设备 token）");
     deny(200, { ok: true });
+    return;
+  }
+
+  /* ── OAuth 式浏览器授权（10-13 晚）：回调页 + 授权态令牌交接 ─────────────────
+     流程：本机点「授权」→ 系统浏览器打开网页（?claim=<本机码> 预填）→ 用户注册/登录并
+     认领 → 网页 **302 回本机 /auth/callback?code=<码>** → 本机回调页轮询绑定状态，
+     绑定完成即把本地令牌写进 localStorage 并进入界面。
+     ⛔ 轮询（/api/cloud-state 的 machinePaired）是兜底：就算浏览器拦截了重定向，
+        本机的 5 秒认领轮询照样会完成绑定（双保险）。 */
+  if (p === "/auth/callback") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    const claimCode = String(url.searchParams.get("code") || "").replace(/[^0-9a-f]/g, "").slice(0, 8);
+    const okPage = `<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="utf-8"/>` +
+      `<meta name="viewport" content="width=device-width,initial-scale=1"/><title>授权完成 · Codex Assistant</title>` +
+      `<style>html,body{margin:0;height:100%;background:#141413;color:#ececea;font:14px/1.6 Inter,system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;display:flex;align-items:center;justify-content:center}` +
+      `.box{text-align:center;max-width:380px;padding:32px}.t{font-size:16px;font-weight:600;margin-bottom:8px}` +
+      `.d{font-size:12.5px;color:#a6a6a1;line-height:1.7}.spin{display:inline-block;width:16px;height:16px;border-radius:50%;` +
+      `border:2px solid #7c3aed;border-top-color:transparent;animation:s .8s linear infinite;vertical-align:-3px;margin-right:8px}` +
+      `@keyframes s{to{transform:rotate(360deg)}}.bad{color:#ec7a70}</style></head><body><div class="box">` +
+      `<div class="t" id="t">授权成功</div><div class="d" id="d"><span class="spin"></span>正在完成连接，即将进入界面…</div></div>` +
+      `<script>(function(){var code=${JSON.stringify(claimCode)};var tries=0;` +
+      `function done(){document.getElementById("t").textContent="连接完成";` +
+      `fetch("/api/pair-token-for-callback?code="+encodeURIComponent(code),{cache:"no-store"})` +
+      `.then(function(r){return r.json()}).then(function(j){` +
+      `if(j&&j.ok&&j.token){try{localStorage.setItem("chc-token",j.token)}catch(e){}}location.replace("/")})` +
+      `.catch(function(){location.replace("/")})}` +
+      `function fail(m){document.getElementById("t").textContent="授权未完成";document.getElementById("d").innerHTML='<span class="bad">'+m+'</span><br>可回到本机窗口点「重新打开授权页面」重试。';}` +
+      `function tick(){fetch("/api/cloud-state",{cache:"no-store"}).then(function(r){return r.json()}).then(function(s){` +
+      `if(s&&s.machinePaired){done();return}` +
+      `if(++tries>40){fail("等待超时：本机没有收到认领结果。请确认网页上的认领是否成功，然后回到本机窗口重试。");return}` +
+      `setTimeout(tick,600)})}tick();})();</script></body></html>`;
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(okPage);
+    return;
+  }
+  /* 授权回包：凭本机码取本地令牌。⛔ 码必须与账号服务上「已认领」的记录对得上
+     （服务端真相源）—— 否则任何人拿一个编造的码就能换出本地令牌（首轮实现漏了这条，已补）。 */
+  if (p === "/api/pair-token-for-callback" && req.method === "GET") {
+    if (!GATED) { deny(404, { ok: false, error: "standalone" }); return; }
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    const claimCode = String(url.searchParams.get("code") || "").replace(/[^0-9a-f]/g, "").slice(0, 8);
+    if (!claimCode) { deny(404, { ok: false, error: "not-claimed" }); return; }
+    void (async () => {
+      try {
+        const check = await fetch(`${ACCOUNTS_BASE}/device/claim-status?code=${encodeURIComponent(claimCode)}`, { signal: AbortSignal.timeout(8000) });
+        const meta = (await check.json().catch(() => null)) as { ok?: boolean; claimed?: boolean; username?: unknown } | null;
+        if (!check.ok || !meta?.ok || !meta.claimed) { deny(404, { ok: false, error: "not-claimed" }); return; }
+        const username = String(meta.username || "");
+        /* 双保险：轮询若还没跑到，这里顺手完成绑定 */
+        bindSeat("owner", username);
+        deny(200, { ok: true, token: ownerToken, account: username });
+      } catch {
+        deny(502, { ok: false, error: "accounts-unreachable" });
+      }
+    })();
     return;
   }
 

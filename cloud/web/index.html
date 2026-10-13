@@ -433,7 +433,7 @@
     userInput.focus();
   }
 
-  function renderPairing(agentBase, presetPair) {
+  function renderPairing(agentBase, presetPair, presetClaim) {
     boot.hidden = true; gate.hidden = true; login.hidden = false;
     login.innerHTML = "";
     login.appendChild(stepBar(2));
@@ -488,7 +488,8 @@
     input.className = "code"; input.id = "login-code";
     input.placeholder = "8 位十六进制"; input.maxLength = 8;
     input.autocomplete = "off"; input.spellcheck = false;
-    if (presetPair) input.value = String(presetPair).toLowerCase();
+    if (presetClaim) input.value = String(presetClaim).toLowerCase();
+    else if (presetPair) input.value = String(presetPair).toLowerCase();
     var status = document.createElement("p"); status.className = "status";
     var go = document.createElement("button");
     go.className = "go"; go.innerHTML = IC.plug + "<span>连接我的电脑</span>";
@@ -585,8 +586,10 @@
           status.textContent = why === "unauthorized" ? "登录状态已过期，请重新登录" : "认领失败（" + (why || "未知") + "）";
           status.className = "status bad"; claim.disabled = false; return;
         }
-        status.textContent = "已认领 ✓ 本机会在几秒内自动完成连接（本机窗口会自动进入界面）";
+        status.textContent = "已认领 ✓ 正在回到本机完成连接…";
         status.className = "status";
+        /* ⛔ OAuth 式收尾：浏览器 302 回本机回调页（/auth/callback），由本机完成令牌交接 */
+        setTimeout(function () { window.location.href = agentBase + "/auth/callback?code=" + encodeURIComponent(code); }, 600);
       }).catch(function () { status.textContent = "网络错误"; status.className = "status bad"; claim.disabled = false; });
     };
     login.appendChild(label);
@@ -597,6 +600,8 @@
     login.appendChild(guideToggle);
     login.appendChild(why);
     input.focus();
+    /* ⛔ 从授权链接进来（?claim=）⇒ 登录后**自动提交认领**，用户在网页上零输入 */
+    if (presetClaim) setTimeout(function () { claim.click(); }, 500);
   }
 
   /** connector 模式的主流程。
@@ -605,19 +610,20 @@
      顺序：账号（有会话就跳过）→ 找本机助手 → 配对。 */
   function runConnector() {
     var preset = new URLSearchParams(location.search).get("pair");
+    var presetClaim = new URLSearchParams(location.search).get("claim");
     accountFetch("/me").then(function (res) {
-      if (res.ok && res.j && res.j.ok) afterAccount(preset);
-      else renderAccount(preset);
-    }).catch(function () { renderAccount(preset); });
+      if (res.ok && res.j && res.j.ok) afterAccount(preset, presetClaim);
+      else renderAccount(preset, presetClaim);
+    }).catch(function () { renderAccount(preset, presetClaim); });
   }
 
   /** 账号就绪后：找本机助手 → 配对步；找不到就给"启动指引"（可重试）。 */
-  function afterAccount(preset) {
+  function afterAccount(preset, presetClaim) {
     say("正在寻找本机助手…");
     boot.hidden = false; login.hidden = true;
     findAgent().then(function (agent) {
       if (!agent) { showAssistantGate(); return; }
-      renderPairing(agent.base, preset);
+      renderPairing(agent.base, preset, presetClaim);
     }).catch(function (error) {
       showGate("连接失败", String(error && error.message ? error.message : error), null);
     });
