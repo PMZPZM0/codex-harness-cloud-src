@@ -394,6 +394,10 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["history:search"],
     note: "09-24 新增：顶栏 🔍 历史会话搜索。真相源 = rollout 原档（sessions/** + archived_sessions/**）；indexOf 快速否决 + >32MB 跳过计数 + mtime 倒序提前收工",
   },
+  { prefix: "autoUpdate", count: 5, status: "in-features", file: "features/auto-update-ipc.ts",
+    channels: ["autoUpdate:status", "autoUpdate:set", "autoUpdate:scan", "autoUpdate:run", "autoUpdate:run-all"],
+    note: "10-13 统一更新体系：组件清单在 electron/update-registry.ts（单一真相源，含不支持更新的条目及原因），执行层在 electron/update-backends.ts，安全网（快照/回滚/幂等）在 electron/update-safety.ts。status/set 管开关，scan 给全量清单，run / run-all 是手动更新入口。⛔ 手动链与自动链**共用**同一个 updateComponent，不写第二套判据；⛔ 所有远端一律国内镜像（npm→npmmirror、pip→清华、GitHub→gh-mirror）",
+  },
 ];
 
 /** 按通道（完整 channel 名）查所属域条目 */

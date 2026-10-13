@@ -86,6 +86,30 @@ export type AppSettings = {
    */
   changeBackupEnabled?: boolean;
   changeBackupDir?: string;
+  /**
+   * 技能自动更新（10-13 用户令）：开启后主进程后台静默检查市场技能内容变化并自动更新
+   * （启动 15s 后一次 + 每 6 小时一次；走与手动更新完全相同的链路，含安全检查）。
+   * ⛔ **默认关** —— 会改用户技能目录里的文件，属可见行为变化；单技能失败静默跳过，
+   *   下个周期再试，绝不打断启动。
+   */
+  skillAutoUpdate?: boolean;
+  /** 统一更新体系：每个组件行的独立偏好（键 = 组件行 id）。缺省语义见 readAutoUpdateRowSwitch。 */
+  autoUpdateOverrides?: Record<string, boolean>;
+  /**
+   * 自动化能力与引擎的自动更新（10-13 用户令）：四类**各自独立、互不影响**，缺省即**开启**。
+   *   · autoUpdateDesktop     = 桌面自动化（nuphus MCP，`@nuphus/nuphus-mcp`）
+   *   · autoUpdateBrowser     = 浏览器自动化（playwright-cli，`@playwright/cli`）
+   *   · autoUpdateComputerUse = Mac 电脑操作（`open-computer-use`，仅 macOS 生效，其它平台恒跳过）
+   *   · autoUpdateEngine      = Codex 引擎本体（`@openai/codex`）
+   * ⛔ 缺省值判据统一走 `autoUpdateEnabled(settings, key)`（**`!== false`**）—— 字段不存在 = 开；
+   *   ⛔ 别在别处另写一份默认判断（本项目反复栽在两处各写一套上）。
+   * ⛔ 更新源统一走国内镜像（npmmirror），失败回落官方源 —— 与手动更新**同一条链路**。
+   * ⛔ 后台更新只在「开关开 + 确有新版」时才动盘；单类失败只跳过该类，下周期再试，绝不打断启动。
+   */
+  autoUpdateDesktop?: boolean;
+  autoUpdateBrowser?: boolean;
+  autoUpdateComputerUse?: boolean;
+  autoUpdateEngine?: boolean;
   /** 语气自适应（默认开）：按会话维护少量状态（心情/精力/默契），随会话自己的
    *  developer instructions 下发一句「只影响说法、不影响内容」的语气指引。
    *  状态按会话各自一份（agent-mood-<threadId>），关掉即停止更新与注入。 */
@@ -173,4 +197,88 @@ export async function saveAppSettings(userData: string, patch: Partial<AppSettin
 export function invalidateAppSettings() {
   cached = null;
   cachedFor = "";
+}
+
+/**
+ * 自动化 / 引擎自动更新开关的**唯一默认判据**（10-13）。
+ *
+ * ⛔ 缺省 = 开启（`!== false`）：用户要求「开关默认状态为开启」，而老配置的 JSON 里根本没有这些字段，
+ *    若用 `=== true` 判定，升级后所有人的自动更新会**静默关闭** —— 与需求相反。
+ * ⛔ 只有显式写成 `false` 才算关；任何其它假值（undefined / null 之外的脏数据）一律按开启处理，
+ *    不做「脏值回退默认」的花活，因为这里没有需要保护的边界（最坏结果是多查一次 registry）。
+ */
+export function autoUpdateEnabled(
+  settings: AppSettings,
+  key: "autoUpdateDesktop" | "autoUpdateBrowser" | "autoUpdateComputerUse" | "autoUpdateEngine",
+): boolean {
+  return settings?.[key] !== false;
+}
+
+/** 自动更新项在 AppSettings 上的开关字段（含技能那条，它缺省判据不同，见下）。 */
+export type AutoUpdateSettingKey =
+  | "autoUpdateDesktop" | "autoUpdateBrowser" | "autoUpdateComputerUse" | "autoUpdateEngine" | "skillAutoUpdate";
+
+/**
+ * 每个组件行的独立偏好（键 = 组件行 id，见 electron/update-registry.ts 与动态行的 `<spec>/<slug>`）。
+ *
+ * 为什么要有它：四个历史命名开关只覆盖了桌面/浏览器/电脑操作/引擎四类。统一更新体系纳入了
+ * 十几类组件（市场技能、市场插件、官方插件、专家包、人格包、ponytail、pip 工具……），
+ * 给每一类都加一个具名字段会让 AppSettings 无限膨胀 ⇒ 用一张 map 承载，键即组件 id。
+ * ⛔ 具名那四个**保持优先**：它们已经落进用户配置并被界面引用，迁移它们得不偿失。
+ */
+export type AutoUpdateOverrides = Record<string, boolean>;
+
+/** 每一行「属于哪个具名开关」（没有归属的走组件自身的默认），解析唯一入口在 readAutoUpdateSwitch。 */
+export const AUTO_UPDATE_ROW_OWNER: Record<string, AutoUpdateSettingKey> = {
+  nuphus: "autoUpdateDesktop",
+  "playwright-cli": "autoUpdateBrowser",
+  "computer-use": "autoUpdateComputerUse",
+  engine: "autoUpdateEngine",
+  skill: "skillAutoUpdate",
+  // ⛔ 「技能内容更新」那把历史开关管的就是市场技能 ⇒ 动态行 `market-skill/<folder>` 也归属它。
+  //    不接上的话用户把那把开关打开，技能却依然默认关、不检查 —— 界面说开了、后台没动。
+  "market-skill": "skillAutoUpdate",
+};
+
+/** 默认 **关** 的行：它们会在无人值守时改写用户自己的文件/技能目录，必须用户点头。 */
+const AUTO_UPDATE_DEFAULT_OFF = new Set(["market-skill", "expert-skill", "soul"]);
+
+/**
+ * 统一读「某一行」自动更新的生效值 —— **界面、后台循环、手动入口三处共用这一个判据**。
+ *
+ * 解析顺序（⛔ 只此一处，别在别处再写一份默认值）：
+ *   1. 该行自己的显式偏好（settings.autoUpdateOverrides[行id]）；
+ *   2. 该行归属的具名开关（如 nuphus → autoUpdateDesktop）；
+ *   3. 组件默认值：会改写用户文件的三类（市场技能 / 专家包 / 人格包）默认 **关**，其余默认 **开**。
+ *
+ * @param rowId 组件行 id（静态=spec.id，动态=`<spec.id>/<slug>`）
+ */
+export function readAutoUpdateRowSwitch(settings: AppSettings, rowId: string): boolean {
+  const id = String(rowId ?? "").trim();
+  const overrides = settings?.autoUpdateOverrides;
+  if (overrides && typeof overrides === "object" && id in overrides) return overrides[id] === true;
+  const owner = AUTO_UPDATE_ROW_OWNER[id] ?? AUTO_UPDATE_ROW_OWNER[id.split("/")[0]];
+  if (owner) return readAutoUpdateSwitch(settings, owner);
+  return !AUTO_UPDATE_DEFAULT_OFF.has(id.split("/")[0]);
+}
+
+/** 写某一行的偏好（⛔ 只 patch 这一个键，其余行的偏好不动 —— 各行物理独立）。 */
+export function writeAutoUpdateRowSwitch(settings: AppSettings, rowId: string, enabled: boolean): AutoUpdateOverrides {
+  const id = String(rowId ?? "").trim();
+  const next = { ...(settings?.autoUpdateOverrides ?? {}) };
+  next[id] = Boolean(enabled);
+  return next;
+}
+
+/**
+ * 统一读一个自动更新开关的**生效值**。
+ *
+ * ⛔⛔ 缺省语义**分两档**，这是刻意的，不是不一致：
+ *   · 四类「装包/换二进制」的更新（桌面 / 浏览器 / Mac 电脑操作 / 引擎）缺省 = **开**（用户令）；
+ *   · **技能内容更新缺省 = 关**：它会改用户技能目录里的文件（覆盖已装技能），
+ *     属可见行为变化，必须用户主动打开（10-13 上一轮的定稿）。
+ *   ⇒ 判据只此一处，界面与后台都走它 —— ⛔ 别在别处再写一份默认值。
+ */
+export function readAutoUpdateSwitch(settings: AppSettings, key: AutoUpdateSettingKey): boolean {
+  return key === "skillAutoUpdate" ? settings?.skillAutoUpdate === true : autoUpdateEnabled(settings, key);
 }
