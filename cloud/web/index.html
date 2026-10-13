@@ -22,84 +22,219 @@
      ② 要承诺 `Access-Control-Allow-Private-Network: true`（Chrome 的私有网络访问预检）。
 -->
 <style>
-  /* 外壳自带的首屏样式：资产到达前不能白屏，也不能跳版 */
-  html, body { margin: 0; height: 100%; background: #1b1b1a; color: #ececea; }
-  html[data-theme="light"], html[data-theme="light"] body { background: #fff; color: #23231f; }
-  body { font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
-  #boot { padding: 32px; color: inherit; }
+  /* ── 门页设计令牌（自包含；与桌面版令牌同源，另加品牌紫）──────────────────
+     ⛔ 外壳自带的首屏样式：资产到达前不能白屏，也不能跳版（index.html 必须自足可跑）。 */
+  :root {
+    --g-bg: #141413;
+    --g-card: #1e1e1d;
+    --g-field: #ffffff0a;
+    --g-line: #ffffff17;
+    --g-line-soft: #ffffff0f;
+    --g-text: #ececea;
+    --g-muted: #a6a6a1;
+    --g-faint: #7c7c76;
+    --g-brand-1: #a78bfa;
+    --g-brand-2: #7c3aed;
+    --g-brand-ink: #c4b5fd;
+    --g-ok: #58c085;
+    --g-warn: #f0a35c;
+    --g-bad: #ec7a70;
+    --g-dur: 180ms;
+  }
+  html[data-theme="light"] {
+    --g-bg: #f4f4f3;
+    --g-card: #ffffff;
+    --g-field: #00000006;
+    --g-line: #00000017;
+    --g-line-soft: #0000000d;
+    --g-text: #23231f;
+    --g-muted: #6f6f69;
+    --g-faint: #8b8b85;
+    --g-brand-1: #8b5cf6;
+    --g-brand-2: #6d28d9;
+    --g-brand-ink: #6d28d9;
+  }
+
+  html, body { margin: 0; height: 100%; background: var(--g-bg); color: var(--g-text); }
+  html[data-theme="light"], html[data-theme="light"] body { background: var(--g-bg); color: var(--g-text); }
+  body {
+    font: 14px/1.6 Inter, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizelegibility;
+    /* 品牌时刻：顶部的紫晕只用一档，面积克制（规范 §1.1：强调色面积 ≤10%） */
+    background-image: radial-gradient(720px 420px at 50% -12%, color-mix(in srgb, var(--g-brand-2) 26%, transparent), transparent 68%);
+    background-repeat: no-repeat;
+  }
+  #boot { padding: 32px; color: var(--g-muted); }
   #boot[hidden] { display: none; }
-  #boot .mark { font-weight: 600; letter-spacing: .01em; }
+  #boot .mark { font-weight: 600; letter-spacing: .01em; color: var(--g-text); }
   #boot .sub { margin-top: 6px; font-size: 12.5px; opacity: .72; }
-  #gate { max-width: 640px; margin: 48px auto; padding: 26px 28px; border-radius: 14px;
-        border: 1px solid #ffffff1f; background: #ffffff0a; }
-html[data-theme="light"] #gate { border-color: #00000014; background: #00000005; }
-  #gate h1 { font-size: 16px; margin: 0 0 10px; }
-  #gate p { font-size: 13px; margin: 0 0 14px; opacity: .85; }
-  #gate code, #gate pre {
+  #boot[hidden] { display: none; }
+
+  button, input { appearance: none; -webkit-appearance: none; font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--g-brand-1); outline-offset: 2px; border-radius: 8px; }
+
+  /* ── 卡片（登录门 / 启动指引共用容器）────────────────────────────────────── */
+  #gate, #login {
+    max-width: 400px;
+    margin: 8vh auto 0;
+    padding: 30px 30px 26px;
+    border-radius: var(--g-radius);
+    border: 1px solid var(--g-line);
+    background: var(--g-card);
+    box-shadow: 0 1px 2px #00000026, 0 18px 48px #00000059;
+    animation: gate-in 220ms cubic-bezier(.2,.8,.2,1);
+  }
+  #gate { max-width: 640px; margin-top: 10vh; }
+  @keyframes gate-in {
+    from { opacity: 0; transform: translateY(10px) scale(.99); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #gate, #login { animation: none; }
+  }
+
+  /* 品牌头：紫渐变方块 + 渐变字（与桌面版 --brand-ink 同源） */
+  .brand-row { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .brand-mark {
+    width: 26px; height: 26px; border-radius: 8px; flex: none;
+    background: linear-gradient(135deg, var(--g-brand-1), var(--g-brand-2) 55%, #3b1d8f);
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--g-brand-2) 45%, transparent);
+  }
+  .brand-name {
+    font-size: 16px; font-weight: 600; letter-spacing: .01em;
+    background: linear-gradient(100deg, var(--g-brand-1), var(--g-brand-ink), var(--g-brand-1));
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
+  .brand-name em { font-style: normal; -webkit-text-fill-color: var(--g-faint); color: var(--g-faint); font-weight: 400; margin-left: 6px; font-size: 12px; }
+
+  /* 步骤指示：当前项有非颜色标识（实心点 + 字重） */
+  .steps { display: flex; gap: 6px; margin-bottom: 16px; font-size: 11.5px; }
+  .steps .st {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--g-line); color: var(--g-faint);
+  }
+  .steps .st.on {
+    border-color: color-mix(in srgb, var(--g-brand-2) 60%, transparent);
+    color: var(--g-brand-ink);
+    background: color-mix(in srgb, var(--g-brand-2) 12%, transparent);
+    font-weight: 500;
+  }
+  .steps .st.done { color: var(--g-muted); border-color: var(--g-line); }
+  .steps .st.done::before { content: "✓"; font-size: 10px; }
+
+  /* 说明与标题 */
+  #gate h1, .card-title { font-size: 18px; font-weight: 600; line-height: 1.35; margin: 0 0 6px; }
+  #gate p, .card-desc { font-size: 13px; line-height: 1.7; color: var(--g-muted); margin: 0 0 14px; }
+  #gate code {
     font: 12.5px/1.7 ui-monospace, Consolas, monospace;
-    background: #ffffff14; border: 1px solid #ffffff1f; border-radius: 8px;
+    background: var(--g-field); border: 1px solid var(--g-line); border-radius: 6px; padding: 1px 5px;
   }
-  html[data-theme="light"] #gate code, html[data-theme="light"] #gate pre { background: #00000008; border-color: #00000012; }
-  #gate code { padding: 1px 5px; }
-  #gate pre { padding: 10px 12px; overflow: auto; }
+  #gate pre {
+    font: 12.5px/1.7 ui-monospace, Consolas, monospace;
+    background: var(--g-field); border: 1px solid var(--g-line); border-radius: 8px;
+    padding: 10px 12px; overflow: auto; margin: 0 0 14px;
+  }
   #gate .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+
+  /* ── 表单：label 可见 · 40px 高 · 焦点紫环 ────────────────────────────────── */
+  #login label, #gate label {
+    display: block; font-size: 12px; color: var(--g-muted);
+    margin: 0 0 6px; font-weight: 500;
+  }
+  #login input, #gate input {
+    width: 100%; min-height: 40px; padding: 9px 12px;
+    border-radius: 10px; border: 1px solid var(--g-line);
+    background: var(--g-field); color: var(--g-text);
+    font-size: 14px; transition: border-color var(--g-dur) ease, box-shadow var(--g-dur) ease;
+  }
+  #login input::placeholder, #gate input::placeholder { color: var(--g-faint); }
+  #login input:focus, #gate input:focus {
+    outline: 0; border-color: var(--g-brand-2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-brand-2) 25%, transparent);
+  }
+  #login input.code {
+    font-family: ui-monospace, Consolas, monospace;
+    letter-spacing: .22em; font-size: 17px; text-align: center; text-transform: lowercase;
+  }
+
+  /* ── 按钮：主（品牌紫渐变）/ 幽灵 / 危险；同组同高 40px ───────────────────── */
+  #login .go, #gate button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; min-height: 40px; padding: 9px 14px;
+    border-radius: 10px; border: 0; cursor: pointer;
+    font-size: 13.5px; font-weight: 600; letter-spacing: .02em;
+    transition: filter var(--g-dur) ease, transform var(--g-dur) ease;
+  }
+  #login .go { margin-top: 12px; background: linear-gradient(135deg, var(--g-brand-1), var(--g-brand-2)); color: #fff; }
+  #login .go:hover:not(:disabled) { filter: brightness(1.08); }
+  #login .go:active:not(:disabled) { transform: translateY(1px); }
+  #login .go:disabled { opacity: .55; cursor: default; filter: none; }
+  #login .go.alt {
+    background: transparent; border: 1px solid var(--g-line); color: var(--g-text);
+    font-weight: 500; margin-top: 10px;
+  }
+  #login .go.alt:hover:not(:disabled) { background: var(--g-field); }
   #gate button {
-    appearance: none; -webkit-appearance: none; font: inherit;
-    padding: 7px 14px; border-radius: 8px; cursor: pointer;
-    border: 1px solid #ffffff2e; background: #ffffff12; color: inherit;
+    border: 1px solid var(--g-line); background: var(--g-field); color: var(--g-text);
+    font-weight: 500; width: auto; min-width: 96px;
   }
-  #gate button:hover { background: #ffffff1f; }
-  #gate input {
-    appearance: none; -webkit-appearance: none; font: inherit;
-    padding: 7px 10px; border-radius: 8px; width: 190px;
-    border: 1px solid #ffffff2e; background: #ffffff0f; color: inherit;
-  }
-  #gate .why { font-size: 12px; opacity: .6; margin-top: 12px; }
+  #gate button:hover { background: color-mix(in srgb, var(--g-text) 8%, transparent); }
 
-  /* ── 登录门（connector 模式：网页只负责连接本地，界面由本机提供）──────────── */
-  #login {
-    max-width: 400px; margin: 9vh auto 0; padding: 28px 28px 22px;
-    border-radius: 14px; border: 1px solid #ffffff1f; background: #ffffff0a;
-  }
-  html[data-theme="light"] #login { border-color: #00000014; background: #00000005; }
-  #login .brand { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
-  #login .brand em { font-style: normal; font-weight: 400; font-size: 12px; opacity: .6; margin-left: 6px; }
-  #login .desc { font-size: 12.5px; opacity: .75; margin: 0 0 16px; line-height: 1.7; }
-  #login label { display: block; font-size: 12px; opacity: .8; margin-bottom: 6px; }
-  #login .code {
-    appearance: none; -webkit-appearance: none; font: inherit;
-    width: 100%; padding: 9px 11px; border-radius: 8px;
-    border: 1px solid #ffffff2e; background: #ffffff0f; color: inherit;
-    font-family: ui-monospace, Consolas, monospace; letter-spacing: .12em; font-size: 15px;
-  }
-  html[data-theme="light"] #login .code { border-color: #0000002e; background: #00000008; }
-  #login .code:focus { outline: 0; border-color: #2f6bdd; }
-  html[data-theme="light"] #login .code:focus { border-color: #2f6bdd; }
-  #login .go {
-    appearance: none; -webkit-appearance: none; font: inherit;
-    width: 100%; margin-top: 12px; padding: 9px 0; border-radius: 8px; cursor: pointer;
-    border: 0; background: #1a7f37; color: #fff; font-weight: 600; font-size: 13.5px;
-  }
-  html[data-theme="light"] #login .go { background: #1a7f37; color: #fff; }
-  #login .go:hover { filter: brightness(1.08); }
-  #login .go:disabled { opacity: .55; cursor: default; }
-  #login .status { font-size: 12px; margin: 10px 0 0; min-height: 18px; }
-  #login .status.warn { color: #f0a35c; }
-  #login .status.bad { color: #ec7a70; }
-  #login .why { font-size: 11.5px; opacity: .55; margin-top: 14px; line-height: 1.7; }
+  .status { font-size: 12.5px; margin: 12px 0 0; min-height: 18px; line-height: 1.6; }
+  .status.ok { color: var(--g-ok); }
+  .status.warn { color: var(--g-warn); }
+  .status.bad { color: var(--g-bad); }
 
-  /* 账号步（登录/注册）与步骤指示 */
-  #login .steps { display: flex; gap: 6px; margin-bottom: 14px; font-size: 11px; }
-  #login .steps .st { padding: 3px 9px; border-radius: 999px; border: 1px solid #ffffff1f; opacity: .55; }
-  #login .steps .st.on { border-color: #4c8df6; opacity: 1; color: #7cabf8; }
-  html[data-theme="light"] #login .steps .st { border-color: #00000014; }
-  #login .alt { margin-top: 10px; font-size: 12px; text-align: center; }
-  #login .alt a { color: #7cabf8; cursor: pointer; text-decoration: underline; }
-  html[data-theme="light"] #login .alt a { color: #2f6bdd; }
-  #login .acct { font-size: 12px; opacity: .7; margin: -6px 0 14px; }
-  #login .acct b { color: inherit; opacity: 1; }
-  #login .out { font-size: 11.5px; margin-top: 12px; text-align: right; }
-  #login .out a { cursor: pointer; text-decoration: underline; opacity: .7; }
+  /* ── 表单域（非等宽：用户名/密码）与行内链接按钮 ─────────────────────────── */
+  #login .field { font-family: inherit; letter-spacing: normal; font-size: 14px; text-align: left; }
+  .link-soft { margin-left: 8px; cursor: pointer; color: var(--g-brand-ink); text-decoration: underline; text-underline-offset: 3px; font-size: 12px; }
+  .link-danger { margin-left: 8px; cursor: pointer; color: var(--g-bad); text-decoration: underline; text-underline-offset: 3px; font-size: 11.5px; flex: none; }
+  .guide-toggle { cursor: pointer; color: var(--g-muted); text-decoration: underline; text-underline-offset: 3px; font-size: 12px; }
+  .guide-toggle:hover { color: var(--g-text); }
+  .btn-ic { width: 14px; height: 14px; flex: none; }
+
+  #login .why { font-size: 12px; color: var(--g-faint); margin-top: 14px; line-height: 1.7; }
+  #login .alt { margin-top: 12px; font-size: 12.5px; text-align: center; }
+  #login .alt a { color: var(--g-brand-ink); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  #login .acct { font-size: 12.5px; color: var(--g-muted); margin: -4px 0 14px; }
+  #login .acct b { color: var(--g-text); font-weight: 600; }
+  #login .out { font-size: 12px; margin: 10px 0 0; text-align: right; }
+  #login .out a { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; color: var(--g-muted); }
+  #login .out a:hover { color: var(--g-text); }
+
+  /* 我的设备（认领后出现在这里） */
+  .my-devices { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--g-line-soft); }
+  .my-devices .acct { margin-bottom: 8px; }
+  .device-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 10px;
+    border: 1px solid var(--g-line-soft); background: var(--g-field);
+    font-size: 12.5px; margin-bottom: 6px;
+  }
+  .device-row .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .device-row a { color: var(--g-bad); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: 11.5px; flex: none; }
+
+  /* 本机配对码（认领用）：大号等宽 + 品牌紫面板 */
+  .pair-code-box {
+    margin: 14px 0 4px; padding: 14px 12px;
+    border-radius: 12px; text-align: center;
+    border: 1px solid color-mix(in srgb, var(--g-brand-2) 45%, transparent);
+    background: color-mix(in srgb, var(--g-brand-2) 12%, transparent);
+  }
+  .pair-code-box .cap { font-size: 11.5px; color: var(--g-muted); margin-bottom: 6px; }
+  .pair-code-box .code {
+    font: 600 24px/1.2 ui-monospace, Consolas, monospace;
+    letter-spacing: .3em; color: var(--g-brand-ink);
+    text-indent: .3em;   /* 抵消末字符的字距，视觉居中 */
+  }
+
+  /* 启动指引卡（本机没开时） */
+  #gate .card-title { margin-bottom: 8px; }
+  #gate .why { font-size: 12px; color: var(--g-faint); margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -216,32 +351,34 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
     return bar;
   }
 
+  /* 按钮内联图标（无图标库依赖；stroke 跟随 currentColor ⇒ 暗色/亮色自适应） */
+  var IC = {
+    arrow: '<svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>',
+    shield: '<svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>',
+    plug: '<svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>'
+  };
+
   function renderAccount(agentBase, presetPair) {
     boot.hidden = true; gate.hidden = true; login.hidden = false;
     login.innerHTML = "";
     login.appendChild(stepBar(1));
 
-    var brand = document.createElement("div"); brand.className = "brand";
-    brand.appendChild(document.createTextNode("Codex Harness"));
-    var em = document.createElement("em"); em.textContent = "Cloud"; brand.appendChild(em);
-
     var mode = { v: "login" };   // login | register
     var userInput = document.createElement("input");
-    userInput.className = "code"; userInput.id = "acct-user";
+    userInput.className = "field"; userInput.id = "acct-user";
     userInput.placeholder = "用户名（3~24 位字母数字）"; userInput.autocomplete = "username"; userInput.maxLength = 24;
-    userInput.style.letterSpacing = "0"; userInput.style.fontSize = "13.5px"; userInput.style.fontFamily = "inherit";
     var passInput = document.createElement("input");
-    passInput.className = "code"; passInput.id = "acct-pass"; passInput.type = "password";
+    passInput.className = "field"; passInput.id = "acct-pass"; passInput.type = "password";
     passInput.placeholder = "密码（至少 8 位）"; passInput.autocomplete = "current-password";
-    passInput.style.letterSpacing = "0"; passInput.style.fontSize = "13.5px";
 
     var status = document.createElement("p"); status.className = "status";
     var go = document.createElement("button");
-    go.className = "go"; go.textContent = "登录";
+    go.className = "go"; go.innerHTML = IC.arrow + "<span>登录</span>";
     var alt = document.createElement("p"); alt.className = "alt";
 
     function renderMode() {
-      go.textContent = mode.v === "login" ? "登录" : "注册新账号";
+      var label = mode.v === "login" ? "登录" : "创建账号";
+      go.innerHTML = IC.arrow + "<span>" + label + "</span>";
       alt.innerHTML = "";
       var link = document.createElement("a");
       link.textContent = mode.v === "login" ? "没有账号？注册一个" : "已有账号？去登录";
@@ -275,7 +412,14 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
     userInput.addEventListener("keydown", function (e) { if (e.key === "Enter") passInput.focus(); });
     passInput.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
 
-    login.appendChild(brand);
+    /* 品牌头（10-13 界面重构）：紫渐变方块 + 渐变字（与桌面版品牌同源） */
+    var brandRow = document.createElement("div"); brandRow.className = "brand-row";
+    var mark = document.createElement("div"); mark.className = "brand-mark";
+    var brand = document.createElement("div"); brand.className = "brand-name";
+    brand.appendChild(document.createTextNode("Codex Harness"));
+    var em = document.createElement("em"); em.textContent = "Cloud"; brand.appendChild(em);
+    brandRow.appendChild(mark); brandRow.appendChild(brand);
+    login.appendChild(brandRow);
     var desc = document.createElement("p"); desc.className = "desc";
     desc.textContent = "登录你的账号。数据与执行都在各自电脑上，账号只用于访问管理与防滥用。";
     login.appendChild(desc);
@@ -304,7 +448,7 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
         acct.appendChild(b);
         if (res.j.account.role === "admin") {
           var adminLink = document.createElement("a"); adminLink.textContent = "（用户管理）";
-          adminLink.style.marginLeft = "6px"; adminLink.style.cursor = "pointer"; adminLink.style.textDecoration = "underline";
+          adminLink.className = "link-soft";
           adminLink.onclick = function () { window.open("admin.html", "_blank"); };
           acct.appendChild(adminLink);
         }
@@ -327,7 +471,7 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
             var row = document.createElement("div"); row.className = "device-row";
             var nm = document.createElement("span"); nm.textContent = d.name + "（" + new Date(d.claimedAt).toLocaleDateString() + "）";
             var rv = document.createElement("a"); rv.textContent = "吊销";
-            rv.style.cssText = "margin-left:8px;cursor:pointer;color:#a32d2d;text-decoration:underline";
+            rv.className = "link-danger";
             rv.onclick = function () {
               accountFetch("/device/revoke", { method: "POST", body: { id: d.id } }).then(function () { renderPairing(agentBase, presetPair); });
             };
@@ -347,7 +491,7 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
     if (presetPair) input.value = String(presetPair).toLowerCase();
     var status = document.createElement("p"); status.className = "status";
     var go = document.createElement("button");
-    go.className = "go"; go.textContent = "连接我的电脑";
+    go.className = "go"; go.innerHTML = IC.plug + "<span>连接我的电脑</span>";
     go.onclick = function () {
       var code = (input.value || "").trim().toLowerCase();
       if (!code) { status.textContent = "请填入个人配对码"; status.className = "status warn"; input.focus(); return; }
@@ -419,7 +563,7 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
       "③ <b>「连接我的电脑」</b>= 立即进入本机界面。两步都做，本机会记住这台设备，下次直接进。";
     var guideToggle = document.createElement("a");
     guideToggle.textContent = " ▸ 展开说明";
-    guideToggle.style.cssText = "cursor:pointer;color:inherit;text-decoration:underline;font-size:12px";
+    guideToggle.className = "guide-toggle";
     guideToggle.onclick = function () {
       var open = why.style.display !== "none";
       why.style.display = open ? "none" : "";
@@ -429,7 +573,7 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
     /* 认领这台电脑（10-13 二期）：把本机码绑定到我的账号 ⇒ 本机轮询拿到设备 token 后
        **自动完成连接**（助手窗口自动进入界面），云端管理 / 自动更新都认这个绑定。 */
     var claim = document.createElement("button");
-    claim.className = "go alt"; claim.textContent = "认领这台电脑（绑定到我的账号）";
+    claim.className = "go alt"; claim.innerHTML = IC.shield + "<span>认领这台电脑（绑定到我的账号）</span>";
     claim.onclick = function () {
       var code = (input.value || "").trim().toLowerCase();
       if (!code) { status.textContent = "请填入本机配对码"; status.className = "status warn"; input.focus(); return; }
