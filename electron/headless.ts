@@ -17,7 +17,8 @@
  * ⛔ 安全：本服务只绑 127.0.0.1。与伴生服务的鉴权合并是下一阶段（先打通真界面）。
  */
 import electron from "electron";
-import { app, ipcMain } from "electron";
+import { app, ipcMain, shell } from "electron";
+import { mutableState } from "./main";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -350,6 +351,13 @@ function issueOwnerPair(): string {
   }
   return ownerPairCode;
 }
+/** 唤起系统浏览器打开授权页（主进程直开 —— 不依赖渲染层桥；自动与卡片按钮都走这里）。 */
+function openAuthPage(): void {
+  const url = ASSISTANT_WEB_ENTRY + "?claim=" + issueOwnerPair();
+  try { shell.openExternal(url); console.log("[device] 已唤起系统浏览器打开授权页：" + url); }
+  catch (error) { console.error("[device] 唤起浏览器失败：", error); }
+}
+let authAutoOpened = false;
 function redeemOwnerPair(candidate: string): { ok: boolean; reason?: string } {
   if (!ownerPairCode) return { ok: false, reason: "no-code" };
   if (!safeEq(candidate, ownerPairCode)) return { ok: false, reason: "mismatch" };
@@ -595,14 +603,13 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
       fallback.innerHTML = '若浏览器没有弹到前面，可复制链接手动打开：<br><b id="__chc-url">' + authUrl + "</b>";
       open.onclick = function () {
         fallback.style.display = "block";
-        try {
-          var p = window.codex.openExternal(authUrl);
-          if (p && p.catch) p.catch(function () { /* 失败时上面的链接兜底 */ });
-        } catch (e) { try { window.open(authUrl, "_blank", "noopener"); } catch (e2) { /* 兜底链接已显示 */ } }
+        fetch("/api/open-auth", { method: "POST" }).catch(function () { /* 失败时上面的链接兜底 */ });
       };
-      var cancel = document.createElement("button"); cancel.textContent = "取消";
+      var cancel = document.createElement("button"); cancel.textContent = "取消并退出应用";
       cancel.style.cssText = "width:100%;padding:8px 0;background:transparent;color:#666;border:1px solid #ccc;border-radius:8px;font-size:12.5px;cursor:pointer";
-      cancel.onclick = function () { location.reload(); };
+      cancel.onclick = function () {
+        fetch("/api/app-quit", { method: "POST" }).catch(function () { /* 忽略 */ });
+      };
       card.appendChild(head); card.appendChild(codeWrap); card.appendChild(cap);
       card.appendChild(st); card.appendChild(open); card.appendChild(fallback); card.appendChild(cancel);
       box.appendChild(card); document.body.appendChild(box);
@@ -1010,6 +1017,21 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     deny(200, { ok: true });
     return;
   }
+  /* OAuth 授权：主进程**直开**系统浏览器（渲染层不依赖 codex 桥，点按钮就 fetch 这里）。 */
+  if (p === "/api/open-auth" && req.method === "POST") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    openAuthPage();
+    deny(200, { ok: true });
+    return;
+  }
+  /* 配对卡「取消并退出」：X = 退出的同款语义（走完整退出链，主窗守卫放行）。 */
+  if (p === "/api/app-quit" && req.method === "POST") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    mutableState.closeConfirmed = true;
+    app.quit();
+    deny(200, { ok: true });
+    return;
+  }
 
   /* ── OAuth 式浏览器授权（10-13 晚）：回调页 + 授权态令牌交接 ─────────────────
      流程：本机点「授权」→ 系统浏览器打开网页（?claim=<本机码> 预填）→ 用户注册/登录并
@@ -1253,6 +1275,12 @@ if (process.env.HARNESS_ASSISTANT === "1") {
     void showAssistantWindow().then((ok) => {
       if (ok) console.log("[headless] 助手启动 → 已开应用窗口");
       else if (openInBrowser(assistantUrl())) console.log(`[headless] 窗口创建失败 → 兜底弹浏览器 ${assistantUrl()}`);
+      /* ⛔ OAuth 式授权（10-13 晚）：开闸且未配对 ⇒ **主进程自动唤起系统浏览器**打开授权页
+         （?claim= 预填本机码）—— 用户零操作；卡片上的按钮只是"重新打开"的入口。 */
+      if (ok && GATED && !boundAccounts().length && !authAutoOpened) {
+        authAutoOpened = true;
+        setTimeout(() => openAuthPage(), 1200);
+      }
     });
   }, 1500);
 }
