@@ -338,16 +338,20 @@ const ACCOUNT_POLL_MS = Math.max(500, Number(process.env.HARNESS_ACCOUNT_POLL_MS
 const OWNER_PAIR_TTL_MS = 5 * 60_000;
 let ownerPairCode = "";
 let ownerPairIssuedAt = 0;
+/* ⛔⛔ 10-13 晚：**本机码在未认领前必须稳定不变**。
+   旧逻辑 5 分钟轮换 —— 用户切去网页注册的工夫码就换了：卡片上看到的码作废、
+   本机轮询的码与网页认领的码对不上，整条认领链断在半路（用户实测："注册好了返回都没有"）。
+   新语义：**启动时发一枚，认领成功（redeem）或用户手动重生成之前一直有效**。
+   暴力面由既有闸兜住：/api/pair 10 次锁 60 秒 + claim-status 限速 + 8 位十六进制空间。 */
 function issueOwnerPair(): string {
-  const now = Date.now();
-  if (ownerPairCode && now - ownerPairIssuedAt < OWNER_PAIR_TTL_MS) return ownerPairCode;
-  ownerPairCode = randomBytes(4).toString("hex");
-  ownerPairIssuedAt = now;
+  if (!ownerPairCode) {
+    ownerPairCode = randomBytes(4).toString("hex");
+    ownerPairIssuedAt = Date.now();
+  }
   return ownerPairCode;
 }
 function redeemOwnerPair(candidate: string): { ok: boolean; reason?: string } {
   if (!ownerPairCode) return { ok: false, reason: "no-code" };
-  if (Date.now() - ownerPairIssuedAt > OWNER_PAIR_TTL_MS) { ownerPairCode = ""; return { ok: false, reason: "expired" }; }
   if (!safeEq(candidate, ownerPairCode)) return { ok: false, reason: "mismatch" };
   ownerPairCode = "";   // 一次性：成功即作废，重放无效
   return { ok: true };
@@ -355,7 +359,7 @@ function redeemOwnerPair(candidate: string): { ok: boolean; reason?: string } {
 function printOwnerPairBanner(): void {
   const code = issueOwnerPair();
   console.log(`\n  ┌───────────────────────────────────────────────┐`);
-  console.log(`  │  本机配对码： ${code}   （5 分钟内有效，一次性）`);
+  console.log(`  │  本机配对码： ${code}   （认领成功前一直有效；已绑账号后作废）`);
   console.log(GATED
     ? `  │  ⛔ 需先在网页注册账号，再用这个码完成配对：\n  │     ${ASSISTANT_WEB_ENTRY}`
     : `  │  ⚠️ 独立模式（没配账号服务）：本机界面直接填这个码即可`);
@@ -565,6 +569,13 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
       link.textContent = window.__CHC_WEB_ENTRY__ || "";
       link.href = window.__CHC_WEB_ENTRY__ || "";
       link.style.cssText = "display:block;padding:10px 0;background:#185fa5;color:#fff;border-radius:8px;font-size:13.5px;text-decoration:none;word-break:break-all";
+      /* ⛔ 必须**在系统浏览器里打开**，绝不能让助手窗口自己导航过去 ——
+         旧版点了链接会把本窗口带去网页，用户注册完回来本地界面就没了（实测投诉："返回都没有"）。
+         openExternal 走系统默认浏览器，助手窗口原地不动，认领后自动进入。 */
+      link.onclick = function (e) {
+        e.preventDefault();
+        try { window.codex.openExternal(window.__CHC_WEB_ENTRY__); } catch (e2) { /* 忽略 */ }
+      };
       card.appendChild(head); card.appendChild(codeRow); card.appendChild(tip); card.appendChild(link);
       box.appendChild(card); document.body.appendChild(box);
       return;
