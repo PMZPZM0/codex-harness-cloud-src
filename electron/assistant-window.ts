@@ -125,6 +125,20 @@ export async function createAssistantWindow(): Promise<boolean> {
 /** 显示并聚焦；窗口不在则重建。返回 false 表示彻底失败（调用方兜底）。 */
 export async function showAssistantWindow(): Promise<boolean> {
   if (win && !win.isDestroyed()) {
+    /* ⛔ 10-13 晚：**把窗口带回家** —— 窗口可能被旧版配对卡的原地链接导航去了网页
+       （ppz123.asia/cloud/），此时 show/focus 只是把"卡在网页上的窗口"再显示一遍，
+       用户看到的永远是登录门，重启都回不来（实测投诉："启动就是这个界面"）。
+       判据：当前 URL 不是本机助手地址 ⇒ 重新 loadURL 回本机。 */
+    try {
+      /* AssistantWin 是窄接口 ⇒ webContents 走结构化断言（同 headless.ts 的做法） */
+      const wc = (win as unknown as { webContents: { getURL: () => string; loadURL: (u: string) => Promise<void> } }).webContents;
+      const url = wc.getURL();
+      const local = `http://127.0.0.1:${Number(process.env.HARNESS_HEADLESS_PORT || 8917)}`;
+      if (!url.startsWith(local) && !url.startsWith("http://localhost:")) {
+        console.log(`[assistant-window] 窗口被导航去了 ${url.slice(0, 80)} ⇒ 带回本机界面`);
+        await wc.loadURL(assistantUrl());
+      }
+    } catch { /* 读不到 URL 就照常显示 */ }
     win.show();
     win.focus();
     return true;
