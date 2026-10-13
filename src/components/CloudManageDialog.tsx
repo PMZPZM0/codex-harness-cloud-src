@@ -75,9 +75,15 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
 
   const runUpdateCheck = () => {
     setChecking(true);
-    void cloudApi().cloudUpdateCheck?.()
-      .then((r) => setUpdate(r))
-      .catch(() => setUpdate({ available: false, reason: "检查失败" }))
+    /* ⑤ 设备令牌更新通道：本机带设备令牌问服务器（/api/cloud-update-check → 账号服务
+       /device/update/check）—— 更新渠道由服务器掌控（灰度/通道/最小版本）。 */
+    fetch("/api/cloud-update-check", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((r: UpdateInfo | { ok: boolean; error?: string }) => {
+        if (r && "ok" in r && r.ok === false) { setUpdate({ available: false, reason: (r as { error?: string }).error || "检查失败" }); return; }
+        setUpdate(r as UpdateInfo);
+      })
+      .catch(() => setUpdate({ available: false, reason: "网络错误" }))
       .finally(() => setChecking(false));
   };
 
