@@ -567,7 +567,14 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
             被配对卡整个压住 ⇒ 看不见任何反应 = "叉不掉"（实测投诉）。 */
       var box = document.createElement("div");
       box.id = "__chc-pair";
-      box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:940";
+      /* ⛔⛔ z-index 10001：必须高于 .boot-splash 的 9999（10-14 用户实测"修不好"的根源：
+         令牌失效 ⇒ 数据全 401 ⇒ 启动图永不淡出 ⇒ 配对卡压在它下面永不可见 = 死锁）。
+         ⛔ 同时把 .boot-splash 藏掉（下面）—— 未配对时它是唯一该出现的界面。
+         ⛔ 曾因降到 940（给关闭确认弹窗让位）反而被启动图盖住 —— 助手窗口的 X 已改为
+           真退出（不弹确认框）⇒ 这里不再需要给 950 让位，直接压过启动图。 */
+      box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10001";
+      var splashes = document.querySelectorAll(".boot-splash");
+      for (var si = 0; si < splashes.length; si++) (splashes[si] as HTMLElement).style.display = "none";
       var card = document.createElement("div");
       card.style.cssText = "background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:400px;width:90%;font-family:system-ui,sans-serif;text-align:center";
       var head = document.createElement("div"); head.textContent = "连接云端账号";
