@@ -888,6 +888,30 @@ function renderPairing() {
   const overlay = dom.overlay;
   clear(overlay);
   overlay.hidden = false;
+  const gated = Boolean(state.server.capabilities && state.server.capabilities.accountGate);
+  /* ⛔⛔ 开闸模式（10-13）：配对的前置条件是**网页账号**，所以本机界面**不收配对码** ——
+     在这里收码，就等于把"必须先注册"这条从本机侧又绕开了（旧版正是如此：
+     控制台自动打开带 ?pair= 的链接，一步登入，全程不碰网页）。
+     现在本机界面只负责把人**送到网页登录门**，配对照样在那边完成、成功后跳回本机界面。 */
+  if (gated) {
+    const webBase = (state.server.capabilities.cdnBase || location.origin).replace(/\/+$/, "");
+    overlay.append(h("div", {
+      id: "chc-pairing", class: "card", style: {
+        position: "fixed", inset: "auto", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
+        width: "min(460px, calc(100vw - 32px))", zIndex: "30",
+      },
+    },
+      h("div", { class: "card-title" }, h("span", { text: "先注册账号，再配对" })),
+      h("p", { class: "card-desc", text: "本机助手已就绪。配对需要一个网页账号：请到下面这个地址注册或登录，然后用你的配对码完成配对。" }),
+      h("p", { class: "card-desc", style: { wordBreak: "break-all" }, text: webBase + "/" }),
+      h("p", { class: "card-desc", text: "配对成功后会自动跳回本机界面，这个页面可以关掉。" }),
+      h("div", { class: "actions" }, h("button", {
+        type: "button", class: "btn primary", text: "打开网页完成配对",
+        onclick: () => { window.open(webBase + "/", "_blank", "noopener"); },
+      })),
+    ));
+    return;
+  }
   const input = h("input", {
     type: "text", placeholder: "输入控制台上的配对码（8 位十六进制）",
     class: "card-code", style: { width: "100%", padding: "9px 11px" },
@@ -906,7 +930,7 @@ function renderPairing() {
     },
   },
     h("div", { class: "card-title" }, h("span", { text: "与本机伴生服务配对" })),
-    h("p", { class: "card-desc", text: "打开本地伴生服务的那个控制台窗口，把上面打印的配对码填进来。配对码 5 分钟内有效、且只能用一次。" }),
+    h("p", { class: "card-desc", text: "⚠️ 独立模式（这台机器没配置账号服务）：打开本地伴生服务的那个控制台窗口，把打印的配对码填进来。配对码 5 分钟内有效、且只能用一次。" }),
     input, message, h("div", { class: "actions" }, submit),
   ));
   input.focus();
@@ -1089,8 +1113,21 @@ async function main() {
   if (code) {
     // 从控制台带参进来：换 token 后把 URL 上的配对码抹掉（别留在历史记录里）
     history.replaceState(null, "", location.pathname);
-    state.pairing = true;
+    /* ⛔⛔ 先问清"开闸没开闸"再决定收不收码（10-13）：
+       开闸模式下 **URL 里的 ?pair= 一律不认** —— 那条路正是"本机侧绕开网页注册"的老入口
+       （控制台自动打开 base/?pair=<owner码>，一步登入，全程不碰网页），必须关掉。
+       判断必须问服务端，不能前端猜：服务端才是"要不要账号"的真相源。 */
     state.ready = true;
+    state.pairing = true;
+    try {
+      const handshake = await api("/api/handshake", { auth: false });
+      state.server = { ...state.server, capabilities: handshake.capabilities || {} };
+    } catch { /* 问不到就按未开闸走 —— 服务端仍会拒掉无票据的配对，不会静默放行 */ }
+    if (state.server.capabilities.accountGate) {
+      render();
+      markReady();
+      return;
+    }
     render();
     markReady();
     await pair(code.toLowerCase());

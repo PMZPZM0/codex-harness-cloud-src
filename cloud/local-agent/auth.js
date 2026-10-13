@@ -156,6 +156,73 @@ class UserRegistry {
 }
 
 /**
+ * 账号绑定表（10-13）：**本机身份 ⇄ 账号身份**。
+ *
+ * ⛔ 为什么必须有：`users.json` 里的 `name` 是**机主线下取的名字**（`--add-user 手机`），
+ *   账号 `username` 是用户自己在网页注册的 —— 这本来是**两套互不相关的身份**，
+ *   而 `handshake.account.userId` 一直把本机名字当用户身份返回。接入账号闸之后必须显式记录
+ *   "这次配对用的是哪个账号"，否则：① 账号被停用**管不到已经在用的人**；
+ *   ② 将来按账号做云存储隔离（README 已预留 `cloudStorage`）时会**串户**。
+ *
+ * 语义：
+ *   · `owner` 一格 + `users[本机名]` 若干格，值是账号 username；
+ *   · 配对成功时写入（后配对的账号覆盖同一格的旧值 —— 一个"座位"同时只认一个账号）；
+ *   · 账号被停用时由服务端轮询发现 ⇒ `unbindByAccount()` 摘掉 ⇒ 该格令牌立刻失效。
+ * ⛔ 只存 username，**不存任何账号资料**（与账号服务"只存身份不存内容"同口径）。
+ */
+class AccountBindings {
+  constructor(homeDir, logger) {
+    this.log = logger;
+    this.file = path.join(homeDir, "accounts.json");
+    this.data = { owner: "", users: {} };
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.file, "utf8"));
+      if (raw && typeof raw === "object") {
+        this.data = {
+          owner: String(raw.owner || ""),
+          users: raw.users && typeof raw.users === "object" ? raw.users : {},
+        };
+      }
+    } catch { /* 首次运行没有这个文件，正常 */ }
+  }
+
+  persist() {
+    try { fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2), { mode: 0o600 }); } catch (error) { this.log(`[account] 绑定表写盘失败：${error.message}`); }
+  }
+
+  /** 把某个"座位"绑到账号上。id 取值：`"owner"` 或 users.json 里的本机名。 */
+  bind(seat, username) {
+    const name = String(username || "").trim();
+    if (!seat || !name) return;
+    if (seat === "owner") this.data.owner = name; else this.data.users[seat] = name;
+    this.persist();
+  }
+
+  /** 座位 → 账号（未绑定返回空串）。 */
+  of(seat) {
+    if (!seat) return "";
+    return seat === "owner" ? this.data.owner : (this.data.users[seat] || "");
+  }
+
+  /** 账号被停用/删除时摘掉绑定（返回是否真的摘了什么）。 */
+  unbindByAccount(username) {
+    const name = String(username || "");
+    let hit = false;
+    if (name && this.data.owner === name) { this.data.owner = ""; hit = true; }
+    for (const [seat, bound] of Object.entries(this.data.users)) {
+      if (bound === name) { delete this.data.users[seat]; hit = true; }
+    }
+    if (hit) this.persist();
+    return hit;
+  }
+
+  /** 当前绑定到的全部账号（去重；供状态轮询用）。 */
+  accounts() {
+    return [...new Set([this.data.owner, ...Object.values(this.data.users)].filter(Boolean))];
+  }
+}
+
+/**
  * 判断 Origin 是否可信。
  * ⛔ 不用 `startsWith(origin, allowed)`：`http://127.0.0.1:8917.evil.com` 会被前缀匹配放行。
  *   必须精确相等（协议+主机+端口），或命中的是显式配置的通配后缀条目。
@@ -221,4 +288,4 @@ function corsHeaders(origin, allowedOrigins) {
   };
 }
 
-module.exports = { Pairing, UserRegistry, authorize, originAllowed, corsHeaders, safeEqual, PAIR_CODE_TTL_MS };
+module.exports = { Pairing, UserRegistry, AccountBindings, authorize, originAllowed, corsHeaders, safeEqual, PAIR_CODE_TTL_MS };

@@ -17,7 +17,7 @@
  * ⛔ 用假引擎是**有意的**：真引擎要模型 key + 网络 + 花钱，而且输出不确定；而上面这五条
  *   与模型无关。失败时一定是我们的 bug，不会跟上游随机行为混淆。
  */
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -131,7 +131,9 @@ writeFileSync(path.join(home, "users.json"), JSON.stringify([
 ]), "utf8");
 const child = spawn(process.execPath, [path.join(CLOUD_DIR, "local-agent", "server.js"), "--mock"], {
   cwd: CLOUD_DIR,
-  env: { ...process.env, HARNESS_CLOUD_HOME: home, HARNESS_CLOUD_PORT: String(PORT), HARNESS_CLOUD_QUIET: "1", MOCK_ENGINE_STEP_MS: "40" },
+  // ⛔ 主流程跑**独立模式**（HARNESS_ACCOUNTS_URL=""）：下面①②③那些断言验的是"码机制"本身，
+  //   与账号无关；开闸（账号闸）那一整套在 ⑨ 段用**真账号服务**单独验（见文件尾）。
+  env: { ...process.env, HARNESS_CLOUD_HOME: home, HARNESS_CLOUD_PORT: String(PORT), HARNESS_CLOUD_QUIET: "1", MOCK_ENGINE_STEP_MS: "40", HARNESS_ACCOUNTS_URL: "" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 
@@ -416,6 +418,143 @@ try {
 } finally {
   child.kill();
   try { rmSync(home, { recursive: true, force: true }); } catch { /* 忽略 */ }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ⑨ 账号闸（10-13）：**配对必须先有网页账号**
+   ⛔ 这一段起的是**真的账号服务进程**（server-account/server.js），不写第二份桩实现 ——
+     否则验的是"我对协议的理解"，而不是协议本身（本项目吃过"守卫自洽地错"的亏）。
+   ⛔ 它还盯住那条最容易做错、又最难发现的事：**账号停用后，已签发的令牌必须失效**。
+   ══════════════════════════════════════════════════════════════════════════ */
+group("⑨ 账号闸：配对必须先有网页账号（真账号服务 + 开闸的伴生服务）");
+{
+  const ACC_PORT = Number(process.env.SMOKE_ACCOUNTS_PORT || 8921);
+  const AGENT_PORT = PORT + 1;
+  const accHome = mkdtempSync(path.join(tmpdir(), "chc-smoke-acc-"));
+  const gatedHome = mkdtempSync(path.join(tmpdir(), "chc-smoke-gated-"));
+  const accBase = `http://127.0.0.1:${ACC_PORT}`;
+  const gatedBase = `http://127.0.0.1:${AGENT_PORT}`;
+  const accFile = path.join(accHome, "accounts.json");
+  // 开闸的伴生服务也要有"机主签发的个人码"（Alice），用来验"个人码路径同样过闸"
+  writeFileSync(path.join(gatedHome, "users.json"), JSON.stringify([
+    { name: "Alice", code: "a1b2c3d4", token: "e".repeat(48), createdAt: Date.now() },
+  ]), "utf8");
+  let acc = null;
+  let gated = null;
+  const accApi = async (p, { method = "GET", body, bearer } = {}) => {
+    const headers = {};
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (bearer) headers.Authorization = `Bearer ${bearer}`;
+    const response = await fetch(accBase + p, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    let payload = null;
+    try { payload = await response.json(); } catch { /* 可能没 body */ }
+    return { status: response.status, payload };
+  };
+  const gapi = async (p, { method = "GET", body, bearer } = {}) => {
+    const headers = { "x-harness-client": "web" };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (bearer) headers.Authorization = `Bearer ${bearer}`;
+    const response = await fetch(gatedBase + p, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    let payload = null;
+    try { payload = await response.json(); } catch { /* 可能没 body */ }
+    return { status: response.status, payload };
+  };
+  try {
+    // 管理员先建：CLI 写完就退出，服务再起 —— 否则两边各持一份内存 db 会互相覆盖
+    execFileSync(process.execPath, [path.join(CLOUD_DIR, "server-account", "server.js"), "--init-admin", "smoke_admin", "admin-pass-123"], {
+      env: { ...process.env, HARNESS_ACCOUNTS_FILE: accFile },
+      stdio: "ignore",
+    });
+    acc = spawn(process.execPath, [path.join(CLOUD_DIR, "server-account", "server.js")], {
+      env: { ...process.env, HARNESS_ACCOUNTS_PORT: String(ACC_PORT), HARNESS_ACCOUNTS_FILE: accFile },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    acc.stderr.on("data", (chunk) => process.stderr.write(`[accounts] ${chunk}`));
+    let accUp = false;
+    for (let i = 0; i < 60 && !accUp; i += 1) {
+      try { await accApi("/me"); accUp = true; } catch { await new Promise((r) => setTimeout(r, 100)); }
+    }
+    check("真账号服务进程起来了", accUp);
+
+    gated = spawn(process.execPath, [path.join(CLOUD_DIR, "local-agent", "server.js"), "--mock"], {
+      cwd: CLOUD_DIR,
+      env: {
+        ...process.env, HARNESS_CLOUD_HOME: gatedHome, HARNESS_CLOUD_PORT: String(AGENT_PORT),
+        HARNESS_CLOUD_QUIET: "1", MOCK_ENGINE_STEP_MS: "40",
+        HARNESS_ACCOUNTS_URL: accBase,          // 非空 = 开闸
+        HARNESS_ACCOUNT_POLL_MS: "1200",        // 缩短轮询，好在自测里验"停用后令牌失效"
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let gatedOut = "";
+    let gatedCode = "";
+    gated.stdout.on("data", (chunk) => {
+      gatedOut += String(chunk);
+      const match = /配对码：\s*([0-9a-f]{8})/.exec(gatedOut);
+      if (match) gatedCode = match[1];
+    });
+    gated.stderr.on("data", (chunk) => process.stderr.write(`[gated] ${chunk}`));
+    await waitFor(() => Boolean(gatedCode), 8000, "开闸伴生服务就绪并打印配对码");
+    check("开闸模式横幅明确写了「需先在网页注册账号」", /需先在网页注册账号/.test(gatedOut));
+    check("⛔ 开闸模式的横幅**不再**打印带 ?pair= 的自动登入链接", !/\?pair=[0-9a-f]{8}/.test(gatedOut));
+
+    const hs = await gapi("/api/handshake");
+    check("handshake 声明 accountGate=true（界面据此把配对卡改成「去网页」）", hs.payload?.capabilities?.accountGate === true, JSON.stringify(hs.payload?.capabilities));
+
+    const noTicket = await gapi("/api/pair", { method: "POST", body: { code: gatedCode } });
+    check("⛔ 不带票据配对被拒（ticket-required）", noTicket.status === 403 && noTicket.payload?.error === "ticket-required", JSON.stringify(noTicket.payload));
+
+    const reg = await accApi("/register", { method: "POST", body: { username: "smoke_user", password: "user-pass-12345" } });
+    check("账号服务注册成功并下发会话", reg.status === 200 && reg.payload?.ok === true && Boolean(reg.payload?.token));
+    const session = reg.payload?.token;
+
+    const badTicket = await gapi("/api/pair", { method: "POST", body: { code: gatedCode, ticket: "0".repeat(64) } });
+    check("⛔ 无效票据被拒（ticket-unknown）", badTicket.status === 403 && badTicket.payload?.error === "ticket-unknown", JSON.stringify(badTicket.payload));
+
+    const tick = await accApi("/pair-ticket", { method: "POST", bearer: session });
+    check("用账号会话取到一次性配对票据", tick.status === 200 && tick.payload?.ok === true && String(tick.payload?.ticket || "").length >= 32, JSON.stringify(tick.payload));
+
+    const paired = await gapi("/api/pair", { method: "POST", body: { code: gatedCode, ticket: tick.payload.ticket } });
+    check("有效票据 + 正确本机码 ⇒ 配对成功", paired.status === 200 && paired.payload?.ok === true && Boolean(paired.payload?.token), JSON.stringify(paired.payload));
+    check("对外身份是**网页账号**（不再是本机名字）", paired.payload?.account?.userId === "smoke_user", JSON.stringify(paired.payload?.account));
+
+    const replay = await gapi("/api/pair", { method: "POST", body: { code: gatedCode, ticket: tick.payload.ticket } });
+    check("⛔ 同一票据重放被拒（ticket-used）", replay.status === 403 && replay.payload?.error === "ticket-used", JSON.stringify(replay.payload));
+
+    const ownerToken = paired.payload?.token;
+    const hs2 = await gapi("/api/handshake", { bearer: ownerToken });
+    check("已配对令牌的 handshake 带本人账号身份", hs2.payload?.account?.userId === "smoke_user" && hs2.payload?.capabilities?.paired === true, JSON.stringify(hs2.payload?.account));
+
+    // 个人码路径同样过闸，且换到的对外身份是账号而不是本机名
+    const tickAlice = await accApi("/pair-ticket", { method: "POST", bearer: session });
+    const alicePair = await gapi("/api/pair", { method: "POST", body: { code: "a1b2c3d4", ticket: tickAlice.payload.ticket } });
+    check("个人码 + 票据也能配对，且身份是账号", alicePair.status === 200 && alicePair.payload?.account?.userId === "smoke_user" && alicePair.payload?.account?.seat === "Alice", JSON.stringify(alicePair.payload?.account));
+
+    // 停用：票在停用前签发、停用后核销 ⇒ 必须被拒（这一步证明"账号状态是核销时复查的"）
+    const tickPreDisable = await accApi("/pair-ticket", { method: "POST", bearer: session });
+    const adminLogin = await accApi("/login", { method: "POST", body: { username: "smoke_admin", password: "admin-pass-123" } });
+    const disable = await accApi("/admin/users/smoke_user/disable", { method: "POST", bearer: adminLogin.payload?.token });
+    check("管理员停用该账号", disable.status === 200 && disable.payload?.ok === true, JSON.stringify(disable.payload));
+    const blocked = await gapi("/api/pair", { method: "POST", body: { code: "a1b2c3d4", ticket: tickPreDisable.payload.ticket } });
+    check("⛔ 票在停用前签发、停用后核销 ⇒ ticket-account-disabled", blocked.status === 403 && blocked.payload?.error === "ticket-account-disabled", JSON.stringify(blocked.payload));
+
+    // ⛔⛔ 最关键的一条：停用要能**撤销已在用的令牌**（旧设计的缺口：停用只管新配对）
+    let revoked = false;
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline && !revoked) {
+      const probe = await gapi("/api/handshake", { bearer: ownerToken });
+      if (probe.payload?.account?.userId === null && probe.payload?.capabilities?.paired === false) revoked = true;
+      else await new Promise((r) => setTimeout(r, 250));
+    }
+    check("⛔⛔ 账号停用后**已签发的令牌也失效**（轮询摘绑定；服务不可达时失败放行）", revoked);
+  } catch (error) {
+    check("⑨ 账号闸自测未抛异常", false, error.stack || error.message);
+  } finally {
+    if (gated) gated.kill();
+    if (acc) acc.kill();
+    try { rmSync(accHome, { recursive: true, force: true }); } catch { /* 忽略 */ }
+    try { rmSync(gatedHome, { recursive: true, force: true }); } catch { /* 忽略 */ }
+  }
 }
 
 const failed = results.filter((r) => !r.ok);

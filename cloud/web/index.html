@@ -334,18 +334,50 @@ html[data-theme="light"] #gate { border-color: #00000014; background: #00000005;
       var code = (input.value || "").trim().toLowerCase();
       if (!code) { status.textContent = "请填入个人配对码"; status.className = "status warn"; input.focus(); return; }
       go.disabled = true; input.disabled = true;
-      status.textContent = "正在连接…"; status.className = "status";
-      fetchWithTimeout(agentBase + "/api/pair", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-harness-client": "web" },
-        body: JSON.stringify({ code: code }),
-      }, AGENT_PROBE_MS * 2).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      status.textContent = "正在获取配对票据…"; status.className = "status";
+      /* ⛔⛔ 先取票据再配对（10-13）：**账号是配对的前置条件**。
+         票据由账号服务签发、一次性、120 秒有效 —— 本机侧会拿它反向核销，
+         核销不过就直接拒（连码都不比）。⛔ 绝不缓存票据：它是一次性的，缓存 = 第二次必然失败。 */
+      accountFetch("/pair-ticket", { method: "POST" }).then(function (res) {
+        if (!res.ok || !res.j || !res.j.ok || !res.j.ticket) {
+          var why = (res.j && res.j.error) || "";
+          if (why === "unauthorized") {
+            status.textContent = "登录状态已过期，请重新登录账号";
+            lsSet("chc-session", "");
+            try { localStorage.removeItem("chc-session"); } catch (e) { /* 忽略 */ }
+            setTimeout(function () { renderAccount(agentBase, presetPair); }, 1200);
+          } else {
+            status.textContent = "取配对票据失败（" + (why || "账号服务不可达") + "）";
+            status.className = "status bad";
+            go.disabled = false; input.disabled = false;
+          }
+          return null;
+        }
+        status.textContent = "正在连接…";
+        return fetchWithTimeout(agentBase + "/api/pair", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-harness-client": "web" },
+          body: JSON.stringify({ code: code, ticket: res.j.ticket }),
+        }, AGENT_PROBE_MS * 2);
+      }).then(function (r) {
+        if (!r) return null;
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      })
         .then(function (res) {
+          if (!res) return;
           if (!res.ok || !res.j || !res.j.ok || !res.j.token) {
             var reason = res.j && res.j.error;
             var text = reason === "mismatch" ? "配对码不对，请核对后重试"
               : reason === "locked" ? "尝试次数过多，已临时锁定 —— 约 1 分钟后再试"
-              : reason === "expired" ? "配对码已过期" : "连接失败（" + (reason || "未知") + "）";
+              : reason === "expired" ? "配对码已过期"
+              : reason === "ticket-required" ? "缺少配对票据 —— 请重新登录账号后再试"
+              : reason === "ticket-used" ? "配对票据已被使用，请再点一次（会自动换一张新票据）"
+              : reason === "ticket-expired" ? "配对票据已过期，请再点一次"
+              : reason === "ticket-account-disabled" ? "该账号已被停用或不存在 —— 请联系管理员"
+              : reason === "ticket-accounts-unreachable" ? "账号服务暂时不可达，无法配对 —— 请稍后重试"
+              : reason === "ticket-rate-limited" ? "请求过于频繁，请稍后重试"
+              : reason === "ticket-unknown" ? "配对票据无效 —— 请重新登录账号后再试"
+              : "连接失败（" + (reason || "未知") + "）";
             status.textContent = text; status.className = "status bad";
             go.disabled = false; input.disabled = false; input.select();
             return;
