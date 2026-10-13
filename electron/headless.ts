@@ -551,169 +551,6 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
     if (t) h["Authorization"] = "Bearer " + t;
     return h;
   }
-  function showPairBox() {
-    if (document.getElementById("__chc-pair")) return;
-    /* ⛔ 开闸模式（10-13）：配对的前置条件是**网页账号**，本机界面**不收配对码** ——
-       在这里收码，等于把"必须先注册"从本机侧又绕开了（旧版一键签发 + 填码，全程不碰网页）。
-       这里只负责把人送到网页登录门，配对成功会自动跳回本机界面。
-       ⛔ 开关读的是**服务端注入的 window.__CHC_ACCOUNT_GATE__** ——
-         这段代码跑在浏览器里，主进程的常量在这里不存在。 */
-    if (window.__CHC_ACCOUNT_GATE__ === true) {
-      /* ⛔ OAuth 式浏览器授权（10-13 晚）：本机只负责**生成配对码 + 等待授权结果**；
-         授权动作在系统浏览器里完成（点「打开授权页面」唤起，带 ?claim= 预填本机码）。
-         等待期轮询 cloud-state：认领完成（machinePaired）⇒ 刷新进入界面；
-         ⛔ 网页认领后还会 302 回本机 /auth/callback —— 双保险，谁先到都算数。
-         ⛔ z-index 940：**必须低于关闭确认弹窗（950）** —— 之前用 99999，点 X 时确认弹窗
-            被配对卡整个压住 ⇒ 看不见任何反应 = "叉不掉"（实测投诉）。 */
-      var box = document.createElement("div");
-      box.id = "__chc-pair";
-      /* ⛔⛔ z-index 10001：必须高于 .boot-splash 的 9999（10-14 用户实测"修不好"的根源：
-         令牌失效 ⇒ 数据全 401 ⇒ 启动图永不淡出 ⇒ 配对卡压在它下面永不可见 = 死锁）。
-         ⛔ 同时把 .boot-splash 藏掉（下面）—— 未配对时它是唯一该出现的界面。
-         ⛔ 曾因降到 940（给关闭确认弹窗让位）反而被启动图盖住 —— 助手窗口的 X 已改为
-           真退出（不弹确认框）⇒ 这里不再需要给 950 让位，直接压过启动图。 */
-      box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10001";
-      var splashes = document.querySelectorAll(".boot-splash");
-      for (var si = 0; si < splashes.length; si++) splashes[si].style.display = "none";
-      var card = document.createElement("div");
-      card.style.cssText = "background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:400px;width:90%;font-family:system-ui,sans-serif;text-align:center";
-      var head = document.createElement("div"); head.textContent = "连接云端账号";
-      head.style.cssText = "font-size:15px;font-weight:600;margin-bottom:10px";
-      var codeWrap = document.createElement("div");
-      codeWrap.style.cssText = "display:flex;align-items:center;gap:8px;margin:6px 0 2px";
-      var codeRow = document.createElement("div");
-      codeRow.textContent = window.__CHC_PAIR_CODE__ || "（刷新本页获取）";
-      codeRow.style.cssText = "flex:1;font-size:24px;font-weight:700;letter-spacing:.3em;text-indent:.3em;padding:12px 6px;background:#f3f4f6;border-radius:10px;font-family:ui-monospace,Consolas,monospace";
-      var copyBtn = document.createElement("button"); copyBtn.textContent = "复制";
-      copyBtn.style.cssText = "flex:none;padding:10px 12px;border:1px solid #ccc;background:#fff;border-radius:10px;font-size:12.5px;cursor:pointer";
-      copyBtn.onclick = function () {
-        var code = window.__CHC_PAIR_CODE__ || "";
-        var fin = function () { copyBtn.textContent = "已复制 ✓"; setTimeout(function () { copyBtn.textContent = "复制"; }, 1500); };
-        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(code).then(fin, fin); }
-        else { var ta = document.createElement("textarea"); ta.value = code; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch (e2) { } document.body.removeChild(ta); fin(); }
-      };
-      codeWrap.appendChild(codeRow); codeWrap.appendChild(copyBtn);
-      var cap = document.createElement("div");
-      cap.textContent = "本机配对码 · 在网页上认领时填这个";
-      cap.style.cssText = "font-size:11.5px;color:#888;margin:0 0 12px";
-      var st = document.createElement("div"); st.id = "__chc-wait";
-      st.style.cssText = "font-size:12.5px;color:#555;line-height:1.7;margin-bottom:12px";
-      st.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #7c3aed;border-top-color:transparent;animation:__chcspin .8s linear infinite;vertical-align:-3px;margin-right:8px"></span>等待浏览器授权…';
-      var style = document.createElement("style");
-      style.textContent = "@keyframes __chcspin{to{transform:rotate(360deg)}}";
-      document.head.appendChild(style);
-      var open = document.createElement("button"); open.textContent = "打开授权页面";
-      open.style.cssText = "width:100%;padding:10px 0;background:#185fa5;color:#fff;border:none;border-radius:8px;font-size:13.5px;cursor:pointer;margin-bottom:8px";
-      var authUrl = (window.__CHC_WEB_ENTRY__ || "https://ppz123.asia/cloud/") + "?claim=" + (window.__CHC_PAIR_CODE__ || "");
-      var fallback = document.createElement("div");
-      fallback.style.cssText = "display:none;font-size:11.5px;color:#666;line-height:1.7;margin-bottom:8px;word-break:break-all";
-      fallback.innerHTML = '若浏览器没有弹到前面，可复制链接手动打开：<br><b id="__chc-url">' + authUrl + "</b>";
-      open.onclick = function () {
-        fallback.style.display = "block";
-        fetch("/api/open-auth", { method: "POST" }).catch(function () { /* 失败时上面的链接兜底 */ });
-      };
-      var cancel = document.createElement("button"); cancel.textContent = "取消并退出应用";
-      cancel.style.cssText = "width:100%;padding:8px 0;background:transparent;color:#666;border:1px solid #ccc;border-radius:8px;font-size:12.5px;cursor:pointer";
-      cancel.onclick = function () {
-        fetch("/api/app-quit", { method: "POST" }).catch(function () { /* 忽略 */ });
-      };
-      card.appendChild(head); card.appendChild(codeWrap); card.appendChild(cap);
-      card.appendChild(st); card.appendChild(open); card.appendChild(fallback); card.appendChild(cancel);
-      box.appendChild(card); document.body.appendChild(box);
-      /* 等待轮询：认领完成 ⇒ 本机已绑定 ⇒ 刷新进界面；账号停用 ⇒ 显示失败原因 */
-      var waited = 0;
-      var timer = setInterval(function () {
-        fetch("/api/cloud-state", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (s) {
-          if (s && s.machinePaired) { clearInterval(timer); location.reload(); }
-          else if ((waited += 2000) > 180000) { clearInterval(timer); st.textContent = "等待超时：网页上还没有完成认领。可点「打开授权页面」重试。"; }
-        }).catch(function () { /* 瞬时失败继续等 */ });
-      }, 2000);
-      return;
-    }
-    var box = document.createElement("div");
-    box.id = "__chc-pair";
-    box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:99999";
-    var card = document.createElement("div");
-    card.style.cssText = "background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:360px;width:90%;font-family:system-ui,sans-serif;text-align:center";
-    var head = document.createElement("div"); head.textContent = "连接这台电脑的助手";
-    head.style.cssText = "font-size:15px;font-weight:600;margin-bottom:6px";
-    var tip = document.createElement("div");
-    tip.textContent = "第一次用这台电脑？点下面「在本机签发一个配对码」，生成后会自动填入 —— 不用命令行。";
-    tip.style.cssText = "font-size:12.5px;color:#666;line-height:1.6;margin-bottom:12px";
-    var input = document.createElement("input");
-    input.placeholder = "8 位配对码"; input.maxLength = 8; input.autocomplete = "off";
-    input.style.cssText = "width:100%;box-sizing:border-box;padding:8px 10px;font-size:14px;letter-spacing:4px;text-align:center;border:1px solid #ccc;border-radius:8px;margin-bottom:10px";
-    var issue = document.createElement("button"); issue.textContent = "在本机签发一个配对码";
-    issue.style.cssText = "width:100%;padding:8px 0;background:#fff;color:#185fa5;border:1px solid #185fa5;border-radius:8px;font-size:13px;cursor:pointer;margin-bottom:8px";
-    var btn = document.createElement("button"); btn.textContent = "连接";
-    btn.style.cssText = "width:100%;padding:9px 0;background:#185fa5;color:#fff;border:none;border-radius:8px;font-size:13.5px;cursor:pointer";
-    var st = document.createElement("div"); st.style.cssText = "font-size:12px;color:#a32d2d;margin-top:8px;min-height:16px";
-    // 一键签发：调本机 /api/issue-code，拿到码自动填进输入框（随后点「连接」即可）
-    issue.onclick = function () {
-      issue.disabled = true; st.style.color = "#666"; st.textContent = "正在签发…";
-      fetch("/api/issue-code", { method: "POST", headers: { "Content-Type": "application/json", "x-harness-client": "web" }, body: JSON.stringify({}) })
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          if (!j || !j.ok) {
-            st.textContent = j && j.error === "too_many" ? "签发太频繁，请等一分钟" : "签发失败：" + ((j && j.error) || "未知");
-            st.style.color = "#a32d2d"; issue.disabled = false; return;
-          }
-          input.value = j.code;
-          st.style.color = "#2f7d32";
-          st.textContent = "已为「" + j.name + "」签发，点「连接」即可";
-          issue.disabled = false;
-          btn.focus();
-        })
-        .catch(function () { st.textContent = "网络错误"; issue.disabled = false; });
-    };
-    btn.onclick = function () {
-      var code = (input.value || "").trim().toLowerCase();
-      if (!code) { st.textContent = "请输入配对码"; return; }
-      btn.disabled = true; st.style.color = "#666"; st.textContent = "正在连接…";
-      fetch("/api/pair", { method: "POST", headers: { "Content-Type": "application/json", "x-harness-client": "web" }, body: JSON.stringify({ code: code }) })
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          if (!j || !j.ok) {
-            st.textContent = j && j.error === "mismatch" ? "配对码不对" : j && j.error === "locked" ? "尝试过多，锁定 1 分钟" : "失败：" + ((j && j.error) || "未知");
-            st.style.color = "#a32d2d"; btn.disabled = false; return;
-          }
-          try { localStorage.setItem("chc-token", j.token); } catch (e) { /* 忽略 */ }
-          location.reload();
-        })
-        .catch(function () { st.textContent = "网络错误"; btn.disabled = false; });
-    };
-    input.addEventListener("keydown", function (e) { if (e.key === "Enter") btn.click(); });
-    card.appendChild(head); card.appendChild(tip); card.appendChild(issue); card.appendChild(input); card.appendChild(btn); card.appendChild(st);
-    box.appendChild(card); document.body.appendChild(box);
-    input.focus();
-  }
-  // ⛔ 助手品牌覆盖（10-12 用户：「左上角 logo 改成 Codex Assistant，颜色也换一种，方便区分」）
-  //   云助手与桌面版**共用同一份界面**（同一套 dist）⇒ 只能在运行期改：把侧栏品牌名换成
-  //   "Codex Assistant"，并把图标换成青绿色内联 SVG（桌面版是蓝色 PNG）。
-  //   live 渲染会被 React 重渲染覆盖 ⇒ 用 MutationObserver 守着重新打标。
-  var ASSISTANT_BRAND = "Codex Assistant";
-  var ASSISTANT_LOGO =
-    "data:image/svg+xml;charset=utf-8," +
-    encodeURIComponent(
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0' +
-        '" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A78BFA"/><stop offset=".55" stop-color="#7C' +
-        '3AED"/><stop offset="1" stop-color="#3B1D8F"/></linearGradient><radialGradient id="w" cx=".5" cy' +
-        '=".5" r=".5"><stop offset="0" stop-color="#FFE9C2" stop-opacity=".5"/><stop offset="1" stop-colo' +
-        'r="#FFE9C2" stop-opacity="0"/></radialGradient></defs><rect width="512" height="512" rx="116" fi' +
-        'll="url(#g)"/><circle cx="362" cy="150" r="84" fill="url(#w)"/><path d="M148 196 L300 256 L148 3' +
-        '16" fill="none" stroke="#FFFFFF" stroke-width="58" stroke-linecap="round" stroke-linejoin="round' +
-        '"/><path d="M330 330 L414 330" fill="none" stroke="#FFFFFF" stroke-opacity=".55" stroke-width="2' +
-        '4" stroke-linecap="round"/><path d="M362 96 L370 134 L408 142 L370 150 L362 188 L354 150 L316 14' +
-        '2 L354 134 Z" fill="#FFD66B"/></svg>'
-    );
-  function applyAssistantBrand() {
-    try {
-      var name = document.querySelector(".brand-row .brand-name");
-      if (name && name.textContent !== ASSISTANT_BRAND) name.textContent = ASSISTANT_BRAND;
-      var logo = document.querySelector("img.ch-logo-img");
-      if (logo && logo.getAttribute("src") !== ASSISTANT_LOGO) logo.setAttribute("src", ASSISTANT_LOGO);
-    } catch (e) { /* 忽略 */ }
-  }
   var brandObserver = null;
   function watchAssistantBrand() {
     applyAssistantBrand();
@@ -729,31 +566,16 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
   }
   connect();
 
-  // ⛔⛔ 未配对就**立刻**弹配对框，不等第一次 invoke 401（10-12 用户实测）：
-  //   新手打开页面时渲染层可能还没发出任何 invoke ⇒ 界面上什么都不出现，
-  //   用户既看不到配对框也不知道该干嘛（"配对窗口也没有"）。
-  //   shim 注入在 </head> 前 ⇒ body 可能还没解析，必须等 DOMContentLoaded。
-  function pairIfNeeded() {
-    if (!tok()) showPairBox();
-  }
-  /* ⛔ 自愈（10-14 用户实测"断开后一直卡启动页"）：**闸开着 + 本地有令牌 + 机器却未配对**
-     = 失配的旧令牌（断开/服务端解绑/账号停用留下的）—— 外壳会带着它启动，全部 401。
-     开机自检一次：失配 ⇒ 清令牌并重载，按未配对重新走（sessionStorage 防循环，只做一次）。 */
-  function healStaleToken() {
-    fetch("/api/cloud-state", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (s) {
-      if (!s || s.machinePaired !== false) return;   // 已配对/状态拿不到 ⇒ 不动
-      var hasTok = false;
-      try { hasTok = !!localStorage.getItem("chc-token"); } catch (e) { /* 忽略 */ }
-      if (!hasTok) return;
-      if (sessionStorage.getItem("__chc_heal")) return;
-      try { sessionStorage.setItem("__chc_heal", "1"); localStorage.removeItem("chc-token"); } catch (e) { return; }
-      location.reload();
-    }).catch(function () { /* 状态拿不到就不动 */ });
+  /* ⛔⛔ 未配对 ⇒ 整个外壳重定向到独立配对页 /pair（10-14 用户令「没匹配应用不加载」）：
+     应用一行代码都不加载 —— 没有启动图、没有动画、不发任何请求（自然没有 401 噪音）。
+     ⛔ 这段内联在 </head> 前 ⇒ 早于 body 里的模块脚本执行；配对页同源，
+        配对完成后自己写 localStorage 并跳回 /，闸自然放行。
+     ⛔⛔ 本注释内**禁写反引号**：会把外层模板字面量提前终结（实测编译错误）。 */
+  if (!tok()) {
+    location.replace("/pair");
   }
   function onReady() {
     watchAssistantBrand();
-    healStaleToken();
-    pairIfNeeded();
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", onReady);
@@ -770,7 +592,7 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
         headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ id: id, channel: channel, args: args }),
       }).then(function (r) {
-        if (r.status === 401) { showPairBox(); throw new Error("未配对（401）"); }
+        if (r.status === 401) { location.replace("/pair"); throw new Error("未配对（401）"); }
         return r.json();
       }).then(function (body) {
         var entry = pending[id]; if (!entry) return;
@@ -884,13 +706,9 @@ function shellHtml(shimJs: string, assetBase: string) {
       .replace(/style-src 'self'/g, `style-src 'self' ${cloudOrigin}`);
   }
   const cdnMark = `<script>window.__CHC_CDN__ = ${JSON.stringify(assetBase)};</script>\n`;
-  /* 配对码注入（10-13）：**直接显示在应用内的配对卡里** ——
-     ⛔ 以前只打在控制台，而云助手常以隐藏/重定向控制台方式跑 ⇒ 用户根本读不到码，
-     网页认领那一步就卡死。窗口里能看到的人 = 在这台机器前的人，信任模型不变。 */
-  const pairMark = `<script>window.__CHC_PAIR_CODE__ = ${JSON.stringify(issueOwnerPair())};</script>\n`;
   // 云端登录门的 token 交接：/#t=<token>（fragment 不进服务器日志）→ localStorage → 抹掉 hash
   const handoff = `<script>(function(){var m=/^t=([0-9a-f]{16,})$/.exec(location.hash.slice(1));if(m){try{localStorage.setItem("chc-token",m[1])}catch(e){}history.replaceState(null,"",location.pathname+location.search)}})();</script>\n`;
-  return rewritten.replace("</head>", `${cdnMark}${pairMark}${handoff}<script>${shimJs}</script>\n</head>`);
+  return rewritten.replace("</head>", `${cdnMark}${handoff}<script>${shimJs}</script>\n</head>`);
 }
 
 function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
@@ -1068,6 +886,67 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
      绑定完成即把本地令牌写进 localStorage 并进入界面。
      ⛔ 轮询（/api/cloud-state 的 machinePaired）是兜底：就算浏览器拦截了重定向，
         本机的 5 秒认领轮询照样会完成绑定（双保险）。 */
+  /* ── 独立配对页（10-14 重构）：未配对时外壳整体重定向到这里 ───────────────────
+     ⛔ 自包含静态页：**不加载任何应用代码**（无启动图、无动画、无请求、无 401 噪音）。
+     配对码由服务端直出（页面里就是最终值，不靠 JS 状态）；完成后本页自己写令牌并跳回 `/`。 */
+  if (p === "/pair") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    const pairCode = GATED ? issueOwnerPair() : "";
+    const pairPage = `<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="utf-8"/>` +
+      `<meta name="viewport" content="width=device-width,initial-scale=1"/><title>连接云端账号 · Codex Assistant</title>` +
+      `<style>html,body{margin:0;min-height:100%;background:#141413;color:#ececea;` +
+      `font:14px/1.6 Inter,system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;` +
+      `display:flex;align-items:center;justify-content:center;-webkit-font-smoothing:antialiased}` +
+      `.box{text-align:center;max-width:400px;padding:32px;width:90%}` +
+      `.t{font-size:15px;font-weight:600;margin-bottom:14px}` +
+      `.row{display:flex;align-items:center;gap:8px;margin:6px 0 4px}` +
+      `.code{flex:1;font:700 24px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.3em;text-indent:.3em;` +
+      `padding:12px 6px;background:#ffffff0a;border:1px solid #ffffff17;border-radius:10px}` +
+      `button{appearance:none;-webkit-appearance:none;font:inherit;cursor:pointer;border:0}` +
+      `.cp{flex:none;padding:10px 12px;border:1px solid #ffffff2e;background:#ffffff0f;color:inherit;border-radius:10px;font-size:12.5px}` +
+      `.cap{font-size:11.5px;color:#7c7c76;margin:0 0 14px}` +
+      `.st{font-size:12.5px;color:#a6a6a1;line-height:1.8;margin-bottom:14px;min-height:20px}` +
+      `.go{display:block;width:100%;padding:10px 0;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;` +
+      `border-radius:10px;font-size:13.5px;font-weight:600;margin-bottom:8px}` +
+      `.go:hover{filter:brightness(1.08)}` +
+      `.quit{display:block;width:100%;padding:8px 0;background:transparent;color:#a6a6a1;` +
+      `border:1px solid #ffffff2e;border-radius:10px;font-size:12.5px}` +
+      `.fb{display:none;font-size:11.5px;color:#7c7c76;line-height:1.7;margin-bottom:8px;word-break:break-all}` +
+      `.bad{color:#ec7a70}</style></head><body><div class="box">` +
+      `<div class="t">连接云端账号</div>` +
+      (pairCode
+        ? `<div class="row"><div class="code">${pairCode}</div><button class="cp" id="cp">复制</button></div>` +
+          `<div class="cap">本机配对码 · 在网页上认领时填这个</div>`
+        : `<div class="cap">本机码生成中，稍候刷新本页</div>`) +
+      `<div class="st" id="st">等待浏览器授权…</div>` +
+      `<button class="go" id="go">打开授权页面</button>` +
+      `<div class="fb" id="fb"></div>` +
+      `<button class="quit" id="quit">取消并退出应用</button></div>` +
+      `<script>(function(){var code=${JSON.stringify(pairCode)};var web=${JSON.stringify(ASSISTANT_WEB_ENTRY)};` +
+      `var url=web+"?claim="+code;var tries=0;` +
+      `function st(t){document.getElementById("st").textContent=t}` +
+      `document.getElementById("go").onclick=function(){` +
+      `document.getElementById("fb").style.display="block";` +
+      `document.getElementById("fb").innerHTML='若浏览器没有弹到前面，可复制链接手动打开：<br><b>'+url+"</b>";` +
+      `fetch("/api/open-auth",{method:"POST"}).catch(function(){})};` +
+      `document.getElementById("quit").onclick=function(){fetch("/api/app-quit",{method:"POST"}).catch(function(){})};` +
+      `var cp=document.getElementById("cp");` +
+      `if(cp)cp.onclick=function(){function fin(){cp.textContent="已复制 ✓";setTimeout(function(){cp.textContent="复制"},1500)}` +
+      `if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(code).then(fin,fin)}else{fin()}};` +
+      `/* 认领完成 ⇒ 凭码取本地令牌 ⇒ 写 localStorage ⇒ 回 /（闸放行，应用才启动） */` +
+      `function tick(){fetch("/api/cloud-state",{cache:"no-store"}).then(function(r){return r.json()}).then(function(s){` +
+      `if(s&&s.machinePaired){` +
+      `st("已认领，正在完成连接…");` +
+      `fetch("/api/pair-token-for-callback?code="+encodeURIComponent(code),{cache:"no-store"})` +
+      `.then(function(r){return r.json()}).then(function(j){` +
+      `if(j&&j.ok&&j.token){try{localStorage.setItem("chc-token",j.token)}catch(e){}}location.replace("/")})` +
+      `.catch(function(){location.replace("/")});return}` +
+      `if(++tries>90){st("等待超时：网页上还没有完成认领。可点「打开授权页面」重试。");return}` +
+      `setTimeout(tick,2000)})}tick();})();</script></body></html>`;
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(pairPage);
+    return;
+  }
   if (p === "/auth/callback") {
     if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
     const claimCode = String(url.searchParams.get("code") || "").replace(/[^0-9a-f]/g, "").slice(0, 8);
