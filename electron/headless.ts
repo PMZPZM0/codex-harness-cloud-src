@@ -20,7 +20,7 @@ import electron from "electron";
 import { app, ipcMain, shell } from "electron";
 import { mutableState } from "./main";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
@@ -199,12 +199,21 @@ if (electronDialog) {
 }
 
 /* ── ②c 云版配对与鉴权（与伴生服务同语义、同落盘）──────────────────────────
-   home = HARNESS_CLOUD_HOME（默认 ~/.codex-harness-cloud），token/users.json 与
+   home = HARNESS_CLOUD_HOME（默认 ~/.codex-assistant），token/users.json 与
    伴生服务**共用** ⇒ --add-user 签发的个人码两边通用。四道闸与 local-agent/auth.js
    同源：Bearer（不用 Cookie）/ Origin 白名单 / 预检强制 / 常量时间比较。桥的全部
    状态通道（/__ipc /__events /__upload /__dialog）都要过 token；/api/health、
    /api/pair 与静态资产除外 —— 配对就是为了换 token。 */
-const CHC_HOME = process.env.HARNESS_CLOUD_HOME || join(homedir(), ".codex-harness-cloud");
+/* ⛔ 数据目录与桌面版彻底分开（10-14 用户令「八竿子打不着」）：
+   自己的家 = ~/.codex-assistant（⛔ 不再用桌面版的旧名 .codex-harness-cloud）。
+   一次性迁移：老目录存在且新目录不存在 ⇒ 整体改名（账号绑定/设备令牌/本地令牌全带走）。 */
+const CHC_HOME = process.env.HARNESS_CLOUD_HOME || join(homedir(), ".codex-assistant");
+{
+  const legacy = join(homedir(), ".codex-harness-cloud");
+  try {
+    if (!existsSync(CHC_HOME) && existsSync(legacy)) { renameSync(legacy, CHC_HOME); console.log("[cloud] 数据目录已迁移：" + legacy + " → " + CHC_HOME); }
+  } catch (error) { console.error("[cloud] 数据目录迁移失败（继续用新目录）：", error); }
+}
 /* ── 账号闸（10-13）：**配对必须先有网页账号** ────────────────────────────────
    与 cloud/local-agent 的账号闸同一套语义（见其 auth.js / server.js 头注），但**两份实现并存**
    （这里 = Electron 真界面，那里 = 伴生服务 Node 脚本）—— 落盘**共用**同一批文件
@@ -757,7 +766,7 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
 
   // 云版门面（登录门探测 + 配对换 token；协议与伴生服务一致 ⇒ 门零改动可用）
   if (p === "/api/health") {
-    deny(200, { ok: true, product: "codex-harness-cloud", protocolVersion: 1, mode: "real-ui" });
+    deny(200, { ok: true, product: "codex-assistant", protocolVersion: 1, mode: "real-ui" });
     return;
   }
   if (p === "/api/pair" && req.method === "POST") {
