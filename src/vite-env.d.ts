@@ -724,6 +724,24 @@ interface Window {
     relayOpenPurchase(): Promise<{ ok: boolean; url: string }>;
     enhancePrompt(text: string): Promise<{ ok: boolean; text?: string; error?: string }>;
     listTerminals(): Promise<{ id: string; alive: boolean; cwd: string }[]>;
+    /* 读改动备份配置（enabled/目录/是否被回退/目录是否存在） */
+    backupConfigGet(): Promise<{ ok: boolean; error?: string; config?: any }>;
+    /* 写改动备份配置；启用时才创建目录 */
+    backupConfigSet(input: { enabled?: boolean; dir?: string }): Promise<{ ok: boolean; error?: string; config?: any; dirReady?: boolean }>;
+    /* 读某会话的备份索引（回合级） */
+    backupList(conversationId?: string): Promise<{ ok: boolean; error?: string; changes?: any[] }>;
+    /* 备份产物概览（会话数/条数/字节数） */
+    backupSummary(): Promise<{ ok: boolean; error?: string; summary?: any }>;
+    /* 清空备份（⚠ 不可恢复，渲染层须先确认） */
+    backupClear(): Promise<{ ok: boolean; error?: string; summary?: any }>;
+    /* agent 工具：列出全部会话的备份概览 + 容量上限 */
+    backupListAll(): Promise<{ ok: boolean; error?: string; list?: any; maxBytes?: number }>;
+    /* agent 工具：读某条备份全文（索引 + 明细 hunks） */
+    backupReadChange(input: { conversationId?: string; requestId?: string }): Promise<{ ok: boolean; error?: string; change?: any }>;
+    /* agent 工具：回滚某文件；⛔ 只存 hunks 时回 needs_full_content；目标须在工作区内 */
+    backupRestoreFile(input: { conversationId?: string; requestId?: string; filePath?: string; workspace?: string }): Promise<{ ok: boolean; error?: string; note?: string }>;
+    /* agent 工具：手动触发容量裁剪（超上限把最旧的移进回收站，不硬删） */
+    backupPrune(input: { maxBytes?: number }): Promise<{ ok: boolean; error?: string; prunedConversations?: number; freedBytes?: number; skipped?: number; bytes?: number; maxBytes?: number }>;
     validatePlugin(target: string): Promise<{ ok: boolean; root: string; manifestPath?: string; issues: string[]; inventory: { skills: number; commands: number; agents: number; hooks: number }; name?: string }>;
     chooseDirectoryAt(startPath: string): Promise<string | null>;
     /* 10-03 资源停用/启用（不删文件，可逆） */
@@ -1212,6 +1230,12 @@ interface Window {
 
     /** 订阅下载进度（0~1），返回取消订阅函数 */
     updateOnProgress(callback: (percent: number) => void): () => void;
+
+    /**
+     * 订阅「更新包已就绪」（10-13 后台静默下载完成）。
+     * ⛔ 与设置页无关 —— 用户可能压根没打开设置页，只能靠事件弹窗。
+     */
+    updateOnReady(callback: (info: { version?: string; path?: string }) => void): () => void;
     /** 更新状态机推送（10-11 自动更新，手写桥）：主进程 updates:state 事件 */
     onUpdateState(callback: (state: { phase: string; percent: number; receivedBytes: number; totalBytes: number; speedBytesPerSec: number; etaSeconds: number | null; version?: string; changelog?: string; filename?: string; error?: string; deferredVersion?: string; onBattery?: boolean; product?: string; channel?: string }) => void): () => void;
 

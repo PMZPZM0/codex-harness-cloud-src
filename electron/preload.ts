@@ -386,6 +386,24 @@ contextBridge.exposeInMainWorld("codex", {
   relayOpenPurchase: () => __ipc("relay:open-purchase", 0, []),
   enhancePrompt: (text: string) => __ipc("prompt:enhance", 1, [{ text }]),
   listTerminals: () => __ipc("terminal:list", 0, []),
+  /* 读改动备份配置（enabled/目录/是否被回退/目录是否存在） */
+  backupConfigGet: () => __ipc("backup:config-get", 0, []),
+  /* 写改动备份配置；启用时才创建目录 */
+  backupConfigSet: (input: { enabled?: boolean; dir?: string }) => __ipc("backup:config-set", 1, [input]),
+  /* 读某会话的备份索引（回合级） */
+  backupList: (conversationId?: string) => __ipc("backup:list", 0, [conversationId]),
+  /* 备份产物概览（会话数/条数/字节数） */
+  backupSummary: () => __ipc("backup:summary", 0, []),
+  /* 清空备份（⚠ 不可恢复，渲染层须先确认） */
+  backupClear: () => __ipc("backup:clear", 0, []),
+  /* agent 工具：列出全部会话的备份概览 + 容量上限 */
+  backupListAll: () => __ipc("backup:list-all", 0, []),
+  /* agent 工具：读某条备份全文（索引 + 明细 hunks） */
+  backupReadChange: (input: { conversationId?: string; requestId?: string }) => __ipc("backup:read-change", 1, [input]),
+  /* agent 工具：回滚某文件；⛔ 只存 hunks 时回 needs_full_content；目标须在工作区内 */
+  backupRestoreFile: (input: { conversationId?: string; requestId?: string; filePath?: string; workspace?: string }) => __ipc("backup:restore-file", 1, [input]),
+  /* agent 工具：手动触发容量裁剪（超上限把最旧的移进回收站，不硬删） */
+  backupPrune: (input: { maxBytes?: number }) => __ipc("backup:prune", 1, [input]),
   validatePlugin: (target: string) => __ipc("plugin:validate", 1, [{ path: target }]),
   chooseDirectoryAt: (startPath: string) => __ipc("dialog:directory-at", 1, [startPath]),
   /* 10-03 资源停用/启用（不删文件，可逆） */
@@ -768,6 +786,10 @@ onConnectorOAuth: (listener: (event: unknown) => void) =>
   // 粘贴的长文本落盘成 .txt（超过阈值时输入框显示为文件 chip，见 composer-attachments.mjs）
   updateOnProgress: (callback: (percent: number) => void) => {
     __on("updates:download-progress", callback, (callback) => (_event: unknown, percent: number) => callback(percent));
+  },
+  // ⛔ 10-13 自桌面版同步：后台静默下载完成事件（渲染层可能压根没开设置页，只能靠事件弹窗）。
+  updateOnReady: (callback: (info: { version?: string; path?: string }) => void) => {
+    __on("updates:ready", callback, (callback) => (_event: unknown, payload: { version?: string; path?: string }) => callback(payload ?? {}));
   },
   /* 更新状态机推送（10-11 云助手自动更新）：主进程每次相位变化推一次。
      载荷与 updates:state-read 一致（单一真相源在主进程），渲染层只渲染、不自己推断。 */
