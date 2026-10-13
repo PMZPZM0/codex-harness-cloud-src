@@ -1032,6 +1032,13 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     deny(200, { ok: true });
     return;
   }
+  /* 授权回调页「跳转到应用」：把助手窗口调到前台（浏览器本页就可以关了）。 */
+  if (p === "/api/focus-app" && req.method === "POST") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    void showAssistantWindow();
+    deny(200, { ok: true });
+    return;
+  }
 
   /* ── OAuth 式浏览器授权（10-13 晚）：回调页 + 授权态令牌交接 ─────────────────
      流程：本机点「授权」→ 系统浏览器打开网页（?claim=<本机码> 预填）→ 用户注册/登录并
@@ -1042,19 +1049,29 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
   if (p === "/auth/callback") {
     if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
     const claimCode = String(url.searchParams.get("code") || "").replace(/[^0-9a-f]/g, "").slice(0, 8);
+    /* ⛔ 10-13 晚（用户反馈）：回调完成后**不在浏览器里加载主界面**（会多出一个完整的浏览器版应用），
+       只给「登录成功 + 跳转到应用」——跳转 = 主进程把助手窗口调到前台，浏览器本页随手关掉。 */
     const okPage = `<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="utf-8"/>` +
       `<meta name="viewport" content="width=device-width,initial-scale=1"/><title>授权完成 · Codex Assistant</title>` +
-      `<style>html,body{margin:0;height:100%;background:#141413;color:#ececea;font:14px/1.6 Inter,system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;display:flex;align-items:center;justify-content:center}` +
-      `.box{text-align:center;max-width:380px;padding:32px}.t{font-size:16px;font-weight:600;margin-bottom:8px}` +
-      `.d{font-size:12.5px;color:#a6a6a1;line-height:1.7}.spin{display:inline-block;width:16px;height:16px;border-radius:50%;` +
+      `<style>html,body{margin:0;min-height:100%;background:#141413;color:#ececea;font:14px/1.6 Inter,system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;display:flex;align-items:center;justify-content:center}` +
+      `.box{text-align:center;max-width:380px;padding:32px}.t{font-size:17px;font-weight:600;margin-bottom:8px}` +
+      `.d{font-size:12.5px;color:#a6a6a1;line-height:1.8}.spin{display:inline-block;width:16px;height:16px;border-radius:50%;` +
       `border:2px solid #7c3aed;border-top-color:transparent;animation:s .8s linear infinite;vertical-align:-3px;margin-right:8px}` +
-      `@keyframes s{to{transform:rotate(360deg)}}.bad{color:#ec7a70}</style></head><body><div class="box">` +
-      `<div class="t" id="t">授权成功</div><div class="d" id="d"><span class="spin"></span>正在完成连接，即将进入界面…</div></div>` +
+      `@keyframes s{to{transform:rotate(360deg)}}.bad{color:#ec7a70}` +
+      `.j{display:inline-block;margin-top:14px;padding:10px 22px;border:0;border-radius:10px;cursor:pointer;font-size:13.5px;font-weight:600;` +
+      `background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff}.m{font-size:11.5px;color:#7c7c76}</style></head><body><div class="box">` +
+      `<div class="t" id="t">正在完成授权</div><div class="d" id="d"><span class="spin"></span>正在连接本机应用…</div></div>` +
       `<script>(function(){var code=${JSON.stringify(claimCode)};var tries=0;` +
-      `function done(){document.getElementById("t").textContent="连接完成";` +
+      `function focusApp(){fetch("/api/focus-app",{method:"POST"}).catch(function(){})}` +
+      `function done(){document.getElementById("t").textContent="登录成功 · 已连接";` +
       `fetch("/api/pair-token-for-callback?code="+encodeURIComponent(code),{cache:"no-store"})` +
       `.then(function(r){return r.json()}).then(function(j){` +
-      `if(j&&j.ok&&j.token){try{localStorage.setItem("chc-token",j.token)}catch(e){}}location.replace("/")})` +
+      `if(j&&j.ok&&j.token){try{localStorage.setItem("chc-token",j.token)}catch(e){}}` +
+      `document.getElementById("d").innerHTML="已在本机完成登录并连接云端。<br>"+` +
+      `'<button class="j" id="j">跳转到应用</button><br><span class="m">点击后切换到应用窗口，本页可以关闭</span>';` +
+      `document.getElementById("j").onclick=function(){focusApp();` +
+      `document.getElementById("d").innerHTML="已切换到应用窗口，本页可以关闭。"};` +
+      `focusApp();})` +
       `.catch(function(){location.replace("/")})}` +
       `function fail(m){document.getElementById("t").textContent="授权未完成";document.getElementById("d").innerHTML='<span class="bad">'+m+'</span><br>可回到本机窗口点「重新打开授权页面」重试。';}` +
       `function tick(){fetch("/api/cloud-state",{cache:"no-store"}).then(function(r){return r.json()}).then(function(s){` +
@@ -1066,8 +1083,7 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     return;
   }
   /* 授权回包：凭本机码取本地令牌。⛔ 码必须与账号服务上「已认领」的记录对得上
-     （服务端真相源）—— 否则任何人拿一个编造的码就能换出本地令牌（首轮实现漏了这条，已补）。 */
-  if (p === "/api/pair-token-for-callback" && req.method === "GET") {
+     （服务端真相源）—— 否则任何人拿一个编造的码就能换出本地令牌（首轮实现漏了这条，已补）。 */  if (p === "/api/pair-token-for-callback" && req.method === "GET") {
     if (!GATED) { deny(404, { ok: false, error: "standalone" }); return; }
     if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
     const claimCode = String(url.searchParams.get("code") || "").replace(/[^0-9a-f]/g, "").slice(0, 8);
