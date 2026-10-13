@@ -435,3 +435,14 @@ html.theme-switching *::before, html.theme-switching *::after {
   .option { padding: 11px 12px; }
   .jump-btn { right: 14px; bottom: 110px; }
 }
+
+/* ── 设备绑定 / 我的设备（10-13 二期）──────────────────────────────────── */
+.go.alt {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  margin-bottom: 10px;
+}
+.go.alt:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.my-devices { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.device-row { font-size: 12px; color: var(--muted); line-height: 1.9; }

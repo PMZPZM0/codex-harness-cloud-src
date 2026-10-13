@@ -454,6 +454,22 @@ async function pollDeviceClaim(): Promise<void> {
     bindSeat("owner", username);
     saveDeviceToken(payload.token);
     console.log(`[device] 本机已被网页账号「${username}」认领 ⇒ 设备 token 已落盘，允许连接服务器`);
+    // ⛔ 给已打开的助手窗口**注入本地令牌**并刷新 —— 同进程 ⇒ 直接写 localStorage 即可，
+    //    用户全程无感：网页认领后，本机窗口自己进入界面（不需要再输码 / 走票据）。
+    try {
+      const win = getAssistantWindow();
+      if (win && !win.isDestroyed()) {
+        // AssistantWin 是窄接口（show/focus/hide…）⇒ webContents 走结构化断言
+        const wc = (win as unknown as { webContents: { executeJavaScript: (code: string) => Promise<unknown>; reload: () => void } }).webContents;
+        void wc
+          .executeJavaScript(`try{localStorage.setItem("chc-token", ${JSON.stringify(ownerToken)})}catch(e){}`)
+          .then(() => {
+            wc.reload();
+            console.log("[device] 助手窗口已注入本地令牌并刷新（自动进入界面）");
+          })
+          .catch(() => undefined);
+      }
+    } catch { /* 窗口不在就随它去：用户刷新本机页面即可 */ }
   } catch { /* 账号服务不可达：下轮再试 */ }
 }
 
