@@ -1204,6 +1204,8 @@ interface Window {
     onChannelBotEvent(listener: (event: any) => void): () => void;
 
     onHarnessEvent(listener: (event: any) => void): () => void;
+    /* 10-13 关闭确认弹窗：主进程推送「有任务在跑」时弹应用内确认卡（preload 手写桥，不在 manifest 清单） */
+    onCloseConfirmAsk(handler: (payload: { busy: number; appName: string }) => void): () => void;
 
     // ---- 语音通话（本机离线识别与合成，旁挂新增） ----
 
