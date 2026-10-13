@@ -19,7 +19,7 @@
 import electron from "electron";
 import { app, ipcMain } from "electron";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
@@ -414,6 +414,7 @@ async function pollAccountStatus(): Promise<void> {
   try {
     const response = await fetch(`${ACCOUNTS_BASE}/pair-ticket/status?usernames=${encodeURIComponent(accounts.join(","))}`, { signal: AbortSignal.timeout(8000) });
     if (!response.ok) return;
+    cloudReachable = true;
     const payload = (await response.json().catch(() => null)) as { accounts?: Record<string, { disabled?: boolean }> } | null;
     for (const [username, info] of Object.entries(payload?.accounts || {})) {
       if (info?.disabled && unbindByAccount(username)) {
@@ -421,6 +422,39 @@ async function pollAccountStatus(): Promise<void> {
       }
     }
   } catch { /* 不可达 = 保持现状（失败放行） */ }
+}
+
+/* ── 设备入网轮询（10-13 二期）：本机码 → 云端匹配 → 拿设备 token ───────────
+   流程：本机打印配对码 → 用户在网页注册/登录后**认领**这个码 → 服务端绑定
+   「账号 ⟷ 本机码」→ 本机轮询拿到**设备 token**（HMAC 派生）→ 落盘（0600）。
+   ⛔ 这就是"允许本地连接服务器"的那把钥匙：此后检查更新/将来的云端会话索引都凭它。
+   ⛔ 只有还没绑定任何账号时才轮询（已配对就别再打服务器）。 */
+const deviceTokenFile = join(CHC_HOME, "device-token");
+function saveDeviceToken(token: string): void {
+  mkdirSync(CHC_HOME, { recursive: true });
+  writeFileSync(deviceTokenFile, token, { mode: 0o600 });
+}
+export function readDeviceToken(): string {
+  try { return readFileSync(deviceTokenFile, "utf8").trim(); } catch { return ""; }
+}
+/** 账号服务可达性（云端管理面板展示用；由两个轮询顺手维护）。 */
+let cloudReachable = false;
+async function pollDeviceClaim(): Promise<void> {
+  if (!GATED) return;
+  if (boundAccounts().length > 0) return;                       // 已配对：不再轮询
+  const code = ownerPairCode;
+  if (!code) return;                                            // 本机码还没生成
+  try {
+    const response = await fetch(`${ACCOUNTS_BASE}/device/claim-status?code=${encodeURIComponent(code)}`, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return;
+    cloudReachable = true;
+    const payload = (await response.json().catch(() => null)) as { claimed?: boolean; token?: unknown; username?: unknown } | null;
+    if (!payload?.claimed || typeof payload.token !== "string" || !payload.token) return;   // 还没人认领，继续等
+    const username = String(payload.username || "");
+    bindSeat("owner", username);
+    saveDeviceToken(payload.token);
+    console.log(`[device] 本机已被网页账号「${username}」认领 ⇒ 设备 token 已落盘，允许连接服务器`);
+  } catch { /* 账号服务不可达：下轮再试 */ }
 }
 
 /* ── ③ shim 生成：manifest(441 invoke) + preload.ts(24 事件桥) ────────────── */
@@ -849,6 +883,41 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     return;
   }
 
+  /* ── 云端管理（10-13 二期）：状态 + 断开连接（界面「云端管理」页的数据源）──── */
+  if (p === "/api/cloud-state") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    const seat = whoByToken(tokenOf(req, url), loadChcUsers());
+    const bindings = loadAccountBindings();
+    deny(200, {
+      ok: true,
+      gated: GATED,
+      paired: Boolean(seat),
+      /* ⛔ machine* 是**整机状态**（有没有任何座位绑定了账号）—— 云端管理面板用它；
+         paired / account 是**请求者**状态（带令牌才有）。两者口径不同，缺一不可。 */
+      machinePaired: boundAccounts().length > 0,
+      machineAccounts: boundAccounts(),
+      account: seat ? (GATED ? accountOf(seat) : seat) : null,
+      seats: bindings,
+      hasDeviceToken: existsSync(deviceTokenFile),
+      serverReachable: cloudReachable,
+      webEntry: ASSISTANT_WEB_ENTRY,
+      /** 方案扩展位：A+（云端会话索引）/ B（云端执行）在这里声明能力，界面按位渲染 */
+      plan: "A",
+      cloudFeatures: { sessionIndex: false, cloudExec: false },
+    });
+    return;
+  }
+  /* 断开连接：清空全部绑定 + 设备 token ⇒ 界面清掉本地令牌后回到配对卡。 */
+  if (p === "/api/cloud-disconnect" && req.method === "POST") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    if (!bridgeAuthOk(req, url)) { deny(401, { ok: false, error: "unauthorized" }); return; }
+    persistAccountBindings({ owner: "", users: {} });
+    try { rmSync(deviceTokenFile, { force: true }); } catch { /* 忽略 */ }
+    console.log("[cloud] 已断开云端连接（清空账号绑定与设备 token）");
+    deny(200, { ok: true });
+    return;
+  }
+
   // ⛔ /__* 状态通道逐一上 token 闸（静态外壳不挡 —— 它要自己消费 #t / 弹配对框）
 
   // ⛔ 传图通道（用户定调：限 2M）。浏览器 <input type=file> → 这里落盘 →
@@ -995,6 +1064,9 @@ createServer((req, res) => route(req, res, shimJs)).listen(PORT, "127.0.0.1", ()
   // 账号状态轮询：账号被停用后，已签发的令牌也要失效（失败放行，见 pollAccountStatus 头注）
   setInterval(pollAccountStatus, ACCOUNT_POLL_MS).unref();
   void pollAccountStatus();
+  // 设备入网轮询：等网页认领本机码（认领 ⇒ 绑定账号 + 落盘设备 token ⇒ 允许连服务器）
+  setInterval(pollDeviceClaim, 5000).unref();
+  void pollDeviceClaim();
 });
 
 // 真 main.ts：86 个域 / 真引擎 / 全部业务。⛔ 必须最后 require。
