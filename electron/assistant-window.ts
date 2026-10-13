@@ -17,7 +17,7 @@ import { existsSync } from "node:fs";
 import { assistantUrl } from "./open-browser";
 import { resolveWindowIcon } from "./app-icon";
 import { applyRoundedCorners } from "./win-rounded-corners";
-import { titleBarOverlayOptions } from "./runtime-refs";
+import { titleBarOverlayOptions, closeConfirmBridge, closePromptSeen, closeToTrayEnabled, engineActiveTurnIds } from "./runtime-refs";
 
 type AssistantWin = {
   show: () => void;
@@ -104,15 +104,41 @@ export async function createAssistantWindow(): Promise<boolean> {
   //   page-title-updated 里 preventDefault ⇒ 标题恒为 WINDOW_TITLE。
   w.on("page-title-updated", (e) => e?.preventDefault());
   w.setTitle(WINDOW_TITLE);
-  // 关窗只隐藏（保服务）；closed 后清引用，下次 show 时重建
+  // 关窗：⛔⛔ 10-13 晚 —— **助手窗口的 X 也走关闭确认弹窗**（应用内卡片）。
+  //   此前这里是无提示 hide：托盘图标又被 Windows 收进「隐藏的图标 ^」溢出区 ⇒
+  //   用户点 X 后既看不到窗口也找不到托盘 ⇒ "退不掉"（连续三轮投诉的真正根源）。
+  //   行为对齐桌面主窗的关窗守卫：未记住动作 ⇒ 推 close-confirm:ask 弹卡片；
+  //   已记住 ⇒ 按 closeToTray 直接走。回包经 closeConfirmBridge.respondAssistant（下方注入）。
+  let assistantCloseConfirmed = false;
   w.on("close", (e) => {
+    if (assistantCloseConfirmed) return;   // 真关闭放行（quit 回包/系统关机）
     e?.preventDefault();
-    w.hide();
+    if (closePromptSeen()) {
+      if (closeToTrayEnabled()) { w.hide(); return; }
+      assistantCloseConfirmed = true;
+      /* ⛔ 必须 app.quit() 而不是 w.close()：无头形态下桌面主窗还**隐藏活着**，
+         只关助手窗 ⇒ window-all-closed 不触发 ⇒ 应用退不干净（又是一个"退不掉"）。 */
+      app.quit();
+      return;
+    }
+    closeConfirmBridge.pending = { busy: engineActiveTurnIds.size, source: "assistant" };
+    /* AssistantWin 是窄接口 ⇒ webContents 走结构化断言（同 headless.ts 的做法） */
+    const wc = (w as unknown as { webContents: { send: (ch: string, payload: unknown) => void } }).webContents;
+    wc.send("close-confirm:ask", { busy: engineActiveTurnIds.size, appName: app.getName() });
   });
   w.on("closed", () => {
     if (win === w) win = null;
   });
   win = w;
+  // 助手窗口的关窗回包执行端（close-confirm-ipc 按 pending.source 分发到这里）：
+  closeConfirmBridge.respondAssistant = (action) => {
+    if (action === "tray") { w.hide(); return; }          // 最小化到托盘：服务全不中断
+    if (action === "quit") {
+      assistantCloseConfirmed = true;
+      app.quit();                                          // 走 before-quit 链路（cleanupAll 幂等）
+    }
+    // cancel：什么都不做
+  };
   try {
     await w.loadURL(assistantUrl());
     return true;
