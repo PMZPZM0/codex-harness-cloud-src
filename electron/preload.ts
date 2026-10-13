@@ -186,7 +186,7 @@ contextBridge.exposeInMainWorld("codex", {
   prepareDataDir: (dir: string) => __ipc("dataDir:prepare", 1, [dir]),
   /* 应用级运行时开关（联网搜索等） */
   readAppSettings: () => __ipc("appSettings:read", 0, []),
-  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy" }) => __ipc("appSettings:save", 1, [patch]),
+  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean }) => __ipc("appSettings:save", 1, [patch]),
   themeApply: (theme: string) => __ipc("theme:apply", 1, [theme]),
   updateReveal: (filePath: string) => __ipc("updates:reveal", 1, [filePath]) as Promise<{ ok: boolean }>,
   /* SSH 服务器连接管理：列表 CRUD、批量启停、连接测试、命令执行、交互式会话、导入导出 */
@@ -742,6 +742,16 @@ contextBridge.exposeInMainWorld("codex", {
   deferUpdateInstall: () => __ipc("updates:defer-install", 0, []),
   /* 更新：跳过此版本（同版本不再提示；持久化） */
   skipUpdateVersion: (version: string) => __ipc("updates:skip-version", 1, [version]),
+  /* 10-13 新增：主要组件的自动更新开关与版本号（技能 / 桌面 / 浏览器 / Mac 电脑操作 / 引擎）。⛔ 版本数据与 autoUpdate:scan 同源（都走 scanRows），两个端点不可能给出矛盾的结论 */
+  readAutoUpdateStatus: () => __ipc("autoUpdate:status", 0, []),
+  /* 10-13 新增：单独开关某一类自动更新（四个开关互相独立，patch 只写对应那一个 AppSettings 字段）；缺省值判据统一走 autoUpdateEnabled（!== false ⇒ 默认开） */
+  setAutoUpdate: (id: string, enabled: boolean) => __ipc("autoUpdate:set", 2, [id, enabled]),
+  /* 10-13 统一更新体系：全量组件清单与版本状态（工具 / 引擎 / 技能 / 插件 / ponytail / 钩子等）。清单单一真相源在 electron/update-registry.ts（含「不支持更新」的条目及其原因）；动态类目（市场技能/插件/专家包/人格包）按已装实例展开成多行。传 id 可只扫某一類 */
+  scanAutoUpdateComponents: (id?: string) => __ipc("autoUpdate:scan", 0, [id]),
+  /* 10-13 统一更新体系：按行 id 更新指定组件。幂等（内容一致 ⇒ unchanged，不重装）；有目标目录的一律先快照、失败自动回滚（electron/update-safety.ts）。更新源一律国内镜像：npm→npmmirror、pip→清华、GitHub→gh-mirror 通道 */
+  runAutoUpdateComponent: (id: string) => __ipc("autoUpdate:run", 1, [id]),
+  /* 10-13 统一更新体系：一键更新全部组件（手动入口，不按开关过滤 —— 用户点了就是授权）。逐项返回结��，单项失败不影响其余 */
+  runAllAutoUpdateComponents: () => __ipc("autoUpdate:run-all", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

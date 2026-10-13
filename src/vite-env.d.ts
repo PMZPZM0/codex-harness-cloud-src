@@ -523,7 +523,7 @@ interface Window {
     /* 写指路牌并就地完成基础迁移（异步分批 + 进度）；重启后只做秒级增量同步。重启复用既有 app:relaunch */
     prepareDataDir(dir: string): Promise<{ ok: boolean; restoreDefault: boolean; needRestart: boolean; target: string; migrate?: boolean; hasExistingData?: boolean; migrated?: { files: number; bytes: number }; note?: string }>;
     /* 应用级运行时开关（联网搜索等） */
-    readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy" }>;
+    readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean }>;
     saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy" }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean }>;
     themeApply(theme: string): Promise<{ ok: boolean }>;
     updateReveal(filePath: string): Promise<{ ok: boolean }>;
@@ -1080,6 +1080,16 @@ interface Window {
     deferUpdateInstall(): Promise<{ ok: boolean; deferredPath?: string; deferredVersion?: string; error?: string }>;
     /* 更新：跳过此版本（同版本不再提示；持久化） */
     skipUpdateVersion(version: string): Promise<{ ok: boolean; skippedVersion?: string; error?: string }>;
+    /* 10-13 新增：主要组件的自动更新开关与版本号（技能 / 桌面 / 浏览器 / Mac 电脑操作 / 引擎）。⛔ 版本数据与 autoUpdate:scan 同源（都走 scanRows），两个端点不可能给出矛盾的结论 */
+    readAutoUpdateStatus(): Promise<{ id: string; kind: "tool" | "engine" | "skill"; label: string; pkg: string; enabled: boolean; current: string; latest: string; hasUpdate: boolean; error: string }[]>;
+    /* 10-13 新增：单独开关某一类自动更新（四个开关互相独立，patch 只写对应那一个 AppSettings 字段）；缺省值判据统一走 autoUpdateEnabled（!== false ⇒ 默认开） */
+    setAutoUpdate(id: string, enabled: boolean): Promise<{ id: string; enabled: boolean }>;
+    /* 10-13 统一更新体系：全量组件清单与版本状态（工具 / 引擎 / 技能 / 插件 / ponytail / 钩子等）。清单单一真相源在 electron/update-registry.ts（含「不支持更新」的条目及其原因）；动态类目（市场技能/插件/专家包/人格包）按已装实例展开成多行。传 id 可只扫某一類 */
+    scanAutoUpdateComponents(id?: string): Promise<{ id: string; specId: string; label: string; group: string; pkg: string; mirror: boolean; reason: string; installed: boolean; enabled: boolean; current: string; latest: string; hasUpdate: boolean; detectable: boolean; unsupported: string; error: string }[]>;
+    /* 10-13 统一更新体系：按行 id 更新指定组件。幂等（内容一致 ⇒ unchanged，不重装）；有目标目录的一律先快照、失败自动回滚（electron/update-safety.ts）。更新源一律国内镜像：npm→npmmirror、pip→清华、GitHub→gh-mirror 通道 */
+    runAutoUpdateComponent(id: string): Promise<{ id: string; label: string; action: "updated" | "unchanged" | "failed" | "skipped"; before: string; after: string; message: string }>;
+    /* 10-13 统一更新体系：一键更新全部组件（手动入口，不按开关过滤 —— 用户点了就是授权）。逐项返回结��，单项失败不影响其余 */
+    runAllAutoUpdateComponents(): Promise<{ id: string; label: string; action: "updated" | "unchanged" | "failed" | "skipped"; before: string; after: string; message: string }>[];
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
