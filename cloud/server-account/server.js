@@ -112,6 +112,83 @@ function verifyTicket(ticket) {
   return { ok: true, username: found.username };
 }
 
+/* ── 设备绑定（10-13 二期）：本机码 → 云端匹配 → 下发设备 token ─────────────
+   流程（方案 A+ 的第一块地基 —— 账号开始有实际价值）：
+     ① 本机生成配对码并显示（本机负责生成，这一步永远离线）；
+     ② 用户在网页注册/登录后提交这个码（认领）；
+     ③ 服务端把「账号 ⟷ 本机码」绑定并生成**设备 token**（32B 随机，只存 sha256）；
+     ④ 本机轮询拿走 token → 存本机 ⇒ 允许连接服务器（拉更新 / 将来的云功能）。
+
+   ⛔ 信任模型与配对码一致：**码即凭据**（8 位十六进制 + 认领需网页会话）。
+   ⛔ 同码重复认领 = 重装/换机场景 ⇒ 重新生成 token（旧 token 立即失效）。
+   ⛔ token 绝不写日志；服务端只存 sha256。 */
+if (typeof db.devices !== "object" || !db.devices) db.devices = {};   // codeHash → 设备记录
+const DEVICE_CODE_RE = /^[0-9a-f]{8}$/;
+/** 服务端密钥（HMAC 派生设备 token 用）：首次运行自动生成并落盘（0600）。
+ *  ⛔ 为什么用派生而不是随机+存库：本机要靠**轮询**拿 token，而库里只存 sha256
+ *     （拖库不泄露凭据）⇒ token 必须**可由服务端重算**。HMAC(serverSecret, code) 兼顾两者：
+ *     库泄露拿不到 token；换 secret = 全部设备 token 同时失效（等于全员重配对，语义也正确）。 */
+function serverSecret() {
+  const secretFile = path.join(path.dirname(DATA_FILE), "secret.key");
+  try { return fs.readFileSync(secretFile, "utf8").trim(); } catch { /* 首次运行 */ }
+  const secret = crypto.randomBytes(32).toString("hex");
+  try { fs.writeFileSync(secretFile, secret, { mode: 0o600 }); } catch (error) { console.error("[accounts] 密钥落盘失败：", error.message); }
+  return secret;
+}
+function deviceTokenOf(code) {
+  return crypto.createHmac("sha256", serverSecret()).update(`device:${String(code || "").trim().toLowerCase()}`).digest("hex");
+}
+function deviceCodeHash(code) { return crypto.createHash("sha256").update(String(code || "").trim().toLowerCase()).digest("hex"); }
+function deviceIdOf(codeHash) { return codeHash.slice(0, 8); }
+function listDevices(username) {
+  const out = [];
+  for (const [hash, device] of Object.entries(db.devices)) {
+    if (device.username !== username) continue;
+    out.push({ id: deviceIdOf(hash), name: device.name, claimedAt: device.claimedAt, lastSeen: device.lastSeen || 0 });
+  }
+  return out.sort((a, b) => b.claimedAt - a.claimedAt);
+}
+/** 认领：码 + 网页会话 ⇒ 绑定账号。token 由服务端密钥派生（见 serverSecret 头注）。
+ *  同码重复认领 = 重装/换机 ⇒ 绑定刷新（token 不变，因为它只由码派生）。 */
+function claimDevice(code, username, name) {
+  const raw = String(code || "").trim().toLowerCase();
+  if (!DEVICE_CODE_RE.test(raw)) return { ok: false, reason: "bad-code" };
+  const hash = deviceCodeHash(raw);
+  const prev = db.devices[hash];
+  db.devices[hash] = {
+    username,
+    name: String(name || "").trim().slice(0, 32) || `设备-${deviceIdOf(hash)}`,
+    tokenHash: crypto.createHash("sha256").update(deviceTokenOf(raw)).digest("hex"),
+    claimedAt: prev?.claimedAt || Date.now(),
+    lastSeen: prev?.lastSeen || 0,
+  };
+  persist();
+  return { ok: true, device: { id: deviceIdOf(hash), name: db.devices[hash].name, token: deviceTokenOf(raw), rebound: Boolean(prev) } };
+}
+/** 入网核销：本机拿码换设备 token（轮询用；码即凭据）。⛔ 账号被停用 ⇒ 拒绝。 */
+function redeemDeviceCode(code) {
+  const raw = String(code || "").trim().toLowerCase();
+  if (!DEVICE_CODE_RE.test(raw)) return { ok: false, claimed: false, reason: "unknown" };
+  const device = db.devices[deviceCodeHash(raw)];
+  if (!device) return { ok: false, claimed: false };
+  const user = db.users.find((u) => u.username === device.username);
+  if (!user || user.disabled) return { ok: false, claimed: true, reason: "account-disabled" };
+  device.lastSeen = Date.now();
+  persist();
+  return { ok: true, claimed: true, username: device.username, name: device.name, id: deviceIdOf(deviceCodeHash(raw)), token: deviceTokenOf(raw) };
+}
+/** 吊销：删除设备（token 随之失效）。 */
+function revokeDevice(username, id) {
+  for (const [hash, device] of Object.entries(db.devices)) {
+    if (device.username === username && deviceIdOf(hash) === String(id || "")) {
+      delete db.devices[hash];
+      persist();
+      return true;
+    }
+  }
+  return false;
+}
+
 /* ── 限速 ────────────────────────────────────────────────────────────────── */
 const buckets = new Map();   // key → { count, resetAt }
 function rateLimit(key, max, windowMs) {
@@ -219,6 +296,38 @@ const server = http.createServer(async (req, res) => {
         accounts[name] = { exists: Boolean(user), disabled: !user || Boolean(user.disabled) };
       }
       return send(200, { ok: true, accounts });
+    }
+
+    /* ── 设备绑定（10-13 二期）：本机码 → 云端匹配 → 下发设备 token ──────────
+       这是「账号」从摆设变成有实际价值的第一步：绑定了设备，本机才有资格连服务器
+       （拉更新 / 将来的云端会话索引 —— 方案 A+ 的挂点）。 */
+    if (p === "/device/claim" && req.method === "POST") {
+      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      if (!rateLimit(`claim-ip:${ip}`, 30, 5 * 60_000)) return send(429, { ok: false, error: "请求过于频繁，稍后再试" });
+      const body = await readBody();
+      const result = claimDevice(body && body.code, me.username, body && body.name);
+      if (!result.ok) return send(400, { ok: false, error: result.reason });
+      return send(200, { ok: true, device: result.device, account: publicView(me) });
+    }
+    /* 本机轮询：码即凭据（无网页会话）。账号停用 ⇒ 拒绝下发。 */
+    if (p === "/device/claim-status" && req.method === "GET") {
+      if (!rateLimit(`devstatus-ip:${ip}`, 120, 5 * 60_000)) return send(429, { ok: false, error: "too-many-requests" });
+      const result = redeemDeviceCode(url.searchParams.get("code"));
+      if (!result.claimed) return send(200, { ok: true, claimed: false });
+      if (!result.ok) return send(403, { ok: false, error: result.reason });
+      return send(200, { ok: true, claimed: true, token: result.token, username: result.username, device: { id: result.id, name: result.name } });
+    }
+    /* 用户中心：我的设备列表 */
+    if (p === "/devices" && req.method === "GET") {
+      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      return send(200, { ok: true, devices: listDevices(me.username) });
+    }
+    /* 用户中心：吊销设备（token 随之失效） */
+    if (p === "/device/revoke" && req.method === "POST") {
+      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      const body = await readBody();
+      const gone = revokeDevice(me.username, body && body.id);
+      return gone ? send(200, { ok: true }) : send(404, { ok: false, error: "设备不存在" });
     }
 
     if (p === "/me" && req.method === "GET") {
