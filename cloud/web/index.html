@@ -494,6 +494,37 @@
     input.autocomplete = "off"; input.spellcheck = false;
     if (presetClaim) input.value = String(presetClaim).toLowerCase();
     else if (presetPair) input.value = String(presetPair).toLowerCase();
+    /* ⛔ 10-14 用户令「这里手动填的地方也把粘贴功能加上」：
+       Ctrl+V 在各浏览器/输入法组合下并不总是可靠 ⇒ 显式给一个「粘贴」按钮
+       （navigator.clipboard.readText === 用户手势内可用），并把粘贴内容清洗成 8 位小写十六进制
+       （用户常整段复制「配对码：12fec9e2」这类文本）。 */
+    var pasteBtn = document.createElement("button");
+    pasteBtn.type = "button"; pasteBtn.className = "paste"; pasteBtn.textContent = "粘贴";
+    pasteBtn.style.cssText = "position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px 12px;font-size:13px;border-radius:8px;border:1px solid var(--line,#e0e0dc);background:#fff;cursor:pointer";
+    function sanitizeCode(text) {
+      var hex = String(text || "").toLowerCase().replace(/[^0-9a-f]/g, "");
+      return hex.slice(0, 8);
+    }
+    pasteBtn.onclick = function () {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(function (text) {
+          var clean = sanitizeCode(text);
+          if (!clean) { status.textContent = "剪贴板里没有可用的配对码（需 8 位十六进制）"; status.className = "status warn"; return; }
+          input.value = clean; input.focus();
+          status.textContent = "已粘贴配对码 " + clean; status.className = "status";
+        }).catch(function () {
+          status.textContent = "读剪贴板被浏览器拒绝 —— 请点进输入框按 Ctrl+V 粘贴"; status.className = "status warn"; input.focus();
+        });
+      } else {
+        status.textContent = "当前浏览器不支持一键粘贴 —— 请点进输入框按 Ctrl+V"; status.className = "status warn"; input.focus();
+      }
+    };
+    /* 输入/粘贴内容统一清洗：只留小写十六进制、最多 8 位（Ctrl+V 走这里也能保证格式干净） */
+    input.addEventListener("input", function () { var v = sanitizeCode(input.value); if (v !== input.value) input.value = v; });
+    var inputWrap = document.createElement("div");
+    inputWrap.style.cssText = "position:relative";
+    inputWrap.appendChild(input); inputWrap.appendChild(pasteBtn);
+
     var status = document.createElement("p"); status.className = "status";
     var go = document.createElement("button");
     go.className = "go"; go.innerHTML = IC.plug + "<span>连接我的电脑</span>";
@@ -597,7 +628,7 @@
       }).catch(function () { status.textContent = "网络错误"; status.className = "status bad"; claim.disabled = false; });
     };
     login.appendChild(label);
-    login.appendChild(input);
+    login.appendChild(inputWrap);
     login.appendChild(claim);
     login.appendChild(go);
     login.appendChild(status);
