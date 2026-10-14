@@ -20,6 +20,11 @@ const path = require("node:path");
 
 const PORT = Number(process.env.HARNESS_ACCOUNTS_PORT || 8091);
 const DATA_FILE = process.env.HARNESS_ACCOUNTS_FILE || path.join(__dirname, "data.json");
+/* ── 配额（单一真相源；界面文案从 /sync/usage 与 /device/list 读，别在前端再写一份） ── */
+const DEVICE_LIMIT = Number(process.env.HARNESS_DEVICE_LIMIT || 3);                       // 每账号最多绑定机器数
+const STORAGE_LIMIT_BYTES = Number(process.env.HARNESS_STORAGE_LIMIT || 1024 * 1024 * 1024); // 每账号 1 GB
+/** 云端数据落盘根：与账号文件同目录，便于一起备份/迁移。 */
+const SYNC_DIR = process.env.HARNESS_SYNC_DIR || path.join(path.dirname(DATA_FILE), "sync");
 const ALLOWED_ORIGINS = (process.env.HARNESS_ACCOUNTS_ORIGINS || "https://ppz123.asia,https://www.ppz123.asia").split(",");
 const SESSION_TTL_MS = 7 * 24 * 3600_000;
 
@@ -146,6 +151,27 @@ function deviceTokenOf(base) {
 }
 function deviceCodeHash(code) { return crypto.createHash("sha256").update(String(code || "").trim().toLowerCase()).digest("hex"); }
 function deviceIdOf(codeHash) { return codeHash.slice(0, 8); }
+/* ── 云端同步存储（P0：会话上传 + 索引；按账号分目录落盘） ─────────────────
+   布局：<SYNC_DIR>/<username>/sessions/<sessionId>.jsonl  +  <SYNC_DIR>/<username>/index.json
+   ⛔ 与本地 rollout 同构（逐行可比）；索引只存元数据（标题/项目/机器/时间/字节数/行数）。 */
+function syncUserDir(username) { return path.join(SYNC_DIR, String(username || "unknown").replace(/[^A-Za-z0-9_.-]/g, "_")); }
+function syncIndexFile(username) { return path.join(syncUserDir(username), "index.json"); }
+function readSyncIndex(username) {
+  try { const raw = JSON.parse(fs.readFileSync(syncIndexFile(username), "utf8")); return raw && typeof raw === "object" ? raw : {}; }
+  catch { return {}; }
+}
+function writeSyncIndex(username, index) {
+  const dir = syncUserDir(username);
+  try { fs.mkdirSync(path.join(dir, "sessions"), { recursive: true }); fs.writeFileSync(syncIndexFile(username), JSON.stringify(index)); return true; }
+  catch (error) { console.error("[sync] 索引写入失败：", error.message); return false; }
+}
+/** 已用字节（索引累加，避免每次扫盘）。 */
+function syncUsageBytes(username) {
+  const index = readSyncIndex(username);
+  let total = 0;
+  for (const row of Object.values(index)) total += Number(row && row.sizeBytes || 0);
+  return total;
+}
 function listDevices(username) {
   const out = [];
   for (const [hash, device] of Object.entries(db.devices)) {
@@ -160,6 +186,11 @@ function claimDevice(code, username, name, machineId) {
   const raw = String(code || "").trim().toLowerCase();
   if (!DEVICE_CODE_RE.test(raw)) return { ok: false, reason: "bad-code" };
   const hash = deviceCodeHash(raw);
+  /* ⛔ 每账号最多 DEVICE_LIMIT 台（10-14 用户令）。判重按 machineId：同一台机器重新配对不算新增
+     （认领时会替换同机旧记录），所以先算出"去掉本机后还剩几台"。 */
+  const mid0 = String(machineId || "").trim().slice(0, 64);
+  const others = Object.values(db.devices).filter((d) => d.username === username && (!mid0 || d.machineId !== mid0)).length;
+  if (others >= DEVICE_LIMIT) return { ok: false, reason: "device-limit", limit: DEVICE_LIMIT, current: others };
   /* ⛔ 一台机器恒一条记录（10-14 用户实测：面板里堆了 6 条"我的电脑"）：认领带本机稳定标识
      （installation_id）⇒ 先把**同一台机器**的旧记录删掉再写新的 = 重配对即更新。 */
   const mid = String(machineId || "").trim().slice(0, 64);
@@ -261,6 +292,14 @@ const server = http.createServer(async (req, res) => {
     req.on("end", () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch (e) { reject(new Error("bad-json")); } });
     req.on("error", reject);
   });
+  /** 大 body 读取（同步上传用）：默认 readBody 限 64KB，会话批次远超 —— 单次上限 32MB。 */
+  const readBodyLarge = (limit = 32 * 1024 * 1024) => new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (c) => { size += c.length; if (size > limit) { reject(new Error("too-large")); req.destroy(); return; } chunks.push(c); });
+    req.on("end", () => { try { const raw = Buffer.concat(chunks).toString("utf8"); resolve(raw ? JSON.parse(raw) : {}); } catch (e) { reject(new Error("bad-json")); } });
+    req.on("error", reject);
+  });
   const ip = ipOf(req);
 
   try {
@@ -340,6 +379,9 @@ const server = http.createServer(async (req, res) => {
       if (!rateLimit(`claim-ip:${ip}`, 30, 5 * 60_000)) return send(429, { ok: false, error: "请求过于频繁，稍后再试" });
       const body = await readBody();
       const result = claimDevice(body && body.code, me.username, body && body.name, body && body.machineId);
+      if (!result.ok && result.reason === "device-limit") {
+        return send(409, { ok: false, error: "device-limit", message: `每个账号最多绑定 ${result.limit} 台电脑（当前已有 ${result.current} 台）。请先在用户中心删除一台已绑定机器，再绑定新机器。`, limit: result.limit, current: result.current });
+      }
       if (!result.ok) return send(400, { ok: false, error: result.reason });
       return send(200, { ok: true, device: result.device, account: publicView(me) });
     }
@@ -410,6 +452,95 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody();
       const gone = revokeDevice(device.username, body && body.id);
       return gone ? send(200, { ok: true }) : send(404, { ok: false, error: "设备不存在" });
+    }
+    /* ── 云端同步 API（设备令牌鉴权：本机上传；会话令牌：用户在网页查看/删除） ───────── */
+    function syncAuth() {
+      const header = String(req.headers.authorization || "");
+      const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+      const device = findDeviceByToken(token);
+      if (device) return { username: device.username, machineId: device.machineId || "", device };
+      if (me) return { username: me.username, machineId: "", device: null };
+      return null;
+    }
+    if (p === "/sync/usage" && req.method === "GET") {
+      const who = syncAuth();
+      if (!who) return send(401, { ok: false, error: "unauthorized" });
+      const used = syncUsageBytes(who.username);
+      const index = readSyncIndex(who.username);
+      const devices = listDevices(who.username).length;
+      return send(200, {
+        ok: true, usedBytes: used, limitBytes: STORAGE_LIMIT_BYTES,
+        sessions: Object.keys(index).length, devices, deviceLimit: DEVICE_LIMIT,
+      });
+    }
+    if (p === "/sync/index" && req.method === "GET") {
+      const who = syncAuth();
+      if (!who) return send(401, { ok: false, error: "unauthorized" });
+      const index = readSyncIndex(who.username);
+      const rows = Object.values(index)
+        .map((r) => ({ id: r.id, title: r.title || "", project: r.project || "", machineName: r.machineName || "", machineId: r.machineId || "", lines: r.lines || 0, sizeBytes: r.sizeBytes || 0, uploadedAt: r.uploadedAt || 0, updatedAt: r.updatedAt || r.uploadedAt || 0 }))
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      return send(200, { ok: true, sessions: rows, usedBytes: syncUsageBytes(who.username), limitBytes: STORAGE_LIMIT_BYTES });
+    }
+    if (p === "/sync/push" && req.method === "POST") {
+      const who = syncAuth();
+      if (!who) return send(401, { ok: false, error: "unauthorized" });
+      if (!who.device) return send(403, { ok: false, error: "device-token-required" });
+      const body = await readBodyLarge();
+      const incoming = Array.isArray(body && body.sessions) ? body.sessions : [];
+      const index = readSyncIndex(who.username);
+      let used = syncUsageBytes(who.username);
+      const results = [];
+      for (const item of incoming) {
+        const id = String(item && item.id || "").trim();
+        if (!id) continue;
+        const lines = Array.isArray(item.lines) ? item.lines.map((l) => String(l)) : [];
+        const from = Math.max(0, Number(item.fromOrdinal || 0));
+        const dir = path.join(syncUserDir(who.username), "sessions");
+        const file = path.join(dir, id + ".jsonl");
+        const prev = index[id] || { lines: 0, sizeBytes: 0, uploadedAt: 0 };
+        const prevBytes = Number(prev.sizeBytes || 0);
+        const addBytes = lines.reduce((n, l) => n + Buffer.byteLength(l, "utf8") + 1, 0);
+        /* ⛔ 配额：超限就**不写这一条**并如实回报 —— 绝不留半截数据（客户端据此提示"已达上限"）。 */
+        if (used + addBytes > STORAGE_LIMIT_BYTES) {
+          results.push({ id, ok: false, error: "quota-exceeded", needBytes: addBytes, usedBytes: used, limitBytes: STORAGE_LIMIT_BYTES });
+          continue;
+        }
+        try {
+          fs.mkdirSync(dir, { recursive: true });
+          if (lines.length) fs.appendFileSync(file, lines.join("\n") + "\n");
+        } catch (error) {
+          results.push({ id, ok: false, error: "write-failed", message: error.message });
+          continue;
+        }
+        used += addBytes;
+        index[id] = {
+          id, lines: Number(prev.lines || 0) + lines.length, sizeBytes: prevBytes + addBytes,
+          title: String(item.title || prev.title || "").slice(0, 200),
+          project: String(item.project || prev.project || "").slice(0, 200),
+          machineId: who.machineId || prev.machineId || "",
+          machineName: String(who.device && who.device.name || prev.machineName || "").slice(0, 64),
+          uploadedAt: prev.uploadedAt || Date.now(), updatedAt: Date.now(),
+        };
+        results.push({ id, ok: true, lines: index[id].lines, sizeBytes: index[id].sizeBytes });
+      }
+      writeSyncIndex(who.username, index);
+      return send(200, { ok: true, results, usedBytes: used, limitBytes: STORAGE_LIMIT_BYTES });
+    }
+    if (p === "/sync/delete" && req.method === "POST") {
+      const who = syncAuth();
+      if (!who) return send(401, { ok: false, error: "unauthorized" });
+      const body = await readBody();
+      const index = readSyncIndex(who.username);
+      const ids = Array.isArray(body && body.ids) ? body.ids.map(String) : [];
+      const project = String(body && body.project || "");
+      const targets = Object.keys(index).filter((id) => (ids.includes(id)) || (project && index[id] && index[id].project === project));
+      for (const id of targets) {
+        try { fs.rmSync(path.join(syncUserDir(who.username), "sessions", id + ".jsonl"), { force: true }); } catch { /* 忽略 */ }
+        delete index[id];
+      }
+      writeSyncIndex(who.username, index);
+      return send(200, { ok: true, deleted: targets.length, usedBytes: syncUsageBytes(who.username), limitBytes: STORAGE_LIMIT_BYTES });
     }
     if (p === "/device/heartbeat" && req.method === "POST") {
       const header = String(req.headers.authorization || "");

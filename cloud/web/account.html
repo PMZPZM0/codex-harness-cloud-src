@@ -93,6 +93,15 @@
   .status.ok { color: var(--ok); } .status.bad { color: var(--bad); } .status.warn { color: var(--warn); }
   .empty { color: var(--faint); font-size: 13px; padding: 6px 0; }
   .todo { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; line-height: 1.7; }
+  .bar { height: 8px; border-radius: 999px; background: var(--field); border: 1px solid var(--line-soft); overflow: hidden; margin-top: 8px; }
+  .bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--brand2), var(--brand)); }
+  .bar.warn > i { background: linear-gradient(90deg, #f0b357, var(--warn)); }
+  .bar.bad > i { background: linear-gradient(90deg, #e57a6d, var(--bad)); }
+  .sess { border-top: 1px solid var(--line-soft); padding: 11px 0; }
+  .sess:first-of-type { border-top: 0; }
+  .sess .t { font-weight: 600; font-size: 13.5px; word-break: break-all; }
+  .sess .m { color: var(--faint); font-size: 12px; margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .sess .m code { font-family: ui-monospace, Consolas, monospace; background: var(--field); padding: 0 5px; border-radius: 5px; }
   .check { display: flex; align-items: center; gap: 9px; padding: 7px 0; font-size: 13.5px; }
   .check input { width: 16px; height: 16px; accent-color: var(--brand); }
   .check .hint { margin-left: auto; }
@@ -167,7 +176,7 @@
       </div>
 
       <div class="card">
-        <h2>已配对设备</h2>
+        <h2>已配对设备 <span class="tag" id="devQuota">—</span></h2>
         <div id="devices"><div class="empty">读取中…</div></div>
       </div>
     </section>
@@ -185,8 +194,8 @@
           <div class="stat"><div class="n" id="stLastSync">—</div><div class="l">最近同步</div></div>
         </div>
         <div class="todo" style="margin-top:12px">
-          跨设备同步（会话 / 项目 / 记忆）已在设计中，尚未开启。范围与冲突规则见
-          <b>CLOUD-SYNC-DESIGN.md</b>：会话按行增量、账户切换=空间隔离、删除走墓碑。
+          <b>会话同步已开启</b>（P0）：本机按行增量上传，两台机器各自追加不冲突。
+          项目 / 记忆 / 技能 / 设置同步与「冲突解决 UI」按 <b>CLOUD-SYNC-DESIGN.md</b> 的 P1–P4 推进。
         </div>
       </div>
 
@@ -202,8 +211,20 @@
       </div>
 
       <div class="card">
-        <h2>本账号数据</h2>
-        <div id="cloudData"><div class="empty">读取中…</div></div>
+        <h2>存储用量 <span class="tag" id="quotaTag">—</span></h2>
+        <div id="usageBar"><div class="bar"><i style="width:0"></i></div></div>
+        <div class="hint" id="usageText" style="margin-top:8px">读取中…</div>
+        <div class="hint" style="margin-top:6px">每账号上限 <b>1 GB</b>；达上限后**停止上传新会话**（本机照常记录），直到在下方删除数据或扩容。</div>
+        <div class="btn-row">
+          <button class="btn primary" id="syncNow">立即同步</button>
+          <span class="status" id="syncStatus"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>已上传会话 <span class="tag" id="sessCount">0</span></h2>
+        <div id="sessList"><div class="empty">读取中…</div></div>
+        <div class="hint" style="margin-top:8px">按项目批量删除：<span id="projDel"></span></div>
       </div>
 
       <div class="card">
@@ -377,7 +398,10 @@
     }).then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) {
         var why = (r.j && r.j.error) || "";
-        st.textContent = why === "unauthorized" ? "登录已过期，请重新登录" : "认领失败（" + (why || "未知") + "）";
+        /* ⛔ 3 台上限：服务端返回 device-limit + 明确文案，原样显示（别吞掉） */
+        st.textContent = why === "unauthorized" ? "登录已过期，请重新登录"
+          : why === "device-limit" ? ((r.j && r.j.message) || "每个账号最多绑定 3 台电脑")
+          : "认领失败（" + (why || "未知") + "）";
         st.className = "status bad"; btn.disabled = false; return;
       }
       st.textContent = "已认领 ✓ 本机助手正在完成连接…"; st.className = "status ok";
@@ -392,6 +416,8 @@
       var box = $("devices"); box.innerHTML = "";
       var list = (r.ok && r.j && r.j.ok && r.j.devices) || [];
       $("stDevices").textContent = String(list.length);
+      var dq = $("devQuota");
+      if (dq) { dq.textContent = list.length + " / 3"; dq.style.background = list.length >= 3 ? "var(--warn-soft)" : "var(--brand-soft)"; dq.style.color = list.length >= 3 ? "var(--warn)" : "var(--brand-ink)"; }
       if (!list.length) { box.appendChild(el("div", "empty", "还没有设备配对过。用上面的配对码把这台电脑绑上来。")); return; }
       list.forEach(function (d) {
         var row = el("div", "row");
@@ -412,7 +438,91 @@
   }
 
   /* ── 云端管理：概览与数据 ─────────────────────────────────────── */
-  function refreshCloud() {
+  function fmtSize(n) {
+    n = Number(n || 0);
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    if (n < 1024 * 1024 * 1024) return (n / 1048576).toFixed(2) + " MB";
+    return (n / 1073741824).toFixed(2) + " GB";
+  }
+  function machineShort(id) { return id ? String(id).slice(0, 8) : "未知机器"; }
+
+  function refreshSync() {
+    api("/sync/index").then(function (r) {
+      var j = (r.ok && r.j && r.j.ok) ? r.j : { sessions: [], usedBytes: 0, limitBytes: 1073741824 };
+      var used = Number(j.usedBytes || 0), limit = Number(j.limitBytes || 1073741824);
+      var pct = Math.min(100, Math.round(used / limit * 1000) / 10);
+      var bar = $("usageBar").firstChild;
+      bar.className = "bar" + (pct >= 95 ? " bad" : pct >= 80 ? " warn" : "");
+      bar.firstChild.style.width = pct + "%";
+      $("usageText").innerHTML = "已用 <b>" + fmtSize(used) + "</b> / " + fmtSize(limit) + "（" + pct + "%） · 会话 " + (j.sessions || []).length + " 个";
+      $("quotaTag").textContent = pct >= 95 ? "接近上限" : pct >= 80 ? "已用 " + pct + "%" : "正常";
+      $("sessCount").textContent = (j.sessions || []).length + " 个";
+      /* 概览卡也接真实数据（原先恒 0） */
+      var projSet = {};
+      (j.sessions || []).forEach(function (r2) { if (r2.project) projSet[r2.project] = 1; });
+      if ($("stSessions")) $("stSessions").textContent = String((j.sessions || []).length);
+      if ($("stProjects")) $("stProjects").textContent = String(Object.keys(projSet).length);
+      if ($("stLastSync")) {
+        var last = (j.sessions || []).reduce(function (mx, r2) { return Math.max(mx, r2.updatedAt || 0); }, 0);
+        $("stLastSync").textContent = last ? ago(last) : "—";
+      }
+
+      var box = $("sessList"); box.innerHTML = "";
+      var list = j.sessions || [];
+      var projBox = $("projDel"); projBox.innerHTML = "";
+      if (!list.length) { box.appendChild(el("div", "empty", "还没有上传过会话。本机助手启动后会自动同步（每 5 分钟一次），也可点上面的「立即同步」。")); return; }
+      var projects = {};
+      list.forEach(function (row) {
+        if (row.project) projects[row.project] = (projects[row.project] || 0) + 1;
+        var d = el("div", "sess");
+        d.appendChild(el("div", "t", row.title || row.id));
+        var m = el("div", "m");
+        m.appendChild(el("span", null, "项目：" + (row.project || "—")));
+        m.appendChild(el("span", null, "机器：" + (row.machineName || "—") + " "));
+        var code = el("code", null, machineShort(row.machineId));
+        m.appendChild(code);
+        m.appendChild(el("span", null, "上传：" + fmt(row.uploadedAt)));
+        m.appendChild(el("span", null, fmtSize(row.sizeBytes) + " · " + (row.lines || 0) + " 行"));
+        d.appendChild(m);
+        var del = el("button", "btn sm danger", "删除");
+        del.style.marginTop = "8px";
+        del.onclick = function () {
+          if (!window.confirm("删除云端这条会话？（本机文件不受影响）")) return;
+          del.disabled = true;
+          api("/sync/delete", { method: "POST", body: { ids: [row.id] } }).then(function () { refreshSync(); }).catch(function () { del.disabled = false; });
+        };
+        d.appendChild(del);
+        box.appendChild(d);
+      });
+      Object.keys(projects).forEach(function (name) {
+        var b = el("button", "btn sm danger", name + "（" + projects[name] + "）");
+        b.style.marginRight = "8px";
+        b.onclick = function () {
+          if (!window.confirm("删除项目「" + name + "」在云端的全部会话？")) return;
+          b.disabled = true;
+          api("/sync/delete", { method: "POST", body: { project: name } }).then(function () { refreshSync(); }).catch(function () { b.disabled = false; });
+        };
+        projBox.appendChild(b);
+      });
+    }).catch(function () {
+      $("sessList").innerHTML = ""; $("sessList").appendChild(el("div", "empty", "云端数据读取失败，稍后重试。"));
+    });
+  }
+
+  $("syncNow").onclick = function () {
+    var st = $("syncStatus"); st.className = "status"; st.textContent = "正在通知本机助手同步…";
+    fetch(AGENT + "/api/sync-now", { method: "POST" }).then(function (r) { return r.json(); }).then(function (j) {
+      var res = j && j.result || {};
+      st.textContent = res.ok ? ("完成：上传 " + (res.pushedSessions || 0) + " 个会话 / " + (res.pushedLines || 0) + " 行" + (res.quotaExceeded ? "（已达存储上限，剩余未传）" : "")) : ("未完成：" + (res.reason || "本机助手未运行或未配对"));
+      st.className = "status " + (res.ok ? "ok" : "warn");
+      refreshSync();
+    }).catch(function () { st.textContent = "本机助手未运行 —— 请先启动它"; st.className = "status warn"; });
+  };
+
+  function refreshCloud() { refreshSync(); }
+
+  function legacyRefreshCloud() {
     $("cloudData").innerHTML = ""; $("cloudData").appendChild(el("div", "empty", "读取中…"));
     api("/devices").then(function (r) {
       var list = (r.ok && r.j && r.j.ok && r.j.devices) || [];

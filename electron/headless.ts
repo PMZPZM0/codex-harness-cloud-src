@@ -19,6 +19,7 @@
 import electron from "electron";
 import { app, ipcMain, shell } from "electron";
 import { mutableState } from "./main";
+import { runCloudSyncOnce, readSyncSummary, type SyncResult } from "./cloud-sync";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -360,6 +361,36 @@ function issueOwnerPair(): string {
   }
   return ownerPairCode;
 }
+/* ── 云端会话同步（P0）：触发时机（单一真相源，界面文案与此一致） ─────────────
+   ① 启动后自动一次（已配对时，延迟 25s 让引擎先把会话索引备好）
+   ② 定时自动：每 5 分钟一次（仅在已配对时真正上传）
+   ③ 手动：云端管理面板「立即同步」/ 网站配对中心（走 /api/sync-now）
+   ⛔ 回合结束时**不**单独触发（P1 再接 turn/completed —— 现在用定时兜住，避免频繁小包）。 */
+const SYNC_INTERVAL_MS = 5 * 60_000;
+const syncStateFile = () => join(app.getPath("userData"), "sync", "state.json");
+let lastSync: { at: number; result: SyncResult | null; running: boolean } = { at: 0, result: null, running: false };
+async function runSyncNow(trigger: string): Promise<SyncResult> {
+  if (lastSync.running) return lastSync.result || { ok: false, reason: "already-running" };
+  lastSync.running = true;
+  try {
+    const result = await runCloudSyncOnce({
+      codexHome: join(app.getPath("userData"), "codex-home"),
+      stateFile: syncStateFile(),
+      accountsBase: ACCOUNTS_BASE,
+      deviceToken: () => readDeviceToken(),
+      machineId: () => machineId(),
+    });
+    lastSync = { at: Date.now(), result, running: false };
+    if (result.ok && result.pushedSessions) console.log(`[sync] ${trigger}：上传 ${result.pushedSessions} 个会话 / ${result.pushedLines} 行`);
+    else if (!result.ok && result.reason !== "not-paired") console.warn(`[sync] ${trigger} 未完成：${result.reason || ""}`);
+    return result;
+  } catch (error) {
+    const failure: SyncResult = { ok: false, reason: "exception", error: (error as Error).message };
+    lastSync = { at: Date.now(), result: failure, running: false };
+    return failure;
+  }
+}
+
 /** 本机稳定标识：引擎的 installation_id（持久、跨重启不变）—— 认领时带给服务器，
  *  同机重配对按它**更新那一条设备记录**，不再堆出一排"我的电脑"（10-14 实测修复）。 */
 function machineId(): string {
@@ -735,6 +766,9 @@ function serveFile(res: ServerResponse, file: string) {
    用户看到的是"什么都没发生"，真正的界面在助手窗口里 ⇒ 这里补一个把助手窗口带起来的。
    （双击快捷方式 = 唤回界面；真正退出走托盘右键「退出"。） */
 app.on("second-instance", () => { void showAssistantWindow(); });
+/* ① 启动后自动一次 ② 每 5 分钟一次（未配对时 runCloudSyncOnce 直接返回 not-paired，零成本） */
+setTimeout(() => { void runSyncNow("启动"); }, 25_000);
+setInterval(() => { void runSyncNow("定时"); }, SYNC_INTERVAL_MS);
 
 /* ── 云端选址（与登录门同一铁律：前置探测，不用 <link> 的 error 回退）────────
    ⛔ 10-14 用户令「服务器上有，本地就是一个壳」：真界面资产在云端 /cloud/app/
@@ -1082,6 +1116,32 @@ if (p === "/api/pair-code/refresh" && req.method === "POST") {
     mutableState.closeConfirmed = true;
     app.quit();
     deny(200, { ok: true });
+    return;
+  }
+  /* 手动同步（面板按钮 / 网站配对中心调用）：立刻跑一次 */
+  if (p === "/api/sync-now" && req.method === "POST") {
+    if (!localUiAuthOk(req, url)) { deny(403, { ok: false, error: "unauthorized" }); return; }
+    void (async () => {
+      const result = await runSyncNow("手动");
+      const summary = readSyncSummary(syncStateFile());
+      deny(200, { ok: true, result, summary, lastSyncAt: lastSync.at });
+    })();
+    return;
+  }
+  /* 同步状态（面板展示）：最近一次结果 + 游标摘要 + 间隔
+     ⛔ 同源 GET **不带 Origin**（规范：只有非 GET/HEAD 才发）⇒ 只读端点用 originAllowed，
+     写端点（/api/sync-now 是 POST）才用 localUiAuthOk。 */
+  if (p === "/api/sync-state" && req.method === "GET") {
+    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+    deny(200, {
+      ok: true,
+      lastSyncAt: lastSync.at,
+      lastResult: lastSync.result,
+      running: lastSync.running,
+      intervalMs: SYNC_INTERVAL_MS,
+      summary: readSyncSummary(syncStateFile()),
+      paired: boundAccounts().length > 0,
+    });
     return;
   }
   /* 授权回调页「跳转到应用」：把助手窗口调到前台（浏览器本页就可以关了）。 */
