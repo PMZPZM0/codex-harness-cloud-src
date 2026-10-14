@@ -183,6 +183,28 @@
     </div>
   </div>
 
+  <div class="card" id="pointsPanel" hidden>
+    <h2>积分管理</h2>
+    <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <input class="field" id="ptq" placeholder="按用户名搜索…" style="flex:1;min-width:180px;padding:8px 12px;border-radius:8px;border:1px solid var(--g-line);background:var(--g-field);font:inherit" />
+      <button class="btn" id="ptSearch">搜索</button>
+      <button class="btn" id="ptAll">全部</button>
+      <span class="hint" id="ptSummary"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>用户名</th><th>积分余额</th><th>流水</th><th>最近变动</th><th>发放（正数增加 / 负数扣减）</th></tr></thead>
+        <tbody id="ptRows"></tbody>
+      </table>
+    </div>
+    <p class="status" id="ptStatus"></p>
+    <p class="hint">
+      · 新用户注册即赠 <b id="ptGrant"></b> 积分（同账号只赠一次）。<br>
+      · 积分消耗来自用户在「限时福利」里调用模型的上游回执，与该模型倍率一致（云端管理可看倍率）。<br>
+      · 发放会写入对方积分流水（带你的管理员名与备注），不可静默修改历史。
+    </p>
+  </div>
+
   <div class="card" id="panel" hidden>
     <div class="table-wrap">
     <table>
@@ -251,6 +273,57 @@
     });
   }
 
+  /* ── 积分管理 ─────────────────────────────────────────────────────── */
+  function loadPoints(q) {
+    var box = $("ptRows"); if (!box) return;
+    box.innerHTML = "";
+    api("/admin/points" + (q ? "?q=" + encodeURIComponent(q) : "")).then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { say("积分读取失败：" + ((r.j && r.j.error) || r.status)); return; }
+      $("pointsPanel").hidden = false;
+      $("ptGrant").textContent = r.j.signupGrant;
+      $("ptSummary").textContent = "共 " + r.j.total + " 个账号";
+      if (!r.j.users.length) { box.appendChild(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="5" class="hint">没有匹配的账号</td>' })); return; }
+      r.j.users.forEach(function (u) {
+        var tr = document.createElement("tr");
+        function td(cls, text) { var d = document.createElement("td"); if (cls) d.className = cls; d.textContent = text; return d; }
+        var tdName = document.createElement("td");
+        tdName.appendChild(Object.assign(document.createElement("span"), { className: "name", textContent: u.username }));
+        if (u.disabled) tdName.appendChild(Object.assign(document.createElement("span"), { className: "hint", textContent: " （已停用）" }));
+        if (u.role === "admin") tdName.appendChild(Object.assign(document.createElement("span"), { className: "hint", textContent: " （管理员）" }));
+        tr.appendChild(tdName);
+        tr.appendChild(td("", Number(u.balance).toFixed(2).replace(/\.00$/, "")));
+        tr.appendChild(td("", u.txnCount + " 条"));
+        tr.appendChild(td("time", u.lastAt ? fmtTime(u.lastAt) + " · " + u.lastNote : "—"));
+        var tdOps = document.createElement("td");
+        var wrap = document.createElement("div"); wrap.className = "ops";
+        var amt = document.createElement("input");
+        amt.type = "number"; amt.placeholder = "如 500 / -100"; amt.value = "500";
+        amt.style.cssText = "width:110px;padding:5px 8px;border-radius:6px;border:1px solid var(--g-line);background:var(--g-field);font:inherit;font-size:12.5px";
+        var note = document.createElement("input");
+        note.placeholder = "备注（可选）";
+        note.style.cssText = "width:140px;padding:5px 8px;border-radius:6px;border:1px solid var(--g-line);background:var(--g-field);font:inherit;font-size:12.5px";
+        var go = document.createElement("button");
+        go.className = "btn"; go.textContent = "发放";
+        go.onclick = function () {
+          var delta = Number(amt.value);
+          if (!Number.isFinite(delta) || delta === 0) { say("请输入非 0 的分值", "bad"); return; }
+          go.disabled = true;
+          api("/admin/points/grant", { method: "POST", body: { username: u.username, delta: delta, note: note.value } }).then(function (x) {
+            go.disabled = false;
+            if (x.ok && x.j && x.j.ok) { say("已给 " + u.username + " 发放 " + delta + "，余额 " + x.j.balance, "ok"); loadPoints($("ptq").value.trim()); }
+            else { say("发放失败：" + ((x.j && x.j.error) || x.status), "bad"); }
+          }).catch(function () { go.disabled = false; say("网络错误", "bad"); });
+        };
+        wrap.appendChild(amt); wrap.appendChild(note); wrap.appendChild(go);
+        tdOps.appendChild(wrap); tr.appendChild(tdOps);
+        box.appendChild(tr);
+      });
+    });
+  }
+  if ($("ptSearch")) $("ptSearch").onclick = function () { loadPoints($("ptq").value.trim()); };
+  if ($("ptq")) $("ptq").addEventListener("keydown", function (e) { if (e.key === "Enter") loadPoints($("ptq").value.trim()); });
+  if ($("ptAll")) $("ptAll").onclick = function () { $("ptq").value = ""; loadPoints(""); };
+
   function render(users, me) {
     var rows = $("rows"); rows.innerHTML = "";
     for (var i = users.length - 1; i >= 0; i--) {
@@ -305,6 +378,7 @@
   }
 
   function load() {
+    if (typeof loadPoints === "function") loadPoints("");
     api("/admin/users").then(function (r) {
       if (r.status === 401 || r.status === 403) { showGate("会话已过期，请重新登录"); return; }
       if (!r.ok) { say(r.j && r.j.error || "加载失败", "bad"); return; }
