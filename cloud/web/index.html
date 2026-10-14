@@ -610,12 +610,21 @@
        **自动完成连接**（助手窗口自动进入界面），云端管理 / 自动更新都认这个绑定。 */
     var claim = document.createElement("button");
     claim.className = "go alt"; claim.innerHTML = IC.shield + "<span>认领这台电脑（绑定到我的账号）</span>";
-    claim.onclick = function () {
-      var code = (input.value || "").trim().toLowerCase();
+    /* ⛔ 10-14 用户实测「绑定会显示电脑，连接不会显示已绑定」：手动「连接我的电脑」走的是
+       **旧的本地配对通道**（只发本机会话令牌，不在服务器建设备记录）⇒ 设备列表 / 已绑定都没有。
+       现在两条路**统一到认领（claim）**：服务器建设备记录 ⇒ 本机轮询拿到设备令牌 ⇒ 助手自动进入。
+       machineId 从本机 /api/health 取（同机重配对不新增设备行）。 */
+    function doClaim(code) {
       if (!code) { status.textContent = "请填入本机配对码"; status.className = "status warn"; input.focus(); return; }
       claim.disabled = true;
       status.textContent = "正在认领…"; status.className = "status";
-      accountFetch("/device/claim", { method: "POST", body: { code: code, name: "我的电脑", machineId: PRESET_MID } }).then(function (res) {
+      /* machineId：授权链接带来（PRESET_MID）或直接问本机 /api/health（手动填码路径）——
+         保证"同一台机器只占一条设备记录"。拿不到就留空（服务端按码建记录，兼容）。 */
+      var midPromise = PRESET_MID
+        ? Promise.resolve(PRESET_MID)
+        : fetch(agentBase + "/api/health", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) { return (j && j.machineId) || ""; }).catch(function () { return ""; });
+      midPromise.then(function (mid) {
+      accountFetch("/device/claim", { method: "POST", body: { code: code, name: "我的电脑", machineId: mid } }).then(function (res) {
         if (!res.ok || !res.j || !res.j.ok) {
           var why = (res.j && res.j.error) || "";
           status.textContent = why === "unauthorized" ? "登录状态已过期，请重新登录" : "认领失败（" + (why || "未知") + "）";
@@ -626,11 +635,21 @@
         /* ⛔ OAuth 式收尾：浏览器 302 回本机回调页（/auth/callback），由本机完成令牌交接 */
         setTimeout(function () { window.location.href = agentBase + "/auth/callback?code=" + encodeURIComponent(code); }, 600);
       }).catch(function () { status.textContent = "网络错误"; status.className = "status bad"; claim.disabled = false; });
-    };
+      });
+    }
+    claim.onclick = function () { doClaim((input.value || "").trim().toLowerCase()); };
+    /* 「连接我的电脑」= 同一条认领（用户问"有啥区别"—— 现在没有区别了） */
+    go.onclick = function () { doClaim((input.value || "").trim().toLowerCase()); };
     login.appendChild(label);
-    login.appendChild(inputWrap);
-    login.appendChild(claim);
-    login.appendChild(go);
+    /* ⛔ 10-14 用户问「连接跟绑定电脑有啥区别吗」：**没有区别** —— 都是"用码把这台机器绑到当前账号"。
+       上一轮加确认面板时忘了收起旧的手动路径，同一件事出现两个按钮（用户截图里四连按钮）。
+       现在：从授权链接来（有 presetClaim）⇒ **只留确认/换号**（码已知，不需要再填）；
+       自己直接进站（无 presetClaim）⇒ 只留手动路径（输入码 + 连接我的电脑）。 */
+    var cameFromApp = !!presetClaim;
+    if (!cameFromApp) {
+      login.appendChild(inputWrap);
+      login.appendChild(go);   // 只留一个主按钮；认领按钮不再重复出现
+    }
     login.appendChild(status);
     login.appendChild(guideToggle);
     login.appendChild(why);
@@ -643,7 +662,7 @@
       var ask = document.createElement("div");
       ask.className = "status";
       ask.style.cssText = "margin-top:10px";
-      ask.innerHTML = "本机助手正在等待认领（配对码 <b>" + String(presetClaim).toLowerCase() + "</b>）。<br>确认把本机绑定到当前账号，或换个账号登录。";
+      ask.innerHTML = "本机助手正在等待认领：配对码 <b>" + String(presetClaim).toLowerCase() + "</b>。<br>把<b>这台电脑</b>绑定到当前账号 —— 或换个账号登录。";
       login.appendChild(ask);
       var okBtn = document.createElement("button");
       okBtn.type = "button"; okBtn.textContent = "确认绑定这台电脑";
