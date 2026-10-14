@@ -18,6 +18,7 @@
  */
 import electron from "electron";
 import { app, ipcMain, shell } from "electron";
+import { defaultUserDataDir } from "./data-dir";
 import { mutableState } from "./main";
 import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, type SyncResult } from "./cloud-sync";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -49,7 +50,15 @@ process.env.HARNESS_ASSISTANT = "1";
  *     与 data-dir.ts 的优先级一致）与独立 AUMID。安装目录的隔离在打包侧
  *     （electron-builder.assistant.yml 的 extraMetadata.name + nsis.installDirectoryName）。 */
 if (!process.env.CODEX_HARNESS_USER_DATA) {
-  process.env.CODEX_HARNESS_USER_DATA = join(app.getPath("appData"), "codex-assistant");
+  /* ⛔⛔ 10-14 修正：这里原样钉的是旧锚点 `join(appData, "codex-assistant")`（小写）——
+     10-12 拆分期的旧名。当天晚些时候 data-dir.ts 按用户令把默认目录改名为产品名
+     "Codex Assistant"（大写）并做了迁移 ⇒ 用户全部数据都在大写目录，而本 env 会把
+     resolveStartupUserData 的**第一优先级**（env 分支）劫持到小写旧锚点 ⇒
+     应用读到那个空目录 ⇒ 「保存重启后第一次进啥也没有，第二次进才有」
+     （两份 installation_id / 两套 codex-home 实证；主仓库无 headless.ts 故不受影响）。
+     修法：不再手拼目录名字符串，直接复用 data-dir 的单一真相源 defaultUserDataDir()，
+     改名只改一处，两边永不漂移。 */
+  process.env.CODEX_HARNESS_USER_DATA = defaultUserDataDir();
 }
 try { app.setAppUserModelId("com.codexharness.assistant"); } catch { /* 非 win 平台忽略 */ }
 
