@@ -186,6 +186,28 @@ function addPoints(username, delta, kind, ref, note) {
   if (acct.txns.length > POINTS_TXN_KEEP) acct.txns.length = POINTS_TXN_KEEP;
   return { changed: true, balance: acct.balance, txn };
 }
+/**
+ * 只落一条流水、**不动余额** —— 免费模型调用留痕专用（10-14 用户令
+ * 「免费的模型，只要调用了，就要有记录，我看免费的模型没有出来调用记录」）。
+ *
+ * ⛔ 为什么不直接用 addPoints：它承担的是**余额变更**，`d === 0` 是它的合法短路
+ *    （余额没变就不该产生一条"变动"记录）；而这里要的恰恰是相反语义 ——
+ *    **余额不变，但调用事实必须留痕**。两者语义不同，硬塞进一个函数会让
+ *    「注册赠送 / 手工调整」等其它调用方也开始落 0 值垃圾记录。
+ * ⛔ delta 恒为 0 ⇒ 不参与 pointsVerify 的求和 ⇒ 账目一致性判定不受影响。
+ */
+function addUsageOnly(username, kind, ref, note) {
+  const acct = pointsOf(username);
+  if (ref && acct.txns.some((t) => t.ref === ref)) return { changed: false, balance: acct.balance, txn: null };
+  const txn = {
+    id: acct.txns.length + 1, at: Date.now(), delta: 0,
+    kind: String(kind || "consume"), ref: String(ref || ""),
+    note: String(note || "").slice(0, 200), after: acct.balance,
+  };
+  acct.txns.unshift(txn);
+  if (acct.txns.length > POINTS_TXN_KEEP) acct.txns.length = POINTS_TXN_KEEP;
+  return { changed: true, balance: acct.balance, txn };
+}
 /** 自查：balance 必须等于流水之和（对不上说明有并发或手改） */
 function pointsVerify(username) {
   const acct = pointsOf(username);
@@ -828,9 +850,17 @@ const server = http.createServer(async (req, res) => {
               } catch { /* 忽略非 JSON 行 */ }
             }
           }
-          if (credit !== null && Number.isFinite(credit) && credit > 0) {
-            const r = addPoints(hit.username, -credit, "consume", `call:${crypto.randomBytes(8).toString("hex")}`, `限时福利 · ${wantedModel || "模型调用"} 消耗 ${credit}`);
-            if (r.changed) console.log(`[points] ${hit.username} 消耗 ${credit}（余额 ${r.balance}）`);
+          /* ⛔ 10-14 用户令「免费的模型，只要调用了，就要有记录，我看免费的模型没有出来调用记录」：
+             原先条件是 `credit > 0` ⇒ 免费模型（倍率 ×0.00 ⇒ credit=0）**连"调用过"都看不到**。
+             现在 **credit >= 0 都留痕**：有消耗走 addPoints（改余额），0 消耗走 addUsageOnly（只落流水）。
+             ⛔ 判据仍是"拿得到 credit 才算"（取不到就如实不记，宁可少记也不瞎记，由对账兜底）。 */
+          if (credit !== null && Number.isFinite(credit) && credit >= 0) {
+            const ref = `call:${crypto.randomBytes(8).toString("hex")}`;
+            const label = wantedModel || "模型调用";
+            const r = credit > 0
+              ? addPoints(hit.username, -credit, "consume", ref, `限时福利 · ${label} 消耗 ${credit}`)
+              : addUsageOnly(hit.username, "consume", ref, `限时福利 · ${label}（免费模型，未扣积分）`);
+            if (r.changed) console.log(`[points] ${hit.username} ${credit > 0 ? `消耗 ${credit}` : "免费调用"}（余额 ${r.balance}）`);
           }
         } catch { /* 记分失败不影响调用本身 */ }
       } catch (error) {
