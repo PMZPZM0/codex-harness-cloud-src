@@ -2,81 +2,227 @@
 <html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>用户中心 · Codex Assistant</title>
-<!-- ⛔ 自足页：只依赖本文件与 /cloud-api/*（与 admin.html 同铁律，云端原样托管即可用）。 -->
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>控制台 · Codex Assistant</title>
+<!-- ⛔ 自足页：只依赖本文件与 /cloud-api/*、本机 127.0.0.1（探测助手）—— 云端原样托管即可用。
+     三个中心（用户 / 配对 / 云端）共用一套设计令牌与组件，手机端（<=760px）切为顶部标签 + 单列。 -->
 <style>
   :root {
-    --bg: #f6f6f4; --card: #ffffff; --field: #fafaf8; --line: #e6e6e1; --line-soft: #efefeb;
+    --bg: #f6f6f4; --card: #fff; --field: #fafaf8; --line: #e6e6e1; --line-soft: #efefeb;
     --text: #22221f; --muted: #6a6a64; --faint: #9a9a93;
-    --brand: #7c3aed; --brand-soft: #f0e9fe;
-    --ok: #1a7f37; --bad: #c0392b;
+    --brand: #7c3aed; --brand2: #a78bfa; --brand-soft: #f1ebfe; --brand-ink: #4c1d95;
+    --ok: #1a7f37; --ok-soft: #e8f5ec; --warn: #b45309; --warn-soft: #fef3e2; --bad: #c0392b; --bad-soft: #fdecea;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.04);
+    --r: 12px; --dur: .18s;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.6 Inter, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 40px 20px 64px; }
-  .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
-  .mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, #a78bfa, #7c3aed);
-    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px; }
-  .head-links { display: flex; gap: 14px; align-items: center; font-size: 13px; }
-  .head-links a { color: var(--brand); text-decoration: none; cursor: pointer; }
-  .head-links a:hover { text-decoration: underline; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
-  .card h2 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
-  .kv { display: grid; grid-template-columns: 96px 1fr; gap: 8px 14px; font-size: 13.5px; }
+    font: 14px/1.65 Inter, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  a { color: var(--brand); text-decoration: none; cursor: pointer; }
+  a:hover { text-decoration: underline; }
+  button { appearance: none; -webkit-appearance: none; font: inherit; cursor: pointer; }
+
+  /* ── 布局：桌面左导航 + 单列内容；移动端顶部标签 ─────────────────────── */
+  .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+  .side { background: var(--card); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; height: 100vh; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; font-weight: 700; font-size: 15px; }
+  .mark { width: 28px; height: 28px; border-radius: 9px; background: linear-gradient(135deg, var(--brand2), var(--brand)); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; color: var(--text); font-size: 13.5px; font-weight: 500; border: 0; background: transparent; width: 100%; text-align: left; }
+  .nav-item:hover { background: var(--field); text-decoration: none; }
+  .nav-item.on { background: var(--brand-soft); color: var(--brand-ink); font-weight: 600; }
+  .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .45; flex: none; }
+  .side-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
+  .side-foot b { color: var(--text); font-weight: 600; }
+
+  .main { padding: 28px 32px 64px; max-width: 860px; }
+  .page-head { margin-bottom: 18px; }
+  .page-head h1 { margin: 0 0 4px; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+  .page-head p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); padding: 20px 22px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 14px; font-size: 14px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+  .card h2 .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-ink); }
+  .hint { color: var(--faint); font-size: 12.5px; }
+
+  .kv { display: grid; grid-template-columns: 92px 1fr; gap: 9px 16px; font-size: 13.5px; }
   .kv .k { color: var(--muted); }
-  .row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line-soft); font-size: 13.5px; }
+  .kv .v b { font-weight: 600; }
+
+  .row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line-soft); font-size: 13.5px; flex-wrap: wrap; }
   .row:first-of-type { border-top: 0; }
-  .row .name { flex: 1; font-weight: 500; }
+  .row .name { font-weight: 600; }
   .row .meta { color: var(--faint); font-size: 12px; }
-  .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); }
-  button { appearance: none; -webkit-appearance: none; font: inherit; cursor: pointer; border-radius: 8px; padding: 7px 14px; font-size: 13px; border: 1px solid var(--line); background: #fff; color: var(--text); }
-  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
-  button.danger { color: var(--bad); border-color: #f0d5d1; }
-  button:disabled { opacity: .55; cursor: default; }
-  .field { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); font: inherit; font-size: 13.5px; }
-  .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
-  .form-row .field { flex: 1; min-width: 180px; }
+  .row .grow { flex: 1; }
+  .pill { font-size: 11px; padding: 2px 9px; border-radius: 999px; font-weight: 600; }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.bad { background: var(--bad-soft); color: var(--bad); }
+  .pill.plain { background: var(--field); color: var(--muted); }
+
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+  .stat { background: var(--field); border: 1px solid var(--line-soft); border-radius: 10px; padding: 12px 14px; }
+  .stat .n { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+  .stat .l { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 8px 16px;
+    border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--text); font-size: 13.5px; font-weight: 550;
+    transition: filter var(--dur) ease, transform var(--dur) ease, background var(--dur) ease; }
+  .btn:hover:not(:disabled) { background: var(--field); }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.primary { background: linear-gradient(135deg, var(--brand2), var(--brand)); border-color: transparent; color: #fff; font-weight: 600; }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+  .btn.danger { color: var(--bad); border-color: #f0d5d1; }
+  .btn.danger:hover:not(:disabled) { background: var(--bad-soft); }
+  .btn.block { width: 100%; }
+  .btn.sm { min-height: 32px; padding: 5px 12px; font-size: 12.5px; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+
+  .field { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); font: inherit; font-size: 13.5px; color: var(--text); }
+  .field:focus { outline: 2px solid var(--brand2); outline-offset: 1px; }
+  .field-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .field-row .field { flex: 1; min-width: 170px; }
+  .code-input { font-family: ui-monospace, Consolas, monospace; letter-spacing: .22em; text-align: center; font-size: 18px; font-weight: 700; }
+
   .status { font-size: 12.5px; color: var(--muted); min-height: 18px; }
-  .status.bad { color: var(--bad); }
-  .status.ok { color: var(--ok); }
+  .status.ok { color: var(--ok); } .status.bad { color: var(--bad); } .status.warn { color: var(--warn); }
   .empty { color: var(--faint); font-size: 13px; padding: 6px 0; }
+  .todo { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; line-height: 1.7; }
+  .check { display: flex; align-items: center; gap: 9px; padding: 7px 0; font-size: 13.5px; }
+  .check input { width: 16px; height: 16px; accent-color: var(--brand); }
+  .check .hint { margin-left: auto; }
+
+  @media (max-width: 760px) {
+    .shell { grid-template-columns: 1fr; }
+    .side { position: static; height: auto; flex-direction: row; align-items: center; gap: 8px; overflow-x: auto; padding: 12px 12px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
+    .brand { padding: 0 10px 0 4px; flex: none; }
+    .nav-item { width: auto; white-space: nowrap; padding: 8px 12px; }
+    .side-foot { margin: 0; padding: 0 0 0 10px; border-top: 0; border-left: 1px solid var(--line-soft); flex-direction: row; align-items: center; gap: 12px; }
+    .main { padding: 18px 16px 56px; }
+    .kv { grid-template-columns: 76px 1fr; }
+    .grid2 { grid-template-columns: 1fr; }
+    .row { align-items: flex-start; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="head">
-    <div class="brand"><span class="mark">CA</span><span>用户中心 · Codex Assistant</span></div>
-    <div class="head-links" id="nav"></div>
-  </div>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><span class="mark">CA</span><span>Codex Assistant</span></div>
+    <button class="nav-item" data-tab="user"><span class="dot"></span>用户中心</button>
+    <button class="nav-item" data-tab="pair"><span class="dot"></span>配对中心</button>
+    <button class="nav-item" data-tab="cloud"><span class="dot"></span>云端管理</button>
+    <button class="nav-item" data-tab="admin" id="navAdmin" hidden><span class="dot"></span>用户管理</button>
+    <div class="side-foot">
+      <span id="whoami">读取中…</span>
+      <a id="logout">退出登录</a>
+    </div>
+  </aside>
 
-  <div class="card">
-    <h2>账号信息</h2>
-    <div class="kv" id="acct"><div class="k">状态</div><div>读取中…</div></div>
-  </div>
+  <main class="main">
+    <!-- ── 用户中心 ─────────────────────────────────────────────── -->
+    <section class="tab" data-tab="user" hidden>
+      <div class="page-head"><h1>用户中心</h1><p>你的账号资料与此账号下的操作。</p></div>
+      <div class="card">
+        <h2>账号资料</h2>
+        <div class="kv" id="profile"><div class="k">状态</div><div>读取中…</div></div>
+      </div>
+      <div class="card">
+        <h2>账号操作</h2>
+        <div class="field-row"><input class="field" id="pwOld" type="password" placeholder="当前密码" autocomplete="current-password" /></div>
+        <div class="field-row"><input class="field" id="pwNew" type="password" placeholder="新密码（至少 8 位）" autocomplete="new-password" /></div>
+        <div class="field-row"><input class="field" id="pwNew2" type="password" placeholder="再输一次新密码" autocomplete="new-password" /></div>
+        <div class="btn-row"><button class="btn primary" id="pwSave">修改密码</button><button class="btn danger" id="logout2">退出登录</button></div>
+        <div class="status" id="pwStatus"></div>
+      </div>
+    </section>
 
-  <div class="card">
-    <h2>我的设备</h2>
-    <div id="devices"><div class="empty">读取中…</div></div>
-    <div style="margin-top:12px"><button id="addDevice">连接新设备</button></div>
-  </div>
+    <!-- ── 配对中心 ─────────────────────────────────────────────── -->
+    <section class="tab" data-tab="pair" hidden>
+      <div class="page-head"><h1>配对中心</h1><p>把这台电脑绑到账号，或解除不再使用的设备。</p></div>
 
-  <div class="card">
-    <h2>修改密码</h2>
-    <div class="form-row"><input class="field" id="pwOld" type="password" placeholder="当前密码" autocomplete="current-password" /></div>
-    <div class="form-row"><input class="field" id="pwNew" type="password" placeholder="新密码（至少 8 位）" autocomplete="new-password" /></div>
-    <div class="form-row"><input class="field" id="pwNew2" type="password" placeholder="再输一次新密码" autocomplete="new-password" /><button class="primary" id="pwSave">保存</button></div>
-    <div class="status" id="pwStatus"></div>
-  </div>
+      <div class="card">
+        <h2>本机助手 <span class="tag" id="agentPill">探测中…</span></h2>
+        <div class="kv" id="agentInfo"><div class="k">状态</div><div>正在探测本机助手…</div></div>
+        <div class="btn-row">
+          <button class="btn" id="agentRetry">重新检测</button>
+          <button class="btn" id="agentOpen">打开助手授权页</button>
+        </div>
+        <div class="hint" style="margin-top:8px">助手只监听本机 127.0.0.1，必须在<b>这台电脑</b>上运行；浏览器若拦截本地请求请放行。</div>
+      </div>
+
+      <div class="card">
+        <h2>用配对码绑定</h2>
+        <div class="field-row">
+          <input class="field code-input" id="pairCode" maxlength="8" placeholder="8 位十六进制" autocomplete="off" spellcheck="false" />
+          <button class="btn" id="pairPaste">粘贴</button>
+        </div>
+        <div class="btn-row"><button class="btn primary" id="pairClaim">把这台电脑绑定到当前账号</button></div>
+        <div class="status" id="pairStatus"></div>
+      </div>
+
+      <div class="card">
+        <h2>已配对设备</h2>
+        <div id="devices"><div class="empty">读取中…</div></div>
+      </div>
+    </section>
+
+    <!-- ── 云端管理 ─────────────────────────────────────────────── -->
+    <section class="tab" data-tab="cloud" hidden>
+      <div class="page-head"><h1>云端管理</h1><p>云端数据概览、同步配置与数据处置。</p></div>
+
+      <div class="card">
+        <h2>概览</h2>
+        <div class="grid2">
+          <div class="stat"><div class="n" id="stDevices">—</div><div class="l">已配对设备</div></div>
+          <div class="stat"><div class="n" id="stSessions">—</div><div class="l">云端会话</div></div>
+          <div class="stat"><div class="n" id="stProjects">—</div><div class="l">云端项目</div></div>
+          <div class="stat"><div class="n" id="stLastSync">—</div><div class="l">最近同步</div></div>
+        </div>
+        <div class="todo" style="margin-top:12px">
+          跨设备同步（会话 / 项目 / 记忆）已在设计中，尚未开启。范围与冲突规则见
+          <b>CLOUD-SYNC-DESIGN.md</b>：会话按行增量、账户切换=空间隔离、删除走墓碑。
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>同步范围 <span class="tag">待开启</span></h2>
+        <label class="check"><input type="checkbox" checked disabled />会话正文<span class="hint">按行增量，两机各自追加不冲突</span></label>
+        <label class="check"><input type="checkbox" checked disabled />会话元数据<span class="hint">标题 / 时间 / 收藏</span></label>
+        <label class="check"><input type="checkbox" checked disabled />项目覆盖项<span class="hint">显示名 / 分组 / 颜色</span></label>
+        <label class="check"><input type="checkbox" disabled />项目记忆<span class="hint">条目级并集</span></label>
+        <label class="check"><input type="checkbox" disabled />技能与自定义命令</label>
+        <label class="check"><input type="checkbox" disabled />设置白名单<span class="hint">不含任何密钥</span></label>
+        <div class="hint" style="margin-top:8px">⛔ 凭据、沙箱策略、exec 策略在任何档位下都不会上传。</div>
+      </div>
+
+      <div class="card">
+        <h2>本账号数据</h2>
+        <div id="cloudData"><div class="empty">读取中…</div></div>
+      </div>
+
+      <div class="card">
+        <h2>危险区</h2>
+        <div class="btn-row">
+          <button class="btn danger" id="cloudWipe" disabled>清空云端数据（未开放）</button>
+        </div>
+        <div class="hint" style="margin-top:8px">云端数据处置（清空 / 导出 / 回收站）随后端同步服务一并开放。</div>
+      </div>
+    </section>
+  </main>
 </div>
+
 <script>(function () {
   "use strict";
   var API = "/cloud-api";
+  var AGENT = "http://127.0.0.1:8917";
   var session = "";
   try { session = localStorage.getItem("chc-session") || ""; } catch (e) { /* 忽略 */ }
   var $ = function (id) { return document.getElementById(id); };
+  if (!session) { window.location.replace("index.html"); return; }
+
   function api(path, opts) {
     opts = opts || {};
     var headers = { "Content-Type": "application/json" };
@@ -87,76 +233,201 @@
   function fmt(ms) {
     if (!ms) return "—";
     var d = new Date(ms);
-    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " +
+      String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
   }
-  function link(text, href, target) {
-    var a = document.createElement("a"); a.textContent = text;
-    a.onclick = function () { if (target) window.open(href, target); else window.location.href = href; };
-    return a;
+  function ago(ms) {
+    if (!ms) return "从未";
+    var s = Math.floor((Date.now() - ms) / 1000);
+    if (s < 60) return "刚刚";
+    if (s < 3600) return Math.floor(s / 60) + " 分钟前";
+    if (s < 86400) return Math.floor(s / 3600) + " 小时前";
+    return Math.floor(s / 86400) + " 天前";
+  }
+  function el(tag, cls, text) { var d = document.createElement(tag); if (cls) d.className = cls; if (text !== undefined) d.textContent = text; return d; }
+  function kv(box, pairs) {
+    box.innerHTML = "";
+    pairs.forEach(function (p) {
+      var k = el("div", "k", p[0]); var v = el("div", "v"); if (p[2]) v.innerHTML = p[2]; else v.textContent = p[1];
+      box.appendChild(k); box.appendChild(v);
+    });
   }
   function logout() {
     api("/logout", { method: "POST" }).catch(function () { /* 忽略 */ });
     try { localStorage.removeItem("chc-session"); } catch (e) { /* 忽略 */ }
     window.location.href = "index.html";
   }
+  $("logout").onclick = logout; $("logout2").onclick = logout;
 
-  if (!session) { window.location.replace("index.html"); return; }
-
-  api("/me").then(function (r) {
-    if (!r.ok || !r.j || !r.j.ok) { try { localStorage.removeItem("chc-session"); } catch (e) {} window.location.replace("index.html"); return; }
-    var a = r.j.account;
-    var kv = $("acct"); kv.innerHTML = "";
-    [["用户名", a.username], ["角色", a.role === "admin" ? "管理员" : "普通用户"], ["注册时间", fmt(a.createdAt)], ["上次登录", fmt(a.lastLogin)]].forEach(function (pair) {
-      var k = document.createElement("div"); k.className = "k"; k.textContent = pair[0];
-      var v = document.createElement("div"); v.textContent = pair[1];
-      kv.appendChild(k); kv.appendChild(v);
+  /* ── 标签切换（桌面左导航 / 移动端顶部标签；hash 记住位置） ─────────── */
+  function show(tab) {
+    var found = false;
+    Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (s) {
+      var on = s.getAttribute("data-tab") === tab; s.hidden = !on; if (on) found = true;
     });
-    var nav = $("nav");
-    nav.appendChild(link("连接新设备", "index.html"));
-    if (a.role === "admin") nav.appendChild(link("用户管理", "admin.html", "_blank"));
-    nav.appendChild(link("退出登录", "#"));
-    nav.lastChild.onclick = logout;
-    loadDevices();
+    Array.prototype.forEach.call(document.querySelectorAll(".nav-item"), function (b) { b.classList.toggle("on", b.getAttribute("data-tab") === tab); });
+    if (tab === "pair") refreshPairing();
+    if (tab === "cloud") refreshCloud();
+    try { history.replaceState(null, "", "#" + tab); } catch (e) { /* 忽略 */ }
+    if (!found) show("user");
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".nav-item"), function (b) {
+    b.onclick = function () {
+      var t = b.getAttribute("data-tab");
+      if (t === "admin") { window.open("admin.html", "_blank"); return; }
+      show(t);
+    };
+  });
+
+  /* ── 账号资料 ─────────────────────────────────────────────────── */
+  var me = null;
+  api("/me").then(function (r) {
+    if (!r.ok || !r.j || !r.j.ok) { try { localStorage.removeItem("chc-session"); } catch (e) { } window.location.replace("index.html"); return; }
+    me = r.j.account;
+    kv($("profile"), [
+      ["用户名", me.username],
+      ["角色", me.role === "admin" ? "管理员" : "普通用户"],
+      ["注册时间", fmt(me.createdAt)],
+      ["上次登录", fmt(me.lastLogin)],
+    ]);
+    $("whoami").innerHTML = "当前账号：<b>" + me.username + "</b>";
+    if (me.role === "admin") $("navAdmin").hidden = false;
+    var start = (location.hash || "#user").slice(1);
+    show(["user", "pair", "cloud"].indexOf(start) >= 0 ? start : "user");
   }).catch(function () { window.location.replace("index.html"); });
 
-  function loadDevices() {
-    api("/devices").then(function (r) {
-      var box = $("devices"); box.innerHTML = "";
-      var list = (r.ok && r.j && r.j.ok && r.j.devices) || [];
-      if (!list.length) { var e = document.createElement("div"); e.className = "empty"; e.textContent = "还没有设备认领过。点下面的「连接新设备」把这台电脑连上。"; box.appendChild(e); return; }
-      list.forEach(function (d) {
-        var row = document.createElement("div"); row.className = "row";
-        var name = document.createElement("span"); name.className = "name"; name.textContent = d.name || "未命名设备";
-        var meta = document.createElement("span"); meta.className = "meta"; meta.textContent = "认领 " + fmt(d.claimedAt) + " · 最后在线 " + fmt(d.lastSeen);
-        var revoke = document.createElement("button"); revoke.className = "danger"; revoke.textContent = "吊销";
-        revoke.onclick = function () {
-          revoke.disabled = true;
-          api("/device/revoke", { method: "POST", body: { id: d.id } }).then(function (x) {
-            if (x.ok && x.j && x.j.ok) loadDevices(); else { revoke.disabled = false; }
-          }).catch(function () { revoke.disabled = false; });
-        };
-        row.appendChild(name); row.appendChild(meta); row.appendChild(revoke);
-        box.appendChild(row);
-      });
-    }).catch(function () {
-      var box = $("devices"); box.innerHTML = "";
-      var e = document.createElement("div"); e.className = "empty"; e.textContent = "设备列表读取失败，稍后重试。"; box.appendChild(e);
-    });
-  }
-
-  $("addDevice").onclick = function () { window.location.href = "index.html"; };
+  /* ── 改密 ─────────────────────────────────────────────────────── */
   $("pwSave").onclick = function () {
     var st = $("pwStatus"); st.className = "status";
-    var oldPw = $("pwOld").value, newPw = $("pwNew").value, again = $("pwNew2").value;
-    if (newPw.length < 8) { st.textContent = "新密码至少 8 位"; st.className = "status bad"; return; }
-    if (newPw !== again) { st.textContent = "两次输入的新密码不一致"; st.className = "status bad"; return; }
+    var a = $("pwOld").value, b = $("pwNew").value, c = $("pwNew2").value;
+    if (b.length < 8) { st.textContent = "新密码至少 8 位"; st.className = "status bad"; return; }
+    if (b !== c) { st.textContent = "两次输入的新密码不一致"; st.className = "status bad"; return; }
     var btn = $("pwSave"); btn.disabled = true;
-    api("/password", { method: "POST", body: { oldPassword: oldPw, newPassword: newPw } }).then(function (r) {
+    api("/password", { method: "POST", body: { oldPassword: a, newPassword: b } }).then(function (r) {
       btn.disabled = false;
       if (r.ok && r.j && r.j.ok) { st.textContent = "已修改 ✓"; st.className = "status ok"; $("pwOld").value = $("pwNew").value = $("pwNew2").value = ""; }
       else { st.textContent = (r.j && r.j.error) || "修改失败"; st.className = "status bad"; }
     }).catch(function () { btn.disabled = false; st.textContent = "网络错误"; st.className = "status bad"; });
   };
+
+  /* ── 配对中心：本机助手探测 ───────────────────────────────────── */
+  var agentState = null;
+  function probeAgent() {
+    var pill = $("agentPill"); pill.className = "tag"; pill.textContent = "探测中…";
+    var ctl = new AbortController(); var t = setTimeout(function () { ctl.abort(); }, 4000);
+    return fetch(AGENT + "/api/cloud-state", { cache: "no-store", signal: ctl.signal })
+      .then(function (r) { clearTimeout(t); return r.json(); })
+      .then(function (s) {
+        agentState = s;
+        var paired = s && s.machinePaired === true;
+        pill.className = "tag"; pill.textContent = paired ? "已在运行 · 已配对" : "已在运行 · 未配对";
+        pill.style.background = paired ? "var(--ok-soft)" : "var(--warn-soft)";
+        pill.style.color = paired ? "var(--ok)" : "var(--warn)";
+        kv($("agentInfo"), [
+          ["状态", "本机助手已启动"],
+          ["配对闸", s.gated ? "开（需网页账号）" : "关"],
+          ["绑定账号", (s.machineAccounts || []).join("、") || "未绑定"],
+          ["设备凭据", s.hasDeviceToken ? "已就绪" : "无"],
+          ["服务器", s.serverReachable ? "可达" : "不可达"],
+        ]);
+      })
+      .catch(function () {
+        agentState = null;
+        pill.className = "tag"; pill.textContent = "未检测到";
+        pill.style.background = "var(--bad-soft)"; pill.style.color = "var(--bad)";
+        kv($("agentInfo"), [
+          ["状态", "没有检测到本机助手"],
+          ["怎么办", "双击桌面上的「Codex Assistant」图标启动它，再点下面的「重新检测」"],
+        ]);
+      });
+  }
+  $("agentRetry").onclick = function () { probeAgent(); };
+  $("agentOpen").onclick = function () {
+    if (!agentState) { probeAgent().then(function () { $("agentOpen").click(); }); return; }
+    fetch(AGENT + "/api/open-auth", { method: "POST" }).catch(function () { /* 忽略 */ });
+  };
+
+  /* ── 配对中心：配对码绑定（走服务端认领，和设备列表同一套数据） ──── */
+  function sanitizeCode(v) { return String(v || "").toLowerCase().replace(/[^0-9a-f]/g, "").slice(0, 8); }
+  $("pairCode").addEventListener("input", function () { var v = sanitizeCode($("pairCode").value); if (v !== $("pairCode").value) $("pairCode").value = v; });
+  $("pairPaste").onclick = function () {
+    var st = $("pairStatus");
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      navigator.clipboard.readText().then(function (text) {
+        var c = sanitizeCode(text);
+        if (!c) { st.textContent = "剪贴板里没有可用的配对码（需 8 位十六进制）"; st.className = "status warn"; return; }
+        $("pairCode").value = c; $("pairCode").focus(); st.textContent = "已粘贴：" + c; st.className = "status";
+      }).catch(function () { st.textContent = "读剪贴板被拒绝 —— 请点进输入框按 Ctrl+V"; st.className = "status warn"; });
+    } else { st.textContent = "浏览器不支持一键粘贴 —— 请按 Ctrl+V"; st.className = "status warn"; }
+  };
+  $("pairClaim").onclick = function () {
+    var st = $("pairStatus"); var code = sanitizeCode($("pairCode").value);
+    if (code.length !== 8) { st.textContent = "配对码是 8 位十六进制"; st.className = "status warn"; return; }
+    var btn = $("pairClaim"); btn.disabled = true; st.textContent = "正在认领…"; st.className = "status";
+    var mid = agentState && agentState.machineId ? agentState.machineId : "";
+    var midPromise = mid ? Promise.resolve(mid)
+      : fetch(AGENT + "/api/health", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) { return (j && j.machineId) || ""; }).catch(function () { return ""; });
+    midPromise.then(function (m) {
+      return api("/device/claim", { method: "POST", body: { code: code, name: "我的电脑", machineId: m } });
+    }).then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) {
+        var why = (r.j && r.j.error) || "";
+        st.textContent = why === "unauthorized" ? "登录已过期，请重新登录" : "认领失败（" + (why || "未知") + "）";
+        st.className = "status bad"; btn.disabled = false; return;
+      }
+      st.textContent = "已认领 ✓ 本机助手正在完成连接…"; st.className = "status ok";
+      loadDevices(); probeAgent();
+      setTimeout(function () { btn.disabled = false; }, 1500);
+    }).catch(function () { st.textContent = "网络错误"; st.className = "status bad"; btn.disabled = false; });
+  };
+
+  /* ── 配对中心：设备列表 + 解除配对 ────────────────────────────── */
+  function loadDevices() {
+    api("/devices").then(function (r) {
+      var box = $("devices"); box.innerHTML = "";
+      var list = (r.ok && r.j && r.j.ok && r.j.devices) || [];
+      $("stDevices").textContent = String(list.length);
+      if (!list.length) { box.appendChild(el("div", "empty", "还没有设备配对过。用上面的配对码把这台电脑绑上来。")); return; }
+      list.forEach(function (d) {
+        var row = el("div", "row");
+        row.appendChild(el("span", "name grow", d.name || "未命名设备"));
+        row.appendChild(el("span", "meta", "认领 " + fmt(d.claimedAt) + " · 最后在线 " + ago(d.lastSeen)));
+        var un = el("button", "btn sm danger", "解除配对");
+        un.onclick = function () {
+          if (!window.confirm("解除这台设备的配对？该设备需要重新配对才能再连云端。")) return;
+          un.disabled = true;
+          api("/device/revoke", { method: "POST", body: { id: d.id } }).then(function (x) {
+            if (x.ok && x.j && x.j.ok) { loadDevices(); probeAgent(); } else { un.disabled = false; }
+          }).catch(function () { un.disabled = false; });
+        };
+        row.appendChild(un);
+        box.appendChild(row);
+      });
+    }).catch(function () { $("devices").innerHTML = ""; $("devices").appendChild(el("div", "empty", "设备列表读取失败，稍后重试。")); });
+  }
+
+  /* ── 云端管理：概览与数据 ─────────────────────────────────────── */
+  function refreshCloud() {
+    $("cloudData").innerHTML = ""; $("cloudData").appendChild(el("div", "empty", "读取中…"));
+    api("/devices").then(function (r) {
+      var list = (r.ok && r.j && r.j.ok && r.j.devices) || [];
+      $("stDevices").textContent = String(list.length);
+      $("stSessions").textContent = "0";
+      $("stProjects").textContent = "0";
+      $("stLastSync").textContent = "未开启";
+      var box = $("cloudData"); box.innerHTML = "";
+      if (!list.length) { box.appendChild(el("div", "empty", "本账号名下还没有设备。")); return; }
+      list.forEach(function (d) {
+        var row = el("div", "row");
+        row.appendChild(el("span", "name grow", d.name || "未命名设备"));
+        row.appendChild(el("span", "meta", "最后在线 " + ago(d.lastSeen)));
+        row.appendChild(el("span", "pill plain", "会话 0 · 用量 0 B"));
+        box.appendChild(row);
+      });
+    }).catch(function () { });
+  }
+
+  function refreshPairing() { probeAgent(); loadDevices(); }
 })();</script>
 </body>
 </html>
