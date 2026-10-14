@@ -135,8 +135,14 @@ function serverSecret() {
   try { fs.writeFileSync(secretFile, secret, { mode: 0o600 }); } catch (error) { console.error("[accounts] 密钥落盘失败：", error.message); }
   return secret;
 }
-function deviceTokenOf(code) {
-  return crypto.createHmac("sha256", serverSecret()).update(`device:${String(code || "").trim().toLowerCase()}`).digest("hex");
+/** 设备 token 派生基准：`mid:<机器标识>`（机器稳定、重配对不变）或 `code:<配对码>`（兼容旧记录）。
+ *  ⛔ 仍然只存 sha256(token)：库泄露同样拿不到 token（基准不落库，只由记录里的 machineId/code 现算）。 */
+function deviceTokenBaseOf(device) {
+  const mid = String(device && device.machineId || "").trim();
+  return mid ? "mid:" + mid : "code:" + String(device && device.code || "").trim().toLowerCase();
+}
+function deviceTokenOf(base) {
+  return crypto.createHmac("sha256", serverSecret()).update(`device:${String(base || "").trim().toLowerCase()}`).digest("hex");
 }
 function deviceCodeHash(code) { return crypto.createHash("sha256").update(String(code || "").trim().toLowerCase()).digest("hex"); }
 function deviceIdOf(codeHash) { return codeHash.slice(0, 8); }
@@ -166,8 +172,9 @@ function claimDevice(code, username, name, machineId) {
   db.devices[hash] = {
     username,
     name: String(name || "").trim().slice(0, 32) || `设备-${deviceIdOf(hash)}`,
+    code: raw,
     machineId: mid || prev?.machineId || "",
-    tokenHash: crypto.createHash("sha256").update(deviceTokenOf(raw)).digest("hex"),
+    tokenHash: crypto.createHash("sha256").update(deviceTokenOf(mid ? "mid:" + mid : "code:" + raw)).digest("hex"),
     claimedAt: prev?.claimedAt || Date.now(),
     lastSeen: prev?.lastSeen || 0,
   };
@@ -184,7 +191,7 @@ function redeemDeviceCode(code) {
   if (!user || user.disabled) return { ok: false, claimed: true, reason: "account-disabled" };
   device.lastSeen = Date.now();
   persist();
-  return { ok: true, claimed: true, username: device.username, name: device.name, id: deviceIdOf(deviceCodeHash(raw)), token: deviceTokenOf(raw) };
+  return { ok: true, claimed: true, username: device.username, name: device.name, id: deviceIdOf(deviceCodeHash(raw)), token: deviceTokenOf(deviceTokenBaseOf(device)) };
 }
 /** 凭设备 token 找设备（tokenHash 反查；db.devices 的键是 code+token 的组合哈希）。 */
 function findDeviceByToken(token) {
@@ -337,6 +344,27 @@ const server = http.createServer(async (req, res) => {
       return send(200, { ok: true, device: result.device, account: publicView(me) });
     }
     /* 本机轮询：码即凭据（无网页会话）。账号停用 ⇒ 拒绝下发。 */
+    /* ⛔ 按**机器**查询认领状态（10-14 修复回调超时）：本机用 installation_id 轮询，
+       不再依赖"当前码" —— 用户手填旧码认领时，本机也能凭机器标识接上（码只是握手）。 */
+    if (p === "/device/status" && req.method === "GET") {
+      const mid = String(url.searchParams.get("machineId") || "").trim().slice(0, 64);
+      const code = String(url.searchParams.get("code") || "").trim().toLowerCase();
+      let device = null;
+      let hitHash = "";
+      if (mid) {
+        for (const [hash, row] of Object.entries(db.devices)) if (row.machineId === mid) { device = row; hitHash = hash; break; }
+      }
+      if (!device && DEVICE_CODE_RE.test(code)) {
+        const hash = deviceCodeHash(code);
+        if (db.devices[hash]) { device = db.devices[hash]; hitHash = hash; }
+      }
+      if (!device) return send(200, { ok: true, claimed: false });
+      const user = db.users.find((u) => u.username === device.username);
+      if (!user || user.disabled) return send(200, { ok: true, claimed: true, reason: "account-disabled" });
+      device.lastSeen = Date.now();
+      persist();
+      return send(200, { ok: true, claimed: true, username: device.username, name: device.name, id: deviceIdOf(hitHash), token: deviceTokenOf(deviceTokenBaseOf(device)) });
+    }
     if (p === "/device/claim-status" && req.method === "GET") {
       if (!rateLimit(`devstatus-ip:${ip}`, 120, 5 * 60_000)) return send(429, { ok: false, error: "too-many-requests" });
       const result = redeemDeviceCode(url.searchParams.get("code"));
