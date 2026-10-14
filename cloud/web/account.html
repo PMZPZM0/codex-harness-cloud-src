@@ -129,6 +129,7 @@
     <button class="nav-item" data-tab="admin" id="navAdmin" hidden><span class="dot"></span>用户管理</button>
     <div class="side-foot">
       <span id="whoami">读取中…</span>
+      <span id="sidePoints" class="hint">积分 —</span>
       <a id="logout">退出登录</a>
     </div>
   </aside>
@@ -141,6 +142,23 @@
         <h2>账号资料</h2>
         <div class="kv" id="profile"><div class="k">状态</div><div>读取中…</div></div>
       </div>
+      <div class="card">
+        <h2>我的积分 <span class="tag" id="ptTag">读取中…</span></h2>
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+          <span id="ptBalance" style="font-size:30px;font-weight:700;letter-spacing:-.02em">—</span>
+          <span class="hint">积分</span>
+        </div>
+        <div class="hint" id="ptMeta">正在读取…</div>
+        <div class="hint" style="margin-top:8px">
+          用途：在「限时福利」里调用模型时按**模型倍率**扣减（倍率见云端管理的模型列表）。
+          消耗数值取自上游回执，与 WorkBuddy Manager 记账一致。
+        </div>
+        <div style="margin-top:12px">
+          <div class="hint" style="margin-bottom:6px">最近变动</div>
+          <div id="ptList"><div class="empty">读取中…</div></div>
+        </div>
+      </div>
+
       <div class="card">
         <h2>账号操作</h2>
         <div class="field-row"><input class="field" id="pwOld" type="password" placeholder="当前密码" autocomplete="current-password" /></div>
@@ -316,6 +334,7 @@
       var on = s.getAttribute("data-tab") === tab; s.hidden = !on; if (on) found = true;
     });
     Array.prototype.forEach.call(document.querySelectorAll(".nav-item"), function (b) { b.classList.toggle("on", b.getAttribute("data-tab") === tab); });
+    if (tab === "user") loadPoints();
     if (tab === "pair") refreshPairing();
     if (tab === "cloud") refreshCloud();
     try { history.replaceState(null, "", "#" + tab); } catch (e) { /* 忽略 */ }
@@ -341,6 +360,7 @@
       ["上次登录", fmt(me.lastLogin)],
     ]);
     $("whoami").innerHTML = "当前账号：<b>" + me.username + "</b>";
+    loadPoints();
     /* ⛔ 双保险：非管理员不仅 hidden，还**从 DOM 摘除**（不靠 CSS 兜底，也不在页面里留痕迹） */
     if (me.role === "admin") { $("navAdmin").hidden = false; }
     else { var a = $("navAdmin"); if (a && a.parentNode) a.parentNode.removeChild(a); }
@@ -557,6 +577,41 @@
       refreshSync();
     }).catch(function () { st.textContent = "本机助手未运行 —— 请先启动它"; st.className = "status warn"; });
   };
+
+  /* ── 我的积分（用户中心）─────────────────────────────────────────────── */
+  function loadPoints() {
+    api("/points/me").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) {
+        $("ptTag").textContent = "读取失败"; $("ptList").innerHTML = "";
+        return;
+      }
+      var j = r.j;
+      $("ptBalance").textContent = Number(j.balance).toFixed(2).replace(/\.00$/, "");
+      $("ptTag").textContent = j.verify && j.verify.ok ? "账目一致" : "账目待核对";
+      $("ptTag").style.background = (j.verify && j.verify.ok) ? "var(--ok-soft)" : "var(--warn-soft)";
+      $("ptTag").style.color = (j.verify && j.verify.ok) ? "var(--ok)" : "var(--warn)";
+      var last = (j.txns && j.txns[0]) ? j.txns[0] : null;
+      $("ptMeta").innerHTML = "注册赠送 " + (j.signupGrant || 0) + " 积分" +
+        (last ? " · 最近变动 " + ago(last.at) : "") +
+        " · 明细 " + (j.txns ? j.txns.length : 0) + " 条";
+      if ($("sidePoints")) $("sidePoints").textContent = "积分 " + Number(j.balance).toFixed(2).replace(/\.00$/, "");
+      var box = $("ptList"); box.innerHTML = "";
+      if (!j.txns || !j.txns.length) { box.appendChild(el("div", "empty", "还没有积分变动")); return; }
+      j.txns.slice(0, 20).forEach(function (t) {
+        var row = el("div", "row");
+        var up = Number(t.delta) > 0;
+        var amt = el("span", "name", (up ? "+" : "") + Number(t.delta).toFixed(2).replace(/\.00$/, ""));
+        amt.style.color = up ? "var(--ok)" : "var(--bad)";
+        amt.style.minWidth = "74px";
+        row.appendChild(amt);
+        row.appendChild(el("span", "grow", t.note || t.kind));
+        var kindText = t.kind === "signup" ? "注册赠送" : t.kind === "grant" ? "管理员发放" : t.kind === "consume" ? "消费" : t.kind;
+        row.appendChild(el("span", "pill plain", kindText));
+        row.appendChild(el("span", "meta", fmt(t.at) + " · 余 " + Number(t.after).toFixed(2).replace(/\.00$/, "")));
+        box.appendChild(row);
+      });
+    }).catch(function () { $("ptTag").textContent = "读取失败"; });
+  }
 
   /* ── 限时福利：模型目录 + 勾选管理 ─────────────────────────────────────
      · 目录来自 WBM（经服务端只读凭据同步）；每模型的 credits = 积分消耗倍率

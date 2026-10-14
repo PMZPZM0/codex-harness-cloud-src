@@ -161,6 +161,38 @@ if (typeof db.devices !== "object" || !db.devices) db.devices = {};   // codeHas
 if (typeof db.modelCatalog !== "object" || !db.modelCatalog) db.modelCatalog = { syncedAt: 0, realm: "cn", source: "", list: [] };
 /* 每用户生效模型：username → [modelId]（空/缺省 = 全不启用，由用户勾选决定） */
 if (typeof db.userModels !== "object" || !db.userModels) db.userModels = {};
+/* ── 积分账本（10-14）──────────────────────────────────────────────────────
+   db.points = { "<username>": { balance, txns: [ {id, at, delta, kind, ref, note, after} ] } }
+   ⛔ 流水是唯一真相源，balance 是它的累加；ref 唯一 ⇒ 同一件事只入账一次（幂等）。
+   ⛔ 消耗数值**取自 WBM 返回的 usage.credit**（不是本地估的）⇒ 天然与 WBM 口径同步。 */
+if (typeof db.points !== "object" || !db.points) db.points = {};
+const SIGNUP_GRANT = Number(process.env.HARNESS_SIGNUP_POINTS || 1000);
+const POINTS_TXN_KEEP = 200;                         // 每人保留的流水条数（防无限增长）
+function pointsOf(username) {
+  const key = String(username || "");
+  if (!db.points[key]) db.points[key] = { balance: 0, txns: [] };
+  if (!Array.isArray(db.points[key].txns)) db.points[key].txns = [];
+  return db.points[key];
+}
+/** 入账：ref 幂等（同 ref 只记一次）。返回 { changed, balance, txn } */
+function addPoints(username, delta, kind, ref, note) {
+  const acct = pointsOf(username);
+  const d = Number(delta);
+  if (!Number.isFinite(d) || d === 0) return { changed: false, balance: acct.balance, txn: null };
+  if (ref && acct.txns.some((t) => t.ref === ref)) return { changed: false, balance: acct.balance, txn: null };
+  acct.balance = Math.round((acct.balance + d) * 100) / 100;
+  const txn = { id: acct.txns.length + 1, at: Date.now(), delta: d, kind: String(kind || "adjust"), ref: String(ref || ""), note: String(note || "").slice(0, 200), after: acct.balance };
+  acct.txns.unshift(txn);
+  if (acct.txns.length > POINTS_TXN_KEEP) acct.txns.length = POINTS_TXN_KEEP;
+  return { changed: true, balance: acct.balance, txn };
+}
+/** 自查：balance 必须等于流水之和（对不上说明有并发或手改） */
+function pointsVerify(username) {
+  const acct = pointsOf(username);
+  const sum = Math.round(acct.txns.reduce((n, t) => n + Number(t.delta || 0), 0) * 100) / 100;
+  return { balance: acct.balance, sum, ok: Math.abs(sum - acct.balance) < 0.005 };
+}
+
 /* 每用户代理令牌：username → { hash, prefix, createdAt, lastUsedAt, ips: [] }
    ⛔ 库内**只存 sha256**，明文仅签发时返回一次（与 WBM 的 api_tokens 同一形态）；
    ⛔ 它不是上游网关密钥 —— 上游密钥只在服务端由代理注入，客户端永远拿不到。 */
@@ -359,8 +391,12 @@ const server = http.createServer(async (req, res) => {
       if (!passwordOk(body.password)) return send(400, { ok: false, error: "密码至少 8 位" });
       if (db.users.some((u) => u.username === username)) return send(409, { ok: false, error: "用户名已被占用" });
       const user = makeUser(username, body.password, "user");
-      db.users.push(user); persist();
-      return send(200, { ok: true, token: issueSession(username), account: publicView(user) });
+      db.users.push(user);
+      /* 新用户注册即赠积分（ref 幂等 ⇒ 同一账号绝不会重复送） */
+      addPoints(username, SIGNUP_GRANT, "signup", `signup:${username}`, `注册赠送 ${SIGNUP_GRANT} 积分`);
+      persist();
+      console.log(`[points] 新用户 ${username} 注册，赠送 ${SIGNUP_GRANT} 积分`);
+      return send(200, { ok: true, token: issueSession(username), account: publicView(user), points: { balance: pointsOf(username).balance, granted: SIGNUP_GRANT } });
     }
 
     /* 登录 */
@@ -725,6 +761,11 @@ const server = http.createServer(async (req, res) => {
         const data = Array.isArray(upstreamList.data) ? upstreamList.data.filter((m) => allowed.has(String(m.id || ""))) : [];
         return send(200, { ...upstreamList, data });
       }
+      /* 余额预检：≤0 直接拒（不让上游白跑；管理员发放后即可继续） */
+      const myBalance = pointsOf(hit.username).balance;
+      if (myBalance <= 0) {
+        return send(402, { ok: false, error: "insufficient-points", balance: myBalance, message: "积分为 0，已暂停调用 —— 请联系管理员加分或改用其它供应商" });
+      }
       let wantedModel = "";
       try { wantedModel = String((JSON.parse(bodyBuf.toString("utf8")) || {}).model || ""); } catch { /* 解析不了就交给上游报错 */ }
       if (wantedModel && !allowed.has(wantedModel)) {
@@ -739,8 +780,38 @@ const server = http.createServer(async (req, res) => {
           body: req.method === "POST" ? bodyBuf : undefined,
         });
         res.writeHead(upstream.status, { "Content-Type": String(upstream.headers.get("content-type") || "application/json"), "Cache-Control": "no-store" });
-        if (upstream.body) for await (const chunk of upstream.body) res.write(chunk);
+        /* 透传的同时**采集**响应（最多留 256KB 用于解析用量），不改动发回客户端的字节 */
+        const seen = [];
+        let seenBytes = 0;
+        if (upstream.body) {
+          for await (const chunk of upstream.body) {
+            res.write(chunk);
+            if (seenBytes < 256 * 1024) { seen.push(chunk); seenBytes += chunk.length; }
+          }
+        }
         res.end();
+        /* ⛔ 记分口径：直接用 **WBM 返回的 usage.credit**（上游自己算的）⇒ 与 WBM 天然同步；
+           取不到就如实不记（宁可少记也不瞎记），由对账环节兜底。 */
+        try {
+          const text = Buffer.concat(seen).toString("utf8");
+          let credit = null;
+          const m1 = /"credit"\s*:\s*(-?[0-9.]+)/.exec(text);
+          if (m1) credit = Number(m1[1]);
+          if (credit === null) {
+            const lines = text.split(/\r?\n/).filter((l) => l.startsWith("data:"));
+            for (let i = lines.length - 1; i >= 0 && credit === null; i--) {
+              try {
+                const j = JSON.parse(lines[i].slice(5).trim());
+                const u = j && j.usage;
+                if (u && (u.credit !== undefined || u.total_credit !== undefined)) credit = Number(u.credit !== undefined ? u.credit : u.total_credit);
+              } catch { /* 忽略非 JSON 行 */ }
+            }
+          }
+          if (credit !== null && Number.isFinite(credit) && credit > 0) {
+            const r = addPoints(hit.username, -credit, "consume", `call:${crypto.randomBytes(8).toString("hex")}`, `限时福利 · ${wantedModel || "模型调用"} 消耗 ${credit}`);
+            if (r.changed) console.log(`[points] ${hit.username} 消耗 ${credit}（余额 ${r.balance}）`);
+          }
+        } catch { /* 记分失败不影响调用本身 */ }
       } catch (error) {
         send(502, { ok: false, error: "upstream-unreachable", message: sanitize(error && error.message) });
       }
@@ -751,6 +822,51 @@ const server = http.createServer(async (req, res) => {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const pulled = await pullModelCatalog(true);
       return send(pulled.ok ? 200 : 502, { ok: pulled.ok, ...pulled, total: (db.modelCatalog.list || []).length });
+    }
+    /* ── 积分：自己的余额与流水 / 管理端总览与发放 ─────────────────────────── */
+    if (p === "/points/me" && req.method === "GET") {
+      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      const acct = pointsOf(me.username);
+      return send(200, {
+        ok: true,
+        username: me.username,
+        balance: acct.balance,
+        signupGrant: SIGNUP_GRANT,
+        txns: acct.txns.slice(0, 50),
+        verify: pointsVerify(me.username),
+      });
+    }
+    if (p === "/admin/points" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const q = String(url.searchParams.get("q") || "").trim().toLowerCase();
+      const rows = db.users
+        .map((u) => {
+          const acct = pointsOf(u.username);
+          const last = acct.txns[0] || null;
+          return { username: u.username, role: u.role, disabled: !!u.disabled, balance: acct.balance, txnCount: acct.txns.length, lastAt: last ? last.at : 0, lastNote: last ? (last.note || last.kind) : "" };
+        })
+        .filter((r) => !q || r.username.toLowerCase().includes(q))
+        .sort((a, b) => b.balance - a.balance);
+      return send(200, { ok: true, total: rows.length, signupGrant: SIGNUP_GRANT, users: rows });
+    }
+    if (p === "/admin/points/grant" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const target = String(body && body.username || "").trim();
+      const delta = Number(body && body.delta);
+      const note = String(body && body.note || "").slice(0, 200);
+      if (!db.users.some((u) => u.username === target)) return send(404, { ok: false, error: "用户不存在" });
+      if (!Number.isFinite(delta) || delta === 0) return send(400, { ok: false, error: "分值必须是数字且非 0" });
+      /* ref 用"管理员+时间戳+随机"⇒ 每次发放都是一条独立流水，不会被幂等吃掉 */
+      const ref = `admin:${me.username}:${Date.now()}:${crypto.randomBytes(4).toString("hex")}`;
+      const r = addPoints(target, delta, "grant", ref, note || `管理员 ${me.username} 发放`);
+      persist();
+      console.log(`[points] ${me.username} 给 ${target} 发放 ${delta}（余额 ${r.balance}）`);
+      return send(200, { ok: true, username: target, delta, balance: r.balance, txn: r.txn });
+    }
+    if (p === "/points/verify" && req.method === "GET") {
+      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      return send(200, { ok: true, ...pointsVerify(me.username) });
     }
     if (p === "/device/heartbeat" && req.method === "POST") {
       const header = String(req.headers.authorization || "");
