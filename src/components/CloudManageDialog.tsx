@@ -32,7 +32,9 @@ type CloudState = {
   plan: string;
   cloudFeatures: { sessionIndex: boolean; cloudExec: boolean };
 };
-type DeviceRow = { name: string; createdAt: number; tokenFingerprint: string };
+/* 与服务端 /device/list 同构（10-14 设备令牌通道）：id 才是吊销用的键，
+   ⛔ 旧字段 tokenFingerprint 早就不存在了 —— 用它当标签 + 拿 name 当 id 调用 ⇒ 永远 404 = "点解绑没反应"。 */
+type DeviceRow = { id: string; name: string; claimedAt?: number; lastSeen?: number; current?: boolean };
 type UpdateInfo = { available: boolean; current?: string; latest?: string; url?: string; notes?: string; reason?: string };
 /* ⛔ 云通道（cloud:device/*、cloud:update/check）只存在于**云助手仓**的 manifest ⇒
    桌面仓的生成类型里没有它们。组件只在云助手形态挂载，但 TS 对三仓统一编译
@@ -92,10 +94,18 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
       .finally(() => setChecking(false));
   };
 
-  const unbind = (name: string) => {
-    void fetch("/api/cloud-device-revoke", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: name }) })
+  const unbind = (id: string) => {
+    void fetch("/api/cloud-device-revoke", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) })
       .then(() => refresh())
       .catch(() => undefined);
+  };
+  /* 当前这台：断开并**自动重连** —— 主进程断开后会自动再开授权页，网页已登录即自动认领，
+     整条重连闭环无人值守（用户令「流程都自动化了，我想自动重新配对」）。 */
+  const reconnect = () => {
+    setDisconnecting(true);
+    void fetch("/api/cloud-disconnect", { method: "POST" })
+      .then(() => { setTimeout(() => location.reload(), 400); })
+      .catch(() => setDisconnecting(false));
   };
 
   const disconnect = () => {
@@ -155,10 +165,14 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
           ) : (
             <div className="cloud-manage-devices">
               {devices.map((d) => (
-                <div key={d.name} className="cloud-manage-device">
-                  <span className="nm">{d.name}</span>
-                  <span className="fp">{d.tokenFingerprint}…</span>
-                  <button type="button" onClick={() => unbind(d.name)}>解绑</button>
+                <div key={d.id} className="cloud-manage-device">
+                  <span className="nm">{d.name}{d.current ? "（本机）" : ""}</span>
+                  <span className="fp">{d.current ? "当前在线" : d.lastSeen ? "最后在线 " + new Date(d.lastSeen).toLocaleDateString() : "已离线"}</span>
+                  {d.current ? (
+                    <button type="button" disabled={disconnecting} onClick={reconnect}>断开重连</button>
+                  ) : (
+                    <button type="button" onClick={() => unbind(d.id)}>解绑</button>
+                  )}
                 </div>
               ))}
             </div>

@@ -368,9 +368,11 @@ function machineId(): string {
 }
 
 /** 唤起系统浏览器打开授权页（主进程直开 —— 不依赖渲染层桥；自动与卡片按钮都走这里）。 */
-function openAuthPage(): void {
+function openAuthPage(forceSwitch = false): void {
   const mid = machineId();
-  const url = ASSISTANT_WEB_ENTRY + "?claim=" + issueOwnerPair() + (mid ? "&mid=" + encodeURIComponent(mid) : "");
+  /* ⛔ switch=1：网页侧**强制显示登录/注册表单**（忽略当前网页会话）—— 换账号绑定的唯一入口
+     （否则自动认领永远绑到网页上当前登录的那个号，用户换号测试会"又自动连上了"）。 */
+  const url = ASSISTANT_WEB_ENTRY + "?claim=" + issueOwnerPair() + (mid ? "&mid=" + encodeURIComponent(mid) : "") + (forceSwitch ? "&switch=1" : "");
   try { shell.openExternal(url); console.log("[device] 已唤起系统浏览器打开授权页：" + url); }
   catch (error) { console.error("[device] 唤起浏览器失败：", error); }
 }
@@ -910,6 +912,11 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     persistAccountBindings({ owner: "", users: {} });
     try { rmSync(deviceTokenFile, { force: true }); } catch { /* 忽略 */ }
     console.log("[cloud] 已断开云端连接（清空账号绑定与设备 token）");
+    /* ⛔ 10-14 用户令「流程都自动化了，我想自动重新配对」：断开后**自动再打开授权页**，
+       网页侧若已登录会自动认领 ⇒ 整条重连闭环无人值守（不再只依赖启动时那一次自动打开）。
+       认领时带 &mid= ⇒ 同一台机器仍然只占一条设备记录（覆盖旧记录）。 */
+    authAutoOpened = true;
+    setTimeout(() => openAuthPage(), 600);
     deny(200, { ok: true });
     return;
   }
@@ -1074,7 +1081,8 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
       `<div class="st" id="st">等待浏览器授权…</div>` +
       `<button class="go" id="go">打开授权页面</button>` +
       `<div class="fb" id="fb"></div>` +
-      `<button class="quit" id="quit">取消并退出应用</button></div>` +
+      `<button class="quit" id="quit">取消并退出应用</button>` +
+      `<div style="margin-top:8px"><a id="switch" style="font-size:12px;color:#8b8b86;cursor:pointer">换一个账号连接…</a></div></div>` +
       `<script>(function(){var code=${JSON.stringify(pairCode)};var web=${JSON.stringify(ASSISTANT_WEB_ENTRY)};var mid=${JSON.stringify(pairMid)};` +
       `var url=web+"?claim="+code+(mid?"&mid="+encodeURIComponent(mid):"");var tries=0;` +
       `function st(t){document.getElementById("st").textContent=t}` +
@@ -1083,6 +1091,7 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
       `document.getElementById("fb").innerHTML='若浏览器没有弹到前面，可复制链接手动打开：<br><b>'+url+"</b>";` +
       `fetch("/api/open-auth",{method:"POST"}).catch(function(){})};` +
       `document.getElementById("quit").onclick=function(){fetch("/api/app-quit",{method:"POST"}).catch(function(){})};` +
+      `document.getElementById("switch").onclick=function(){fetch("/api/open-auth?switch=1",{method:"POST"}).catch(function(){})};` +
       `var cp=document.getElementById("cp");` +
       `if(cp)cp.onclick=function(){function fin(){cp.textContent="已复制 ✓";setTimeout(function(){cp.textContent="复制"},1500)}` +
       `if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(code).then(fin,fin)}else{fin()}};` +
