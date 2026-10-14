@@ -32,6 +32,9 @@
   .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; color: var(--text); font-size: 13.5px; font-weight: 500; border: 0; background: transparent; width: 100%; text-align: left; }
   .nav-item:hover { background: var(--field); text-decoration: none; }
   .nav-item.on { background: var(--brand-soft); color: var(--brand-ink); font-weight: 600; }
+  /* ⛔ 有了这条，hidden 属性才真的隐藏 —— 否则 .nav-item 的 display:flex（作者样式）
+     会盖掉 UA 对 [hidden] 的 display:none ⇒ 非管理员照样看到「用户管理」（用户实测）。 */
+  .nav-item[hidden] { display: none !important; }
   .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .45; flex: none; }
   .side-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
   .side-foot b { color: var(--text); font-weight: 600; }
@@ -291,7 +294,9 @@
       ["上次登录", fmt(me.lastLogin)],
     ]);
     $("whoami").innerHTML = "当前账号：<b>" + me.username + "</b>";
-    if (me.role === "admin") $("navAdmin").hidden = false;
+    /* ⛔ 双保险：非管理员不仅 hidden，还**从 DOM 摘除**（不靠 CSS 兜底，也不在页面里留痕迹） */
+    if (me.role === "admin") { $("navAdmin").hidden = false; }
+    else { var a = $("navAdmin"); if (a && a.parentNode) a.parentNode.removeChild(a); }
     var start = (location.hash || "#user").slice(1);
     show(["user", "pair", "cloud"].indexOf(start) >= 0 ? start : "user");
   }).catch(function () { window.location.replace("index.html"); });
