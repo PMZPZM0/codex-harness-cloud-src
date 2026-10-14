@@ -172,3 +172,49 @@ export function readSyncSummary(stateFile: string): { sessions: number; lines: n
   const rows = Object.values(state.sessions);
   return { sessions: rows.length, lines: rows.reduce((n, r) => n + Number(r.pushedLines || 0), 0) };
 }
+
+/** ── P1：云端 → 本机（下载/恢复） ─────────────────────────────────────────
+ *  把云端会话拉回本地 sessions 目录（与本地同构：<年>/<月>/<日>/rollout-<时间>-<id>.jsonl）。
+ *  ⛔ 拉回来后**把该会话标记为已推到总行数** —— 否则下一轮上传会把它当新内容重复推上去。
+ *  ⛔ 幂等：本地已存在同名会话就跳过（不覆盖本地更新的那份）。 */
+export type PullResult = { ok: boolean; reason?: string; pulled: number; skipped: number; failed: number; ids?: string[] };
+
+export async function pullCloudSessions(deps: SyncDeps, ids: string[] = []): Promise<PullResult> {
+  const token = deps.deviceToken();
+  if (!token) return { ok: false, reason: "not-paired", pulled: 0, skipped: 0, failed: 0 };
+  try {
+    const idxRes = await fetch(`${deps.accountsBase}/sync/index`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+    const idx = (await idxRes.json().catch(() => null)) as { ok?: boolean; sessions?: { id: string }[] } | null;
+    if (!idxRes.ok || !idx?.ok) return { ok: false, reason: `index-http-${idxRes.status}`, pulled: 0, skipped: 0, failed: 0 };
+    const wanted = (idx.sessions || []).filter((r) => !ids.length || ids.includes(r.id));
+    const local = new Set(listRollouts(join(deps.codexHome, "sessions"), 400).map((f) => (/([0-9a-f-]{36})\.jsonl$/.exec(f) || [])[1] || ""));
+    const state = readState(deps.stateFile);
+    let pulled = 0, skipped = 0, failed = 0;
+    const doneIds: string[] = [];
+    for (const row of wanted) {
+      if (local.has(row.id)) { skipped += 1; continue; }
+      try {
+        const res = await fetch(`${deps.accountsBase}/sync/session?id=${encodeURIComponent(row.id)}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(60000) });
+        const body = (await res.json().catch(() => null)) as { ok?: boolean; content?: string } | null;
+        if (!res.ok || !body?.ok || typeof body.content !== "string") { failed += 1; continue; }
+        const lines = body.content.split("\n").filter((l) => l.trim());
+        /* 目标日期目录：按首行时间戳（与引擎约定一致）；取不到就用今天 */
+        let stamp = new Date();
+        try { const first = JSON.parse(lines[0]) as { timestamp?: string }; if (first.timestamp) stamp = new Date(first.timestamp); } catch { /* 用今天 */ }
+        const y = String(stamp.getFullYear());
+        const m = String(stamp.getMonth() + 1).padStart(2, "0");
+        const d = String(stamp.getDate()).padStart(2, "0");
+        const dir = join(deps.codexHome, "sessions", y, m, d);
+        mkdirSync(dir, { recursive: true });
+        const file = join(dir, `rollout-${stamp.toISOString().slice(0, 19).replace(/[:T]/g, "-")}-${row.id}.jsonl`);
+        writeFileSync(file, lines.join("\n") + "\n");
+        state.sessions[row.id] = { path: relative(join(deps.codexHome, "sessions"), file), pushedLines: lines.length, sizeBytes: Buffer.byteLength(body.content, "utf8"), title: state.sessions[row.id]?.title || "", project: state.sessions[row.id]?.project || "" };
+        pulled += 1; doneIds.push(row.id);
+      } catch { failed += 1; }
+    }
+    if (pulled) writeState(deps.stateFile, state);
+    return { ok: true, pulled, skipped, failed, ids: doneIds };
+  } catch (error) {
+    return { ok: false, reason: (error as Error).message, pulled: 0, skipped: 0, failed: 0 };
+  }
+}
