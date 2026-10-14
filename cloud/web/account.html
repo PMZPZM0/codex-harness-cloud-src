@@ -229,6 +229,31 @@
       </div>
 
       <div class="card">
+        <h2>限时福利 <span class="tag" id="lbState">读取中…</span></h2>
+        <div class="hint" id="lbMeta" style="margin-bottom:10px">内置供应商：登录即可用，无需自己配置密钥。</div>
+        <div class="field-row">
+          <input class="field" id="lbSearch" placeholder="搜索模型…" autocomplete="off" />
+          <button class="btn sm" id="lbAll">全选</button>
+          <button class="btn sm" id="lbNone">清空</button>
+          <button class="btn sm" id="lbReload">重新同步目录</button>
+        </div>
+        <div id="lbList"><div class="empty">读取中…</div></div>
+        <div class="btn-row"><span class="status" id="lbStatus"></span></div>
+        <div class="hint" style="margin-top:8px">
+          勾选即生效，改动自动保存到账号（换台电脑登录也是同一份选择）。
+          ⛔ 未勾选的模型即使被直接调用也会被服务端拒绝。
+        </div>
+        <details style="margin-top:10px">
+          <summary class="hint" style="cursor:pointer">本机接入（高级）</summary>
+          <div class="hint" style="margin-top:8px">
+            地址填 <code id="lbBase">/cloud-api/proxy/v1</code>；密钥点下面签发（明文只显示这一次）。
+          </div>
+          <div class="btn-row"><button class="btn sm" id="lbToken">签发本机接入密钥</button></div>
+          <div class="hint" id="lbTokenOut" style="margin-top:8px;word-break:break-all"></div>
+        </details>
+      </div>
+
+      <div class="card">
         <h2>危险区</h2>
         <div class="btn-row">
           <button class="btn danger" id="cloudWipe" disabled>清空云端数据（未开放）</button>
@@ -533,7 +558,79 @@
     }).catch(function () { st.textContent = "本机助手未运行 —— 请先启动它"; st.className = "status warn"; });
   };
 
-  function refreshCloud() { refreshSync(); }
+  /* ── 限时福利：模型目录 + 勾选管理 ─────────────────────────────────────
+     · 目录来自 WBM（经服务端只读凭据同步）；每模型的 credits = 积分消耗倍率
+     · 勾选是**整集覆盖**保存（前端去抖 500ms）；服务端按此强制放行，
+       所以界面不是"建议"，而是唯一开关。 */
+  var lbData = null;
+  var lbTimer = 0;
+  function lbRender() {
+    var box = $("lbList"); box.innerHTML = "";
+    var kw = String(($("lbSearch") || {}).value || "").trim().toLowerCase();
+    var list = (lbData && lbData.models) || [];
+    var shown = list.filter(function (m) {
+      return !kw || (m.id + " " + (m.name || "") + " " + (m.tags || []).join(" ")).toLowerCase().indexOf(kw) >= 0;
+    });
+    if (!shown.length) { box.appendChild(el("div", "empty", list.length ? "没有匹配的模型" : "目录为空（WBM 侧可能未配置）")); return; }
+    shown.forEach(function (m) {
+      var row = el("label", "check");
+      var cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = !!m.enabled; cb.dataset.id = m.id;
+      cb.onchange = function () {
+        m.enabled = cb.checked;
+        $("lbStatus").textContent = "保存中…"; $("lbStatus").className = "status";
+        clearTimeout(lbTimer);
+        lbTimer = setTimeout(lbSave, 500);
+      };
+      row.appendChild(cb);
+      var name = el("span", null, m.name || m.id);
+      row.appendChild(name);
+      var meta = el("span", "hint");
+      meta.style.marginLeft = "auto";
+      meta.textContent = (m.credits ? "消耗 " + m.credits : "免费") +
+        (m.contextLength ? " · " + Math.round(m.contextLength / 1000) + "K" : "");
+      row.appendChild(meta);
+      box.appendChild(row);
+    });
+  }
+  function lbSave() {
+    var ids = ((lbData && lbData.models) || []).filter(function (m) { return m.enabled; }).map(function (m) { return m.id; });
+    api("/models/enabled", { method: "POST", body: { ids: ids } }).then(function (r) {
+      if (r.ok && r.j && r.j.ok) { $("lbStatus").textContent = "已保存 ✓ 启用 " + r.j.enabledCount + " 个"; $("lbStatus").className = "status ok"; }
+      else { $("lbStatus").textContent = "保存失败，已回滚"; $("lbStatus").className = "status bad"; lbLoad(); }
+    }).catch(function () { $("lbStatus").textContent = "网络错误"; $("lbStatus").className = "status bad"; });
+  }
+  function lbLoad(force) {
+    $("lbStatus").textContent = ""; $("lbStatus").className = "status";
+    api(force ? "/admin/models/sync" : "/models").then(function (r) {
+      if (!r.ok || !r.j) { $("lbList").innerHTML = ""; $("lbList").appendChild(el("div", "empty", "读取失败")); return; }
+      if (r.j.ok === false) { $("lbList").innerHTML = ""; $("lbList").appendChild(el("div", "empty", "目录同步失败：" + (r.j.error || "未知"))); return; }
+      lbData = r.j;
+      var st = $("lbState");
+      st.textContent = (r.j.provider && r.j.provider.ready) ? "可用" : "待配置";
+      st.style.background = (r.j.provider && r.j.provider.ready) ? "var(--ok-soft)" : "var(--warn-soft)";
+      st.style.color = (r.j.provider && r.j.provider.ready) ? "var(--ok)" : "var(--warn)";
+      $("lbMeta").innerHTML = "内置供应商：登录即可用，无需自己配置密钥。" +
+        "已启用 <b>" + (r.j.enabledCount || 0) + "</b> / " + (r.j.total || 0) + " 个模型" +
+        (r.j.syncedAt ? " · 目录同步于 " + ago(r.j.syncedAt) : "") +
+        " · 来源 " + (r.j.source || "—");
+      if (r.j.provider && r.j.provider.baseUrl) $("lbBase").textContent = r.j.provider.baseUrl;
+      lbRender();
+    }).catch(function () { $("lbList").innerHTML = ""; $("lbList").appendChild(el("div", "empty", "读取失败")); });
+  }
+  $("lbSearch").oninput = lbRender;
+  $("lbAll").onclick = function () { ((lbData || {}).models || []).forEach(function (m) { m.enabled = true; }); lbRender(); lbSave(); };
+  $("lbNone").onclick = function () { ((lbData || {}).models || []).forEach(function (m) { m.enabled = false; }); lbRender(); lbSave(); };
+  $("lbReload").onclick = function () { lbLoad(true); };
+  $("lbToken").onclick = function () {
+    var out = $("lbTokenOut"); out.textContent = "签发中…";
+    api("/proxy/token", { method: "POST" }).then(function (r) {
+      if (r.ok && r.j && r.j.token) { out.innerHTML = "本机接入密钥（<b>只显示这一次</b>，请立即保存）：<br><code>" + r.j.token + "</code>"; }
+      else { out.textContent = "签发失败：" + ((r.j && r.j.error) || "未知"); }
+    }).catch(function () { out.textContent = "网络错误"; });
+  };
+
+  function refreshCloud() { refreshSync(); lbLoad(false); }
 
   function legacyRefreshCloud() {
     $("cloudData").innerHTML = ""; $("cloudData").appendChild(el("div", "empty", "读取中…"));

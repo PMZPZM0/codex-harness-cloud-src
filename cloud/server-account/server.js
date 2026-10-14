@@ -704,11 +704,34 @@ const server = http.createServer(async (req, res) => {
       hit.row.lastUsedAt = Date.now();
       persist();
       if (!WBM_BASE || !WBM_GATEWAY_KEY) return send(503, { ok: false, error: "upstream-not-configured" });
-      /* 转发：只替换 Authorization，其余原样（模型、参数、流式标志） */
-      const target = `${WBM_BASE}/v1/${p.endsWith("models") ? "models" : "chat/completions"}`;
+      /* ⛔ 先把请求体读完（判模型与转发都要用）。
+         10-14 踩坑：原先把这段放在下面 ⇒ 上面的判模型引用了尚未声明的 bodyBuf，
+         抛错被 catch 吞掉 ⇒ 未勾选的模型**照样放行**。顺序必须是这样。 */
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const bodyBuf = Buffer.concat(chunks);
+      /* ⛔ 勾选即生效：只放行用户勾选的模型（未勾选 ⇒ 403，附明确文案）。
+         这是"勾选管理哪些模型生效"的执行点 —— 界面只是表达，这里是强制。 */
+      const allowed = new Set(Array.isArray(db.userModels[hit.username]) ? db.userModels[hit.username] : []);
+      if (p.endsWith("models")) {
+        // 模型清单也按勾选过滤（客户端因此只看得到自己启用的）
+        const upstreamList = await (async () => {
+          try {
+            const r = await fetch(`${WBM_BASE}/v1/models`, { headers: { Authorization: `Bearer ${WBM_GATEWAY_KEY}` } });
+            return r.ok ? await r.json() : null;
+          } catch { return null; }
+        })();
+        if (!upstreamList) return send(502, { ok: false, error: "upstream-unreachable" });
+        const data = Array.isArray(upstreamList.data) ? upstreamList.data.filter((m) => allowed.has(String(m.id || ""))) : [];
+        return send(200, { ...upstreamList, data });
+      }
+      let wantedModel = "";
+      try { wantedModel = String((JSON.parse(bodyBuf.toString("utf8")) || {}).model || ""); } catch { /* 解析不了就交给上游报错 */ }
+      if (wantedModel && !allowed.has(wantedModel)) {
+        return send(403, { ok: false, error: "model-not-enabled", message: "该模型未在「限时福利」里启用 —— 请在云端管理的模型列表里勾选后重试" });
+      }
+      /* 转发：只替换 Authorization，其余原样（模型、参数、流式标志） */
+      const target = `${WBM_BASE}/v1/${p.endsWith("models") ? "models" : "chat/completions"}`;
       try {
         const upstream = await fetch(target, {
           method: req.method,
