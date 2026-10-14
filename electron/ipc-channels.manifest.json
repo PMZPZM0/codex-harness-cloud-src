@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 491,
+  "count": 495,
   "channels": [
     {
       "name": "request",
@@ -4631,6 +4631,46 @@
       "invokeArgs": "",
       "cast": null,
       "note": "免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除）"
+    },
+    {
+      "name": "limitedBenefitCatalog",
+      "channel": "limited-benefit:catalog",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; provider?: { id: string; name: string; baseUrl: string; ready: boolean; hasProxyToken?: boolean }; models?: { id: string; name?: string; credits?: string; enabled?: boolean }[]; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "\u9650\u65f6\u798f\u5229\uff08limited-benefit \u57df\uff0c10-14\uff09\uff1a\u5e26\u8bbe\u5907\u4ee4\u724c\u62c9\u670d\u52a1\u7aef /models\uff08\u542b\u9010\u6a21\u578b\u52fe\u9009\u72b6\u6001\u4e0e\u79ef\u5206\u500d\u7387\uff09\u3002\u26d4 \u4e0d\u8fd4\u56de\u4efb\u4f55\u5bc6\u94a5\u4e0e\u4e0a\u6e38\u5730\u5740"
+    },
+    {
+      "name": "limitedBenefitToken",
+      "channel": "limited-benefit:token",
+      "paramsImpl": "input?: { force?: boolean }",
+      "paramsDecl": "input?: { force?: boolean }",
+      "returns": "Promise<{ ok: boolean; token?: string; error?: string; reused?: boolean }>",
+      "invokeArgs": "[input]",
+      "cast": null,
+      "note": "\u9650\u65f6\u798f\u5229\uff1a\u53d6\u672c\u7528\u6237\u4ee3\u7406\u4ee4\u724c\uff08\u524d\u7f00 wap_\uff09\u3002\u26d4 \u660e\u6587\u4ec5\u672c\u901a\u9053\u8fd4\u56de\u4e00\u6b21\uff08\u6e32\u67d3\u5c42\u7acb\u5373\u5199\u8fdb\u4f9b\u5e94\u5546 apiKey\uff09\uff1bforce=true \u5f3a\u5236\u91cd\u65b0\u7b7e\u53d1"
+    },
+    {
+      "name": "limitedBenefitStatus",
+      "channel": "limited-benefit:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ paired: boolean; hasToken: boolean; provider: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "\u9650\u65f6\u798f\u5229\uff1a\u672c\u673a\u72b6\u6001\uff08\u662f\u5426\u5df2\u914d\u5bf9 / \u662f\u5426\u5df2\u6709\u4ee3\u7406\u4ee4\u724c\uff09\uff0c\u4e0d\u8054\u7f51"
+    },
+    {
+      "name": "limitedBenefitApply",
+      "channel": "limited-benefit:apply",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; models: number; changed: boolean; promoted: boolean; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "限时福利：按当前勾选把供应商行写成最新（勾选 = 下拉框可见）。⛔ 只 upsert 这一行：不抢生效位、不禁用用户其他供应商（故意不走 custom-model:save）"
     },
     {
       "name": "cloudSyncStatus",

@@ -265,12 +265,41 @@ export const appFeature = defineFeature<null>({
          摘掉它 ⇒ 新实例走 `loadFile(dist/index.html)`（本地构建产物，一定在）。
          打包版本就没有该变量，此操作对其无影响。窗口侧还有一道加载兜底（见 window-factory）。 */
       if (!host.app.isPackaged()) delete process.env.VITE_DEV_SERVER_URL;
-      // ⚠️ 接缝的 relaunch 收 `{ args?: string[] }`；不传参时内部走 `app.relaunch(undefined)`
-      //    ⇒ 与原来裸 `app.relaunch()` 行为一致（守卫【174】钉住这条）。
-      host.app.relaunch();
+      /* ⛔⛔ 用**显式分离 spawn** 而不是 `app.relaunch()`（10-14 用户报障「保存重启，怎么就关掉了
+         应用，没有自动重启呢」）—— 云助手无头形态专有的坑，桌面版（`electron .`）不受影响：
+         对照实验（同机同探针）`app.relaunch()` 返回 200 不抛错，进程表 1 秒内从 3 归零，
+         之后 20 秒无新进程、8917 一直 ECONNREFUSED（**复现报障**）；改 spawn 后 t+2s 起
+         进程恢复、8917 回 `{"ok":true}` 稳定到 t+20s（**修复**）。
+         要点：① 子进程立刻起，不等旧进程退完；② argv 逐字继承（打包版与 dev 同一条路）；
+         ③ 旧进程随后照常 quit() 走完整清理。 */
+      host.app.releaseSingleInstanceLock();
+      /* stdio 落盘：新实例是独立应用不该挂旧进程管道（旧进程一退管道就断），留一份
+         stderr 便于重启失败时排查（本应用无可见终端）。cwd 沿用（dev 下脚本路径是相对的）。 */
+      let childLog: number | "ignore" = "ignore";
+      try {
+        const logPath = path.join(os.homedir(), "Codex Assistant", "relaunch-child.log");
+        const { openSync } = require("node:fs") as typeof import("node:fs");
+        childLog = openSync(logPath, "w");
+      } catch { childLog = "ignore"; }
+      const child = spawn(process.execPath, process.argv.slice(1), {
+        detached: true,
+        stdio: ["ignore", childLog, childLog],
+        cwd: process.cwd(),
+        /* ⛔⛔ 剔除 ELECTRON_RUN_AS_NODE（10-14 实证：另一条「重启后应用彻底消失」成因）：
+           该变量在环境里时 electron.exe 以**纯 Node 模式**启动 ⇒ require("electron") 返回
+           undefined ⇒ registerSchemesAsPrivileged 抛 TypeError ⇒ 子进程秒退。
+           本应用要起真 Electron 主进程，该变量任何情况下都不该传下去（用户的启动器 /
+           IDE / 工具链 shell 都可能带上），故显式删除而不依赖调用方环境。 */
+        env: (() => {
+          const next = { ...process.env };
+          delete next.ELECTRON_RUN_AS_NODE;
+          return next;
+        })(),
+      });
+      child.unref();   // 与旧进程脱钩：旧进程退出不带走它
       // 优雅退出（quit 而非 exit）：走 before-quit 全套清理（closeConfirmed /
-      // destroyAppTray / cleanupAll / ssh / voice），旧进程干净退出后新实例才起，
-      // 任务栏图标不会被旧进程的退出态顶成默认。
+      // destroyAppTray / cleanupAll / ssh / voice），旧进程干净退出，任务栏图标不会被
+      // 旧进程的退出态顶成默认。（新实例已在上面 spawn 出来，不依赖旧进程先退完。）
       host.app.quit();
     });
 

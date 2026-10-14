@@ -1101,6 +1101,74 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
   })();
   return;
 }
+/* ── ⑥ 积分与模型目录（10-14 用户令「面板里啥都没有」）────────────────────────
+   症状：积分卡/限时福利此前**只做在网站**，桌面面板看不到。
+   根因：服务端 /points/me 与 /models 原本只认网页会话（cookie），设备令牌读不到。
+        已在服务端加 accountWho()（会话或设备令牌都认），这里补本机转发。
+   ⛔ 只读 GET ⇒ 用 originAllowed（同源 GET 不带 Origin，见 /api/sync-state 那条注释）。 */
+if (p === "/api/cloud-points" && req.method === "GET") {
+  if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+  const deviceToken = readDeviceToken();
+  if (!GATED || !deviceToken) { deny(404, { ok: false, error: "no-device-token" }); return; }
+  void (async () => {
+    try {
+      const r = await fetch(`${ACCOUNTS_BASE}/points/me`, {
+        headers: { Authorization: `Bearer ${deviceToken}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      const meta = await r.json().catch(() => null);
+      deny(r.ok && meta ? 200 : 502, meta && typeof meta === "object" ? (meta as Record<string, unknown>) : { ok: false, error: "points-failed" });
+    } catch {
+      deny(502, { ok: false, error: "accounts-unreachable" });
+    }
+  })();
+  return;
+}
+if (p === "/api/cloud-models" && req.method === "GET") {
+  if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+  const deviceToken = readDeviceToken();
+  if (!GATED || !deviceToken) { deny(404, { ok: false, error: "no-device-token" }); return; }
+  void (async () => {
+    try {
+      const r = await fetch(`${ACCOUNTS_BASE}/models`, {
+        headers: { Authorization: `Bearer ${deviceToken}` },
+        signal: AbortSignal.timeout(10000),
+      });
+      const meta = await r.json().catch(() => null);
+      deny(r.ok && meta ? 200 : 502, meta && typeof meta === "object" ? (meta as Record<string, unknown>) : { ok: false, error: "models-failed" });
+    } catch {
+      deny(502, { ok: false, error: "accounts-unreachable" });
+    }
+  })();
+  return;
+}
+/* 勾选/取消勾选可用模型（写端点 ⇒ localUiAuthOk）。 */
+if (p === "/api/cloud-models-enabled" && req.method === "POST") {
+  if (!localUiAuthOk(req, url)) { deny(403, { ok: false, error: "unauthorized" }); return; }
+  const deviceToken = readDeviceToken();
+  if (!GATED || !deviceToken) { deny(404, { ok: false, error: "no-device-token" }); return; }
+  void (async () => {
+    try {
+      let raw = "";
+      await new Promise<void>((done) => {
+        req.on("data", (chunk) => { raw += chunk; if (raw.length > 256 * 1024) req.destroy(); });
+        req.on("end", () => done());
+        req.on("error", () => done());
+      });
+      const r = await fetch(`${ACCOUNTS_BASE}/models/enabled`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${deviceToken}`, "Content-Type": "application/json" },
+        body: raw || "{}",
+        signal: AbortSignal.timeout(10000),
+      });
+      const meta = await r.json().catch(() => null);
+      deny(r.ok && meta ? 200 : 502, meta && typeof meta === "object" ? (meta as Record<string, unknown>) : { ok: false, error: "models-enabled-failed" });
+    } catch {
+      deny(502, { ok: false, error: "accounts-unreachable" });
+    }
+  })();
+  return;
+}
 /* 配对码刷新（10-14 用户令「配对码没有刷新功能」）：把当前码作废并立即发一枚新的。
    用途：码泄露给人看过、或认领卡住想重来一把。⛔ 刷新后**旧码立刻失效**（轮询与认领都按新码走）。 */
 if (p === "/api/pair-code/refresh" && req.method === "POST") {
@@ -1472,18 +1540,37 @@ function probeAssetBase(): void {
 probeAssetBase();
 setInterval(probeAssetBase, 60_000);
 
-createServer((req, res) => route(req, res, shimJs)).listen(PORT, "127.0.0.1", () => {
-  console.log(`[headless] 桥与界面就绪 http://127.0.0.1:${PORT}（dist=${DIST_DIR}，invoke=${manifest.channels.length}，events=${onChannels.length}）`);
-  console.log(`[headless] 配对闸：${GATED ? `开 —— 必须先在网页注册账号（${ASSISTANT_WEB_ENTRY}），票据由本机向 ${ACCOUNTS_BASE} 核销` : "关 —— 独立模式（未配置账号服务）：本机码即可配对，无账号校验"}`);
-  // ⛔ 配对码只打在控制台：能看到这行输出的人才配得上这台机器（与伴生服务同一条信任模型）
-  printOwnerPairBanner();
-  // 账号状态轮询：账号被停用后，已签发的令牌也要失效（失败放行，见 pollAccountStatus 头注）
-  setInterval(pollAccountStatus, ACCOUNT_POLL_MS).unref();
-  void pollAccountStatus();
-  // 设备入网轮询：等网页认领本机码（认领 ⇒ 绑定账号 + 落盘设备 token ⇒ 允许连服务器）
-  setInterval(pollDeviceClaim, 5000).unref();
-  void pollDeviceClaim();
-});
+/* ⛔⛔ 端口要**重试绑定**（10-14 实证：这是「保存重启后应用彻底消失」的最后一道坎）。
+   重启路径上旧进程刚被要求退出、正在跑 before-quit 清理，8917 往往**还握在它手里**；
+   裸 `listen()` 撞上 EADDRINUSE 会发一个没人接的 error 事件 ⇒ 未捕获异常 ⇒
+   新进程**秒退且不留一句话**（实测子进程日志停在 `appPath 已校正` 之后）。
+   单实例锁只挡"用户又开了一个应用"，挡不住"重启竞态"这个窗口。
+   ⇒ 逐步退让重试（最多 ~15s，覆盖旧进程清理耗时），仍失败才明确报错退出。 */
+function listenWithRetry(attempt = 0): void {
+  const server = createServer((req, res) => route(req, res, shimJs));
+  server.once("error", (error: NodeJS.ErrnoException) => {
+    if (error.code === "EADDRINUSE" && attempt < 30) {
+      console.log(`[headless] 端口 ${PORT} 被占用（旧实例正在退出？）—— 第 ${attempt + 1} 次重试…`);
+      setTimeout(() => listenWithRetry(attempt + 1), 500);
+      return;
+    }
+    console.error(`[headless] ⛔ 端口 ${PORT} 绑定失败：${error.code ?? error.message}（应用无法提供界面）`);
+    app.exit(1);
+  });
+  server.listen(PORT, "127.0.0.1", () => {
+    console.log(`[headless] 桥与界面就绪 http://127.0.0.1:${PORT}（dist=${DIST_DIR}，invoke=${manifest.channels.length}，events=${onChannels.length}）`);
+    console.log(`[headless] 配对闸：${GATED ? `开 —— 必须先在网页注册账号（${ASSISTANT_WEB_ENTRY}），票据由本机向 ${ACCOUNTS_BASE} 核销` : "关 —— 独立模式（未配置账号服务）：本机码即可配对，无账号校验"}`);
+    // ⛔ 配对码只打在控制台：能看到这行输出的人才配得上这台机器（与伴生服务同一条信任模型）
+    printOwnerPairBanner();
+    // 账号状态轮询：账号被停用后，已签发的令牌也要失效（失败放行，见 pollAccountStatus 头注）
+    setInterval(pollAccountStatus, ACCOUNT_POLL_MS).unref();
+    void pollAccountStatus();
+    // 设备入网轮询：等网页认领本机码（认领 ⇒ 绑定账号 + 落盘设备 token ⇒ 允许连服务器）
+    setInterval(pollDeviceClaim, 5000).unref();
+    void pollDeviceClaim();
+  });
+}
+listenWithRetry();
 
 // 真 main.ts：86 个域 / 真引擎 / 全部业务。⛔ 必须最后 require。
 require("./main");

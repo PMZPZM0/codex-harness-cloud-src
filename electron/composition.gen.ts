@@ -96,6 +96,7 @@ import { knowledgeBaseFeature as feat_kb } from "./features/knowledge-base-ipc";
 import { modelViewerFeature as feat_model_viewer } from "./features/model-viewer-ipc";
 import { imageLabFeature as feat_image_lab } from "./features/image-lab";
 import { freeGatewayFeature as feat_free_gateway } from "./features/free-gateway-ipc";
+import { limitedBenefitFeature as feat_limited_benefit } from "./features/limited-benefit-ipc";
 import { whatsNewFeature as feat_whatsnew } from "./features/whats-new-ipc";
 import { htmlVideoFeature as feat_html_video } from "./features/html-video-ipc";
 import { cloudReserveFeature as feat_cloud_reserve } from "./features/cloud-reserve-ipc";
@@ -201,6 +202,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "model-viewer", plugin: feat_model_viewer as Plugin<unknown>, config: null },
   { id: "image-lab", plugin: feat_image_lab as Plugin<unknown>, config: null },
   { id: "free-gateway", plugin: feat_free_gateway as Plugin<unknown>, config: null },
+  { id: "limited-benefit", plugin: feat_limited_benefit as Plugin<unknown>, config: null },
   { id: "whatsnew", plugin: feat_whatsnew as Plugin<unknown>, config: null },
   { id: "html-video", plugin: feat_html_video as Plugin<unknown>, config: null },
   { id: "cloud-reserve", plugin: feat_cloud_reserve as Plugin<unknown>, config: null },

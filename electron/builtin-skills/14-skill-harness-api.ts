@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（93 个能力域 / 491 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（94 个能力域 / 495 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -263,6 +263,10 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 ### free-gateway（7 通道）
 **免费模型网关**（10-12，第三方开源项目 dsh-our-free-model 的本地侧车，MIT）：把它的独立网关（127.0.0.1:18900，OpenAI 兼容）作为可选下载服务接入。⛔ 这些通道是**宿主生命周期管理**（下载/启停/健康/取 Key/管理台/拉模型清单），不是模型工具 —— 模型侧永远不调它们；要用免费模型：模型设置页点推荐卡 → 下载并启动 → 在上游管理台登录渠道账号 → 一键注册为供应商，然后正常选模型。⛔ 免责：上游与本项目开发者无关，渠道合规性与可用性由使用者自担
 通道：free-gateway:download, free-gateway:models, free-gateway:open-admin, free-gateway:start, free-gateway:status, free-gateway:stop, free-gateway:uninstall
+
+### limited-benefit（4 通道）
+**限时福利**（10-14）：云端账号服务内置的模型供应商（模型目录由 WorkBuddy Manager 同步，逐模型带积分倍率）。这些通道是**宿主管理面**（拉目录 / 取代理令牌 / 同步成本机供应商行），不是模型工具 —— 模型侧永远不调它们；要用它：云端管理面板勾选模型（勾选 = 本机模型下拉框可见）→ 在下拉框里选中的即生效，按倍率扣积分。⛔ 上游真实地址与网关密钥只在服务端，客户端只拿到同源代理路径；代理令牌（wap_ 前缀）明文仅在签发那一次出现。
+通道：limited-benefit:catalog, limited-benefit:token, limited-benefit:status, limited-benefit:apply
 
 ### dialog（6 通道）
 文件/目录选择对话框（含跨窗口）

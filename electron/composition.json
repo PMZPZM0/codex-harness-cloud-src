@@ -625,6 +625,13 @@
       "config": null
     },
     {
+      "id": "limited-benefit",
+      "enabled": true,
+      "file": "features/limited-benefit-ipc.ts",
+      "export": "limitedBenefitFeature",
+      "config": null
+    },
+    {
       "id": "whatsnew",
       "enabled": true,
       "file": "features/whats-new-ipc.ts",

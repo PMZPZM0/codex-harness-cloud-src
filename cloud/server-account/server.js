@@ -536,6 +536,21 @@ const server = http.createServer(async (req, res) => {
       const gone = revokeDevice(device.username, body && body.id);
       return gone ? send(200, { ok: true }) : send(404, { ok: false, error: "设备不存在" });
     }
+    /* ── 统一身份：网页会话 或 设备令牌 ─────────────────────────────────────────
+       ⛔ 桌面端「云端管理」面板没有登录会话，只有设备令牌 ⇒ 这两类只读/自助接口
+       必须同时认设备令牌（否则面板里就是"啥都没有"）。管理员专属接口**不在此列**。 */
+    function accountWho() {
+      if (me) return { username: me.username, role: me.role, via: "session" };
+      const header = String(req.headers.authorization || "");
+      const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+      const device = findDeviceByToken(token);
+      if (device) {
+        const u = db.users.find((x) => x.username === device.username);
+        if (u && !u.disabled) return { username: device.username, role: u.role, via: "device" };
+      }
+      return null;
+    }
+
     /* ── 模型目录同步（WBM → 本服务）────────────────────────────────────────────
        拉 WBM /api/model-catalog，归一化成客户端要的字段；credits（积分倍率）原样保留 ——
        ⛔ 倍率是"消耗速度随模型而定"的**唯一真相源**，本服务只转发不重写。 */
@@ -673,9 +688,10 @@ const server = http.createServer(async (req, res) => {
     }
     /* ── 内置供应商「限时福利」：模型列表（含每模型积分倍率）+ 生效勾选 ───────── */
     if (p === "/models" && req.method === "GET") {
-      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      const who = accountWho();
+      if (!who) return send(401, { ok: false, error: "unauthorized" });
       const pulled = await pullModelCatalog(false);
-      const enabled = new Set(Array.isArray(db.userModels[me.username]) ? db.userModels[me.username] : []);
+      const enabled = new Set(Array.isArray(db.userModels[who.username]) ? db.userModels[who.username] : []);
       const models = (db.modelCatalog.list || []).map((m) => ({ ...m, enabled: enabled.has(m.id) }));
       return send(200, {
         ok: true,
@@ -687,7 +703,7 @@ const server = http.createServer(async (req, res) => {
           baseUrl: BUILTIN_PROXY_PATH,
           ready: Boolean(WBM_BASE && WBM_GATEWAY_KEY),
           /* 客户端据此决定是否要调 /proxy/token 签发（明文只在那一次响应里） */
-          hasProxyToken: Boolean(db.proxyTokens[me.username]),
+          hasProxyToken: Boolean(db.proxyTokens[who.username]),
         },
         models,
         enabledCount: enabled.size,
@@ -700,21 +716,26 @@ const server = http.createServer(async (req, res) => {
     }
     /* 勾选生效模型：整集覆盖（前端去抖后提交全量），只接受目录里存在的 id */
     if (p === "/models/enabled" && req.method === "POST") {
-      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      const who = accountWho();
+      if (!who) return send(401, { ok: false, error: "unauthorized" });
       const body = await readBody();
       const known = new Set((db.modelCatalog.list || []).map((m) => m.id));
       const ids = Array.isArray(body && body.ids) ? body.ids.map(String).filter((id) => known.has(id)) : [];
-      db.userModels[me.username] = Array.from(new Set(ids));
+      db.userModels[who.username] = Array.from(new Set(ids));
       persist();
-      return send(200, { ok: true, enabledCount: db.userModels[me.username].length, enabled: db.userModels[me.username] });
+      return send(200, { ok: true, enabledCount: db.userModels[who.username].length, enabled: db.userModels[who.username] });
     }
-    /* 签发 / 轮换本用户的代理令牌（会话鉴权）。明文**仅此一次**返回，之后无法再取。 */
+    /* 签发 / 轮换本用户的代理令牌（明文**仅此一次**返回，之后无法再取）。
+       ⛔ 10-14：鉴权从「只认网页会话」改为 accountWho()（会话 或 设备令牌）——
+       桌面端「云端管理」面板只有设备令牌，否则签不出令牌 ⇒ 限时福利供应商没有 key
+       ⇒ 模型勾了也调不通（用户实测「我选了模型生效，下拉框里面没有啊」的连环根因之一）。 */
     if (p === "/proxy/token" && req.method === "POST") {
-      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      const who = accountWho();
+      if (!who) return send(401, { ok: false, error: "unauthorized" });
       const token = PROXY_TOKEN_PREFIX + crypto.randomBytes(32).toString("base64url");
-      db.proxyTokens[me.username] = { hash: hashProxyToken(token), prefix: token.slice(0, 12), createdAt: Date.now(), lastUsedAt: 0, ips: [] };
+      db.proxyTokens[who.username] = { hash: hashProxyToken(token), prefix: token.slice(0, 12), createdAt: Date.now(), lastUsedAt: 0, ips: [] };
       persist();
-      console.log(`[proxy] 已为账号 ${me.username} 签发代理令牌 ${token.slice(0, 12)}…[已脱敏]`);
+      console.log(`[proxy] 已为账号 ${who.username} 签发代理令牌 ${token.slice(0, 12)}…[已脱敏] via=${who.via}`);
       return send(200, { ok: true, token, prefix: token.slice(0, 12), note: "明文仅此一次，请客户端立即保存到本机配置" });
     }
     /* 代理转发的目标：OpenAI 兼容的对话接口（流式原样透传）。
@@ -825,15 +846,16 @@ const server = http.createServer(async (req, res) => {
     }
     /* ── 积分：自己的余额与流水 / 管理端总览与发放 ─────────────────────────── */
     if (p === "/points/me" && req.method === "GET") {
-      if (!me) return send(401, { ok: false, error: "unauthorized" });
-      const acct = pointsOf(me.username);
+      const who = accountWho();
+      if (!who) return send(401, { ok: false, error: "unauthorized" });
+      const acct = pointsOf(who.username);
       return send(200, {
         ok: true,
-        username: me.username,
+        username: who.username,
         balance: acct.balance,
         signupGrant: SIGNUP_GRANT,
         txns: acct.txns.slice(0, 50),
-        verify: pointsVerify(me.username),
+        verify: pointsVerify(who.username),
       });
     }
     if (p === "/admin/points" && req.method === "GET") {
