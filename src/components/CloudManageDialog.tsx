@@ -99,12 +99,23 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
       .then(() => refresh())
       .catch(() => undefined);
   };
-  /* 当前这台：断开并**自动重连** —— 主进程断开后会自动再开授权页，网页已登录即自动认领，
-     整条重连闭环无人值守（用户令「流程都自动化了，我想自动重新配对」）。 */
+  /* 当前这台：断开并回到配对（不自动重连 —— 让用户在配对页自己选"重连原号 / 换号"）。 */
   const reconnect = () => {
     setDisconnecting(true);
     void fetch("/api/cloud-disconnect", { method: "POST" })
       .then(() => { setTimeout(() => location.reload(), 400); })
+      .catch(() => setDisconnecting(false));
+  };
+  /* 换绑：断开 + **强制打开登录表单**（switch=1，忽略网页当前登录态）⇒ 登另一个号即完成换绑。
+     ⛔ 用户实测「我想换绑的机会都没有」—— 这条就是那个机会。 */
+  const switchAccount = () => {
+    setDisconnecting(true);
+    void fetch("/api/cloud-disconnect", { method: "POST" })
+      .then(() => {
+        try { localStorage.removeItem("chc-token"); } catch { /* 忽略 */ }
+        void fetch("/api/open-auth?switch=1", { method: "POST" }).catch(() => undefined);
+        setTimeout(() => location.reload(), 800);
+      })
       .catch(() => setDisconnecting(false));
   };
 
@@ -201,11 +212,18 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
 
         <section className="cloud-manage-sec">
           <div className="cloud-manage-label">危险区</div>
+          {/* ⛔ 10-14 用户令「我想换绑的机会都没有」：这一条就是换绑入口 ——
+              断开本机绑定 + **强制打开登录表单**（switch=1，忽略网页当前登录态）
+              ⇒ 登另一个号即完成换绑。 */}
+          <button type="button" className="cloud-manage-btn danger" onClick={switchAccount} disabled={disconnecting}>
+            <Unplug size={13} />
+            {disconnecting ? "正在断开…" : "更换绑定账号（换号登录后重新认领）"}
+          </button>
           <button type="button" className="cloud-manage-btn danger" onClick={disconnect} disabled={disconnecting || !paired}>
             <Unplug size={13} />
             {disconnecting ? "正在断开…" : "断开云端连接（清空绑定，回到配对）"}
           </button>
-          <div className="cloud-manage-muted">断开后本机仍可离线使用独立功能，但云端管理与自动更新需要重新认领。</div>
+          <div className="cloud-manage-muted">断开后本机仍可离线使用独立功能，但云端管理与自动更新需要重新认领。要换号请用上面那条「更换绑定账号」。</div>
         </section>
 
         {note ? <div className="cloud-manage-note">{note}</div> : null}
