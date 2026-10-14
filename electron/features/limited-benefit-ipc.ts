@@ -207,16 +207,22 @@ async function applyProvider(): Promise<{ ok: boolean; models: number; changed: 
     enabled: picked.length > 0 ? true : (previous?.enabled ?? false),
   } as CustomModelFile;
 
+  /* ⛔⛔ 令牌会轮换（重签 / 换绑 / 服务端清记录）—— 旧 key 随即失效，但行里还留着它，
+     于是「本机静默 401、界面仍显示已安全保存」（10-14 实证：令牌缓存已是新串，
+     行里还是上一枚）。所以判据必须落在**令牌本身有没有变**上，不能只看「有没有 key」。 */
+  const prevKey = decryptRowKey(previous?.encryptedKey);
+  const keyStale = Boolean(token) && token !== prevKey;
+
   const same = previous
     && JSON.stringify(previous.models ?? []) === JSON.stringify(next.models ?? [])
     && previous.baseUrl === next.baseUrl
     && previous.model === next.model
     && previous.enabled === next.enabled
-    && Boolean(previous.encryptedKey) === Boolean(previous.encryptedKey || token);
+    && !keyStale;
 
-  /* 首次注册才写令牌（已有 key 的行沿用原值：每次同步重写凭据毫无必要，且会无谓地
-     改动用户可见的配置时间戳）。加密不可用时不写（供应商届时不可用，但绝不写明文）。 */
-  const finalRow: CustomModelFile = previous?.encryptedKey
+  /* 已有 key 且令牌未变时沿用原值（每次同步重写凭据毫无必要，且会无谓地改动用户可见的
+     配置时间戳）。加密不可用时不写（供应商届时不可用，但绝不写明文）。 */
+  const finalRow: CustomModelFile = (previous?.encryptedKey && !keyStale)
     ? next
     : { ...next, encryptedKey: token ? encryptToken(token) : undefined };
 
@@ -245,9 +251,12 @@ async function promoteIfVacant(row: CustomModelFile): Promise<boolean> {
     const alive = (await readCustomModels()).some((entry) => entry.provider === active.provider && entry.enabled !== false);
     if (alive) return false;
   }
-  if (active?.provider === row.provider) return false;   // 已经是自己，无需重复写
   /* 补上 model（见上方说明）：提升即选第一个模型，用户打开下拉框时当前值不会是空的。 */
   const picked: CustomModelFile = { ...row, model: row.model || row.models[0]?.id || "" };
+  /* ⛔⛔ 已是自己时**也不能直接返回** —— 生效档案里的 key 同样要跟着令牌走：令牌轮换后
+     旧 key 失效，引擎拿它调上游必然 401，而界面照旧显示「已安全保存」（10-14 实证）。
+     key 一致才算真的无需重写。 */
+  if (active?.provider === row.provider && active.encryptedKey === picked.encryptedKey) return false;
   /* 三种情况走到这里：①档案不存在 ②档案指向已被删除/禁用的供应商 ③档案本来就是这个 id
      （上面已排除）。统一写单数档案 + applyCustomModel（生成 config.toml + 下发全局 Key）。
      ⛔ restart:false —— 只是把空位填上，不需要打断任何在跑的回合（引擎下次读配置即生效）。 */
@@ -260,6 +269,13 @@ async function promoteIfVacant(row: CustomModelFile): Promise<boolean> {
 function encryptToken(token: string): string {
   if (!safeStorage.isEncryptionAvailable()) return "";
   return safeStorage.encryptString(token).toString("base64");
+}
+
+/** 读回供应商行里的明文令牌（仅用于与本机最新令牌比对，不落盘）。
+    读不出（未加密 / 格式坏 / 密钥换了）一律返回空串 ⇒ 上层判为「已失效」而重写。 */
+function decryptRowKey(encrypted: string | undefined): string {
+  if (!encrypted || !safeStorage.isEncryptionAvailable()) return "";
+  try { return safeStorage.decryptString(Buffer.from(encrypted, "base64")); } catch { return ""; }
 }
 
 export const limitedBenefitFeature = defineFeature<null>({
