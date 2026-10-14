@@ -360,9 +360,17 @@ function issueOwnerPair(): string {
   }
   return ownerPairCode;
 }
+/** 本机稳定标识：引擎的 installation_id（持久、跨重启不变）—— 认领时带给服务器，
+ *  同机重配对按它**更新那一条设备记录**，不再堆出一排"我的电脑"（10-14 实测修复）。 */
+function machineId(): string {
+  try { return readFileSync(join(app.getPath("userData"), "codex-home", "installation_id"), "utf8").trim().slice(0, 64); }
+  catch { return ""; }
+}
+
 /** 唤起系统浏览器打开授权页（主进程直开 —— 不依赖渲染层桥；自动与卡片按钮都走这里）。 */
 function openAuthPage(): void {
-  const url = ASSISTANT_WEB_ENTRY + "?claim=" + issueOwnerPair();
+  const mid = machineId();
+  const url = ASSISTANT_WEB_ENTRY + "?claim=" + issueOwnerPair() + (mid ? "&mid=" + encodeURIComponent(mid) : "");
   try { shell.openExternal(url); console.log("[device] 已唤起系统浏览器打开授权页：" + url); }
   catch (error) { console.error("[device] 唤起浏览器失败：", error); }
 }
@@ -1036,6 +1044,7 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
   if (p === "/pair") {
     if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
     const pairCode = GATED ? issueOwnerPair() : "";
+    const pairMid = machineId();
     const pairPage = `<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="utf-8"/>` +
       `<meta name="viewport" content="width=device-width,initial-scale=1"/><title>连接云端账号 · Codex Assistant</title>` +
       `<style>html,body{margin:0;min-height:100%;background:#141413;color:#ececea;` +
@@ -1066,8 +1075,8 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
       `<button class="go" id="go">打开授权页面</button>` +
       `<div class="fb" id="fb"></div>` +
       `<button class="quit" id="quit">取消并退出应用</button></div>` +
-      `<script>(function(){var code=${JSON.stringify(pairCode)};var web=${JSON.stringify(ASSISTANT_WEB_ENTRY)};` +
-      `var url=web+"?claim="+code;var tries=0;` +
+      `<script>(function(){var code=${JSON.stringify(pairCode)};var web=${JSON.stringify(ASSISTANT_WEB_ENTRY)};var mid=${JSON.stringify(pairMid)};` +
+      `var url=web+"?claim="+code+(mid?"&mid="+encodeURIComponent(mid):"");var tries=0;` +
       `function st(t){document.getElementById("st").textContent=t}` +
       `document.getElementById("go").onclick=function(){` +
       `document.getElementById("fb").style.display="block";` +
