@@ -412,6 +412,9 @@ function bindSeat(seat: string, username: string): void {
   const bindings = loadAccountBindings();
   if (seat === "owner") bindings.owner = name; else bindings.users[seat] = name;
   persistAccountBindings(bindings);
+  /* ⛔ 「配对过」标记（10-14 用户令）：只在**首次配对**时自动打开授权页；
+     断开过再启动的机器一律停在配对页等用户决定（否则断开后重启又被自动连回去）。 */
+  try { if (!existsSync(pairedOnceFile)) writeFileSync(pairedOnceFile, String(Date.now())); } catch { /* 忽略 */ }
 }
 function accountOf(seat: string): string {
   const bindings = loadAccountBindings();
@@ -473,6 +476,8 @@ async function pollAccountStatus(): Promise<void> {
    ⛔ 这就是"允许本地连接服务器"的那把钥匙：此后检查更新/将来的云端会话索引都凭它。
    ⛔ 只有还没绑定任何账号时才轮询（已配对就别再打服务器）。 */
 const deviceTokenFile = join(CHC_HOME, "device-token");
+/* 首次配对完成才会出现 —— 启动时的"自动打开授权页"只看它（见 bindSeat / 启动块）。 */
+const pairedOnceFile = join(CHC_HOME, "paired-once");
 function saveDeviceToken(token: string): void {
   mkdirSync(CHC_HOME, { recursive: true });
   writeFileSync(deviceTokenFile, token, { mode: 0o600 });
@@ -912,11 +917,9 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     persistAccountBindings({ owner: "", users: {} });
     try { rmSync(deviceTokenFile, { force: true }); } catch { /* 忽略 */ }
     console.log("[cloud] 已断开云端连接（清空账号绑定与设备 token）");
-    /* ⛔ 10-14 用户令「流程都自动化了，我想自动重新配对」：断开后**自动再打开授权页**，
-       网页侧若已登录会自动认领 ⇒ 整条重连闭环无人值守（不再只依赖启动时那一次自动打开）。
-       认领时带 &mid= ⇒ 同一台机器仍然只占一条设备记录（覆盖旧记录）。 */
-    authAutoOpened = true;
-    setTimeout(() => openAuthPage(), 600);
+    /* ⛔ 断开后**不自动重连**（10-14 用户实测要求改回）：停在配对页等用户决定 ——
+       页面上有「打开授权页面」（重连同一个号）与「换一个账号连接…」（换号）两个入口。
+       ⛔ 上一版在这里自动开授权页 ⇒ 断开瞬间又被网页自动认领连回去，用户没法换号。 */
     deny(200, { ok: true });
     return;
   }
@@ -1381,7 +1384,7 @@ if (process.env.HARNESS_ASSISTANT === "1") {
       else if (openInBrowser(assistantUrl())) console.log(`[headless] 窗口创建失败 → 兜底弹浏览器 ${assistantUrl()}`);
       /* ⛔ OAuth 式授权（10-13 晚）：开闸且未配对 ⇒ **主进程自动唤起系统浏览器**打开授权页
          （?claim= 预填本机码）—— 用户零操作；卡片上的按钮只是"重新打开"的入口。 */
-      if (ok && GATED && !boundAccounts().length && !authAutoOpened) {
+      if (ok && GATED && !boundAccounts().length && !authAutoOpened && !existsSync(pairedOnceFile)) {
         authAutoOpened = true;
         setTimeout(() => openAuthPage(), 1200);
       }
