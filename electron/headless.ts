@@ -493,7 +493,11 @@ async function pollDeviceClaim(): Promise<void> {
   const code = ownerPairCode;
   if (!code) return;                                            // 本机码还没生成
   try {
-    const response = await fetch(`${ACCOUNTS_BASE}/device/claim-status?code=${encodeURIComponent(code)}`, { signal: AbortSignal.timeout(8000) });
+    /* ⛔ 按**机器**轮询（10-14 修回调超时）：用户手填了上一轮运行里的旧码认领时，
+       旧实现只按"当前码"查 ⇒ 永远匹配不上 ⇒ 回调页等 80 秒后报"授权未完成"。
+       device/status 机器优先、码兜底 ⇒ 只要认领落在这台机器上（带 machineId）就能接上。 */
+    const mid = machineId();
+    const response = await fetch(`${ACCOUNTS_BASE}/device/status?code=${encodeURIComponent(code)}${mid ? "&machineId=" + encodeURIComponent(mid) : ""}`, { signal: AbortSignal.timeout(8000) });
     if (!response.ok) return;
     cloudReachable = true;
     const payload = (await response.json().catch(() => null)) as { claimed?: boolean; token?: unknown; username?: unknown } | null;
@@ -1167,7 +1171,7 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
       `.j{display:inline-block;margin-top:14px;padding:10px 22px;border:0;border-radius:10px;cursor:pointer;font-size:13.5px;font-weight:600;` +
       `background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff}.m{font-size:11.5px;color:#7c7c76}</style></head><body><div class="box">` +
       `<div class="t" id="t">正在完成授权</div><div class="d" id="d"><span class="spin"></span>正在连接本机应用…</div></div>` +
-      `<script>(function(){var code=${JSON.stringify(claimCode)};var tries=0;` +
+      `<script>(function(){var code=${JSON.stringify(claimCode)};var web=${JSON.stringify(ASSISTANT_WEB_ENTRY)};var tries=0;` +
       `function focusApp(){fetch("/api/focus-app",{method:"POST"}).catch(function(){})}` +
       `function done(){document.getElementById("t").textContent="登录成功 · 已连接";` +
       `fetch("/api/pair-token-for-callback?code="+encodeURIComponent(code),{cache:"no-store"})` +
@@ -1179,10 +1183,13 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
       `document.getElementById("d").innerHTML="已切换到应用窗口，本页可以关闭。"};` +
       `focusApp();})` +
       `.catch(function(){location.replace("/")})}` +
-      `function fail(m){document.getElementById("t").textContent="授权未完成";document.getElementById("d").innerHTML='<span class="bad">'+m+'</span><br>可回到本机窗口点「重新打开授权页面」重试。';}` +
+      `function fail(m){document.getElementById("t").textContent="授权未完成";document.getElementById("d").innerHTML='<span class="bad">'+m+'</span>'+
+        '<div style="margin-top:14px"><a class="j" href="'+web+'account.html" style="text-decoration:none">前往用户中心</a></div>'+
+        '<div style="margin-top:10px"><a id="retry" style="font-size:12px;color:#8b8b86;cursor:pointer">重新打开授权页面…</a></div>';
+        document.getElementById("retry").onclick=function(){fetch("/api/open-auth",{method:"POST"}).catch(function(){})};}` +
       `function tick(){fetch("/api/cloud-state",{cache:"no-store"}).then(function(r){return r.json()}).then(function(s){` +
       `if(s&&s.machinePaired){done();return}` +
-      `if(++tries>40){fail("等待超时：本机没有收到认领结果。请确认网页上的认领是否成功，然后回到本机窗口重试。");return}` +
+      `if(++tries>20){fail("等待超时：本机没有收到认领结果。请确认网页上的认领是否成功，然后回到本机窗口重试。");return}` +
       `setTimeout(tick,600)})}tick();})();</script></body></html>`;
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
     res.end(okPage);
