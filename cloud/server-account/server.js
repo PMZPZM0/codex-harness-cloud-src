@@ -150,14 +150,23 @@ function listDevices(username) {
 }
 /** 认领：码 + 网页会话 ⇒ 绑定账号。token 由服务端密钥派生（见 serverSecret 头注）。
  *  同码重复认领 = 重装/换机 ⇒ 绑定刷新（token 不变，因为它只由码派生）。 */
-function claimDevice(code, username, name) {
+function claimDevice(code, username, name, machineId) {
   const raw = String(code || "").trim().toLowerCase();
   if (!DEVICE_CODE_RE.test(raw)) return { ok: false, reason: "bad-code" };
   const hash = deviceCodeHash(raw);
+  /* ⛔ 一台机器恒一条记录（10-14 用户实测：面板里堆了 6 条"我的电脑"）：认领带本机稳定标识
+     （installation_id）⇒ 先把**同一台机器**的旧记录删掉再写新的 = 重配对即更新。 */
+  const mid = String(machineId || "").trim().slice(0, 64);
+  if (mid) {
+    for (const [oldHash, device] of Object.entries(db.devices)) {
+      if (oldHash !== hash && device.machineId === mid) { delete db.devices[oldHash]; delete db.deviceCodes?.[oldHash]; }
+    }
+  }
   const prev = db.devices[hash];
   db.devices[hash] = {
     username,
     name: String(name || "").trim().slice(0, 32) || `设备-${deviceIdOf(hash)}`,
+    machineId: mid || prev?.machineId || "",
     tokenHash: crypto.createHash("sha256").update(deviceTokenOf(raw)).digest("hex"),
     claimedAt: prev?.claimedAt || Date.now(),
     lastSeen: prev?.lastSeen || 0,
@@ -323,7 +332,7 @@ const server = http.createServer(async (req, res) => {
       if (!me) return send(401, { ok: false, error: "unauthorized" });
       if (!rateLimit(`claim-ip:${ip}`, 30, 5 * 60_000)) return send(429, { ok: false, error: "请求过于频繁，稍后再试" });
       const body = await readBody();
-      const result = claimDevice(body && body.code, me.username, body && body.name);
+      const result = claimDevice(body && body.code, me.username, body && body.name, body && body.machineId);
       if (!result.ok) return send(400, { ok: false, error: result.reason });
       return send(200, { ok: true, device: result.device, account: publicView(me) });
     }

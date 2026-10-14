@@ -580,7 +580,7 @@
       if (!code) { status.textContent = "请填入本机配对码"; status.className = "status warn"; input.focus(); return; }
       claim.disabled = true;
       status.textContent = "正在认领…"; status.className = "status";
-      accountFetch("/device/claim", { method: "POST", body: { code: code, name: "我的电脑" } }).then(function (res) {
+      accountFetch("/device/claim", { method: "POST", body: { code: code, name: "我的电脑", machineId: PRESET_MID } }).then(function (res) {
         if (!res.ok || !res.j || !res.j.ok) {
           var why = (res.j && res.j.error) || "";
           status.textContent = why === "unauthorized" ? "登录状态已过期，请重新登录" : "认领失败（" + (why || "未知") + "）";
@@ -608,9 +608,12 @@
      ⛔ 账号步**永远在最前**：注册/登录是"网站的身份"，跟本机助手开没开没关系 ——
      上一版先找助手、找不到就直接进旧版提示卡，用户连注册入口都看不到（真实投诉）。
      顺序：账号（有会话就跳过）→ 找本机助手 → 配对。 */
+  /* ⛔ 模块级：runConnector 与 renderPairing 是两个函数作用域，认领处理器在后者里。 */
+  var PRESET_MID = "";
   function runConnector() {
     var preset = new URLSearchParams(location.search).get("pair");
     var presetClaim = new URLSearchParams(location.search).get("claim");
+    PRESET_MID = new URLSearchParams(location.search).get("mid") || "";   /* 本机稳定标识（同机重配对不新增设备行） */
     accountFetch("/me").then(function (res) {
       if (res.ok && res.j && res.j.ok) afterAccount(preset, presetClaim);
       else renderAccount(preset, presetClaim);
