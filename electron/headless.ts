@@ -1029,11 +1029,15 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
       `/* 认领完成 ⇒ 凭码取本地令牌 ⇒ 写 localStorage ⇒ 回 /（闸放行，应用才启动） */` +
       `function tick(){fetch("/api/cloud-state",{cache:"no-store"}).then(function(r){return r.json()}).then(function(s){` +
       `if(s&&s.machinePaired){` +
-      `st("已认领，正在完成连接…");` +
+      `/* ⛔ 10-14：完成态**停 1.8 秒**再跳 —— 否则整个配对流程 1 秒闪完，用户会觉得"没配对就直接进来了" */` +
+      `st("✓ 已认领，正在进入应用…");` +
+      `document.getElementById("go").style.display="none";` +
+      `document.getElementById("quit").style.display="none";` +
       `fetch("/api/pair-token-for-callback?code="+encodeURIComponent(code),{cache:"no-store"})` +
       `.then(function(r){return r.json()}).then(function(j){` +
-      `if(j&&j.ok&&j.token){try{localStorage.setItem("chc-token",j.token)}catch(e){}}location.replace("/")})` +
-      `.catch(function(){location.replace("/")});return}` +
+      `if(j&&j.ok&&j.token){try{localStorage.setItem("chc-token",j.token)}catch(e){}}` +
+      `setTimeout(function(){location.replace("/")},1800)})` +
+      `.catch(function(){setTimeout(function(){location.replace("/")},1800)});return}` +
       `if(++tries>90){st("等待超时：网页上还没有完成认领。可点「打开授权页面」重试。");return}` +
       `setTimeout(tick,2000)})}tick();})();</script></body></html>`;
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
