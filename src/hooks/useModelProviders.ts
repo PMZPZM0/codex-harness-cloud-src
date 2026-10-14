@@ -10,7 +10,19 @@ export type ProviderModel = { id: string; enabled?: boolean; contextWindow?: num
  *  供应商原话一律保留（最权威），后面补一句排查清单。 */
 export function classifyProviderProbeFailure(raw: string): string {
   const text = String(raw ?? "").replace(/^Error invoking remote method '[^']+':\s*/i, "").trim();
-  if (/认证失败|401|403|api\s*key|unauthorized|authentication/i.test(text)) {
+  /* ⛔ 429 必须最先判：它说明**连接是通的**，只是触发限流 —— 免费/低价模型是共享配额，
+     「60s 内超过 120 次」就是上游网关的 RPM 规则，所有用户共享。把它报成「连接失败」
+     会误导用户去改配置（10-14 实测）。窗口过去即自愈，无需改任何配置。 */
+  if (/429|请求过于频繁|rate_limit|too-many-requests/i.test(text)) {
+    return `${text}\n说明：连接本身是通的，只是触发了限流（免费/低价模型为共享配额，所有限时福利用户共享上游额度）。等 1-2 分钟再试即可，无需修改任何配置。`;
+  }
+  /* ⛔ 云代理的 403 是「模型未启用」（model-not-enabled / 未在「限时福利」里启用）——
+     它**不是**认证失败：Key 是对的，只是该模型的勾选没在服务端生效（勾选写回是异步的，
+     静默失败时用户毫无感知）。归进「认证失败」会把用户引去改 Key（10-14 实测双重误导）。 */
+  if (/model-not-enabled|未在「限时福利」里启用/i.test(text)) {
+    return `${text}\n说明：Key 没问题，只是这个模型在云端管理的勾选没有生效。到「云端管理」重新勾选并保存；若勾了仍报此错，等几秒重试（写回是异步的）。`;
+  }
+  if (/认证失败|401|api\s*key|unauthorized|authentication/i.test(text)) {
     return `${text}\n排查：① Key 是否复制完整（末尾无空格/换行）；② Key 与 Base URL 通道是否配套（例：火山方舟 /api/plan/v3 需套餐专属 Key，普通 Key 用 /api/v3）；③ Key 是否已过期/被禁用，或该账号未开通对应模型`;
   }
   if (/域名解析失败|连接被拒绝|连接超时|ENOTFOUND|ECONNREFUSED|timeout/i.test(text)) {
