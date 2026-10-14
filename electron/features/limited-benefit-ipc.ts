@@ -95,7 +95,20 @@ function writeProxyToken(token: string) {
   fs.writeFileSync(proxyTokenFile(), payload, { mode: 0o600 });
 }
 
-export type ModelRow = { id: string; name?: string; credits?: string; enabled?: boolean };
+export type ModelRow = {
+  id: string;
+  name?: string;
+  credits?: string;
+  enabled?: boolean;
+  /* 10-14 用户令「模型配置这肯定要同步更新啊真实的上下文额度和输出还有是否支持图片等等」：
+     服务端 /models 对**每个**模型都带这四个规格字段，而原先这里只声明了 id/name/credits/enabled
+     ⇒ applyProvider 写本机供应商行时把它们全丢了 ⇒ 「编辑模型配置」里显示的是硬编码默认值
+     （256000 / 384000 / 只勾文本），与真实额度不符。现在原样透传到 ProviderModel。 */
+  contextLength?: number;
+  maxOutputTokens?: number;
+  supportsImages?: boolean;
+  supportsReasoning?: boolean;
+};
 export type CatalogResult = {
   ok: boolean;
   provider?: { id: string; name: string; baseUrl: string; ready: boolean; hasProxyToken?: boolean };
@@ -182,7 +195,20 @@ async function applyProvider(): Promise<{ ok: boolean; models: number; changed: 
   const index = list.findIndex((entry) => entry.provider === LIMITED_BENEFIT_PROVIDER);
   const previous = index >= 0 ? list[index] : null;
 
-  const models: ProviderModel[] = picked.map((m) => ({ id: m.id }));
+  /* ⛔⛔ 元数据必须一起写（10-14 用户令「模型配置这肯定要同步更新啊真实的上下文额度和输出
+     还有是否支持图片等等」）：只写 id 会让「编辑模型配置」退回硬编码默认值
+     （上下文 256000 / 最大输出 384000 / 只勾"文本"），与供应商真实额度不符 ——
+     虚标会导致长任务请求被上游拒或无限重试。
+     服务端目录已给全量规格，这里逐字段透传；**拿不到的字段不写**（留空由上层走默认，
+     宁可不填也不要编一个假的）。 */
+  const models: ProviderModel[] = picked.map((m) => ({
+    id: m.id,
+    ...(typeof m.contextLength === "number" ? { contextWindow: m.contextLength } : {}),
+    ...(typeof m.maxOutputTokens === "number" ? { maxOutputTokens: m.maxOutputTokens } : {}),
+    ...(typeof m.supportsImages === "boolean"
+      ? { inputTypes: (m.supportsImages ? ["text", "image"] : ["text"]) as ("text" | "image" | "video")[] }
+      : {}),
+  }));
   const next: CustomModelFile = {
     ...(previous ?? {
       provider: LIMITED_BENEFIT_PROVIDER,
