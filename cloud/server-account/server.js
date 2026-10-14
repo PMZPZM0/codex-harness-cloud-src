@@ -482,6 +482,20 @@ const server = http.createServer(async (req, res) => {
         .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       return send(200, { ok: true, sessions: rows, usedBytes: syncUsageBytes(who.username), limitBytes: STORAGE_LIMIT_BYTES });
     }
+    /* 取单会话正文（设备令牌或网页会话都可）：本机"下载/恢复"与网页查看都用它。
+       返回原始 jsonl 文本 + 元数据，客户端按行落回本地 sessions 目录（与本地同构）。 */
+    if (p === "/sync/session" && req.method === "GET") {
+      const who = syncAuth();
+      if (!who) return send(401, { ok: false, error: "unauthorized" });
+      const id = String(url.searchParams.get("id") || "").trim();
+      const index = readSyncIndex(who.username);
+      const row = index[id];
+      if (!row) return send(404, { ok: false, error: "not-found" });
+      let content = "";
+      try { content = fs.readFileSync(path.join(syncUserDir(who.username), "sessions", id + ".jsonl"), "utf8"); }
+      catch { return send(404, { ok: false, error: "file-missing" }); }
+      return send(200, { ok: true, id, meta: row, content });
+    }
     if (p === "/sync/push" && req.method === "POST") {
       const who = syncAuth();
       if (!who) return send(401, { ok: false, error: "unauthorized" });

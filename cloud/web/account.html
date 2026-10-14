@@ -216,7 +216,8 @@
         <div class="hint" id="usageText" style="margin-top:8px">读取中…</div>
         <div class="hint" style="margin-top:6px">每账号上限 <b>1 GB</b>；达上限后**停止上传新会话**（本机照常记录），直到在下方删除数据或扩容。</div>
         <div class="btn-row">
-          <button class="btn primary" id="syncNow">立即同步</button>
+          <button class="btn primary" id="syncNow">立即上传（本机 → 云端）</button>
+          <button class="btn" id="syncPull">从云端下载到本机</button>
           <span class="status" id="syncStatus"></span>
         </div>
       </div>
@@ -509,6 +510,18 @@
       $("sessList").innerHTML = ""; $("sessList").appendChild(el("div", "empty", "云端数据读取失败，稍后重试。"));
     });
   }
+
+  $("syncPull").onclick = function () {
+    var st = $("syncStatus"); st.className = "status"; st.textContent = "正在通知本机助手下载…";
+    fetch(AGENT + "/api/sync-pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var res = j && j.result || {};
+        st.textContent = res.ok ? ("已下载 " + (res.pulled || 0) + " 个会话（本机已有 " + (res.skipped || 0) + " 个）—— 到本机应用的会话列表里看") : ("未完成：" + (res.reason || "本机助手未运行"));
+        st.className = "status " + (res.ok ? "ok" : "warn");
+      })
+      .catch(function () { st.textContent = "本机助手未运行 —— 下载由本机执行，需要助手开着"; st.className = "status warn"; });
+  };
 
   $("syncNow").onclick = function () {
     var st = $("syncStatus"); st.className = "status"; st.textContent = "正在通知本机助手同步…";

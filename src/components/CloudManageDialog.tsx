@@ -17,7 +17,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Cloud, RefreshCw, Unplug, X } from "lucide-react";
+import { Cloud, CloudDownload, CloudUpload, RefreshCw, Unplug, X } from "lucide-react";
 
 type CloudState = {
   gated: boolean;
@@ -36,6 +36,8 @@ type CloudState = {
    ⛔ 旧字段 tokenFingerprint 早就不存在了 —— 用它当标签 + 拿 name 当 id 调用 ⇒ 永远 404 = "点解绑没反应"。 */
 type DeviceRow = { id: string; name: string; claimedAt?: number; lastSeen?: number; current?: boolean };
 type UpdateInfo = { available: boolean; current?: string; latest?: string; url?: string; notes?: string; reason?: string };
+/** 同步结果（与本机 /api/sync-now、/api/sync-state 对齐）。 */
+type SyncResultLike = { ok: boolean; reason?: string; pushedSessions?: number; pushedLines?: number; quotaExceeded?: boolean };
 /* ⛔ 云通道（cloud:device/*、cloud:update/check）只存在于**云助手仓**的 manifest ⇒
    桌面仓的生成类型里没有它们。组件只在云助手形态挂载，但 TS 对三仓统一编译
    ⇒ 这里走**防御性可选类型**，运行时有就有、没有就不调（绝不在桌面仓硬引）。 */
@@ -78,6 +80,7 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     refresh();
+    loadSync();   // 会话同步状态（已上传会话数/行数/最近时间）
   }, [refresh]);
 
   const runUpdateCheck = () => {
@@ -117,6 +120,41 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
         setTimeout(() => location.reload(), 800);
       })
       .catch(() => setDisconnecting(false));
+  };
+
+  /* 会话同步（P0 上传 / P1 下载）：状态读本机 /api/sync-state，动作打本机同步端点。 */
+  const [syncInfo, setSyncInfo] = useState<{ summary: { sessions: number; lines: number }; lastSyncAt: number; lastResult: SyncResultLike | null } | null>(null);
+  const [syncing, setSyncing] = useState<"up" | "down" | "">("");
+  function loadSync() {
+    void fetch("/api/sync-state", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; summary?: { sessions: number; lines: number }; lastSyncAt?: number; lastResult?: SyncResultLike | null }) => {
+        if (j && j.ok && j.summary) setSyncInfo({ summary: j.summary, lastSyncAt: Number(j.lastSyncAt || 0), lastResult: j.lastResult || null });
+      })
+      .catch(() => undefined);
+  }
+  const syncUpload = () => {
+    setSyncing("up");
+    void fetch("/api/sync-now", { method: "POST" })
+      .then((r) => r.json())
+      .then((j: { result?: SyncResultLike }) => {
+        const res = j && j.result;
+        setNote(res && res.ok ? `已上传 ${res.pushedSessions || 0} 个会话 / ${res.pushedLines || 0} 行${res.quotaExceeded ? "（已达存储上限，剩余未传）" : ""}` : `上传未完成：${(res && res.reason) || "未知"}`);
+        loadSync();
+      })
+      .catch(() => setNote("上传失败（本机服务不可达）"))
+      .finally(() => setSyncing(""));
+  };
+  const syncDownload = () => {
+    setSyncing("down");
+    void fetch("/api/sync-pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
+      .then((r) => r.json())
+      .then((j: { result?: { ok?: boolean; pulled?: number; skipped?: number; failed?: number; reason?: string } }) => {
+        const res = j && j.result;
+        setNote(res && res.ok ? `已从云端下载 ${res.pulled || 0} 个会话（本机已有 ${res.skipped || 0} 个，失败 ${res.failed || 0} 个）` : `下载未完成：${(res && res.reason) || "未知"}`);
+      })
+      .catch(() => setNote("下载失败（本机服务不可达）"))
+      .finally(() => setSyncing(""));
   };
 
   const disconnect = () => {
@@ -202,6 +240,28 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
               <div className="cloud-manage-note">{update.reason ? `未探测到新版本：${update.reason}` : "已是最新版本"}</div>
             )
           ) : null}
+        </section>
+
+        <section className="cloud-manage-sec">
+          <div className="cloud-manage-label">会话同步</div>
+          <div className="cloud-manage-note" id="syncSummary" style={{ marginBottom: 8 }}>
+            {syncInfo
+              ? `已上传 ${syncInfo.summary.sessions} 个会话 / ${syncInfo.summary.lines} 行` +
+                (syncInfo.lastSyncAt ? ` · 最近 ${new Date(syncInfo.lastSyncAt).toLocaleTimeString()} ` : "") +
+                (syncInfo.lastResult && syncInfo.lastResult.ok === false && syncInfo.lastResult.reason !== "not-paired"
+                  ? `（上次未完成：${syncInfo.lastResult.reason}）`
+                  : "")
+              : "读取中…"}
+          </div>
+          <button type="button" className="cloud-manage-btn" onClick={syncUpload} disabled={syncing || !paired}>
+            <CloudUpload size={13} />
+            {syncing === "up" ? "正在上传…" : "立即上传（本机 → 云端）"}
+          </button>
+          <button type="button" className="cloud-manage-btn" onClick={syncDownload} disabled={syncing === "down" || !paired}>
+            <CloudDownload size={13} />
+            {syncing === "down" ? "正在下载…" : "从云端下载到本机"}
+          </button>
+          <div className="cloud-manage-muted">自动上传：会话每 5 分钟增量同步一次（只传新增行）；下载会把云端会话落回本机会话列表。</div>
         </section>
 
         <section className="cloud-manage-sec">

@@ -19,7 +19,7 @@
 import electron from "electron";
 import { app, ipcMain, shell } from "electron";
 import { mutableState } from "./main";
-import { runCloudSyncOnce, readSyncSummary, type SyncResult } from "./cloud-sync";
+import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, type SyncResult } from "./cloud-sync";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -1116,6 +1116,31 @@ if (p === "/api/pair-code/refresh" && req.method === "POST") {
     mutableState.closeConfirmed = true;
     app.quit();
     deny(200, { ok: true });
+    return;
+  }
+  /* 云端 → 本机：把云端会话下载回本地 sessions 目录（P1 闭环的另一半）。
+     body 可给 { ids: [...] }（只拉这几条）或空（拉全部云端会话）。
+     ⛔ 拉回来的会话**直接标记为"已同步到该行数"**，否则下一轮上传会把它当新内容重复推上去。 */
+  if (p === "/api/sync-pull" && req.method === "POST") {
+    if (!localUiAuthOk(req, url)) { deny(403, { ok: false, error: "unauthorized" }); return; }
+    void (async () => {
+      let raw = "";
+      await new Promise<void>((done) => {
+        req.on("data", (chunk) => { raw += chunk; if (raw.length > 64 * 1024) req.destroy(); });
+        req.on("end", () => done());
+        req.on("error", () => done());
+      });
+      let ids: string[] = [];
+      try { const body = JSON.parse(raw || "{}") as { ids?: unknown }; if (Array.isArray(body.ids)) ids = body.ids.map(String); } catch { /* 空 body = 全拉 */ }
+      const result = await pullCloudSessions({
+        codexHome: join(app.getPath("userData"), "codex-home"),
+        stateFile: syncStateFile(),
+        accountsBase: ACCOUNTS_BASE,
+        deviceToken: () => readDeviceToken(),
+        machineId: () => machineId(),
+      }, ids);
+      deny(200, { ok: result.ok, result });
+    })();
     return;
   }
   /* 手动同步（面板按钮 / 网站配对中心调用）：立刻跑一次 */
