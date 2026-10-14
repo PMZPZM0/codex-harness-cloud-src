@@ -446,6 +446,10 @@
         acct.appendChild(document.createTextNode("当前账号："));
         var b = document.createElement("b"); b.textContent = res.j.account.username;
         acct.appendChild(b);
+        var center = document.createElement("a"); center.textContent = "（用户中心）";
+        center.className = "link-soft";
+        center.onclick = function () { window.location.href = "account.html"; };
+        acct.appendChild(center);
         if (res.j.account.role === "admin") {
           var adminLink = document.createElement("a"); adminLink.textContent = "（用户管理）";
           adminLink.className = "link-soft";
