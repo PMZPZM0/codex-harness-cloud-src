@@ -155,14 +155,8 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
               <div><span>绑定账号</span><b>{accounts.length ? accounts.join("、") : "未绑定"}</b></div>
               <div><span>服务器</span><b>{state.serverReachable ? "可达" : "不可达"}</b></div>
               <div><span>设备凭据</span><b>{state.hasDeviceToken ? "已就绪" : "无"}</b></div>
-              {!paired && state.gated ? (
-                <div>
-                  <span>本机配对码</span>
-                  <b className="cloud-manage-code">
-                    {(window as unknown as { __CHC_PAIR_CODE__?: string }).__CHC_PAIR_CODE__ || "刷新本页获取（5 分钟有效）"}
-                  </b>
-                </div>
-              ) : null}
+              {/* ⛔ 配对码不在这里显示：外壳已不再注入 __CHC_PAIR_CODE__，"5 分钟有效"的旧语义也早改了
+                  （现在是"认领成功或手动刷新前一直有效"）。配对码统一在**配对页**（/pair）展示，带复制与刷新。 */}
             </div>
           )}
         </section>

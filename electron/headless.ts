@@ -1067,6 +1067,16 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
   })();
   return;
 }
+/* 配对码刷新（10-14 用户令「配对码没有刷新功能」）：把当前码作废并立即发一枚新的。
+   用途：码泄露给人看过、或认领卡住想重来一把。⛔ 刷新后**旧码立刻失效**（轮询与认领都按新码走）。 */
+if (p === "/api/pair-code/refresh" && req.method === "POST") {
+  if (!localUiAuthOk(req, url)) { deny(403, { ok: false, error: "unauthorized" }); return; }
+  ownerPairCode = "";
+  const fresh = issueOwnerPair();
+  console.log("[pair] 配对码已刷新：" + fresh);
+  deny(200, { ok: true, code: fresh });
+  return;
+}
   if (p === "/api/app-quit" && req.method === "POST") {
     if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
     mutableState.closeConfirmed = true;
@@ -1118,7 +1128,7 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
       `.bad{color:#ec7a70}</style></head><body><div class="box">` +
       `<div class="t">连接云端账号</div>` +
       (pairCode
-        ? `<div class="row"><div class="code">${pairCode}</div><button class="cp" id="cp">复制</button></div>` +
+        ? `<div class="row"><div class="code">${pairCode}</div><button class="cp" id="cp">复制</button><button class="cp" id="rf">刷新</button></div>` +
           `<div class="cap">本机配对码 · 在网页上认领时填这个</div>`
         : `<div class="cap">本机码生成中，稍候刷新本页</div>`) +
       `<div class="st" id="st">等待浏览器授权…</div>` +
@@ -1135,6 +1145,7 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
       `fetch("/api/open-auth",{method:"POST"}).catch(function(){})};` +
       `document.getElementById("quit").onclick=function(){fetch("/api/app-quit",{method:"POST"}).catch(function(){})};` +
       `document.getElementById("switch").onclick=function(){fetch("/api/open-auth?switch=1",{method:"POST"}).catch(function(){})};` +
+      `var rf=document.getElementById("rf");if(rf)rf.onclick=function(){rf.disabled=true;rf.textContent="刷新中";fetch("/api/pair-code/refresh",{method:"POST"}).then(function(){location.reload()}).catch(function(){rf.disabled=false;rf.textContent="刷新"})};` +
       `var cp=document.getElementById("cp");` +
       `if(cp)cp.onclick=function(){function fin(){cp.textContent="已复制 ✓";setTimeout(function(){cp.textContent="复制"},1500)}` +
       `if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(code).then(fin,fin)}else{fin()}};` +
