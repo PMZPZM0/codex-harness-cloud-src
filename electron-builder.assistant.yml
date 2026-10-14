@@ -58,9 +58,11 @@ mac:
 nsis:
   oneClick: true
   runAfterFinish: true
-  # ⛔ 显式钉死安装目录/快捷方式名，别依赖默认推导（默认取 package.json 的 name，
-  #   而助手包此前 name 与桌面版相同 ⇒ 装到同一个 Programs 目录里互相覆盖）
-  installDirectoryName: CodexAssistant
+  # ⛔⛔ 10-14：**删除 installDirectoryName** —— 该键在 electron-builder 26 的 NSIS schema
+  #   里已不存在（从 node_modules/app-builder-lib/scheme.json 实测确认），带着它打包**必失败**
+  #   （历史两次云发布失败 + 本次 CI 失败都是它：configuration.nsis 不符合 schema）。
+  #   安装目录的"与桌面版分开"由 extraMetadata.name=codex-assistant 保证（默认目录取它）；
+  #   快捷方式名与卸载项名仍显式钉死。
   shortcutName: Codex Assistant
   uninstallDisplayName: Codex Assistant
   # ⛔ 覆盖安装前强杀运行中的助手（托盘应用关不掉 ⇒ 安装器直接卡死，见 build/installer.nsh）
