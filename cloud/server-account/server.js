@@ -349,6 +349,31 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* ── ⑤ 设备令牌通道：心跳（账号状态轮询用）+ 更新检查 ───────────────────── */
+    /* 设备令牌版的列表/吊销：本机只有**设备令牌**（没有网页会话）⇒ 面板的「设备/座位」
+       必须能用设备令牌查到同一个账号名下的设备（否则列表恒空 —— 10-14 实测现象）。 */
+    if (p === "/device/list" && req.method === "POST") {
+      const header = String(req.headers.authorization || "");
+      const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+      const device = findDeviceByToken(token);
+      if (!device) return send(401, { ok: false, error: "unauthorized" });
+      const user = db.users.find((u) => u.username === device.username);
+      if (!user || user.disabled) return send(403, { ok: false, error: "account-disabled" });
+      const selfHash = Object.entries(db.devices).find(([, d]) => d === device)?.[0] || "";
+      return send(200, {
+        ok: true,
+        account: device.username,
+        devices: listDevices(device.username).map((d) => ({ ...d, current: d.id === deviceIdOf(selfHash) })),
+      });
+    }
+    if (p === "/device/revoke-by-token" && req.method === "POST") {
+      const header = String(req.headers.authorization || "");
+      const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+      const device = findDeviceByToken(token);
+      if (!device) return send(401, { ok: false, error: "unauthorized" });
+      const body = await readBody();
+      const gone = revokeDevice(device.username, body && body.id);
+      return gone ? send(200, { ok: true }) : send(404, { ok: false, error: "设备不存在" });
+    }
     if (p === "/device/heartbeat" && req.method === "POST") {
       const header = String(req.headers.authorization || "");
       const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";

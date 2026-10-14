@@ -66,7 +66,12 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
 
   const refresh = useCallback(() => {
     void fetchCloudState().then((s) => setState(s));
-    void cloudApi().cloudDeviceList?.().then((r) => setDevices(r.devices)).catch(() => setDevices(null));
+    /* ⛔ 10-14：列表走**本机 /api/cloud-devices**（内部用设备令牌问服务器）——
+       原先走 cloud:device/list 需要网页会话，本机没有 ⇒ 列表恒空（"绑定账号 admin 但设备/座位 暂无"）。 */
+    void fetch("/api/cloud-devices", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((r: { ok?: boolean; devices?: DeviceRow[] }) => setDevices(Array.isArray(r?.devices) ? r.devices : null))
+      .catch(() => setDevices(null));
   }, []);
 
   useEffect(() => {
@@ -88,7 +93,9 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
   };
 
   const unbind = (name: string) => {
-    void cloudApi().cloudDeviceUnbind?.(name).then(() => refresh()).catch(() => undefined);
+    void fetch("/api/cloud-device-revoke", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: name }) })
+      .then(() => refresh())
+      .catch(() => undefined);
   };
 
   const disconnect = () => {

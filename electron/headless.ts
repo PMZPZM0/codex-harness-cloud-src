@@ -938,6 +938,57 @@ function pollAccountStatus(): void {
 setInterval(pollAccountStatus, 60_000);
 
 /* ── ⑤ 设备令牌更新通道（架构 §9.5）：本机带**设备令牌**问服务器要版本信息 ────── */
+/* 设备/座位列表（面板用）：本机只有设备令牌（没有网页会话）⇒ 走设备令牌版端点，
+   否则列表恒空（10-14 实测："绑定账号 admin 但设备/座位 暂无"）。 */
+if (p === "/api/cloud-devices" && req.method === "GET") {
+  if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+  const deviceToken = readDeviceToken();
+  if (!GATED || !deviceToken) { deny(404, { ok: false, error: "no-device-token" }); return; }
+  void (async () => {
+    try {
+      const r = await fetch(`${ACCOUNTS_BASE}/device/list`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${deviceToken}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      const meta = (await r.json().catch(() => null)) as { ok?: boolean; account?: string; devices?: unknown[] } | null;
+      if (!r.ok || !meta?.ok) { deny(502, { ok: false, error: "device-list-failed" }); return; }
+      deny(200, { ok: true, account: String(meta.account || ""), devices: Array.isArray(meta.devices) ? meta.devices : [] });
+    } catch {
+      deny(502, { ok: false, error: "accounts-unreachable" });
+    }
+  })();
+  return;
+}
+/* 吊销某台设备（面板的"吊销"按钮；同账号任意设备令牌可吊销兄弟设备）。 */
+if (p === "/api/cloud-device-revoke" && req.method === "POST") {
+  if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
+  const deviceToken = readDeviceToken();
+  if (!GATED || !deviceToken) { deny(404, { ok: false, error: "no-device-token" }); return; }
+  void (async () => {
+    try {
+      let raw = "";
+      await new Promise<void>((done) => {
+        req.on("data", (chunk) => { raw += chunk; if (raw.length > 4 * 1024) req.destroy(); });
+        req.on("end", () => done());
+        req.on("error", () => done());
+      });
+      let id = "";
+      try { id = String((JSON.parse(raw || "{}") as { id?: unknown }).id || ""); } catch { /* 空 body */ }
+      const r = await fetch(`${ACCOUNTS_BASE}/device/revoke-by-token`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${deviceToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const meta = await r.json().catch(() => null);
+      deny(r.status, meta && typeof meta === "object" ? (meta as Record<string, unknown>) : { ok: false, error: "device-revoke-failed" });
+    } catch {
+      deny(502, { ok: false, error: "accounts-unreachable" });
+    }
+  })();
+  return;
+}
 if (p === "/api/cloud-update-check" && req.method === "GET") {
   if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
   const deviceToken = readDeviceToken();
