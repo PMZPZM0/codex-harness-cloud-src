@@ -13,6 +13,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
+import { canonicalStamp } from "./thread-backup";
 
 export type SyncDeps = {
   /** 引擎数据根（sessions 在这里）。 */
@@ -206,7 +207,13 @@ export async function pullCloudSessions(deps: SyncDeps, ids: string[] = []): Pro
         const d = String(stamp.getDate()).padStart(2, "0");
         const dir = join(deps.codexHome, "sessions", y, m, d);
         mkdirSync(dir, { recursive: true });
-        const file = join(dir, `rollout-${stamp.toISOString().slice(0, 19).replace(/[:T]/g, "-")}-${row.id}.jsonl`);
+        /* ⛔⛔ 文件名必须 canonical（`rollout-<YYYY-MM-DDTHH-MM-SS>-<uuid>.jsonl`，**含 `T`**）：
+           引擎 thread-store 直接拒读非 canonical 名（`does not have a canonical rollout filename`），
+           而本机兜底扫描**照样**会把它列进侧栏 ⇒ 用户看到会话在、点开就报错（10-14 用户实测）。
+           旧实现用 `toISOString().slice(0,19).replace(/[:T]/g, "-")` —— **连 `T` 一起换成了 `-`**，
+           于是从云端拉回来的每条会话都是坏名。这里复用 thread-backup 的单一真相源
+           （它用**本地时间**，与上面按本地时间算的日期目录同口径）。 */
+        const file = join(dir, `rollout-${canonicalStamp(stamp.getTime())}-${row.id}.jsonl`);
         writeFileSync(file, lines.join("\n") + "\n");
         state.sessions[row.id] = { path: relative(join(deps.codexHome, "sessions"), file), pushedLines: lines.length, sizeBytes: Buffer.byteLength(body.content, "utf8"), title: state.sessions[row.id]?.title || "", project: state.sessions[row.id]?.project || "" };
         pulled += 1; doneIds.push(row.id);
