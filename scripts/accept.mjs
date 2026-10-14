@@ -2023,6 +2023,185 @@ const CHECKS = [
       await h.screenshot("message-feedback");
     },
   },
+  {
+    id: "md-block-copy",
+    name: "㉚ 块级复制（表格 + 代码块）：常驻可见 + 两段反馈 + 剪贴板真拿到 TSV/代码原文（10-14 轮 · 用户截图：上面那块是代码块、下面那块是表格）",
+    run: async (h) => {
+      /* 为什么真跑：这是"悬停才显形 + 点了变对勾再淡回"的纯交互，静态守卫只能证明选择器写了；
+         它看不见三件事 —— ① CSS `:hover` 对**合成事件**不响应（必须真移动鼠标）；
+         ② 两段动画的选择器漏掉这颗按钮（变色有、弹动无）；③ 复制出去的到底是不是一张表。
+         ⛔ 剪贴板**只能从系统剪贴板读回来**：`navigator.clipboard.readText()` 被本应用的权限处理器挡着
+           （只放行 media），`window.codex` 是 contextBridge 冻结对象 ⇒ 打不了 spy。
+           这里用**真 Ctrl+V** 把剪贴板粘进输入框再比对 —— 走的正是用户那条路。
+         ⛔ 表格来源选**文件预览**（右栏项目树 → 点开一个含表格的 .md）而不是让模型现写一张：
+           模型回表格要几十秒且不保证照做（10-14 实测两次都没等到），而**渲染组件是同一份**
+           （`MD_COMPONENTS.table` 同时供正文 / 文件预览 / 复审报告），交互链路完全一致。
+         ⛔ 期望值**不硬编码文档内容**（文档会改）：改成拿 DOM 里的行列形状去对剪贴板文本的形状。 */
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "主界面", timeoutMs: 40000 }).catch(() => undefined);
+      await wait(2000);
+      // 右栏默认可能收起；展开后切到「项目树」
+      await h.eval(`(function(){ var b=document.querySelector('.tb-right-panel'); if (b && !document.querySelector('.context-panel')) b.click(); return 1; })()`);
+      await wait(700);
+      const tabOk = await h.eval(`(function(){ var b=[...document.querySelectorAll('.panel-tab')].find(function(x){ return (x.title||'')==='项目树'; }); if(!b) return false; b.click(); return true; })()`);
+      let treeRows = 0;
+      for (let i = 0; i < 20; i++) {
+        await wait(400);
+        treeRows = Number(await h.eval(`document.querySelectorAll('[data-tree-path]').length`)) || 0;
+        if (treeRows > 0) break;
+      }
+      h.check("① 前置：右栏「项目树」可用（这趟链路从这里点开一个含表格的 .md）", tabOk === true && treeRows > 0, JSON.stringify({ tabOk, treeRows }));
+      if (tabOk !== true || treeRows === 0) return;
+      // 优先 AGENTS.md（仓库根、必含表格）；找不到就随便挑一个 .md
+      const opened = await h.eval(`(function(){
+        var all=[...document.querySelectorAll('[data-tree-path]')];
+        var pick=all.find(function(x){ return /AGENTS\\.md$/i.test(x.getAttribute('data-tree-path')||''); })
+          || all.find(function(x){ return /\\.md$/i.test(x.getAttribute('data-tree-path')||''); });
+        if(!pick) return null; var p=pick.getAttribute('data-tree-path'); pick.click(); return p; })()`);
+      let preview = null;
+      for (let i = 0; i < 24; i++) {
+        await wait(500);
+        preview = await h.eval(`(function(){
+          var root=document.querySelector('.file-preview-markdown');
+          var tables=root ? root.querySelectorAll('table').length : 0;
+          var wraps=root ? root.querySelectorAll('.md-table-wrap').length : 0;
+          return { root: !!root, tables: tables, wraps: wraps, buttons: root ? root.querySelectorAll('.md-table-copy').length : 0 }; })()`);
+        if (preview && preview.tables > 0) break;
+      }
+      h.check("② 前置：预览里渲染出表格，且**每张表都带** .md-table-wrap + 复制按钮（漏一张就是没接住）",
+        !!preview && preview.tables > 0 && preview.wraps === preview.tables && preview.buttons === preview.tables,
+        JSON.stringify({ file: opened, ...preview }));
+      if (!preview || preview.tables === 0) return;
+
+      await h.moveMouseAway().catch(() => undefined);
+      await wait(400);
+      const idle = await h.eval(`(function(){
+        var w=document.querySelector('.file-preview-markdown .md-table-wrap');
+        var b=w && w.querySelector('.md-table-copy'); if(!b) return { found:false };
+        var cs=getComputedStyle(b), wr=w.getBoundingClientRect(), br=b.getBoundingClientRect();
+        // 底色必须**不透明**（rgba(...,0) 会漏出表头文字 = 压在字上看不清）
+        var solid = !!cs.backgroundColor && !/rgba\\(.*,\\s*0\\)$/.test(cs.backgroundColor);
+        return { found:true, opacity:cs.opacity, pe:cs.pointerEvents, position:cs.position, color:cs.color,
+          bg:cs.backgroundColor, solid:solid, border:cs.borderTopWidth, shadow:cs.boxShadow,
+          dRight:Math.round(wr.right-br.right), dTop:Math.round(br.top-wr.top) }; })()`);
+      h.check("③ 常驻可见且醒目（用户 10-14：「旧消息我没看见」⇒ 不许 hover 才显形）：不 hover 也在，可点、右上角 ≤10px、不透明底色 + 边框 + 阴影",
+        idle?.found === true && idle.position === "absolute" && Math.abs(idle.dRight) <= 10 && Math.abs(idle.dTop) <= 10
+          && Number(idle.opacity) === 1 && idle.pe === "auto" && idle.solid === true
+          && parseFloat(idle.border) >= 1 && String(idle.shadow) !== "none",
+        JSON.stringify(idle));
+
+      // ⛔ 悬停必须悬到**按钮自己**身上：悬到容器中心时 `:hover` 只命中容器，
+      //   按钮自己的 `:hover` 规则不生效（10-14 实测：读到前后配色一模一样）。
+      await h.hover(".file-preview-markdown .md-table-copy").catch(() => undefined);
+      await wait(500);
+      const hovered = await h.eval(`(function(){
+        var w=document.querySelector('.file-preview-markdown .md-table-wrap'); var b=w && w.querySelector('.md-table-copy');
+        if(!b) return { found:false };
+        var prev=b.style.transition; b.style.transition='none'; var cs=getComputedStyle(b); b.style.transition=prev;
+        return { found:true, opacity:cs.opacity, color:cs.color, bg:cs.backgroundColor }; })()`);
+      h.check("④ 悬停是「配色加重」而不是显隐开关：hover 时颜色/底色变化、但始终可见可点",
+        hovered?.found === true && Number(hovered.opacity) === 1
+          && (String(hovered.color) !== String(idle?.color) || String(hovered.bg) !== String(idle?.bg)),
+        JSON.stringify({ idle: { color: idle?.color, bg: idle?.bg }, hovered }).slice(0, 240));
+
+      // 记下这张表的行列形状（一会儿对剪贴板文本的形状）
+      const shape = await h.eval(`(function(){
+        var t=document.querySelector('.file-preview-markdown table');
+        var rows=[...t.rows].map(function(r){ return [...r.cells].map(function(c){ return String(c.textContent||'').replace(/\\s+/g,' ').trim(); }); });
+        return { rows: rows.length, cellsPerRow: rows.map(function(r){ return r.length; }), head: rows[0] }; })()`);
+      const click = await h.eval(`(function(){
+        var w=document.querySelector('.file-preview-markdown .md-table-wrap'); var b=w && w.querySelector('.md-table-copy');
+        if(!b) return { found:false }; window.__mdCopyBtn=b; b.click(); return { found:true }; })()`);
+      let done = null, seen = null;
+      for (let poll = 0; poll < 8 && !done; poll++) {
+        const read = await h.eval(`(function(){ var b=window.__mdCopyBtn; if(!b) return { missing:true };
+          var prev=b.style.transition; b.style.transition='none'; var cs=getComputedStyle(b); b.style.transition=prev;
+          var s={ phase:b.getAttribute('data-phase'), title:b.title, anim:cs.animationName, opacity:cs.opacity,
+            hasCheck:!!b.querySelector('svg.lucide-check') };
+          if (s.phase==='done' && s.hasCheck && Number(s.opacity)>0.9) return { settled:s }; return { seen:s }; })()`);
+        if (read?.settled) done = read.settled;
+        else if (read?.seen) seen = read.seen;
+        await wait(110);
+      }
+      h.check("⑤ 第一段反馈：换成对勾 + 弹动动画真命中（`[data-phase=done]` 的选择器必须带上这颗按钮）",
+        click?.found === true && done?.phase === "done" && done?.anim === "message-action-pop" && done?.hasCheck === true,
+        JSON.stringify({ done, seen }).slice(0, 220));
+
+      // 剪贴板内容：真 Ctrl+V 粘进一个**测试自己的 textarea** 再读回，按形状比对（不硬编码文档内容）。
+      // ⛔ 不能粘进输入框：应用的粘贴处理会把 >200 字的文本存成 .txt 附件（这张表 393 字），
+      //   粘出来的是附件 chip 而不是文本（10-14 实测踩到）。textarea 不经过那条逻辑。
+      await h.eval(`(function(){ var old=document.getElementById('__clipProbe'); if(old) old.remove();
+        var ta=document.createElement('textarea'); ta.id='__clipProbe';
+        ta.style.cssText='position:fixed;left:8px;top:8px;width:320px;height:80px;z-index:99999';
+        document.body.appendChild(ta); ta.focus(); return 1; })()`);
+      await h._send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "v", code: "KeyV", windowsVirtualKeyCode: 86, modifiers: 2, commands: ["paste"] });
+      await h._send("Input.dispatchKeyEvent", { type: "keyUp", key: "v", code: "KeyV", windowsVirtualKeyCode: 86, modifiers: 2 });
+      await wait(600);
+      const pasted = await h.eval(`(function(){ var ta=document.getElementById('__clipProbe'); var v=ta?String(ta.value||''):''; if(ta) ta.remove(); return v; })()`);
+      const lines = String(pasted).split(/\r?\n/).map((l) => l.replace(/\s+$/, "")).filter((l, i, arr) => !(i === arr.length - 1 && l === ""));
+      const shapeOk = lines.length === shape?.rows
+        && lines.every((line, i) => line.split("\t").length === shape.cellsPerRow[i])
+        && !/\|/.test(String(pasted))
+        && String(lines[0] ?? "").split("\t")[0] === String(shape?.head?.[0] ?? "");
+      h.check("⑥ 系统剪贴板里是**整张表的 TSV**（行数/列数与原表一致、首格是表头首格、无 markdown 竖线残留）",
+        shapeOk, JSON.stringify({ gotRows: lines.length, wantRows: shape?.rows, gotFirst: String(lines[0] ?? "").slice(0, 60), wantHead: shape?.head }).slice(0, 260));
+
+      await wait(1400);
+      const stage2 = await h.eval(`(function(){ var b=window.__mdCopyBtn; if(!b) return { missing:true };
+        var cs=getComputedStyle(b);
+        return { phase:b.getAttribute('data-phase'), anim:cs.animationName, title:b.title, hasCopy:!!b.querySelector('svg.lucide-copy') }; })()`);
+      h.check("⑦ 第二段回位：1.1 秒后换回复制图标、动画不重播（否则「变回去」会再弹一次）",
+        stage2?.phase === "idle" && stage2?.anim === "none" && stage2?.hasCopy === true && /复制表格/.test(String(stage2?.title)),
+        JSON.stringify(stage2));
+      /* ⑤b-⑤d 代码块（用户 10-14 截图「上面没有，下面有了」—— 上面那块正是围栏代码块）：
+         同一个按钮、同一套两段反馈；⛔ 按钮锚在外层 pre 上，所以横向滚动时它不会跟着代码滚走。 */
+      const codeInfo = await h.eval(`(function(){
+        var wraps=[...document.querySelectorAll('.file-preview-markdown .md-code-wrap')];
+        if(!wraps.length) return { found:false };
+        var w=wraps[0], b=w.querySelector('.md-code-copy'), pre=w.closest('pre');
+        if(!b) return { found:true, hasButton:false, total:wraps.length };
+        var cs=getComputedStyle(b), br=b.getBoundingClientRect(), pr=pre?pre.getBoundingClientRect():null;
+        return { found:true, hasButton:true, total:wraps.length, opacity:cs.opacity, pe:cs.pointerEvents,
+          anchorIsPre: !!pre, dRight: pr?Math.round(pr.right-br.right):null, dTop: pr?Math.round(br.top-pr.top):null }; })()`);
+      h.check("⑤b 代码块也有复制按钮、常驻可见、且锚在**外层 pre** 的右上角（横向滚动时不会跟着滚走）",
+        codeInfo?.found === true && codeInfo.hasButton === true && codeInfo.anchorIsPre === true
+          && codeInfo.opacity === "1" && codeInfo.pe === "auto"
+          && Math.abs(codeInfo.dRight) <= 14 && Math.abs(codeInfo.dTop) <= 14,
+        JSON.stringify(codeInfo));
+      const codeClick = await h.eval(`(function(){ var w=document.querySelector('.file-preview-markdown .md-code-wrap'); var b=w && w.querySelector('.md-code-copy');
+        if(!b) return {found:false}; window.__mdCodeBtn=b; b.click(); return {found:true}; })()`);
+      let codeDone = null, codeSeen = null;
+      for (let poll = 0; poll < 8 && !codeDone; poll++) {
+        const read = await h.eval(`(function(){ var b=window.__mdCodeBtn; if(!b) return {missing:true};
+          var prev=b.style.transition; b.style.transition='none'; var cs=getComputedStyle(b); b.style.transition=prev;
+          var s={phase:b.getAttribute('data-phase'), title:b.title, anim:cs.animationName, hasCheck:!!b.querySelector('svg.lucide-check')};
+          if (s.phase==='done' && s.hasCheck) return {settled:s}; return {seen:s}; })()`);
+        if (read?.settled) codeDone = read.settled;
+        else if (read?.seen) codeSeen = read.seen;
+        await wait(110);
+      }
+      h.check("⑤c 代码块那一下同样走两段反馈（对勾 + message-action-pop，标题改「已复制代码」）",
+        codeClick?.found === true && codeDone?.phase === "done" && codeDone?.anim === "message-action-pop" && /已复制代码/.test(String(codeDone?.title ?? "")),
+        JSON.stringify({ codeDone, codeSeen }).slice(0, 200));
+      await h.eval(`(function(){ var old=document.getElementById('__clipProbe'); if(old) old.remove();
+        var ta=document.createElement('textarea'); ta.id='__clipProbe';
+        ta.style.cssText='position:fixed;left:8px;top:8px;width:320px;height:80px;z-index:99999';
+        document.body.appendChild(ta); ta.focus(); return 1; })()`);
+      await h._send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "v", code: "KeyV", windowsVirtualKeyCode: 86, modifiers: 2, commands: ["paste"] });
+      await h._send("Input.dispatchKeyEvent", { type: "keyUp", key: "v", code: "KeyV", windowsVirtualKeyCode: 86, modifiers: 2 });
+      await wait(600);
+      const codeClip = await h.eval(`(function(){ var ta=document.getElementById('__clipProbe'); var v=ta?String(ta.value||''):''; if(ta) ta.remove(); return v; })()`);
+      const codeDom = await h.eval(`(function(){ var w=document.querySelector('.file-preview-markdown .md-code-wrap');
+        var el=w && w.querySelector('.code-highlight'); return el ? String(el.textContent||'') : ''; })()`);
+      const codeFirstLine = String(codeClip).split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 3) ?? "";
+      h.check("⑤d 剪贴板里是**代码原文**（非空，且首行能在渲染出的代码里找到同一段 —— 不是把行号或别的块复制走了）",
+        codeFirstLine.length > 3 && String(codeDom).includes(codeFirstLine.slice(0, 20)),
+        JSON.stringify({ clipChars: String(codeClip).length, firstLine: codeFirstLine.slice(0, 40) }).slice(0, 200));
+      await h.screenshot("md-block-copy");
+      // 收尾：关掉预览，别把右栏占着影响后面的项
+      await h.pressKey("Escape");
+      await wait(400);
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2067,6 +2246,7 @@ const ROUND_OF = {
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "boot-intro": "10-12",   // 10-12 轮：550C 开机动画（外观页设置行 + Shadow DOM 预览 + Esc 跳过 + 档位落盘；启动首帧与三不播判据由守卫 20-boot-intro 钉）⛔ 必须跟着 LATEST_ROUND 走，否则默认轮跑不到它 = 保护关着
   "status-lights": "10-12",   // 10-12 轮：输入框底栏动态状态灯（最多一盏 + 轮换 + 窗口自适应隐藏；结构由守卫 12d 钉）
+"md-block-copy": "10-12",   // 10-14 加：块级复制（表格 + 代码块）—— 常驻可见 + 两段反馈 + 剪贴板拿到 TSV/代码原文；结构由守卫 12o 钉
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）
