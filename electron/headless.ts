@@ -793,7 +793,7 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
 
   // 云版门面（登录门探测 + 配对换 token；协议与伴生服务一致 ⇒ 门零改动可用）
   if (p === "/api/health") {
-    deny(200, { ok: true, product: "codex-assistant", protocolVersion: 1, mode: "real-ui" });
+    deny(200, { ok: true, product: "codex-assistant", protocolVersion: 1, mode: "real-ui", machineId: machineId() });
     return;
   }
   if (p === "/api/pair" && req.method === "POST") {
