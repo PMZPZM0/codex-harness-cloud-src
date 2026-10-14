@@ -5,19 +5,24 @@
  *   · 连接状态：闸是否开 / 绑定的账号 / 服务器可达性 / 本机配对码（未绑定时）
  *   · 设备（座位）列表：名称 + token 指纹 + 吊销（吊销后那台机器要重新认领）
  *   · 更新：cloud:update/check（探测云端 version.json）—— download/apply 尚未接线，**如实显示**
+ *   · 我的积分：余额 + 变动明细（10-14 用户令「面板里啥都没有」补上）
+ *   · 限时福利：内置供应商的可用模型 + 倍率 + 勾选（勾了才有权限调用）
+ *   · 会话同步：立即上传 / 从云端下载
  *   · 断开连接：清空绑定与设备 token ⇒ 回到配对卡
  *
  * 数据源（两路，都有就都用，缺了就防御性降级）：
  *   · IPC（并行线的 cloud-reserve-ipc 域）：cloud:device/list / cloud:device/unbind / cloud:update/check
- *   · HTTP（headless 的 /api/cloud-state、/api/cloud-disconnect）：闸/账号/可达性/断开
+ *   · HTTP（headless）：/api/cloud-state、/api/cloud-devices、/api/cloud-points、/api/cloud-models、
+ *     /api/cloud-models-enabled、/api/cloud-disconnect 等
  *
  * ⛔⛔ 必须 portal 到 `document.body`（同 CloseConfirmDialog：transform 祖先会让 fixed 退化）。
  * ⛔ **自包含**：状态与请求都在本组件内；挂载处一行。桌面版（无 __CHC_ACCOUNT_GATE__）
  *    账户菜单里**不会出现**这个入口 ⇒ 本组件也不会被挂载。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Cloud, CloudDownload, CloudUpload, RefreshCw, Unplug, X } from "lucide-react";
+import { Cloud, CloudDownload, CloudUpload, Coins, Gift, RefreshCw, Search, Unplug, X } from "lucide-react";
+import { syncLimitedBenefitQuiet } from "../features/limited-benefit";
 
 type CloudState = {
   gated: boolean;
@@ -38,6 +43,36 @@ type DeviceRow = { id: string; name: string; claimedAt?: number; lastSeen?: numb
 type UpdateInfo = { available: boolean; current?: string; latest?: string; url?: string; notes?: string; reason?: string };
 /** 同步结果（与本机 /api/sync-now、/api/sync-state 对齐）。 */
 type SyncResultLike = { ok: boolean; reason?: string; pushedSessions?: number; pushedLines?: number; quotaExceeded?: boolean };
+/** 积分（服务端 /points/me，设备令牌也能读）。 */
+type PointsTxn = { id: number; at: number; delta: number; kind: string; ref: string; note?: string; after?: number };
+type PointsInfo = {
+  ok: boolean;
+  username?: string;
+  balance?: number;
+  signupGrant?: number;
+  txns?: PointsTxn[];
+  verify?: { balance: number; sum: number; ok: boolean };
+  error?: string;
+};
+/** 模型目录（服务端 /models）。倍率 credits 形如 "x0.29"。
+    ⛔ 已勾选状态是**每个模型内联的 `enabled` 布尔**（不是顶层 id 数组）——
+    按顶层数组读会永远拿到空集（"勾了刷新又没了"）。 */
+type ModelRow = { id: string; name?: string; credits?: string | number; enabled?: boolean; [k: string]: unknown };
+type ModelsInfo = {
+  ok: boolean;
+  provider?: { id: string; name: string; baseUrl: string; ready: boolean; hasProxyToken?: boolean };
+  models?: ModelRow[];
+  enabledCount?: number;
+  total?: number;
+  error?: string;
+};
+const KIND_LABEL: Record<string, string> = {
+  signup: "注册赠送",
+  grant: "管理员发放",
+  consume: "调用消耗",
+  reconcile: "对账冲正",
+  refund: "退回",
+};
 /* ⛔ 云通道（cloud:device/*、cloud:update/check）只存在于**云助手仓**的 manifest ⇒
    桌面仓的生成类型里没有它们。组件只在云助手形态挂载，但 TS 对三仓统一编译
    ⇒ 这里走**防御性可选类型**，运行时有就有、没有就不调（绝不在桌面仓硬引）。 */
@@ -81,6 +116,12 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     refresh();
     loadSync();   // 会话同步状态（已上传会话数/行数/最近时间）
+    loadPoints(); // 积分余额与变动明细
+    loadModels(); // 限时福利：可用模型 + 勾选
+    /* ⛔ 打开面板即把服务端的勾选同步成本机供应商（幂等、静默）：
+       本机模型下拉框只读本机供应商列表 ⇒ 不同步就是"勾了却选不到"（用户实测）。
+       放在这里而不是"仅勾选时"：换机/重装/换绑后第一次打开面板自愈。 */
+    syncLimitedBenefitQuiet();
   }, [refresh]);
 
   const runUpdateCheck = () => {
@@ -120,6 +161,68 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
         setTimeout(() => location.reload(), 800);
       })
       .catch(() => setDisconnecting(false));
+  };
+
+  /* ── 积分（服务端 /points/me，本机 /api/cloud-points 转发）────────────────── */
+  const [points, setPoints] = useState<PointsInfo | null>(null);
+  const [pointsErr, setPointsErr] = useState("");
+  function loadPoints() {
+    void fetch("/api/cloud-points", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j: PointsInfo) => {
+        if (j && j.ok) { setPoints(j); setPointsErr(""); }
+        else { setPoints(null); setPointsErr(j?.error === "no-device-token" ? "未绑定账号" : (j?.error || "读取失败")); }
+      })
+      .catch(() => { setPoints(null); setPointsErr("网络错误"); });
+  }
+  /* ── 限时福利：模型目录（服务端 /models）+ 勾选（/models/enabled）─────────── */
+  const [models, setModels] = useState<ModelsInfo | null>(null);
+  const [modelsErr, setModelsErr] = useState("");
+  const [modelQuery, setModelQuery] = useState("");
+  const [savingModels, setSavingModels] = useState(false);
+  /* 本地选择集：从服务端每模型的 enabled 布尔派生；勾选后就地更新，落盘为 id 数组。 */
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  function loadModels() {
+    void fetch("/api/cloud-models", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j: ModelsInfo) => {
+        if (j && j.ok) {
+          setModels(j);
+          setPicked(new Set((j.models || []).filter((m) => m.enabled).map((m) => m.id)));
+          setModelsErr("");
+        } else { setModels(null); setModelsErr(j?.error === "no-device-token" ? "未绑定账号" : (j?.error || "读取失败")); }
+      })
+      .catch(() => { setModels(null); setModelsErr("网络错误"); });
+  }
+  /* 勾选去抖 500ms 后再落盘（连点不会再打一串请求）。
+     ⛔ 服务端契约是 `{ ids: [...] }` 整集覆盖 —— 发 `{ enabled }` 会被静默丢掉（勾选存不进去）。 */
+  const modelsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function commitModels(next: Set<string>) {
+    setPicked(new Set(next));
+    if (modelsTimer.current) clearTimeout(modelsTimer.current);
+    modelsTimer.current = setTimeout(() => {
+      setSavingModels(true);
+      void fetch("/api/cloud-models-enabled", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [...next] }),
+      })
+        .then((r) => r.json())
+        .then((j: { ok?: boolean; enabled?: string[] }) => {
+          /* 服务端会过滤掉目录里不存在的 id ⇒ 以它的回执为准回填，避免本地与服务端不一致。 */
+          if (j && j.ok && Array.isArray(j.enabled)) setPicked(new Set(j.enabled));
+          /* ⛔ 勾选落盘后必须**同步到本机供应商**：本机模型下拉框只读本机供应商列表，
+             不同步就是"勾了却选不到"（用户实测「我选了模型生效，下拉框里面没有啊」）。 */
+          if (j && j.ok) syncLimitedBenefitQuiet();
+        })
+        .catch(() => setNote("模型勾选保存失败（本机服务不可达）"))
+        .finally(() => setSavingModels(false));
+    }, 500);
+  }
+  const toggleModel = (id: string) => {
+    const next = new Set(picked);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    commitModels(next);
   };
 
   /* 会话同步（P0 上传 / P1 下载）：状态读本机 /api/sync-state，动作打本机同步端点。 */
@@ -196,6 +299,105 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
               {/* ⛔ 配对码不在这里显示：外壳已不再注入 __CHC_PAIR_CODE__，"5 分钟有效"的旧语义也早改了
                   （现在是"认领成功或手动刷新前一直有效"）。配对码统一在**配对页**（/pair）展示，带复制与刷新。 */}
             </div>
+          )}
+        </section>
+
+        <section className="cloud-manage-sec">
+          <div className="cloud-manage-label">我的积分</div>
+          {!points ? (
+            <div className="cloud-manage-muted">{pointsErr || "读取中…"}</div>
+          ) : (
+            <>
+              <div className="cloud-manage-points">
+                <span className="bal">
+                  <Coins size={15} /> {Number(points.balance ?? 0).toLocaleString()}
+                </span>
+                <span className="unit">积分</span>
+                {points.verify ? (
+                  <span className={"cloud-manage-badge" + (points.verify.ok ? " ok" : " bad")}>
+                    {points.verify.ok ? "账目一致" : "账目异常"}
+                  </span>
+                ) : null}
+              </div>
+              {points.txns && points.txns.length ? (
+                <div className="cloud-manage-txns">
+                  {points.txns.slice(0, 8).map((t) => (
+                    <div key={`${t.id}-${t.ref}`} className="cloud-manage-txn">
+                      <span className="k">{KIND_LABEL[t.kind] || t.kind}</span>
+                      <span className="n" title={t.note || ""}>{t.note || t.ref}</span>
+                      <span className={"d" + (t.delta > 0 ? " up" : t.delta < 0 ? " down" : "")}>
+                        {t.delta > 0 ? "+" : ""}{t.delta}
+                      </span>
+                      <span className="t">{new Date(t.at).toLocaleDateString()}</span>
+                    </div>
+                  ))}
+                  {points.txns.length > 8 ? <div className="cloud-manage-muted">仅显示最近 8 条，完整明细见网站用户中心。</div> : null}
+                </div>
+              ) : (
+                <div className="cloud-manage-muted">暂无变动记录（注册赠送 {Number(points.signupGrant ?? 1000).toLocaleString()} 积分）</div>
+              )}
+            </>
+          )}
+        </section>
+
+        <section className="cloud-manage-sec">
+          <div className="cloud-manage-label">
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <Gift size={12} /> 限时福利{models?.provider?.name ? ` · ${models.provider.name}` : ""}
+            </span>
+          </div>
+          {!models ? (
+            <div className="cloud-manage-muted">{modelsErr || "读取中…"}</div>
+          ) : (
+            <>
+              <div className="cloud-manage-muted" style={{ marginBottom: 8 }}>
+                {models.provider?.ready
+                  ? `已开通 · 共 ${models.total ?? models.models?.length ?? 0} 个模型，已勾选 ${picked.size} 个（勾选后才可调用，按倍率扣积分）`
+                  : "供应商尚未就绪，请稍后再试"}
+              </div>
+              <div className="cloud-manage-search">
+                <Search size={13} />
+                <input
+                  type="text"
+                  value={modelQuery}
+                  placeholder="搜索模型…"
+                  onChange={(e) => setModelQuery(e.target.value)}
+                  aria-label="搜索模型"
+                />
+              </div>
+              <div className="cloud-manage-models">
+                {(models.models || [])
+                  .filter((m) => !modelQuery || m.id.toLowerCase().includes(modelQuery.toLowerCase()))
+                  .map((m) => (
+                    <label key={m.id} className="cloud-manage-model">
+                      <input type="checkbox" checked={picked.has(m.id)} onChange={() => toggleModel(m.id)} />
+                      <span className="id">{m.id}</span>
+                      {m.credits ? <span className="cr">×{String(m.credits).replace(/^x/i, "")}</span> : null}
+                    </label>
+                  ))}
+              </div>
+              <div className="cloud-manage-actions" style={{ marginTop: 6 }}>
+                <button
+                  type="button"
+                  className="cloud-manage-btn"
+                  disabled={savingModels || !models.provider?.ready}
+                  onClick={() => commitModels(new Set((models.models || []).map((m) => m.id)))}
+                >
+                  全选
+                </button>
+                <button
+                  type="button"
+                  className="cloud-manage-btn"
+                  disabled={savingModels || !models.provider?.ready}
+                  onClick={() => commitModels(new Set())}
+                >
+                  清空
+                </button>
+                <button type="button" className="cloud-manage-btn" onClick={loadModels}>
+                  <RefreshCw size={13} /> 刷新
+                </button>
+              </div>
+            </>
           )}
         </section>
 

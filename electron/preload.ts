@@ -704,6 +704,14 @@ contextBridge.exposeInMainWorld("codex", {
   freeGatewayModels: () => __ipc("free-gateway:models", 0, []),
   /* 免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除） */
   freeGatewayUninstall: () => __ipc("free-gateway:uninstall", 0, []),
+  /* 限时福利（limited-benefit 域，10-14）：带设备令牌拉服务端 /models（含逐模型勾选状态与积分倍率）。⛔ 不返回任何密钥与上游地址 */
+  limitedBenefitCatalog: () => __ipc("limited-benefit:catalog", 0, []),
+  /* 限时福利：取本用户代理令牌（前缀 wap_）。⛔ 明文仅本通道返回一次（渲染层立即写进供应商 apiKey）；force=true 强制重新签发 */
+  limitedBenefitToken: (input?: { force?: boolean }) => __ipc("limited-benefit:token", 0, [[input]]),
+  /* 限时福利：本机状态（是否已配对 / 是否已有代理令牌），不联网 */
+  limitedBenefitStatus: () => __ipc("limited-benefit:status", 0, []),
+  /* 限时福利：按当前勾选把供应商行写成最新（勾选 = 下拉框可见）。⛔ 只 upsert 这一行：不抢生效位、不禁用用户其他供应商（故意不走 custom-model:save） */
+  limitedBenefitApply: () => __ipc("limited-benefit:apply", 0, []),
   /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
   cloudSyncStatus: () => __ipc("cloud:sync/status", 0, []),
   /* 云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}） */

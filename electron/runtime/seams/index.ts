@@ -48,6 +48,16 @@ export type AppHost = {
   quit: () => void;
   relaunch: (args?: string) => void;
   /**
+   * 释放单实例锁（10-14：`app:relaunch` 的前置动作，否则新实例会自杀）。
+   *
+   * ⛔ `app.relaunch()` 是**立刻** spawn 新实例，不等旧进程退完；而旧进程还在跑 `before-quit`
+   *   的 cleanupAll（秒级到十秒级）。新实例第一个动作就是 `requestSingleInstanceLock()`，
+   *    锁被旧进程持着 ⇒ 拿不到 ⇒ 新实例自己 quit；旧进程退完时 second-instance 已无接收方。
+   *    净效果 = 应用只关不开（用户实测「保存重启，怎么就关掉了应用，没有自动重启呢」）。
+   *    先 release 再 relaunch 即解（顺序不能反：relaunch 后新实例可能已经开始抢锁）。
+   */
+  releaseSingleInstanceLock: () => void;
+  /**
    * 订阅应用生命周期事件（10-03，laya 域需要 `will-quit` 关停子进程）。
    *
    * ⛔ **必须返回退订函数**，且调用方要把它挂进 `ctx.effect` —— 不登记退订的订阅会在
@@ -117,6 +127,7 @@ const hostCaps: HostCaps = {
     // ⚠️ `app.isPackaged` 是**属性**不是方法（写 `isPackaged()` 会 TS2349）；
     //    `app.relaunch` 收的是 `{ args?: string[] }` 对象，不是裸字符串数组。
     relaunch: (args) => app.relaunch(typeof args === "string" ? { args: [args] } : undefined),
+    releaseSingleInstanceLock: () => app.releaseSingleInstanceLock(),
     on: (event, listener) => {
       app.on(event, listener);
       return () => { app.removeListener(event, listener); };
