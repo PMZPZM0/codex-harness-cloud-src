@@ -369,7 +369,9 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
                       <span className="k">{KIND_LABEL[t.kind] || t.kind}</span>
                       <span className="n" title={t.note || ""}>{t.note || t.ref}</span>
                       <span className={"d" + (t.delta > 0 ? " up" : t.delta < 0 ? " down" : "")}>
-                        {t.delta > 0 ? "+" : ""}{t.delta}
+                        {/* 10-14：免费模型的调用记 delta=0（服务端 addUsageOnly 只留痕不改余额）。
+                            直接显示 "0" 看着像异常，按语义写成「免费」；有变动的仍带正负号。 */}
+                        {Number(t.delta) === 0 ? "免费" : `${t.delta > 0 ? "+" : ""}${t.delta}`}
                       </span>
                       <span className="t">{new Date(t.at).toLocaleDateString()}</span>
                     </div>
