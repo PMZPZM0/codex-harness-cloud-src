@@ -253,7 +253,7 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
                   : "")
               : "读取中…"}
           </div>
-          <button type="button" className="cloud-manage-btn" onClick={syncUpload} disabled={syncing || !paired}>
+          <button type="button" className="cloud-manage-btn" onClick={syncUpload} disabled={Boolean(syncing) || !paired}>
             <CloudUpload size={13} />
             {syncing === "up" ? "正在上传…" : "立即上传（本机 → 云端）"}
           </button>
