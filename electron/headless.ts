@@ -911,9 +911,18 @@ function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
     return;
   }
   /* 断开连接：清空全部绑定 + 设备 token ⇒ 界面清掉本地令牌后回到配对卡。 */
-  if (p === "/api/cloud-disconnect" && req.method === "POST") {
-    if (!originAllowed(origin)) { deny(403, { ok: false, error: "origin-not-allowed" }); return; }
-    if (!bridgeAuthOk(req, url)) { deny(401, { ok: false, error: "unauthorized" }); return; }
+/* ⛔⛔ 10-14 实测根因：「断开云端连接」按钮点了像"没反应/又自动登录" ——
+     该端点要**本机令牌**，而界面里的 fetch 不带令牌（令牌在主进程，渲染层拿不到）⇒ 401
+     ⇒ 本地绑定根本没清 ⇒ 配对页轮询发现「机器已绑定」⇒ 交回令牌自己进应用 = 用户看到的"自动登录"。
+   边界改为与其它界面端点一致：**只认本机下发的页面 Origin**（127.0.0.1/localhost 的 PORT），
+   或带合法本机令牌 —— 云端源（ppz123.asia）与任意外域仍拒绝。 */
+function localUiAuthOk(req: IncomingMessage, url: URL): boolean {
+  const origin = req.headers.origin;
+  if (origin === `http://127.0.0.1:${PORT}` || origin === `http://localhost:${PORT}`) return true;
+  return bridgeAuthOk(req, url);
+}
+if (p === "/api/cloud-disconnect" && req.method === "POST") {
+  if (!localUiAuthOk(req, url)) { deny(403, { ok: false, error: "unauthorized" }); return; }
     persistAccountBindings({ owner: "", users: {} });
     try { rmSync(deviceTokenFile, { force: true }); } catch { /* 忽略 */ }
     console.log("[cloud] 已断开云端连接（清空账号绑定与设备 token）");
