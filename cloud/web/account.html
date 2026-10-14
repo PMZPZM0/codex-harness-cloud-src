@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>用户中心 · Codex Assistant</title>
+<!-- ⛔ 自足页：只依赖本文件与 /cloud-api/*（与 admin.html 同铁律，云端原样托管即可用）。 -->
+<style>
+  :root {
+    --bg: #f6f6f4; --card: #ffffff; --field: #fafaf8; --line: #e6e6e1; --line-soft: #efefeb;
+    --text: #22221f; --muted: #6a6a64; --faint: #9a9a93;
+    --brand: #7c3aed; --brand-soft: #f0e9fe;
+    --ok: #1a7f37; --bad: #c0392b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.6 Inter, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 40px 20px 64px; }
+  .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+  .mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, #a78bfa, #7c3aed);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px; }
+  .head-links { display: flex; gap: 14px; align-items: center; font-size: 13px; }
+  .head-links a { color: var(--brand); text-decoration: none; cursor: pointer; }
+  .head-links a:hover { text-decoration: underline; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
+  .kv { display: grid; grid-template-columns: 96px 1fr; gap: 8px 14px; font-size: 13.5px; }
+  .kv .k { color: var(--muted); }
+  .row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line-soft); font-size: 13.5px; }
+  .row:first-of-type { border-top: 0; }
+  .row .name { flex: 1; font-weight: 500; }
+  .row .meta { color: var(--faint); font-size: 12px; }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); }
+  button { appearance: none; -webkit-appearance: none; font: inherit; cursor: pointer; border-radius: 8px; padding: 7px 14px; font-size: 13px; border: 1px solid var(--line); background: #fff; color: var(--text); }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  button.danger { color: var(--bad); border-color: #f0d5d1; }
+  button:disabled { opacity: .55; cursor: default; }
+  .field { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); font: inherit; font-size: 13.5px; }
+  .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .form-row .field { flex: 1; min-width: 180px; }
+  .status { font-size: 12.5px; color: var(--muted); min-height: 18px; }
+  .status.bad { color: var(--bad); }
+  .status.ok { color: var(--ok); }
+  .empty { color: var(--faint); font-size: 13px; padding: 6px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="brand"><span class="mark">CA</span><span>用户中心 · Codex Assistant</span></div>
+    <div class="head-links" id="nav"></div>
+  </div>
+
+  <div class="card">
+    <h2>账号信息</h2>
+    <div class="kv" id="acct"><div class="k">状态</div><div>读取中…</div></div>
+  </div>
+
+  <div class="card">
+    <h2>我的设备</h2>
+    <div id="devices"><div class="empty">读取中…</div></div>
+    <div style="margin-top:12px"><button id="addDevice">连接新设备</button></div>
+  </div>
+
+  <div class="card">
+    <h2>修改密码</h2>
+    <div class="form-row"><input class="field" id="pwOld" type="password" placeholder="当前密码" autocomplete="current-password" /></div>
+    <div class="form-row"><input class="field" id="pwNew" type="password" placeholder="新密码（至少 8 位）" autocomplete="new-password" /></div>
+    <div class="form-row"><input class="field" id="pwNew2" type="password" placeholder="再输一次新密码" autocomplete="new-password" /><button class="primary" id="pwSave">保存</button></div>
+    <div class="status" id="pwStatus"></div>
+  </div>
+</div>
+<script>(function () {
+  "use strict";
+  var API = "/cloud-api";
+  var session = "";
+  try { session = localStorage.getItem("chc-session") || ""; } catch (e) { /* 忽略 */ }
+  var $ = function (id) { return document.getElementById(id); };
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = { "Content-Type": "application/json" };
+    if (session) headers.Authorization = "Bearer " + session;
+    return fetch(API + path, { method: opts.method || "GET", headers: headers, body: opts.body ? JSON.stringify(opts.body) : undefined })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); });
+  }
+  function fmt(ms) {
+    if (!ms) return "—";
+    var d = new Date(ms);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+  function link(text, href, target) {
+    var a = document.createElement("a"); a.textContent = text;
+    a.onclick = function () { if (target) window.open(href, target); else window.location.href = href; };
+    return a;
+  }
+  function logout() {
+    api("/logout", { method: "POST" }).catch(function () { /* 忽略 */ });
+    try { localStorage.removeItem("chc-session"); } catch (e) { /* 忽略 */ }
+    window.location.href = "index.html";
+  }
+
+  if (!session) { window.location.replace("index.html"); return; }
+
+  api("/me").then(function (r) {
+    if (!r.ok || !r.j || !r.j.ok) { try { localStorage.removeItem("chc-session"); } catch (e) {} window.location.replace("index.html"); return; }
+    var a = r.j.account;
+    var kv = $("acct"); kv.innerHTML = "";
+    [["用户名", a.username], ["角色", a.role === "admin" ? "管理员" : "普通用户"], ["注册时间", fmt(a.createdAt)], ["上次登录", fmt(a.lastLogin)]].forEach(function (pair) {
+      var k = document.createElement("div"); k.className = "k"; k.textContent = pair[0];
+      var v = document.createElement("div"); v.textContent = pair[1];
+      kv.appendChild(k); kv.appendChild(v);
+    });
+    var nav = $("nav");
+    nav.appendChild(link("连接新设备", "index.html"));
+    if (a.role === "admin") nav.appendChild(link("用户管理", "admin.html", "_blank"));
+    nav.appendChild(link("退出登录", "#"));
+    nav.lastChild.onclick = logout;
+    loadDevices();
+  }).catch(function () { window.location.replace("index.html"); });
+
+  function loadDevices() {
+    api("/devices").then(function (r) {
+      var box = $("devices"); box.innerHTML = "";
+      var list = (r.ok && r.j && r.j.ok && r.j.devices) || [];
+      if (!list.length) { var e = document.createElement("div"); e.className = "empty"; e.textContent = "还没有设备认领过。点下面的「连接新设备」把这台电脑连上。"; box.appendChild(e); return; }
+      list.forEach(function (d) {
+        var row = document.createElement("div"); row.className = "row";
+        var name = document.createElement("span"); name.className = "name"; name.textContent = d.name || "未命名设备";
+        var meta = document.createElement("span"); meta.className = "meta"; meta.textContent = "认领 " + fmt(d.claimedAt) + " · 最后在线 " + fmt(d.lastSeen);
+        var revoke = document.createElement("button"); revoke.className = "danger"; revoke.textContent = "吊销";
+        revoke.onclick = function () {
+          revoke.disabled = true;
+          api("/device/revoke", { method: "POST", body: { id: d.id } }).then(function (x) {
+            if (x.ok && x.j && x.j.ok) loadDevices(); else { revoke.disabled = false; }
+          }).catch(function () { revoke.disabled = false; });
+        };
+        row.appendChild(name); row.appendChild(meta); row.appendChild(revoke);
+        box.appendChild(row);
+      });
+    }).catch(function () {
+      var box = $("devices"); box.innerHTML = "";
+      var e = document.createElement("div"); e.className = "empty"; e.textContent = "设备列表读取失败，稍后重试。"; box.appendChild(e);
+    });
+  }
+
+  $("addDevice").onclick = function () { window.location.href = "index.html"; };
+  $("pwSave").onclick = function () {
+    var st = $("pwStatus"); st.className = "status";
+    var oldPw = $("pwOld").value, newPw = $("pwNew").value, again = $("pwNew2").value;
+    if (newPw.length < 8) { st.textContent = "新密码至少 8 位"; st.className = "status bad"; return; }
+    if (newPw !== again) { st.textContent = "两次输入的新密码不一致"; st.className = "status bad"; return; }
+    var btn = $("pwSave"); btn.disabled = true;
+    api("/password", { method: "POST", body: { oldPassword: oldPw, newPassword: newPw } }).then(function (r) {
+      btn.disabled = false;
+      if (r.ok && r.j && r.j.ok) { st.textContent = "已修改 ✓"; st.className = "status ok"; $("pwOld").value = $("pwNew").value = $("pwNew2").value = ""; }
+      else { st.textContent = (r.j && r.j.error) || "修改失败"; st.className = "status bad"; }
+    }).catch(function () { btn.disabled = false; st.textContent = "网络错误"; st.className = "status bad"; });
+  };
+})();</script>
+</body>
+</html>
