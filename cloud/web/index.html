@@ -665,13 +665,11 @@
       ask.innerHTML = "本机助手正在等待认领：配对码 <b>" + String(presetClaim).toLowerCase() + "</b>。<br>把<b>这台电脑</b>绑定到当前账号 —— 或换个账号登录。";
       login.appendChild(ask);
       var okBtn = document.createElement("button");
-      okBtn.type = "button"; okBtn.textContent = "确认绑定这台电脑";
-      okBtn.style.cssText = "margin-top:10px;width:100%";
+      okBtn.type = "button"; okBtn.className = "go"; okBtn.textContent = "把本机绑定到当前账号";
       okBtn.onclick = function () { okBtn.disabled = true; claim.click(); };
       login.insertBefore(okBtn, status);
       var swBtn = document.createElement("button");
-      swBtn.type = "button"; swBtn.textContent = "换个账号登录";
-      swBtn.className = "ghost"; swBtn.style.cssText = "margin-top:8px;width:100%";
+      swBtn.type = "button"; swBtn.className = "go alt"; swBtn.textContent = "换个账号登录（用另一个账号绑定）";
       swBtn.onclick = function () { window.location.href = "index.html?claim=" + encodeURIComponent(String(presetClaim).toLowerCase()) + "&switch=1"; };
       login.insertBefore(swBtn, status);
     }
