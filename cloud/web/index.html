@@ -617,7 +617,10 @@
   function runConnector() {
     var preset = new URLSearchParams(location.search).get("pair");
     var presetClaim = new URLSearchParams(location.search).get("claim");
+    /* ⛔ switch=1：换账号 —— 强制走登录/注册表单，忽略当前网页会话（否则自动认领又绑回旧号） */
+    var forceSwitch = new URLSearchParams(location.search).get("switch") === "1";
     PRESET_MID = new URLSearchParams(location.search).get("mid") || "";   /* 本机稳定标识（同机重配对不新增设备行） */
+    if (forceSwitch) { renderAccount(preset, presetClaim); return; }
     accountFetch("/me").then(function (res) {
       if (res.ok && res.j && res.j.ok) afterAccount(preset, presetClaim);
       else renderAccount(preset, presetClaim);
