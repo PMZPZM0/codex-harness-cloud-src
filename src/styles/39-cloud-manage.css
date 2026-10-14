@@ -246,11 +246,47 @@
 .cloud-manage-model:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .cloud-manage-model input { accent-color: var(--text); cursor: pointer; }
 .cloud-manage-model .id { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* 模型元数据徽标（10-14 用户令）：图片 / 上下文 / 输出。
+   ⛔ 数据来自服务端 /models 的 supportsImages·contextLength·maxOutputTokens —— 每个模型都有，
+   所以这里不设"缺就不显示整块"的分支，逐个字段独立判断即可。 */
+.cloud-manage-model .tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+.cloud-manage-model .spec {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .cloud-manage-model .cr {
   color: var(--muted);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* 一键刷新（10-14 用户令「积分也没有用了就刷新」）：贴在「我的积分」标签行右侧。
+   ⛔ 用独立 class 而不改 .cloud-manage-label 本体 —— 后者还有别的使用点。 */
+.cloud-manage-refresh {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+.cloud-manage-label:has(.cloud-manage-refresh) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .spin { animation: cloud-manage-spin 0.9s linear infinite; }
