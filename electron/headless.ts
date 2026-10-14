@@ -923,6 +923,33 @@ function localUiAuthOk(req: IncomingMessage, url: URL): boolean {
 }
 if (p === "/api/cloud-disconnect" && req.method === "POST") {
   if (!localUiAuthOk(req, url)) { deny(403, { ok: false, error: "unauthorized" }); return; }
+    /* ⛔⛔ 10-14 实测真凶（用户「断开后到配对界面又自动进了」）：
+       断开只清本地 ⇒ **服务端那条设备记录还在** ⇒ 本机轮询（未绑定态会问 claim-status）
+       看到"这个码已被认领" ⇒ 约 6 秒后把设备令牌取回来**自己重新绑定** = 用户看到的自动进入。
+       ⇒ 断开必须在**服务端也吊销本机这台设备**（用设备令牌找到 current 那条再吊销）。 */
+    const deviceTokenBeforeClear = readDeviceToken();
+    if (deviceTokenBeforeClear) {
+      void (async () => {
+        try {
+          const listRes = await fetch(`${ACCOUNTS_BASE}/device/list`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${deviceTokenBeforeClear}` },
+            signal: AbortSignal.timeout(6000),
+          });
+          const meta = (await listRes.json().catch(() => null)) as { ok?: boolean; devices?: { id?: string; current?: boolean }[] } | null;
+          const self = (meta?.devices || []).find((d) => d.current);
+          if (self?.id) {
+            await fetch(`${ACCOUNTS_BASE}/device/revoke-by-token`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${deviceTokenBeforeClear}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ id: self.id }),
+              signal: AbortSignal.timeout(6000),
+            });
+            console.log(`[cloud] 已在服务端吊销本机设备记录 ${self.id}（否则本机轮询会自己重新绑定）`);
+          }
+        } catch { /* 服务不可达：本地照常断开；下次轮询若发现仍被认领会重新绑定（界面如实显示） */ }
+      })();
+    }
     persistAccountBindings({ owner: "", users: {} });
     try { rmSync(deviceTokenFile, { force: true }); } catch { /* 忽略 */ }
     console.log("[cloud] 已断开云端连接（清空账号绑定与设备 token）");
