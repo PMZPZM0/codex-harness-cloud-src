@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="color-scheme" content="dark light" />
-<title>Codex Harness Cloud</title>
+<title>Codex Assistant · 账号与设备</title>
 <!--
   这个外壳**同一份文件在三个地方都能用**，靠运行时判断，不靠服务端替换占位符：
     ① 云端：https://ppz123.asia/cloud/          ← 用户直接敲网址进来的入口
@@ -239,7 +239,7 @@
 </head>
 <body>
 <div id="boot">
-  <div class="mark">Codex Harness Cloud</div>
+  <div class="mark">Codex Assistant</div>
   <div class="sub" id="boot-sub">正在连接本地伴生服务…</div>
 </div>
 
@@ -416,7 +416,7 @@
     var brandRow = document.createElement("div"); brandRow.className = "brand-row";
     var mark = document.createElement("div"); mark.className = "brand-mark";
     var brand = document.createElement("div"); brand.className = "brand-name";
-    brand.appendChild(document.createTextNode("Codex Harness"));
+    brand.appendChild(document.createTextNode("Codex Assistant"));
     var em = document.createElement("em"); em.textContent = "Cloud"; brand.appendChild(em);
     brandRow.appendChild(mark); brandRow.appendChild(brand);
     login.appendChild(brandRow);
@@ -735,7 +735,7 @@
     showGate(
       "先启动这台电脑上的助手",
       "你的账号已就绪。干活的助手跑在这台电脑上 —— 现在没有检测到它。\n" +
-      "已安装过：双击桌面上的「Codex Harness Cloud」图标启动，然后点下面的重新检测。\n" +
+      "已安装过：双击桌面上的「Codex Assistant」图标启动，然后点下面的重新检测。\n" +
       "还没安装：点「去下载桌面助手」。",
       null
     );
