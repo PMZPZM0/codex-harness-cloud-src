@@ -604,8 +604,27 @@
     login.appendChild(guideToggle);
     login.appendChild(why);
     input.focus();
-    /* ⛔ 从授权链接进来（?claim=）⇒ 登录后**自动提交认领**，用户在网页上零输入 */
-    if (presetClaim) setTimeout(function () { claim.click(); }, 500);
+    /* ⛔⛔ 10-14 用户实测「断开后到配对界面又自动登录了，我想换绑的机会都没有」：
+       从授权链接（?claim=）进来**不再自动提交认领** —— 旧的自动认领会把"重新绑定/换号测试"
+       变成不可能（标签页一加载就把本机绑回当前登录的号）。改成**一次确认**：
+       当前账号 + [确认绑定这台电脑] + [换个账号登录]。一次点击，但决定权在用户手里。 */
+    if (presetClaim) {
+      var ask = document.createElement("div");
+      ask.className = "status";
+      ask.style.cssText = "margin-top:10px";
+      ask.innerHTML = "本机助手正在等待认领（配对码 <b>" + String(presetClaim).toLowerCase() + "</b>）。<br>确认把本机绑定到当前账号，或换个账号登录。";
+      login.appendChild(ask);
+      var okBtn = document.createElement("button");
+      okBtn.type = "button"; okBtn.textContent = "确认绑定这台电脑";
+      okBtn.style.cssText = "margin-top:10px;width:100%";
+      okBtn.onclick = function () { okBtn.disabled = true; claim.click(); };
+      login.insertBefore(okBtn, status);
+      var swBtn = document.createElement("button");
+      swBtn.type = "button"; swBtn.textContent = "换个账号登录";
+      swBtn.className = "ghost"; swBtn.style.cssText = "margin-top:8px;width:100%";
+      swBtn.onclick = function () { window.location.href = "index.html?claim=" + encodeURIComponent(String(presetClaim).toLowerCase()) + "&switch=1"; };
+      login.insertBefore(swBtn, status);
+    }
   }
 
   /** connector 模式的主流程。
