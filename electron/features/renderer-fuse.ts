@@ -56,8 +56,18 @@ export function eventThreadId(params: any): string {
 export const rendererActiveByWindow = new Map<number, { threadId: string; at: number }>();
 /** 上报新鲜度窗口：超过这个时间没再上报，就认为「不知道它在看什么」，一律放行（宁多不漏）。 */
 const ACTIVE_THREAD_FRESH_MS = 30_000;
-/** 逃生阀：HARNESS_EVENT_FILTER=off 一键回到全量放行（改代码之外的回退路径）。 */
-export const EVENT_FILTER_ENABLED = process.env.HARNESS_EVENT_FILTER !== "off";
+/** 逃生阀：HARNESS_EVENT_FILTER=off 一键回到全量放行（改代码之外的回退路径）。
+ *
+ *  ⛔⛔ 云助手（headless）**默认关闭**按会话裁剪（10-14 用户实测「一直转圈 + 内容不出来」）：
+ *  裁剪的记账靠 `codex:set-active-thread` 写 `event.sender.id`，而 headless 的 `/__ipc`
+ *  桥伪造的 event 只有 `{ isDestroyed, send }` —— **没有 `sender.id`** ⇒ 「哪个窗口在看
+ *  哪个会话」永远不可信 / 记错 ⇒ 正在看的会话的 item·delta 被当"没人看"裁掉，只剩
+ *  `turn/started`（白名单）把运行态点亮 ⇒ 用户看到的就是「一直转圈、正文不出现」。
+ *  实测实锤：`app:perf-counters` 的 `droppedForInactiveSession > 0`。
+ *  桌面版不受影响（真实窗口有 sender.id）⇒ 用 `HARNESS_ASSISTANT` 精准区分平台，
+ *  桌面版行为逐位不变。**平台差异是有意的，不是两份漂移。** */
+export const EVENT_FILTER_ENABLED = process.env.HARNESS_EVENT_FILTER !== "off"
+  && process.env.HARNESS_ASSISTANT !== "1";
 
 /** 当前「必须收到事件」的会话集合 = 各窗口新鲜的活跃会话 ∪ 独立弹窗锁定的会话。
  *  返回 null 表示「信息不可信」——此时调用方必须全量放行。
