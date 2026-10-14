@@ -25,6 +25,35 @@ const DEVICE_LIMIT = Number(process.env.HARNESS_DEVICE_LIMIT || 3);             
 const STORAGE_LIMIT_BYTES = Number(process.env.HARNESS_STORAGE_LIMIT || 1024 * 1024 * 1024); // 每账号 1 GB
 /** 云端数据落盘根：与账号文件同目录，便于一起备份/迁移。 */
 const SYNC_DIR = process.env.HARNESS_SYNC_DIR || path.join(path.dirname(DATA_FILE), "sync");
+/* ── 内置供应商「限时福利」：模型目录来自 WBM（WorkBuddy Manager） ──────────────
+   ⛔⛔ 安全加固（10-14 用户令）：地址与密钥**一律不硬编码、不入日志、不下发前端**。
+   · 取值顺序：systemd 凭据目录（$CREDENTIALS_DIRECTORY/<name>，宿主机密钥加密）
+     → 环境变量（本地开发用）→ 空（如实报"未配置"，**不猜地址**）
+   · 启动/日志里只出现"是否已配置"，任何出错信息都要过 sanitize() 脱敏。 */
+function readSecret(name, envName) {
+  const dir = process.env.CREDENTIALS_DIRECTORY || "";
+  if (dir) {
+    try {
+      const v = fs.readFileSync(path.join(dir, name), "utf8").trim();
+      if (v) return v;
+    } catch { /* 凭据不存在就走环境变量 */ }
+  }
+  return String(process.env[envName] || "").trim();
+}
+/** 日志脱敏：把任何形如 wbt_/wbk_ 的凭据换成前缀+掩码（前缀留 8 位便于排障）。 */
+function sanitize(text) {
+  return String(text == null ? "" : text).replace(/(wbt_|wbk_)([A-Za-z0-9_-]{4})[A-Za-z0-9_-]+/g, "$1$2…[已脱敏]");
+}
+const WBM_BASE = String(process.env.WBM_BASE || "").trim().replace(/\/+$/, "");
+const WBM_TOKEN = readSecret("wbm-token", "WBM_TOKEN");
+const WBM_GATEWAY_KEY = readSecret("wbm-gateway-key", "WBM_GATEWAY_KEY");
+/** 客户端要用的"供应商地址"= 本服务同源代理路径（⛔ 不下发上游真实地址）。 */
+const BUILTIN_PROXY_PATH = "/cloud-api/proxy/v1";
+/** 模型目录缓存时长（WBM 自己也有 5 分钟缓存；这里更宽，避免频繁拉） */
+const MODEL_SYNC_TTL_MS = 30 * 60_000;
+/** 内置供应商在客户端的稳定 id 与展示名 */
+const BUILTIN_PROVIDER_ID = "limited-benefit";
+const BUILTIN_PROVIDER_NAME = "限时福利";
 const ALLOWED_ORIGINS = (process.env.HARNESS_ACCOUNTS_ORIGINS || "https://ppz123.asia,https://www.ppz123.asia").split(",");
 const SESSION_TTL_MS = 7 * 24 * 3600_000;
 
@@ -128,6 +157,24 @@ function verifyTicket(ticket) {
    ⛔ 同码重复认领 = 重装/换机场景 ⇒ 重新生成 token（旧 token 立即失效）。
    ⛔ token 绝不写日志；服务端只存 sha256。 */
 if (typeof db.devices !== "object" || !db.devices) db.devices = {};   // codeHash → 设备记录
+/* 模型目录缓存：{ syncedAt, realm, source, list: [...] } —— 由 WBM 同步而来 */
+if (typeof db.modelCatalog !== "object" || !db.modelCatalog) db.modelCatalog = { syncedAt: 0, realm: "cn", source: "", list: [] };
+/* 每用户生效模型：username → [modelId]（空/缺省 = 全不启用，由用户勾选决定） */
+if (typeof db.userModels !== "object" || !db.userModels) db.userModels = {};
+/* 每用户代理令牌：username → { hash, prefix, createdAt, lastUsedAt, ips: [] }
+   ⛔ 库内**只存 sha256**，明文仅签发时返回一次（与 WBM 的 api_tokens 同一形态）；
+   ⛔ 它不是上游网关密钥 —— 上游密钥只在服务端由代理注入，客户端永远拿不到。 */
+if (typeof db.proxyTokens !== "object" || !db.proxyTokens) db.proxyTokens = {};
+const PROXY_TOKEN_PREFIX = "wap_";
+const PROXY_IP_LIMIT = 5;                       // 同一令牌最多记住几个来源 IP（超出则拒）
+function hashProxyToken(t) { return crypto.createHash("sha256").update(String(t || "")).digest("hex"); }
+function proxyUserByToken(t) {
+  const h = hashProxyToken(t);
+  for (const [username, row] of Object.entries(db.proxyTokens)) {
+    if (row && row.hash === h) return { username, row };
+  }
+  return null;
+}
 const DEVICE_CODE_RE = /^[0-9a-f]{8}$/;
 /** 服务端密钥（HMAC 派生设备 token 用）：首次运行自动生成并落盘（0600）。
  *  ⛔ 为什么用派生而不是随机+存库：本机要靠**轮询**拿 token，而库里只存 sha256
@@ -453,6 +500,38 @@ const server = http.createServer(async (req, res) => {
       const gone = revokeDevice(device.username, body && body.id);
       return gone ? send(200, { ok: true }) : send(404, { ok: false, error: "设备不存在" });
     }
+    /* ── 模型目录同步（WBM → 本服务）────────────────────────────────────────────
+       拉 WBM /api/model-catalog，归一化成客户端要的字段；credits（积分倍率）原样保留 ——
+       ⛔ 倍率是"消耗速度随模型而定"的**唯一真相源**，本服务只转发不重写。 */
+    async function pullModelCatalog(force = false) {
+      const fresh = Date.now() - Number(db.modelCatalog.syncedAt || 0) < MODEL_SYNC_TTL_MS;
+      if (!force && fresh && Array.isArray(db.modelCatalog.list) && db.modelCatalog.list.length) return { ok: true, cached: true };
+      if (!WBM_BASE || !WBM_TOKEN) return { ok: false, error: "wbm-not-configured" };
+      try {
+        const r = await fetch(`${WBM_BASE}/api/model-catalog?realm=cn`, { headers: { Authorization: `Bearer ${WBM_TOKEN}` } });
+        if (!r.ok) return { ok: false, error: `wbm-http-${r.status}` };
+        const data = await r.json();
+        const list = (data.models || []).map((m) => ({
+          id: String(m.id || "").trim(),
+          name: String(m.name || m.id || "").trim(),
+          description: String(m.description || "").slice(0, 200),
+          credits: String(m.credits || "").trim(),
+          tags: Array.isArray(m.tags) ? m.tags.slice(0, 6).map(String) : [],
+          series: String(m.series || ""),
+          contextLength: Number(m.context_length || 0) || null,
+          maxOutputTokens: Number(m.max_output_tokens || 0) || null,
+          supportsImages: Boolean(m.supports_images),
+          supportsReasoning: Boolean(m.supports_reasoning),
+        })).filter((m) => m.id);
+        db.modelCatalog = { syncedAt: Date.now(), realm: String(data.realm || "cn"), source: String(data.source_label || data.source || "wbm"), list };
+        persist();
+        return { ok: true, count: list.length, syncedAt: db.modelCatalog.syncedAt };
+      } catch (error) {
+        /* ⛔ 出错信息可能含 URL/凭据（fetch 的 TypeError 会把地址带进来）⇒ 必须脱敏 */
+        return { ok: false, error: "wbm-unreachable", message: sanitize(error && error.message) };
+      }
+    }
+
     /* ── 云端同步 API（设备令牌鉴权：本机上传；会话令牌：用户在网页查看/删除） ───────── */
     function syncAuth() {
       const header = String(req.headers.authorization || "");
@@ -556,6 +635,100 @@ const server = http.createServer(async (req, res) => {
       writeSyncIndex(who.username, index);
       return send(200, { ok: true, deleted: targets.length, usedBytes: syncUsageBytes(who.username), limitBytes: STORAGE_LIMIT_BYTES });
     }
+    /* ── 内置供应商「限时福利」：模型列表（含每模型积分倍率）+ 生效勾选 ───────── */
+    if (p === "/models" && req.method === "GET") {
+      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      const pulled = await pullModelCatalog(false);
+      const enabled = new Set(Array.isArray(db.userModels[me.username]) ? db.userModels[me.username] : []);
+      const models = (db.modelCatalog.list || []).map((m) => ({ ...m, enabled: enabled.has(m.id) }));
+      return send(200, {
+        ok: true,
+        provider: {
+          id: BUILTIN_PROVIDER_ID,
+          name: BUILTIN_PROVIDER_NAME,
+          /* ⛔ 只给**同源代理路径**：客户端永不接触上游真实地址与网关密钥。
+             真实地址与 wbk_ 密钥只存在本服务（凭据目录）并由代理在服务端注入。 */
+          baseUrl: BUILTIN_PROXY_PATH,
+          ready: Boolean(WBM_BASE && WBM_GATEWAY_KEY),
+          /* 客户端据此决定是否要调 /proxy/token 签发（明文只在那一次响应里） */
+          hasProxyToken: Boolean(db.proxyTokens[me.username]),
+        },
+        models,
+        enabledCount: enabled.size,
+        total: models.length,
+        syncedAt: db.modelCatalog.syncedAt,
+        realm: db.modelCatalog.realm,
+        source: db.modelCatalog.source,
+        sync: pulled.ok ? "ok" : pulled.error,
+      });
+    }
+    /* 勾选生效模型：整集覆盖（前端去抖后提交全量），只接受目录里存在的 id */
+    if (p === "/models/enabled" && req.method === "POST") {
+      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      const body = await readBody();
+      const known = new Set((db.modelCatalog.list || []).map((m) => m.id));
+      const ids = Array.isArray(body && body.ids) ? body.ids.map(String).filter((id) => known.has(id)) : [];
+      db.userModels[me.username] = Array.from(new Set(ids));
+      persist();
+      return send(200, { ok: true, enabledCount: db.userModels[me.username].length, enabled: db.userModels[me.username] });
+    }
+    /* 签发 / 轮换本用户的代理令牌（会话鉴权）。明文**仅此一次**返回，之后无法再取。 */
+    if (p === "/proxy/token" && req.method === "POST") {
+      if (!me) return send(401, { ok: false, error: "unauthorized" });
+      const token = PROXY_TOKEN_PREFIX + crypto.randomBytes(32).toString("base64url");
+      db.proxyTokens[me.username] = { hash: hashProxyToken(token), prefix: token.slice(0, 12), createdAt: Date.now(), lastUsedAt: 0, ips: [] };
+      persist();
+      console.log(`[proxy] 已为账号 ${me.username} 签发代理令牌 ${token.slice(0, 12)}…[已脱敏]`);
+      return send(200, { ok: true, token, prefix: token.slice(0, 12), note: "明文仅此一次，请客户端立即保存到本机配置" });
+    }
+    /* 代理转发的目标：OpenAI 兼容的对话接口（流式原样透传）。
+       ⛔ 上游真实地址与网关密钥**只在这里**出现，绝不回传客户端；
+       ⛔ 未配置网关密钥时如实 503，不静默降级。 */
+    if ((p === "/proxy/v1/chat/completions" && req.method === "POST") || (p === "/proxy/v1/models" && req.method === "GET")) {
+      const header = String(req.headers.authorization || "");
+      const presented = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+      if (!presented || !presented.startsWith(PROXY_TOKEN_PREFIX)) {
+        return send(401, { ok: false, error: "proxy-token-required" });
+      }
+      const hit = proxyUserByToken(presented);
+      if (!hit) return send(401, { ok: false, error: "invalid-proxy-token" });
+      const owner = db.users.find((u) => u.username === hit.username);
+      if (!owner || owner.disabled) return send(403, { ok: false, error: "account-disabled" });
+      /* 来源绑定：首次见到就记住，最多 PROXY_IP_LIMIT 个；超出直接拒（防令牌被转发给别人用） */
+      const ip = ipOf(req);
+      const ips = Array.isArray(hit.row.ips) ? hit.row.ips : [];
+      if (!ips.includes(ip)) {
+        if (ips.length >= PROXY_IP_LIMIT) return send(403, { ok: false, error: "proxy-ip-limit", message: "该令牌已在其它网络使用过，如需更换请重新签发" });
+        ips.push(ip); hit.row.ips = ips;
+      }
+      hit.row.lastUsedAt = Date.now();
+      persist();
+      if (!WBM_BASE || !WBM_GATEWAY_KEY) return send(503, { ok: false, error: "upstream-not-configured" });
+      /* 转发：只替换 Authorization，其余原样（模型、参数、流式标志） */
+      const target = `${WBM_BASE}/v1/${p.endsWith("models") ? "models" : "chat/completions"}`;
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const bodyBuf = Buffer.concat(chunks);
+      try {
+        const upstream = await fetch(target, {
+          method: req.method,
+          headers: { Authorization: `Bearer ${WBM_GATEWAY_KEY}`, "Content-Type": String(req.headers["content-type"] || "application/json") },
+          body: req.method === "POST" ? bodyBuf : undefined,
+        });
+        res.writeHead(upstream.status, { "Content-Type": String(upstream.headers.get("content-type") || "application/json"), "Cache-Control": "no-store" });
+        if (upstream.body) for await (const chunk of upstream.body) res.write(chunk);
+        res.end();
+      } catch (error) {
+        send(502, { ok: false, error: "upstream-unreachable", message: sanitize(error && error.message) });
+      }
+      return;
+    }
+    /* 管理员：立刻重新拉取模型目录（force 绕过缓存） */
+    if (p === "/admin/models/sync" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const pulled = await pullModelCatalog(true);
+      return send(pulled.ok ? 200 : 502, { ok: pulled.ok, ...pulled, total: (db.modelCatalog.list || []).length });
+    }
     if (p === "/device/heartbeat" && req.method === "POST") {
       const header = String(req.headers.authorization || "");
       const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
@@ -643,4 +816,9 @@ if (argv[0] === "--init-admin") {
   process.exit(0);
 }
 
+console.log(
+  "[wbm] 限时福利接入：" +
+    (WBM_BASE && WBM_TOKEN ? "已配置（地址与 token 均来自凭据/环境，不落日志）" : "未配置（缺 WBM_BASE 或 wbm-token 凭据）") +
+    "｜网关密钥：" + (WBM_GATEWAY_KEY ? "已配置" : "未配置")
+);
 server.listen(PORT, "127.0.0.1", () => console.log(`[accounts] 账号服务就绪 127.0.0.1:${PORT}（users=${db.users.length}, file=${DATA_FILE}）`));
