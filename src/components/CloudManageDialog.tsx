@@ -239,12 +239,21 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({ ids: [...next] }),
       })
         .then((r) => r.json())
-        .then((j: { ok?: boolean; enabled?: string[] }) => {
+        .then((j: { ok?: boolean; enabled?: string[]; error?: string }) => {
           /* 服务端会过滤掉目录里不存在的 id ⇒ 以它的回执为准回填，避免本地与服务端不一致。 */
-          if (j && j.ok && Array.isArray(j.enabled)) setPicked(new Set(j.enabled));
-          /* ⛔ 勾选落盘后必须**同步到本机供应商**：本机模型下拉框只读本机供应商列表，
-             不同步就是"勾了却选不到"（用户实测「我选了模型生效，下拉框里面没有啊」）。 */
-          if (j && j.ok) syncLimitedBenefitQuiet();
+          if (j && j.ok && Array.isArray(j.enabled)) {
+            setPicked(new Set(j.enabled));
+            /* ⛔ 勾选落盘后必须**同步到本机供应商**：本机模型下拉框只读本机供应商列表，
+               不同步就是"勾了却选不到"（用户实测「我选了模型生效，下拉框里面没有啊」）。 */
+            syncLimitedBenefitQuiet();
+          } else {
+            /* ⛔⛔ 服务端拒绝 ⇒ 本地勾选必须**回滚**（10-14 实测）：写回静默失败时
+               UI 显示勾上、服务端却没存 ⇒ 代理 403「该模型未在限时福利里启用」，
+               测试连接还把它误报成「认证失败」—— 用户完全无从知道是勾选没存上。
+               回滚到服务端目录的 enabled 真相 + 给出可见提示。 */
+            setPicked(new Set(((models && models.models) || []).filter((m) => m.enabled).map((m) => m.id)));
+            setNote("模型勾选保存失败" + (j && j.error ? `（${j.error}）` : "") + "——已恢复原勾选，请稍后重试");
+          }
         })
         .catch(() => setNote("模型勾选保存失败（本机服务不可达）"))
         .finally(() => setSavingModels(false));
