@@ -23,6 +23,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Cloud, CloudDownload, CloudUpload, Coins, Gift, RefreshCw, Search, Unplug, X } from "lucide-react";
 import { syncLimitedBenefitQuiet } from "../features/limited-benefit";
+/* ⛔ 令牌数格式化复用 model-specs 的单一真相源（1_050_000 → "1.05M"），不在此处抄第二份。 */
+import { formatTokenCount } from "../lib/model-specs";
 
 type CloudState = {
   gated: boolean;
@@ -57,7 +59,20 @@ type PointsInfo = {
 /** 模型目录（服务端 /models）。倍率 credits 形如 "x0.29"。
     ⛔ 已勾选状态是**每个模型内联的 `enabled` 布尔**（不是顶层 id 数组）——
     按顶层数组读会永远拿到空集（"勾了刷新又没了"）。 */
-type ModelRow = { id: string; name?: string; credits?: string | number; enabled?: boolean; [k: string]: unknown };
+type ModelRow = {
+  id: string;
+  name?: string;
+  credits?: string | number;
+  enabled?: boolean;
+  /* 10-14 起渲染的规格字段（服务端 /models 对**每个**模型都带，见本文件模型行的注释）：
+     上下文长度 / 最大输出 / 是否支持图片 / 是否推理模型。显式声明而不是靠索引签名，
+     否则 `m.supportsImages === true` 会因 unknown 判等被 TS 拦下。 */
+  contextLength?: number;
+  maxOutputTokens?: number;
+  supportsImages?: boolean;
+  supportsReasoning?: boolean;
+  [k: string]: unknown;
+};
 type ModelsInfo = {
   ok: boolean;
   provider?: { id: string; name: string; baseUrl: string; ready: boolean; hasProxyToken?: boolean };
@@ -194,6 +209,22 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
       })
       .catch(() => { setModels(null); setModelsErr("网络错误"); });
   }
+  /* ── 一键刷新（积分余额 + 消耗流水 + 模型目录）──────────────────────────────
+     10-14 用户令：「加一个使用日志刷新功能，还有积分同步功能」+「积分也没有用了就刷新」。
+     这些数据在服务端都是**只读快照**，面板只在打开时拉一次 ⇒ 用着用着就过期了
+     （消耗一笔后余额/流水都不动），必须给一个手动重拉的入口。
+     ⛔ 只做重新读取；勾选写回仍走 commitModels 的整集覆盖，不在这里动写路径。 */
+  const [refreshingCloud, setRefreshingCloud] = useState(false);
+  function refreshCloudData() {
+    setRefreshingCloud(true);
+    loadSync();
+    loadPoints();
+    loadModels();
+    /* 三个 load 都是 fire-and-forget（各自内部 catch），给一个最短可见反馈即可 —— 
+       不做 await 编排：任何一路慢/失败都不该把按钮卡住（用户要的是"点了就刷"）。 */
+    window.setTimeout(() => setRefreshingCloud(false), 600);
+  }
+
   /* 勾选去抖 500ms 后再落盘（连点不会再打一串请求）。
      ⛔ 服务端契约是 `{ ids: [...] }` 整集覆盖 —— 发 `{ enabled }` 会被静默丢掉（勾选存不进去）。 */
   const modelsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -303,7 +334,19 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
         </section>
 
         <section className="cloud-manage-sec">
-          <div className="cloud-manage-label">我的积分</div>
+          <div className="cloud-manage-label">
+            我的积分
+            <button
+              type="button"
+              className="cloud-manage-btn cloud-manage-refresh"
+              disabled={refreshingCloud}
+              onClick={refreshCloudData}
+              title="刷新积分余额、消耗记录与模型目录"
+            >
+              <RefreshCw size={12} className={refreshingCloud ? "spin" : undefined} />
+              刷新
+            </button>
+          </div>
           {!points ? (
             <div className="cloud-manage-muted">{pointsErr || "读取中…"}</div>
           ) : (
@@ -372,6 +415,18 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
                     <label key={m.id} className="cloud-manage-model">
                       <input type="checkbox" checked={picked.has(m.id)} onChange={() => toggleModel(m.id)} />
                       <span className="id">{m.id}</span>
+                      {/* 10-14 用户令「模型的上下文数据和是否支持图片等等都更新出来，现在模型啥都没有」：
+                          数据源 = 服务端 /models 的 contextLength · supportsImages · maxOutputTokens。
+                          ⛔ 不要查本地 model-specs 表 —— 它只收录主流模型，限时福利的 hy4-preview /
+                          step-5-preview / space-bunny 都不在表里 ⇒ 那几行原先一个徽标都没有。
+                          服务端目录对**每个**模型都带这三个字段，直接渲染即可。 */}
+                      {m.supportsImages === true ? <span className="tag">图片</span> : null}
+                      {typeof m.contextLength === "number" ? (
+                        <span className="spec">{formatTokenCount(m.contextLength)} 上下文</span>
+                      ) : null}
+                      {typeof m.maxOutputTokens === "number" ? (
+                        <span className="spec">{formatTokenCount(m.maxOutputTokens)} 输出</span>
+                      ) : null}
                       {m.credits ? <span className="cr">×{String(m.credits).replace(/^x/i, "")}</span> : null}
                     </label>
                   ))}
