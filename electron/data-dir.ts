@@ -27,9 +27,12 @@ import { app } from "electron";
 
 export type DataDirBootstrap = { dir?: string; migrate?: boolean };
 
-/** 固定锚点：默认 userData（appData 下的应用目录），bootstrap 指路牌所在。 */
+/** 固定锚点：默认 userData（appData 下的应用目录），bootstrap 指路牌所在。
+ *  ⛔⛔ 10-14 用户令「两个应用八竿子打不着」：默认目录名就是**本产品名** ——
+ *    此前写的是桌面版的 "Codex Harness Desktop"（云助手靠 bootstrap 指路才拐走，
+ *    而且指路牌藏在桌面版的数据目录里 = 又一处缠）。现在默认即 "Codex Assistant"。 */
 export function defaultUserDataDir(): string {
-  return path.join(app.getPath("appData"), "Codex Harness Desktop");
+  return path.join(app.getPath("appData"), "Codex Assistant");
 }
 
 function bootstrapFile(): string {
@@ -159,6 +162,18 @@ export function resolveStartupUserData(): string {
   if (envOverride) return envOverride;
 
   const fallback = defaultUserDataDir();
+  /* ⛔ 一次性迁移（10-14）：历史目录 `codex-assistant`（10-12 分离期用的旧名，且默认名当时
+     还是桌面版的 "Codex Harness Desktop"）⇒ 整体改名到产品名 "Codex Assistant"。
+     老目录存在且新目录不存在才动；失败就继续用老目录（不静默丢数据）。 */
+  const legacy = path.join(app.getPath("appData"), "codex-assistant");
+  try {
+    if (!fs.existsSync(fallback) && fs.existsSync(legacy)) {
+      fs.renameSync(legacy, fallback);
+      console.log(`[data-dir] 用户数据目录已迁移：${legacy} → ${fallback}`);
+    }
+  } catch (error) {
+    console.error("[data-dir] 用户数据目录迁移失败（继续用旧目录）：", error);
+  }
   const boot = readDataDirBootstrap();
   const target = boot?.dir;
   if (!target || path.resolve(target) === path.resolve(fallback)) return fallback;

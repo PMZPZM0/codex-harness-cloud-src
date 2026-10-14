@@ -7,7 +7,7 @@
  *   浏览器端界面，以及把"界面资源从哪来"这件事保持可替换。
  *   所以这里**不存会话内容**，只存三样：监听端口、配对 token、云端资产地址。
  *
- * 落点：$HARNESS_CLOUD_HOME（默认 ~/.codex-assistant/），与桌面版的 userData 完全分开
+ * 落点：$HARNESS_CLOUD_HOME（默认 ~/Codex Assistant/），与桌面版的 userData 完全分开
  *   —— 云版是独立产品，不碰桌面版的账号库/记忆/rollout，避免两个入口互相污染。
  */
 const fs = require("node:fs");
@@ -30,7 +30,7 @@ const DEFAULT_CDN_BASE = "https://ppz123.asia/cloud";
 const DEFAULT_ACCOUNTS_BASE = "https://ppz123.asia/cloud-api";
 
 function homeDir() {
-  return process.env.HARNESS_CLOUD_HOME || path.join(os.homedir(), ".codex-assistant");
+  return process.env.HARNESS_CLOUD_HOME || path.join(os.homedir(), "Codex Assistant");
 }
 
 function ensurePrivateDir(dir) {

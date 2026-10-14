@@ -205,13 +205,13 @@ if (electronDialog) {
    状态通道（/__ipc /__events /__upload /__dialog）都要过 token；/api/health、
    /api/pair 与静态资产除外 —— 配对就是为了换 token。 */
 /* ⛔ 数据目录与桌面版彻底分开（10-14 用户令「八竿子打不着」）：
-   自己的家 = ~/.codex-assistant（⛔ 不再用桌面版的旧名 .codex-harness-cloud）。
+   自己的家 = ~/Codex Assistant（产品名，⛔ 不再用桌面版的旧名 .codex-harness-cloud）。
    一次性迁移：老目录存在且新目录不存在 ⇒ 整体改名（账号绑定/设备令牌/本地令牌全带走）。 */
-const CHC_HOME = process.env.HARNESS_CLOUD_HOME || join(homedir(), ".codex-assistant");
+const CHC_HOME = process.env.HARNESS_CLOUD_HOME || join(homedir(), "Codex Assistant");
 {
-  const legacy = join(homedir(), ".codex-harness-cloud");
+  const legacy = join(homedir(), ".codex-assistant");
   try {
-    if (!existsSync(CHC_HOME) && existsSync(legacy)) { renameSync(legacy, CHC_HOME); console.log("[cloud] 数据目录已迁移：" + legacy + " → " + CHC_HOME); }
+    if (!existsSync(CHC_HOME) && existsSync(legacy)) { renameSync(legacy, CHC_HOME); console.log("[cloud] 云账号目录已迁移：" + legacy + " → " + CHC_HOME); }
   } catch (error) { console.error("[cloud] 数据目录迁移失败（继续用新目录）：", error); }
 }
 /* ── 账号闸（10-13）：**配对必须先有网页账号** ────────────────────────────────
@@ -718,13 +718,10 @@ function serveFile(res: ServerResponse, file: string) {
 app.on("second-instance", () => { void showAssistantWindow(); });
 
 /* ── 云端选址（与登录门同一铁律：前置探测，不用 <link> 的 error 回退）────────
-   跟随服务器更新的机制：真界面资产在 https://…/cloud/app/（version.json 带
-   manifestSha256）。本机指纹与云端**一致**才用云端（协议匹配 = 可安全更新）；
-   不一致或云端不可达 → 本地 dist 兜底。⇒ 站长重新传 /cloud/app/ = 全体用户刷新即新。 */
+   ⛔ 10-14 用户令「服务器上有，本地就是一个壳」：真界面资产在云端 /cloud/app/
+   （version.json 带 protocolVersion）；**协议对得上就一律用云端** —— 界面更新跟
+   服务器走，用户刷新即最新。协议不匹配/云端不可达才回落本地 dist（纯兜底）。 */
 const CLOUD_APP_BASE = process.env.HARNESS_CLOUD_APP_BASE || "https://ppz123.asia/cloud/app";
-const localManifestSha = (() => {
-  try { return createHash("sha256").update(readFileSync(MANIFEST_FILE)).digest("hex").slice(0, 16); } catch { return ""; }
-})();
 
 function shellHtml(shimJs: string, assetBase: string) {
   // ⛔ 本地 index.html 的资源是相对路径（./assets/...）——用云端资产时必须改写基址。
@@ -1212,13 +1209,17 @@ function probeAssetBase(): void {
   const timer = setTimeout(() => controller.abort(), 4000);
   fetch(`${CLOUD_APP_BASE}/version.json?t=${Date.now()}`, { signal: controller.signal, cache: "no-store" })
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-    .then((meta: { protocolVersion?: number; manifestSha256?: string }) => {
+    .then((meta: { protocolVersion?: number }) => {
       clearTimeout(timer);
-      if (Number(meta.protocolVersion) === 1 && meta.manifestSha256 === localManifestSha) {
-        if (assetBaseCache !== CLOUD_APP_BASE) console.log(`[headless] 界面资产切到云端 ${CLOUD_APP_BASE}（跟随服务器更新）`);
+      /* ⛔ 10-14 用户令「服务器上有，本地就是一个壳」：只要云端 version.json 协议对得上
+         ⇒ **一律用云端资产**（界面更新跟服务器走，用户刷新即最新）。
+         ⛔ 原来的"本机 manifestSha256 与云端一致才切云端"是"本地也带一份 UI"时代的闸 ——
+            本地已退化成纯壳，那道闸只会让界面留在本机旧副本上，删。 */
+      if (Number(meta.protocolVersion) === 1) {
+        if (assetBaseCache !== CLOUD_APP_BASE) console.log(`[headless] 界面资产来自云端 ${CLOUD_APP_BASE}（本地只是壳，更新跟服务器走）`);
         assetBaseCache = CLOUD_APP_BASE;
       } else {
-        if (assetBaseCache !== "/__local") console.log(`[headless] 云端 UI 协议不匹配（远端 ${meta.manifestSha256} vs 本机 ${localManifestSha}）→ 本地兜底`);
+        if (assetBaseCache !== "/__local") console.log(`[headless] 云端 UI 协议不匹配（远端 protocolVersion=${meta.protocolVersion}）→ 本地兜底`);
         assetBaseCache = "/__local";
       }
     })
