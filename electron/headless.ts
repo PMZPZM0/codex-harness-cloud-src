@@ -723,20 +723,35 @@ app.on("second-instance", () => { void showAssistantWindow(); });
    服务器走，用户刷新即最新。协议不匹配/云端不可达才回落本地 dist（纯兜底）。 */
 const CLOUD_APP_BASE = process.env.HARNESS_CLOUD_APP_BASE || "https://ppz123.asia/cloud/app";
 
-function shellHtml(shimJs: string, assetBase: string) {
-  // ⛔ 本地 index.html 的资源是相对路径（./assets/...）——用云端资产时必须改写基址。
-  //   注入 <base> 会影响相对链接（icon 等），这里直接把 ./ 前缀替换成资产基址。
-  const html = readFileSync(join(DIST_DIR, "index.html"), "utf8");
+/** 壳 HTML：**云端模式下整份从服务器取**（那才叫"本地只是壳"—— 连 index.html 都不带，
+ *  资产哈希名自然与云端一致）；本地兜底模式才读 dist/index.html。
+ *  ⛔ 曾经的写法是"取本地 index.html 把 ./ 改成云端基址" —— 本地与云端构建的资产哈希名
+ *    不同 ⇒ 改写出一堆 404 ⇒ 黑屏（10-14 实测）。 */
+async function fetchShellHtml(assetBase: string): Promise<string> {
+  if (assetBase !== CLOUD_APP_BASE) return readFileSync(join(DIST_DIR, "index.html"), "utf8");
+  const r = await fetch(`${CLOUD_APP_BASE}/index.html`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`云端 index.html HTTP ${r.status}`);
+  return r.text();
+}
+
+function shellHtml(shimJs: string, assetBase: string, html: string) {
+  // ⛔ html 的来源：云端模式 = 从服务器取的那份（哈希与云端一致）；本地兜底 = dist/index.html。
+  //    但云端那份用的也是相对路径（./assets/…）⇒ 浏览器会回到**本机** origin 找资产
+  //    （本机 dist 的哈希与云端不同 ⇒ 404 ⇒ 黑屏）。所以无论来源，云端模式都要把
+  //    ./ 改写成云端基址 —— 曾经的错法是"取本地 index.html 再改写"（哈希全不对）。
   const isCloud = assetBase !== "/__local";
   let rewritten = isCloud ? html.replace(/(src|href)="\.\//g, `$1="${assetBase}/`) : html;
   if (isCloud) {
-    // ⛔ dist 自带 CSP（script-src 'self' …）会把跨源的云端资产全拦掉（实测：界面全空）。
-    //   资产在云端时，把站点 Origin 加进 script/style 两个白名单 —— 放行的只有
-    //   站长自己的服务器，不是放开任意外域。
+    // ⛔ dist 自带 CSP（script-src 'self' 'unsafe-inline' blob: …）会把跨源的云端资产全拦掉
+    //   （10-14 实测：**黑屏** —— 入口模块脚本被 script-src 拦下，整个应用不加载）。
+    //   ⛔⛔ 改写必须挑「指令开头」插入，不能匹配字面量 `script-src 'self'` —— 真实 CSP 是
+    //   `script-src 'self' 'unsafe-inline' blob:`，字面量根本不在，等于没改（首轮就错在这）。
+    //   放行的只有站长自己的服务器（assetBase 的 Origin），不是放开任意外域。
     const cloudOrigin = new URL(assetBase).origin;
     rewritten = rewritten
-      .replace(/script-src 'self'/g, `script-src 'self' ${cloudOrigin}`)
-      .replace(/style-src 'self'/g, `style-src 'self' ${cloudOrigin}`);
+      .replace(/script-src /g, `script-src ${cloudOrigin} `)
+      .replace(/style-src /g, `style-src ${cloudOrigin} `)
+      .replace(/font-src /g, `font-src ${cloudOrigin} `);
   }
   const cdnMark = `<script>window.__CHC_CDN__ = ${JSON.stringify(assetBase)};</script>\n`;
   // 云端登录门的 token 交接：/#t=<token>（fragment 不进服务器日志）→ localStorage → 抹掉 hash
@@ -1189,7 +1204,17 @@ if (p === "/api/cloud-update-check" && req.method === "GET") {
   if (!file.startsWith(normalize(DIST_DIR))) { res.writeHead(403).end(); return; }
   if (!existsSync(file) || statSync(file).isDirectory()) file = join(DIST_DIR, "index.html");
   if (file.endsWith("index.html")) {
-    res.writeHead(200, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" }).end(shellHtml(shimJs, assetBaseCache));
+    // 云端模式：整份壳从服务器取（失败才回落本地 dist）；注入 shim/交接/CSP 改写后下发
+    void (async () => {
+      let html: string;
+      try {
+        html = await fetchShellHtml(assetBaseCache);
+      } catch (error) {
+        console.error("[headless] 云端壳获取失败，回落本地 dist：", (error as Error).message);
+        html = readFileSync(join(DIST_DIR, "index.html"), "utf8");
+      }
+      res.writeHead(200, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" }).end(shellHtml(shimJs, assetBaseCache, html));
+    })();
     return;
   }
   serveFile(res, file);
