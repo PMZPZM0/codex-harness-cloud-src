@@ -32,7 +32,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ASSISTANT_VERSION: "0.0.1"
+  ASSISTANT_VERSION: "0.0.7"
   # ⛔ 本仓自己（10-12）。发本仓不需要 PAT：默认 GITHUB_TOKEN + contents:write 即可。
   PUBLIC_REPO: PMZPZM0/codex-harness-cloud-src
 
