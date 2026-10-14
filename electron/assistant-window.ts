@@ -18,6 +18,7 @@ import { assistantUrl } from "./open-browser";
 import { resolveWindowIcon } from "./app-icon";
 import { applyRoundedCorners } from "./win-rounded-corners";
 import { titleBarOverlayOptions } from "./runtime-refs";
+import { registerBusWindow, unregisterBusWindow } from "./features/window-bus";
 import { mutableState } from "./main";
 
 type AssistantWin = {
@@ -89,6 +90,16 @@ export async function createAssistantWindow(): Promise<boolean> {
     return false;
   }
   pending = false;
+  /* ⛔⛔ 必须登记到窗口总线（10-14 用户实测「一直转圈、正文不出来」的真根因）：
+     `codex:event` / `harness:event` 等**全部**走 `broadcastToAll()`，而它只遍历
+     `allBusWindows()`（= 登记过的窗口）。桌面版主窗在 window-factory 里登记了，助手窗口是
+     **本模块**另起的一条路 —— 原先从未登记 ⇒ 窗口列表为空 ⇒ **一个事件都推不出去**
+     ⇒ 渲染层只能靠 invoke（thread/resume）拿内容 ⇒ 表现就是「正文不实时、停止后才出来」。
+     实证：连 `/__events` 20 秒只收到握手 `__hello`、**零业务事件**（而引擎侧 rollout 一直在写）。
+     ⛔ 登记后 headless 在 browser-window-created 里包的那层 webContents.send 才会被触发
+     （它才是真正把事件写进 SSE 的那一环），两者缺一不可。 */
+  try { registerBusWindow(created, { primary: true }); } catch { /* 登记失败不阻断窗口创建 */ }
+  created.once("closed", () => { try { unregisterBusWindow(created as BrowserWindow); } catch { /* 忽略 */ } });
   // ⛔ 任务栏图标重申（照抄桌面版主窗 09-27 的修法）：relaunch/快速重启场景下任务栏分组
   //   重建可能吞掉构造期的 icon ⇒ ready-to-show 后 setIcon 再申明一次，幂等、零成本。
   if (process.platform === "win32" && windowIcon && existsSync(windowIcon)) {
