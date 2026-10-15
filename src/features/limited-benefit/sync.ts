@@ -29,7 +29,6 @@ type LimitedApi = {
 
 const api = (): LimitedApi => window.codex as unknown as LimitedApi;
 
-export type SyncResult = { ok: boolean; models: number; promoted: boolean; error?: string };
 
 /**
  * 把「限时福利」的**已勾选模型**同步成本机供应商的模型列表（幂等，可反复调用）。
@@ -42,6 +41,8 @@ export type SyncResult = { ok: boolean; models: number; promoted: boolean; error
  *   下拉框仍是灰的（用户看到的还是"选不到"）。`__refreshProviders` = useModelProviders 导出的
  *   refreshActive（同时刷新 providersList + currentProvider + customModel），注册后用一次即收敛。
  */
+export type SyncResult = { ok: boolean; models: number; promoted: boolean; changed?: boolean; error?: string };
+
 export async function syncLimitedBenefit(_catalog?: CatalogLike | null): Promise<SyncResult> {
   try {
     const r = await api().limitedBenefitApply?.();
@@ -54,7 +55,11 @@ export async function syncLimitedBenefit(_catalog?: CatalogLike | null): Promise
     const refresh = () => { try { (window as unknown as { __refreshProviders?: () => void }).__refreshProviders?.(); } catch { /* 未接线时忽略 */ } };
     refresh();
     setTimeout(refresh, 800);
-    return { ok: true, models: Number(r.models || 0), promoted: Boolean(r.promoted) };
+    /* 10-14：changed 透传给调用方。⛔ 置「pending-restart」标记的动作**不在本函数**——
+       按 10-14 用户令「不是每次勾选都弹」，标记只在用户**手动点「同步到模型配置」按钮**时
+       由 CloudManageDialog 置；配对后自动注册（Quiet）changed 再多也不弹不标记。 */
+    const changed = Boolean((r as { changed?: boolean }).changed);
+    return { ok: true, models: Number(r.models || 0), promoted: Boolean(r.promoted), changed };
   } catch (error) {
     return { ok: false, models: 0, promoted: false, error: String((error as Error)?.message ?? error) };
   }

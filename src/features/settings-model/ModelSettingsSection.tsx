@@ -4,6 +4,7 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
+import { useEffect } from "react";
 import { AppSelect } from "../../components/AppSelect";
 import { Check, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, RefreshCw, Rocket, Store, Trash2, X, Zap } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
@@ -19,6 +20,26 @@ export type ModelSettingsSectionProps = { autoCompactRatio: any; setAutoCompactR
 
 export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   const { autoCompactRatio, setAutoCompactRatio, setNotice, providersList, pptokenCardOff, editingProvider, setCustomDraft, setEditingProvider, uniqueModelCount, customModel, setPptokenCardOff, setProviderEnabled, currentProvider, probingProvider, probeActiveProvider, providerAutoOpenRef, customDraft, savingSettings, openAppConfirm, removeProvider, LOCAL_MODEL_PRESETS, showApiKey, setShowApiKey, probeProvider, saveCustomDraft, switchingModel, probeOneModel, openModelEditor, providerStatus, showToast, saveCustomModel, modelEditor, setModelEditor, targetProviderHint, applyModelIdInput, modelSuggestions, saveModelEditor } = props;
+
+  /* ⛔ 10-14 联动（B）：云端管理面板的模型勾选同步（limited-benefit apply changed=true）
+     会置 localStorage「limited-benefit-pending-restart」标记 —— 本机供应商档案已更新，
+     需要在**本界面**保存供应商并重启应用才最终生效。
+     挂载即检测：有标记 ⇒ 弹确认（复用 openAppConfirm，与「保存供应商」同一弹窗体系）
+     ⇒ 确认后保存 + 重启；取消也清标记（用户已知晓，避免每次进入都弹）。 */
+  useEffect(() => {
+    if (!localStorage.getItem("limited-benefit-pending-restart")) return;
+    try { localStorage.removeItem("limited-benefit-pending-restart"); } catch { /* ignore */ }
+    void (async () => {
+      const go = await openAppConfirm("模型勾选已更新", "云端管理的模型勾选已同步到本机供应商档案。\n在此保存供应商并重启应用后即可完全生效。\n是否现在保存并重启？", "保存并重启应用");
+      if (!go) return;
+      const saved = await saveCustomModel();
+      // ⛔ saveCustomDraft 内部吞错（失败返回 null 且已写内联 notice）——失败绝不能弹「已保存」+重启
+      if (!saved) return;
+      setTimeout(() => { void window.codex.relaunchApp(); }, 800);
+    })();
+    // 仅挂载时检测一次；openAppConfirm/saveCustomModel 来自 bag（稳定引用）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <>
       <section className="settings-model-layout">
