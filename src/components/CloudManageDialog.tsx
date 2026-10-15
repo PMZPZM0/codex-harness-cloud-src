@@ -204,9 +204,15 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
   const [cloudMode, setCloudMode] = useState<{ cloudModels: boolean } | null>(null);
   const [togglingCloud, setTogglingCloud] = useState(false);
   useEffect(() => {
-    void (window.codex as unknown as { modelSourceGet?: () => Promise<{ cloudModels: boolean }> }).modelSourceGet?.()
-      .then((j) => setCloudMode(j || { cloudModels: false }))
-      .catch(() => setCloudMode({ cloudModels: false }));
+    /* ⛔ 必须 null 安全：老版本 dev/未重启主进程时 modelSourceGet 不存在，
+       旧写法 `?.().then()` 会在 undefined 上调 then ⇒ 抛异常 ⇒ 状态卡在 null（开关永远禁用）。 */
+    void (async () => {
+      try {
+        const fn = (window.codex as unknown as { modelSourceGet?: () => Promise<{ cloudModels: boolean }> }).modelSourceGet;
+        const j = fn ? await fn() : null;
+        setCloudMode(j && typeof j.cloudModels === "boolean" ? j : { cloudModels: false });
+      } catch { setCloudMode({ cloudModels: false }); }
+    })();
   }, []);
   function loadModels() {
     void fetch("/api/cloud-models", { cache: "no-store" })
@@ -425,35 +431,50 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
                   : "供应商尚未就绪，请稍后再试"}
               </div>
               {/* 云端模型模式：开启 ⇒ 本地供应商全部停用、模型配置里的供应商开关被锁定 */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-                <span className="cloud-manage-muted" style={{ marginBottom: 0 }}>云端模型模式</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "10px 0", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--line)", background: cloudMode?.cloudModels ? "var(--ok-soft, #e8f5ec)" : "var(--field)", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>云端模型模式</span>
                 <button
                   type="button"
                   role="switch"
                   aria-checked={cloudMode?.cloudModels ? "true" : "false"}
                   aria-label="云端模型模式"
-                  disabled={togglingCloud || cloudMode === null || !models.provider?.ready}
+                  disabled={togglingCloud || !models.provider?.ready}
                   onClick={() => {
                     const next = !(cloudMode?.cloudModels);
                     setTogglingCloud(true);
-                    void (window.codex as unknown as { modelSourceSet?: (i: { cloudModels: boolean }) => Promise<unknown> }).modelSourceSet?.({ cloudModels: next })
-                      .then(() => setCloudMode({ cloudModels: next }))
-                      .catch(() => undefined)
-                      .finally(() => setTogglingCloud(false));
+                    void (async () => {
+                      try {
+                        const fn = (window.codex as unknown as { modelSourceSet?: (i: { cloudModels: boolean }) => Promise<{ cloudModels: boolean }> }).modelSourceSet;
+                        if (!fn) {
+                          alert("当前版本不支持该开关：请重启 dev（npm run dev）后重试。\n主进程需要重新加载才能注册新 IPC。");
+                          return;
+                        }
+                        const j = await fn({ cloudModels: next });
+                        setCloudMode(j && typeof j.cloudModels === "boolean" ? j : { cloudModels: next });
+                      } catch (e) {
+                        alert("切换失败：" + ((e as Error)?.message || "未知错误"));
+                      } finally { setTogglingCloud(false); }
+                    })();
                   }}
                   style={{
-                    position: "relative", width: 40, height: 22, borderRadius: 11, cursor: "pointer",
-                    border: "1px solid var(--line)", background: cloudMode?.cloudModels ? "var(--brand)" : "var(--field)",
-                    opacity: togglingCloud || cloudMode === null ? 0.6 : 1,
+                    position: "relative", width: 52, height: 28, borderRadius: 14, cursor: "pointer", flex: "none",
+                    border: cloudMode?.cloudModels ? "1px solid var(--brand)" : "1px solid var(--line)",
+                    background: cloudMode?.cloudModels ? "var(--brand)" : "var(--line)",
+                    opacity: togglingCloud ? 0.6 : 1,
                   }}
                 >
                   <span style={{
-                    position: "absolute", top: 2, left: cloudMode?.cloudModels ? 20 : 2, width: 16, height: 16,
+                    position: "absolute", top: 3, left: cloudMode?.cloudModels ? 27 : 3, width: 20, height: 20,
                     borderRadius: "50%", background: "#fff", transition: "left .15s ease",
                   }} />
                 </button>
-                <span className="cloud-manage-muted" style={{ marginBottom: 0 }}>
-                  {cloudMode?.cloudModels ? "已开启：只使用云端目录里的模型（本地供应商已停用且开关已锁定）" : "已关闭：使用本地供应商（可在模型配置里切换）"}
+                <span style={{ fontSize: 12, flex: 1, minWidth: 220, color: "var(--muted)" }}>
+                  <b style={{ color: cloudMode?.cloudModels ? "var(--ok, #1a7f37)" : "var(--muted)" }}>
+                    {cloudMode?.cloudModels ? "已开启" : "已关闭"}
+                  </b>
+                  {cloudMode?.cloudModels
+                    ? " · 只使用云端目录里的模型（本地供应商已停用、开关已锁定）"
+                    : " · 使用本地供应商（可在模型配置里切换）"}
                 </span>
               </div>
               <div className="cloud-manage-search">
