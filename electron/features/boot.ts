@@ -7,8 +7,9 @@
  *    局部常量 + setWeixinGateway() 写回 —— 语义等价，且 main 侧引用点零改动。
  */
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from "electron";
+import { readLimitedBenefitTokenForBoot } from "./limited-benefit-ipc";
 import fs from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { WeixinGateway } from "../weixin-gateway";
@@ -365,6 +366,23 @@ export async function bootApp() {
       console.log("[boot] 使用兜底 API key（env HARNESS_CLOUD_API_KEY 或 userData/api-key.txt）");
     }
   }
+  /* ⛔ 20:1x 兼容分支：老用户的限时福利令牌只存在 cloudHome/limited-benefit-token，
+     而上面那段兜底只认 env 与 userData/api-key.txt ⇒ 重启后引擎仍拿不到 Key。
+     这里从既有令牌补写一次 api-key.txt（幂等；写失败不阻断启动），让老用户自动收敛。 */
+  if (!server.hasApiKey()) {
+    try {
+      const legacy = readLimitedBenefitTokenForBoot();
+      if (legacy) {
+        const p = path.join(app.getPath("userData"), "api-key.txt");
+        try { writeFileSync(p, legacy, { mode: 0o600 }); } catch { /* 目录/权限异常则只注入不落盘 */ }
+        server.setApiKey(legacy);
+        console.log("[boot] 从限时福利令牌补位 API key（并落地 api-key.txt）");
+      }
+    } catch (error) {
+      console.warn("[boot] 读取限时福利令牌失败：", error instanceof Error ? error.message : String(error));
+    }
+  }
+
   protocol.handle("harness-image", async (request) => {
     let imagePath = new URL(request.url).searchParams.get("path");
     if (!imagePath) return new Response("Missing path", { status: 400 });
