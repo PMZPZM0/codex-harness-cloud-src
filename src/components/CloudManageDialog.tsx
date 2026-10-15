@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Cloud, CloudDownload, CloudUpload, Coins, Gift, RefreshCw, Search, Unplug, X } from "lucide-react";
-import { syncLimitedBenefitQuiet } from "../features/limited-benefit";
+import { syncLimitedBenefit, syncLimitedBenefitQuiet } from "../features/limited-benefit";
 /* ⛔ 令牌数格式化复用 model-specs 的单一真相源（1_050_000 → "1.05M"），不在此处抄第二份。 */
 import { formatTokenCount } from "../lib/model-specs";
 
@@ -110,13 +110,39 @@ async function fetchCloudState(): Promise<CloudState | null> {
   }
 }
 
-export function CloudManageDialog({ onClose }: { onClose: () => void }) {
+export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => void; onOpenSettings?: (page: string) => void }) {
   const [state, setState] = useState<CloudState | null>(null);
   const [devices, setDevices] = useState<DeviceRow[] | null>(null);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [checking, setChecking] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [note, setNote] = useState("");
+  /* 10-14 联动：勾选同步（limited-benefit:apply changed=true）⇒ 本机供应商档案已更新，
+     模型配置界面需「保存重启」才完全生效 ⇒ 在面板内弹提醒，一键前往模型配置界面。 */
+  const [linkPrompt, setLinkPrompt] = useState(false);
+  /* ⛔ 10-14 用户令「不是每次勾选都弹，加一个同步按键，勾选完点了同步，再刷新模型配置和同步」：
+     勾选（commitModels）只落服务端；点「同步到模型配置」按钮才：
+     ① 拉目录 + applyProvider 同步本机供应商档案（勾选/key/规格落盘，模型配置界面列表刷新）
+     ② changed=true ⇒ 弹「保存重启」提醒 + 置 pending-restart 标记
+        （模型配置界面挂载时据此弹 openAppConfirm 确认框，确认后保存+重启）。
+     ⛔ 配对后的自动注册（useEffect 的 Quiet）走同一函数但 changed 不置标记 —— 自动动作不弹窗。 */
+  const [syncingModels, setSyncingModels] = useState(false);
+  function syncToModelConfig() {
+    setSyncingModels(true);
+    void syncLimitedBenefit()
+      .then((r) => {
+        if (r.ok && r.changed) {
+          try { localStorage.setItem("limited-benefit-pending-restart", String(Date.now())); } catch { /* ignore */ }
+          setLinkPrompt(true);
+        } else if (r.ok) {
+          setNote("已同步，本机模型配置无变更。");
+        } else {
+          setNote("同步失败：" + (r.error || "未知错误"));
+        }
+      })
+      .catch((error) => setNote("同步失败：" + String((error as Error)?.message ?? error)))
+      .finally(() => setSyncingModels(false));
+  }
 
   const refresh = useCallback(() => {
     void fetchCloudState().then((s) => setState(s));
@@ -243,9 +269,9 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
           /* 服务端会过滤掉目录里不存在的 id ⇒ 以它的回执为准回填，避免本地与服务端不一致。 */
           if (j && j.ok && Array.isArray(j.enabled)) {
             setPicked(new Set(j.enabled));
-            /* ⛔ 勾选落盘后必须**同步到本机供应商**：本机模型下拉框只读本机供应商列表，
-               不同步就是"勾了却选不到"（用户实测「我选了模型生效，下拉框里面没有啊」）。 */
-            syncLimitedBenefitQuiet();
+            /* ⛔ 10-14 用户令「不是每次勾选都弹，加一个同步按键」：勾选只写服务端，
+               **不**自动同步本机供应商档案、**不**弹任何提醒 —— 用户点「同步到模型配置」
+               按钮时才执行刷新+同步+弹窗（见 syncToModelConfig）。 */
           } else {
             /* ⛔⛔ 服务端拒绝 ⇒ 本地勾选必须**回滚**（10-14 实测）：写回静默失败时
                UI 显示勾上、服务端却没存 ⇒ 代理 403「该模型未在限时福利里启用」，
@@ -462,6 +488,19 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
                 <button type="button" className="cloud-manage-btn" onClick={loadModels}>
                   <RefreshCw size={13} /> 刷新
                 </button>
+                {/* ⛔ 10-14 用户令「不是每次勾选都弹，加一个同步按键，勾选完点了同步，
+                    再刷新模型配置和同步」：勾选只落服务端；点本按钮才执行
+                    ①拉目录+同步本机供应商档案（模型配置界面列表随之刷新）
+                    ②changed ⇒ 弹「保存重启」提醒 + 置 pending-restart 标记（模型配置界面挂载时据此弹确认）。 */}
+                <button
+                  type="button"
+                  className="cloud-manage-btn primary"
+                  disabled={syncingModels || savingModels || !models.provider?.ready}
+                  onClick={syncToModelConfig}
+                  title="把当前勾选同步到模型配置界面（同步后需在模型配置保存重启生效）"
+                >
+                  <RefreshCw size={13} className={syncingModels ? "spin" : undefined} /> 同步到模型配置
+                </button>
               </div>
             </>
           )}
@@ -549,6 +588,29 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
         </section>
 
         {note ? <div className="cloud-manage-note">{note}</div> : null}
+
+        {/* ⛔ 10-14 联动提醒：勾选同步（changed=true）⇒ 模型配置界面「保存重启」才最终生效。
+            一键前往（关闭本面板 + 打开设置并定位到模型配置页）；也可稍后自行处理。 */}
+        {linkPrompt ? (
+          <div className="cloud-manage-linkmask" role="dialog" aria-modal="true" aria-label="模型配置联动提醒">
+            <div className="cloud-manage-linkcard">
+              <div className="cloud-manage-linktitle">勾选已同步</div>
+              <div className="cloud-manage-linktext">
+                模型勾选已写入本机供应商档案。到<b>模型配置界面</b>点一次「保存」，应用重启后即可完全生效。
+              </div>
+              <div className="cloud-manage-linkbtns">
+                <button
+                  type="button"
+                  className="cloud-manage-btn primary"
+                  onClick={() => { setLinkPrompt(false); onClose(); try { onOpenSettings?.("model"); } catch { /* 导航失败仅关闭面板 */ } }}
+                >
+                  前往模型配置界面
+                </button>
+                <button type="button" className="cloud-manage-btn" onClick={() => setLinkPrompt(false)}>稍后</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>,
     document.body,
