@@ -47,7 +47,12 @@ export const LIMITED_BENEFIT_PROVIDER = "limited-benefit";
 /** 供应商显示名（渲染层常量表逐字一致）。 */
 export const LIMITED_BENEFIT_NAME = "限时福利";
 /** 服务端同源代理路径后缀（上游真实地址与网关密钥只在服务端，客户端永不接触）。 */
-const PROXY_PATH_SUFFIX = "/proxy/v1";
+/* ⛔ 20:2x 修：路径里的 v1 曾与引擎自带前缀重复 —— 引擎请求 rest = `/v1/chat/completions`，
+   桥把它直接拼在 baseUrl 后面；若 baseUrl 以 /v1 结尾，实际发出的是
+   `/cloud-api/proxy/v1/v1/chat/completions` ⇒ 服务端 404 ⇒ 桥协议探测失败 ⇒ 界面显示
+   "上游限流/断流"（用户实测：模型已勾选、Key 已就位，依旧全废）。
+   ⇒ base 只到 /proxy（服务端路由为 /proxy/v1/*，由引擎的 /v1 补全）。 */
+const PROXY_PATH_SUFFIX = "/proxy";
 /** 服务端同源代理路径（本机伴生服务把 /cloud-api 透传到账号服务）。 */
 const DEFAULT_ACCOUNTS_BASE = "https://ppz123.asia/cloud-api";
 
