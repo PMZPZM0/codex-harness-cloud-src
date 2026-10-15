@@ -301,29 +301,3 @@
 
 /* 勾选联动提醒弹层（10-14）：勾选同步 changed=true ⇒ 提醒「模型配置界面保存重启」。
    遮罩盖住面板自身（z 序在面板内容之上、页面级确认框 950 之下）。 */
-.cloud-manage-linkmask {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, #000 45%, transparent);
-  border-radius: inherit;
-}
-.cloud-manage-linkcard {
-  width: min(360px, calc(100% - 48px));
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg, #fff);
-  padding: 16px 18px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
-}
-.cloud-manage-linktitle { font-weight: 600; font-size: 14.5px; margin-bottom: 8px; }
-.cloud-manage-linktext { font-size: 12.5px; color: var(--muted); line-height: 1.65; margin-bottom: 14px; }
-.cloud-manage-linktext b { color: var(--text); }
-.cloud-manage-linkbtns { display: flex; gap: 8px; justify-content: flex-end; }
-.cloud-manage-btn.primary {
-  background: var(--text);
-  color: var(--bg, #fff);
-}
