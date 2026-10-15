@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Cloud, CloudDownload, CloudUpload, Coins, Gift, RefreshCw, Search, Unplug, X } from "lucide-react";
+import { Cloud, CloudDownload, CloudUpload, Coins, Gift, HelpCircle, RefreshCw, Search, Unplug, X } from "lucide-react";
 import { syncLimitedBenefitQuiet } from "../features/limited-benefit";
 /* ⛔ 令牌数格式化复用 model-specs 的单一真相源（1_050_000 → "1.05M"），不在此处抄第二份。 */
 import { formatTokenCount } from "../lib/model-specs";
@@ -117,6 +117,9 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
   const [checking, setChecking] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [note, setNote] = useState("");
+  /* 10-15 用户令：限时福利区加一个「?」教程按钮 —— 勾选后模型那边要怎么做
+     （先刷新模型列表，再保存重启）。点击展开/收起，无遮罩不挡操作。 */
+  const [tipsOpen, setTipsOpen] = useState(false);
 
   const refresh = useCallback(() => {
     void fetchCloudState().then((s) => setState(s));
@@ -466,7 +469,26 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
                 <button type="button" className="cloud-manage-btn" onClick={loadModels}>
                   <RefreshCw size={13} /> 刷新
                 </button>
+                <button
+                  type="button"
+                  className="cloud-manage-btn"
+                  aria-expanded={tipsOpen}
+                  title="勾选后模型配置界面要怎么做"
+                  onClick={() => setTipsOpen((current) => !current)}
+                >
+                  <HelpCircle size={13} /> 勾选后怎么用
+                </button>
               </div>
+              {tipsOpen ? (
+                <div className="cloud-manage-tips" role="note">
+                  <div className="cloud-manage-tipstitle">勾选后，模型配置界面要做的两步：</div>
+                  <ol>
+                    <li><b>刷新模型列表</b> —— 到「模型配置」界面打开这个供应商，勾选的模型会自动出现；没出现就点一次刷新。</li>
+                    <li><b>保存并重启</b> —— 点底部「保存」，应用重启后新勾选的模型即可正常调用。</li>
+                  </ol>
+                  <div className="cloud-manage-muted">提示：未勾选的模型不会出现在模型配置界面的下拉框里。</div>
+                </div>
+              ) : null}
             </>
           )}
         </section>

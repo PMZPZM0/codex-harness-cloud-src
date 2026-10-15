@@ -301,3 +301,16 @@
 
 /* 勾选联动提醒弹层（10-14）：勾选同步 changed=true ⇒ 提醒「模型配置界面保存重启」。
    遮罩盖住面板自身（z 序在面板内容之上、页面级确认框 950 之下）。 */
+
+/* 勾选教程说明块（10-15 用户令：加「?」教程按钮）—— 点击展开/收起，无遮罩。 */
+.cloud-manage-tips {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--line) 22%, transparent);
+}
+.cloud-manage-tipstitle { font-weight: 600; font-size: 12.5px; margin-bottom: 6px; }
+.cloud-manage-tips ol { margin: 0 0 6px; padding-left: 20px; }
+.cloud-manage-tips li { font-size: 12px; line-height: 1.7; }
+.cloud-manage-tips b { color: var(--text); }
