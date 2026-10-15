@@ -119,7 +119,12 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
       // 保存供应商配置不抢模型选择：仅当用户从未选过模型时才初始化下拉
       onAutoSelect(`custom:${saved.provider}:${saved.model}`, DEFAULT_EFFORT);
     }
-    const modelIds = [...new Set([...(saved.models ?? []).map((model) => model.id), ...probedModels, saved.model].filter(Boolean))];
+    /* ⛔ 21:5x 用户定案（方案 A）：「模型配置」只显示**用户已勾选**的模型。
+       限时福利的可用清单由服务端按开放目录返回、档案只写已勾选项 ⇒ **不要并入探测结果**
+       （探测会把开放目录的 17 个全拉回来，与勾选的 5 个不一致 —— 用户实测的核心症状）。
+       其它供应商保持原行为（探测有助于发现其可用模型）。 */
+    const extraProbed = saved.provider === "limited-benefit" ? [] : probedModels;
+    const modelIds = [...new Set([...(saved.models ?? []).map((model) => model.id), ...extraProbed, saved.model].filter(Boolean))];
     setProviderModels(modelIds);
     setModelSourceProvider(saved.provider);
   }
@@ -136,7 +141,11 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
         // 默认 high 而不是顶格：ultra 档的推理 token 会让上游多花数秒才吐首字。
         // 档案 models[].effort（跟着模型保存的档位）优先于全局默认——启动即跟随模型。
         onAutoSelect(`custom:${result.provider}:${result.model}`, savedEffortFor(result.model) || result.models?.find((m) => m.id === result.model)?.effort || DEFAULT_EFFORT);
-        void window.codex.probeCustomModel(result).then((probe) => setProviderModels(probe.models)).catch(() => undefined);
+        /* ⛔ 同上：限时福利**不探测**——它的清单以档案为准（= 用户勾选）；
+           探测 `/models` 拿到的是开放目录全量，会把下拉框冲成 17 个。 */
+        if (result.provider !== "limited-benefit") {
+          void window.codex.probeCustomModel(result).then((probe) => setProviderModels(probe.models)).catch(() => undefined);
+        }
       })
       .catch(() => undefined);
   }, [onAutoSelect]);
