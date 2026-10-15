@@ -23,6 +23,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Cloud, CloudDownload, CloudUpload, Coins, Gift, HelpCircle, RefreshCw, RotateCw, Search, Unplug, X } from "lucide-react";
 import { syncLimitedBenefitQuiet } from "../features/limited-benefit";
+/* ⛔ 胶囊开关一律走统一 ToggleSwitch（守卫【234】⑧）：颜色/暗色适配由它一处负责，
+   不在业务组件里手写轨道与圆点（手写必然各写各的色值 ⇒ 主题一变就露馅）。 */
+import { ToggleSwitch } from "./SettingsWidgets";
 /* ⛔ 令牌数格式化复用 model-specs 的单一真相源（1_050_000 → "1.05M"），不在此处抄第二份。 */
 import { formatTokenCount } from "../lib/model-specs";
 
@@ -430,17 +433,21 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
                   ? `已开通 · 共 ${models.total ?? models.models?.length ?? 0} 个模型，已勾选 ${picked.size} 个（勾选后才可调用，按倍率扣积分）`
                   : "供应商尚未就绪，请稍后再试"}
               </div>
-              {/* 云端模型模式：开启 ⇒ 本地供应商全部停用、模型配置里的供应商开关被锁定 */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "10px 0", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--line)", background: cloudMode?.cloudModels ? "var(--ok-soft, #e8f5ec)" : "var(--field)", flexWrap: "wrap" }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>云端模型模式</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={cloudMode?.cloudModels ? "true" : "false"}
-                  aria-label="云端模型模式"
+              {/* 云端模型模式：开启 ⇒ 本地供应商全部停用、模型配置里的供应商开关被锁定。
+                  ⛔ 色值与尺寸全部下沉到 39-cloud-manage.css（.cloud-mode-*）：
+                     此前写成内联 style 且引用了 --brand / --ok-soft / --field 三个**不存在**的变量，
+                     开启态轨道拿不到品牌色（看着像没开），--ok-soft 还回落成硬编码浅绿（暗色下刺眼）。 */}
+              <div className={`cloud-mode-card ${cloudMode?.cloudModels ? "on" : ""}`}>
+                <span className="cloud-mode-name">云端模型模式</span>
+                <ToggleSwitch
+                  className="cloud-mode-switch"
+                  checked={!!cloudMode?.cloudModels}
                   disabled={togglingCloud || !models.provider?.ready}
-                  onClick={() => {
-                    const next = !(cloudMode?.cloudModels);
+                  label="云端模型模式"
+                  title={cloudMode?.cloudModels
+                    ? "已开启：只使用云端目录里勾选的模型（本地供应商已停用、模型配置里的开关已锁定）"
+                    : "开启后只使用云端目录里勾选的模型，本地供应商自动停用并锁定开关"}
+                  onChange={(next) => {
                     setTogglingCloud(true);
                     void (async () => {
                       try {
@@ -456,22 +463,9 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
                       } finally { setTogglingCloud(false); }
                     })();
                   }}
-                  style={{
-                    position: "relative", width: 52, height: 28, borderRadius: 14, cursor: "pointer", flex: "none",
-                    border: cloudMode?.cloudModels ? "1px solid var(--brand)" : "1px solid var(--line)",
-                    background: cloudMode?.cloudModels ? "var(--brand)" : "var(--line)",
-                    opacity: togglingCloud ? 0.6 : 1,
-                  }}
-                >
-                  <span style={{
-                    position: "absolute", top: 3, left: cloudMode?.cloudModels ? 27 : 3, width: 20, height: 20,
-                    borderRadius: "50%", background: "#fff", transition: "left .15s ease",
-                  }} />
-                </button>
-                <span style={{ fontSize: 12, flex: 1, minWidth: 220, color: "var(--muted)" }}>
-                  <b style={{ color: cloudMode?.cloudModels ? "var(--ok, #1a7f37)" : "var(--muted)" }}>
-                    {cloudMode?.cloudModels ? "已开启" : "已关闭"}
-                  </b>
+                />
+                <span className="cloud-mode-hint">
+                  <b className="cloud-mode-state">{cloudMode?.cloudModels ? "已开启" : "已关闭"}</b>
                   {cloudMode?.cloudModels
                     ? " · 只使用云端目录里的模型（本地供应商已停用、开关已锁定）"
                     : " · 使用本地供应商（可在模型配置里切换）"}
