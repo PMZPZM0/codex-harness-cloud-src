@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（94 个能力域 / 495 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（95 个能力域 / 497 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -379,6 +379,10 @@ SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏�
 ### custom-model（12 通道）
 自定义模型供应商（接入任意 OpenAI 兼容端点：CRUD/探测/测活）
 通道：custom-model:apply, custom-model:list, custom-model:probe, custom-model:read, custom-model:remove, custom-model:remove-model, custom-model:save, custom-model:select, custom-model:set-effort, custom-model:set-enabled, custom-model:set-model, custom-model:upsert-model
+
+### model-source（2 通道）
+**云端模型模式开关**（10-15）：两个通道 —— get 读 / set 写，落盘 userData/model-source.json。开启 ⇒ 模型列表只走云端开放目录里勾选的那些（服务端按 /admin/models/available 下发），本地供应商自动停用，且「模型配置」里的供应商开关被锁定打不开；关闭 ⇒ 恢复本地供应商手动开关。⛔ 只停用**除限时福利之外**的本地供应商 —— 限时福利那一行的可用性由云端勾选决定，不占「当前生效供应商」位。开关本体在「云端管理」面板；模型侧用不到（宿主管理面）。
+通道：model-source:get, model-source:set
 
 ### bridge（1 通道）
 引擎桥连接状态
