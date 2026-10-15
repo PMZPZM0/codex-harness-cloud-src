@@ -314,3 +314,40 @@
 .cloud-manage-tips ol { margin: 0 0 6px; padding-left: 20px; }
 .cloud-manage-tips li { font-size: 12px; line-height: 1.7; }
 .cloud-manage-tips b { color: var(--text); }
+
+/* ===== 云端模型模式开关（10-16 主题色适配）=================================
+   ⛔ 修的是「颜色写死 + 引用不存在的变量」：原内联 style 用了 --brand / --ok-soft / --field，
+      这三个变量在 01-base-and-chrome.css 的变量表里**都没有定义**：
+        · --brand   未定义 ⇒ 开启态轨道拿到的是空值 ⇒ 看着像没开（用户截图就是这个症状）；
+        · --ok-soft 每次都回落到硬编码 #e8f5ec ⇒ 亮色勉强、暗色刺眼；
+        · --field   未定义 ⇒ 关闭态背景透明。
+      现值一律走**真实存在**的语义变量（--ok / --green / --line / --panel-2），
+      并用 color-mix 合成软底 ⇒ 亮/暗两套主题自动跟随，不再需要各写一份色值。 */
+.cloud-mode-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  transition: background var(--dur-ui) ease, border-color var(--dur-ui) ease;
+}
+.cloud-mode-card.on {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.cloud-mode-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.cloud-mode-hint { flex: 1; min-width: 220px; font-size: 12px; color: var(--muted); }
+.cloud-mode-state { font-weight: 600; color: var(--muted); }
+/* 状态字不用 --ok：亮色主题下 --ok(#3fb36b) 落在浅底上对比度不足；
+   --green 是专门给绿字用的（亮 #1a7f37 / 暗 #4ec27a），两套主题都够读。 */
+.cloud-mode-card.on .cloud-mode-state { color: var(--green); }
+
+/* 放大版开关（用户 10-15：「看着不明显」）：只覆盖尺寸与位移，
+   ⛔ 颜色/圆点/on 态动效仍由 .toggle-switch 那一处统一负责，不在这里重写色值。 */
+.cloud-mode-switch .toggle-track { width: 52px; height: 28px; }
+.cloud-mode-switch .toggle-thumb { top: 2px; left: 2px; width: 22px; height: 22px; }
+.cloud-mode-switch.on .toggle-thumb { transform: translateX(24px); }
