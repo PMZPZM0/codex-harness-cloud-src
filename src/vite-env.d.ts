@@ -585,6 +585,10 @@ interface Window {
     upsertProviderModel(input: { provider: string; model: ProviderModelConfig }): Promise<CustomModelState>;
     removeProviderModel(input: { provider: string; modelId: string }): Promise<CustomModelState>;
     setProviderEnabled(input: { provider: string; enabled: boolean }): Promise<CustomModelState>;
+    /* 云端模型模式：读取开关（true=模型列表只走云端开放目录，本地供应商开关被锁定） */
+    modelSourceGet(): Promise<{ cloudModels: boolean }>;
+    /* 云端模型模式：写入开关；开启时自动停用所有本地供应商（限时福利行不受影响） */
+    modelSourceSet(input: { cloudModels: boolean }): Promise<{ cloudModels: boolean }>;
     removeCustomModel(providerId: string): Promise<{ ok: boolean; current: CustomModelState | null }>;
     getChannelBot(): Promise<any>;
     saveChannelBot(config: unknown): Promise<any>;
@@ -1054,7 +1058,7 @@ interface Window {
     /* 限时福利：本机状态（是否已配对 / 是否已有代理令牌），不联网 */
     limitedBenefitStatus(): Promise<{ paired: boolean; hasToken: boolean; provider: string }>;
     /* 限时福利：按当前勾选把供应商行写成最新（勾选 = 下拉框可见）。⛔ 只 upsert 这一行：不抢生效位、不禁用用户其他供应商（故意不走 custom-model:save） */
-    limitedBenefitApply(): Promise<{ ok: boolean; models: number; changed: boolean; error?: string }>;
+    limitedBenefitApply(): Promise<{ ok: boolean; models: number; changed: boolean; promoted: boolean; error?: string }>;
     /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
     cloudSyncStatus(): Promise<{ enabled: boolean; reserved: boolean; quotaBytes: number; usedBytes: number; lastSyncAt: number }>;
     /* 云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}） */

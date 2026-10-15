@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 495,
+  "count": 497,
   "channels": [
     {
       "name": "request",
@@ -1382,6 +1382,26 @@
       "invokeArgs": "input",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "modelSourceGet",
+      "channel": "model-source:get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ cloudModels: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "云端模型模式：读取开关（true=模型列表只走云端开放目录，本地供应商开关被锁定）"
+    },
+    {
+      "name": "modelSourceSet",
+      "channel": "model-source:set",
+      "paramsImpl": "input: { cloudModels: boolean }",
+      "paramsDecl": "input: { cloudModels: boolean }",
+      "returns": "Promise<{ cloudModels: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "云端模型模式：写入开关；开启时自动停用所有本地供应商（限时福利行不受影响）"
     },
     {
       "name": "removeCustomModel",

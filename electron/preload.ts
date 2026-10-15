@@ -242,10 +242,11 @@ contextBridge.exposeInMainWorld("codex", {
   upsertProviderModel: (input: { provider: string; model: unknown }) => __ipc("custom-model:upsert-model", 1, [input]),
   removeProviderModel: (input: { provider: string; modelId: string }) => __ipc("custom-model:remove-model", 1, [input]),
   setProviderEnabled: (input: { provider: string; enabled: boolean }) => __ipc("custom-model:set-enabled", 1, [input]),
-  removeCustomModel: (providerId: string) => __ipc("custom-model:remove", 1, [providerId]),
-  /* 云端模型模式（10-15）：开启 = 只用云端目录里的模型，本地供应商停用且开关锁定。 */
+  /* 云端模型模式：读取开关（true=模型列表只走云端开放目录，本地供应商开关被锁定） */
   modelSourceGet: () => __ipc("model-source:get", 0, []),
+  /* 云端模型模式：写入开关；开启时自动停用所有本地供应商（限时福利行不受影响） */
   modelSourceSet: (input: { cloudModels: boolean }) => __ipc("model-source:set", 1, [input]),
+  removeCustomModel: (providerId: string) => __ipc("custom-model:remove", 1, [providerId]),
   getChannelBot: () => __ipc("channel-bot:read", 0, []),
   saveChannelBot: (config: unknown) => __ipc("channel-bot:save", 1, [config]),
   testChannelBot: (config: unknown) => __ipc("channel-bot:test", 1, [config]),
