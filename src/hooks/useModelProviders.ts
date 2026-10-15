@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_EFFORT, ALL_EFFORTS } from "../lib/effort";
 import { matchModelSpec } from "../lib/model-specs";
 
@@ -10,19 +10,7 @@ export type ProviderModel = { id: string; enabled?: boolean; contextWindow?: num
  *  供应商原话一律保留（最权威），后面补一句排查清单。 */
 export function classifyProviderProbeFailure(raw: string): string {
   const text = String(raw ?? "").replace(/^Error invoking remote method '[^']+':\s*/i, "").trim();
-  /* ⛔ 429 必须最先判：它说明**连接是通的**，只是触发限流 —— 免费/低价模型是共享配额，
-     「60s 内超过 120 次」就是上游网关的 RPM 规则，所有用户共享。把它报成「连接失败」
-     会误导用户去改配置（10-14 实测）。窗口过去即自愈，无需改任何配置。 */
-  if (/429|请求过于频繁|rate_limit|too-many-requests/i.test(text)) {
-    return `${text}\n说明：连接本身是通的，只是触发了限流（免费/低价模型为共享配额，所有限时福利用户共享上游额度）。等 1-2 分钟再试即可，无需修改任何配置。`;
-  }
-  /* ⛔ 云代理的 403 是「模型未启用」（model-not-enabled / 未在「限时福利」里启用）——
-     它**不是**认证失败：Key 是对的，只是该模型的勾选没在服务端生效（勾选写回是异步的，
-     静默失败时用户毫无感知）。归进「认证失败」会把用户引去改 Key（10-14 实测双重误导）。 */
-  if (/model-not-enabled|未在「限时福利」里启用/i.test(text)) {
-    return `${text}\n说明：Key 没问题，只是这个模型在云端管理的勾选没有生效。到「云端管理」重新勾选并保存；若勾了仍报此错，等几秒重试（写回是异步的）。`;
-  }
-  if (/认证失败|401|api\s*key|unauthorized|authentication/i.test(text)) {
+  if (/认证失败|401|403|api\s*key|unauthorized|authentication/i.test(text)) {
     return `${text}\n排查：① Key 是否复制完整（末尾无空格/换行）；② Key 与 Base URL 通道是否配套（例：火山方舟 /api/plan/v3 需套餐专属 Key，普通 Key 用 /api/v3）；③ Key 是否已过期/被禁用，或该账号未开通对应模型`;
   }
   if (/域名解析失败|连接被拒绝|连接超时|ENOTFOUND|ECONNREFUSED|timeout/i.test(text)) {
@@ -153,6 +141,14 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
       .catch(() => undefined);
   }, [onAutoSelect]);
 
+  /* ⛔⛔ 10-15 用户实测「模型删不掉 + API Key 一进界面就掉」的真凶：
+     本 effect 原依赖 [loadActiveModel]，而 loadActiveModel 依赖 onAutoSelect（每次渲染
+     都是新函数）⇒ effect 被反复重跑 ⇒ 每次重跑 activeLoaded 局部变量重置为 false
+     ⇒ 再次 loadActiveModel() ⇒ setCustomDraft 用服务端旧档案覆盖用户正在编辑的草稿
+     （删除被冲掉 = 删不掉；apiKey 被清 = "key 掉了"）。
+     原实现是独立 useEffect([])（空依赖、只跑一次），语义就是"只读一次" —— 必须保持等价：
+     ① activeLoaded 提到 useRef（跨渲染只放行一次）；② 依赖回归 []。 */
+  const activeLoadedRef = useRef(false);
   useEffect(() => {
     /* ⛔⛔ 启动竞态（10-14 用户实测：「保存后重启，第一次进应用啥也没有，第二次进就有」）：
        宿主启动时引擎会被 spawn **两次**——boot.ts:895 发现自定义模型会 applyCustomModel
@@ -163,7 +159,6 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
        拿到非空后再补读一次生效模型（此时 getCustomModel 的 null 才真的可信）。 */
     let cancelled = false;
     let attempt = 0;
-    let activeLoaded = false;
     const loadProviders = () => {
       attempt += 1;
       void window.codex.listCustomModels()
@@ -172,23 +167,25 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
           setProvidersList(providers);
           setCurrentProvider(current);
           const ready = Array.isArray(providers) && providers.length > 0;
-          if (ready && !activeLoaded) {
-            activeLoaded = true;
+          if (ready && !activeLoadedRef.current) {
+            activeLoadedRef.current = true;
             loadActiveModel();
             return;
           }
           if (!ready && attempt <= 6) window.setTimeout(loadProviders, 400 * attempt);
-          else if (!ready && !activeLoaded) { activeLoaded = true; loadActiveModel(); }   // 重试到顶：最后一次兜底
+          else if (!ready && !activeLoadedRef.current) { activeLoadedRef.current = true; loadActiveModel(); }   // 重试到顶：最后一次兜底
         })
         .catch(() => {
           if (cancelled) return;
           if (attempt <= 6) window.setTimeout(loadProviders, 400 * attempt);
-          else if (!activeLoaded) { activeLoaded = true; loadActiveModel(); }
+          else if (!activeLoadedRef.current) { activeLoadedRef.current = true; loadActiveModel(); }
         });
     };
     loadProviders();
     return () => { cancelled = true; };
-  }, [loadActiveModel]);
+    // ⛔ 依赖必须是 []（见上方真凶注释）；onAutoSelect 变化不得重跑本 effect。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 引入 refreshActive：供外部在设置页打开等时机刷新生效供应商（防状态过期导致互斥误判）
   const refreshActive = useCallback(() => {
