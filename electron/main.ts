@@ -210,7 +210,8 @@ if (process.env.CODEX_HARNESS_DEBUG_PORT) app.commandLine.appendSwitch("remote-d
 // 因此做成用户可选的「硬件加速」开关（设置 → 通用），默认 auto，低配机可选 force，需重启生效。
 // 必须在 app ready 之前同步应用（commandLine 开关只在启动早期生效）。
 try {
-  const accel = readAppSettingsSync(app.getPath("userData")).hardwareAcceleration;
+  const boot = readAppSettingsSync(app.getPath("userData"));
+  const accel = boot.hardwareAcceleration;
   if (accel === "force") {
     app.commandLine.appendSwitch("ignore-gpu-blocklist");
     app.commandLine.appendSwitch("enable-gpu-rasterization");
@@ -218,7 +219,18 @@ try {
   } else if (accel === "off") {
     app.disableHardwareAcceleration();
   }
-} catch { /* 设置读取失败不影响启动，保持默认 */ }
+  /* 主题也在这里（app ready 前、**窗口创建前**）落地一次。
+     ⛔ 为什么必须落盘再读：窗口创建时 `assistant-window` / `window-factory` 会取
+        `titleBarOverlayOptions()` 画标题栏 overlay 的符号色（右上角最小化/最大化/关闭），
+        而渲染层的主题存在 localStorage —— 主进程读不到 ⇒ 只能退 `nativeTheme.shouldUseDarkColors`
+        （**系统**主题）。系统亮 + 应用暗时符号色是近黑的 #1b1b1a，画在深色顶栏上几乎看不见；
+        要等渲染层挂载后调 theme:apply 才修正（那之前一直是错的，且渲染层那个 effect 在
+        非聊天界面还不一定及时跑）。这里补一刀 ⇒ 窗口一出生就是对的。 */
+  if (boot.theme === "dark" || boot.theme === "light") {
+    setAppThemeDark(boot.theme === "dark");
+    nativeTheme.themeSource = boot.theme;
+  }
+} catch { /* 设置读取失败不影响启动，保持默认（跟随系统） */ }
 
 // 测试开关（与 CODEX_HARNESS_USER_DATA / CODEX_HARNESS_DEBUG_PORT 同源）：
 // 把 GPU 进程合并进主进程。无 GPU 的机器 / CI / 沙箱里，Chromium 的 GPU 子进程会反复
@@ -668,6 +680,9 @@ ipcMain.handle("theme:apply", (_event, theme: string) => {
   setAppThemeDark(dark);
   nativeTheme.themeSource = dark ? "dark" : "light";
   applyWindowChrome(dark);
+  /* 顺带落盘（10-16）：下次启动在窗口创建前就能读回，标题栏符号色不用等渲染层上报。
+     ⛔ fire-and-forget：写盘失败不能影响主题切换本身（最坏结果 = 下次启动先跟随系统）。 */
+  void saveAppSettings(app.getPath("userData"), { theme: dark ? "dark" : "light" }).catch(() => undefined);
   return { ok: true };
 });
 
