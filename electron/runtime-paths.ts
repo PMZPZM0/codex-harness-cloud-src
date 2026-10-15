@@ -22,6 +22,7 @@ export let memoryGatewayFile = "";
 export let pastedTextDir = "";
 export let memoryWorkspaceFile = "";
 export let modelCatalogFile = "";
+export let modelSourceFile = "";
 /* 09-24 收尾：下列 5 个原在 main.ts，被 main/02..12 反向 import ⇒ 一并下沉（断环无尾巴）。 */
 export let memoryModeFile = "";
 export let mcpOverridesFile = "";
@@ -43,6 +44,8 @@ export function initRuntimePaths() {
   pastedTextDir = path.join(userData, "pasted-text");
   memoryWorkspaceFile = path.join(userData, "memory-workspaces.json");
   modelCatalogFile = path.join(codexHome, "model-catalog.json");
+  /* 「云端模型模式」开关落点：开启 = 只用云端（限时福利）目录里的模型，本地供应商停用且开关锁定 */
+  modelSourceFile = path.join(userData, "model-source.json");
   memoryModeFile = path.join(userData, "memory-mode.json");
   mcpOverridesFile = path.join(userData, "mcp-server-overrides.json");
   connectorsFile = path.join(userData, "connectors.json");

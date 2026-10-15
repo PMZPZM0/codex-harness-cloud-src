@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Cloud, CloudDownload, CloudUpload, Coins, Gift, HelpCircle, RefreshCw, Search, Unplug, X } from "lucide-react";
+import { Cloud, CloudDownload, CloudUpload, Coins, Gift, HelpCircle, RefreshCw, RotateCw, Search, Unplug, X } from "lucide-react";
 import { syncLimitedBenefitQuiet } from "../features/limited-benefit";
 /* ⛔ 令牌数格式化复用 model-specs 的单一真相源（1_050_000 → "1.05M"），不在此处抄第二份。 */
 import { formatTokenCount } from "../lib/model-specs";
@@ -200,6 +200,14 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
   const [savingModels, setSavingModels] = useState(false);
   /* 本地选择集：从服务端每模型的 enabled 布尔派生；勾选后就地更新，落盘为 id 数组。 */
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  /* 10-15 用户令：云端模型模式开关（开启 = 只用云端目录里的模型，本地供应商停用且开关锁定） */
+  const [cloudMode, setCloudMode] = useState<{ cloudModels: boolean } | null>(null);
+  const [togglingCloud, setTogglingCloud] = useState(false);
+  useEffect(() => {
+    void (window.codex as unknown as { modelSourceGet?: () => Promise<{ cloudModels: boolean }> }).modelSourceGet?.()
+      .then((j) => setCloudMode(j || { cloudModels: false }))
+      .catch(() => setCloudMode({ cloudModels: false }));
+  }, []);
   function loadModels() {
     void fetch("/api/cloud-models", { cache: "no-store" })
       .then((r) => r.json())
@@ -416,6 +424,38 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
                   ? `已开通 · 共 ${models.total ?? models.models?.length ?? 0} 个模型，已勾选 ${picked.size} 个（勾选后才可调用，按倍率扣积分）`
                   : "供应商尚未就绪，请稍后再试"}
               </div>
+              {/* 云端模型模式：开启 ⇒ 本地供应商全部停用、模型配置里的供应商开关被锁定 */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+                <span className="cloud-manage-muted" style={{ marginBottom: 0 }}>云端模型模式</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={cloudMode?.cloudModels ? "true" : "false"}
+                  aria-label="云端模型模式"
+                  disabled={togglingCloud || cloudMode === null || !models.provider?.ready}
+                  onClick={() => {
+                    const next = !(cloudMode?.cloudModels);
+                    setTogglingCloud(true);
+                    void (window.codex as unknown as { modelSourceSet?: (i: { cloudModels: boolean }) => Promise<unknown> }).modelSourceSet?.({ cloudModels: next })
+                      .then(() => setCloudMode({ cloudModels: next }))
+                      .catch(() => undefined)
+                      .finally(() => setTogglingCloud(false));
+                  }}
+                  style={{
+                    position: "relative", width: 40, height: 22, borderRadius: 11, cursor: "pointer",
+                    border: "1px solid var(--line)", background: cloudMode?.cloudModels ? "var(--brand)" : "var(--field)",
+                    opacity: togglingCloud || cloudMode === null ? 0.6 : 1,
+                  }}
+                >
+                  <span style={{
+                    position: "absolute", top: 2, left: cloudMode?.cloudModels ? 20 : 2, width: 16, height: 16,
+                    borderRadius: "50%", background: "#fff", transition: "left .15s ease",
+                  }} />
+                </button>
+                <span className="cloud-manage-muted" style={{ marginBottom: 0 }}>
+                  {cloudMode?.cloudModels ? "已开启：只使用云端目录里的模型（本地供应商已停用且开关已锁定）" : "已关闭：使用本地供应商（可在模型配置里切换）"}
+                </span>
+              </div>
               <div className="cloud-manage-search">
                 <Search size={13} />
                 <input
@@ -468,6 +508,25 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
                 </button>
                 <button type="button" className="cloud-manage-btn" onClick={loadModels}>
                   <RefreshCw size={13} /> 刷新
+                </button>
+                <button
+                  type="button"
+                  className="cloud-manage-btn"
+                  disabled={savingModels || !models.provider?.ready}
+                  title="保存当前勾选并重启应用（与模型配置的保存重启同逻辑）"
+                  onClick={() => {
+                    if (!window.confirm("保存当前勾选的模型并重启应用？\n重启后新勾选的模型即可正常调用。")) return;
+                    void (async () => {
+                      try {
+                        const saveCustomModel = (window.codex as unknown as { saveCustomModel?: () => Promise<unknown> }).saveCustomModel;
+                        const relaunchApp = (window.codex as unknown as { relaunchApp?: () => void }).relaunchApp;
+                        if (saveCustomModel) await saveCustomModel();
+                        setTimeout(() => { relaunchApp?.(); }, 600);
+                      } catch { /* 保存失败由 preload 的 notice 提示 */ }
+                    })();
+                  }}
+                >
+                  <RotateCw size={13} /> 保存并重启
                 </button>
                 <button
                   type="button"

@@ -4,7 +4,7 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppSelect } from "../../components/AppSelect";
 import { Check, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, RefreshCw, Rocket, Store, Trash2, X, Zap } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
@@ -19,6 +19,14 @@ import { FreeGatewayRecommendCard } from "../free-gateway";
 export type ModelSettingsSectionProps = { autoCompactRatio: any; setAutoCompactRatio: any; setNotice: any; providersList: any; pptokenCardOff: any; editingProvider: any; setCustomDraft: any; setEditingProvider: any; uniqueModelCount: any; customModel: any; setPptokenCardOff: any; setProviderEnabled: any; currentProvider: any; probingProvider: any; probeActiveProvider: any; providerAutoOpenRef: any; customDraft: any; savingSettings: any; openAppConfirm: any; removeProvider: any; LOCAL_MODEL_PRESETS: any; showApiKey: any; setShowApiKey: any; probeProvider: any; saveCustomDraft: any; switchingModel: any; probeOneModel: any; openModelEditor: any; providerStatus: any; showToast: any; saveCustomModel: any; modelEditor: any; setModelEditor: any; targetProviderHint: any; applyModelIdInput: any; modelSuggestions: any; saveModelEditor: any };
 
 export function ModelSettingsSection(props: ModelSettingsSectionProps) {
+  /* 10-15 用户令：云端模型模式开启时，本地供应商开关必须锁定（模型配置里也打不开）。 */
+  const [cloudLocked, setCloudLocked] = useState(false);
+  useEffect(() => {
+    void (window.codex as unknown as { modelSourceGet?: () => Promise<{ cloudModels: boolean }> }).modelSourceGet?.()
+      .then((j) => setCloudLocked(Boolean(j && j.cloudModels)))
+      .catch(() => setCloudLocked(false));
+  }, []);
+
   const { autoCompactRatio, setAutoCompactRatio, setNotice, providersList, pptokenCardOff, editingProvider, setCustomDraft, setEditingProvider, uniqueModelCount, customModel, setPptokenCardOff, setProviderEnabled, currentProvider, probingProvider, probeActiveProvider, providerAutoOpenRef, customDraft, savingSettings, openAppConfirm, removeProvider, LOCAL_MODEL_PRESETS, showApiKey, setShowApiKey, probeProvider, saveCustomDraft, switchingModel, probeOneModel, openModelEditor, providerStatus, showToast, saveCustomModel, modelEditor, setModelEditor, targetProviderHint, applyModelIdInput, modelSuggestions, saveModelEditor } = props;
 
   /* ⛔ 10-14 联动（B）：云端管理面板的模型勾选同步（limited-benefit apply changed=true）
@@ -57,9 +65,14 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                       {(() => {
                         // PPtoken 赞助商卡常驻置顶：真实配置存在时用真实数据参与排序，否则显示未配置引导卡
                         const realPptoken = providersList.some((p: any) => p.provider === "pptoken");
+                        /* ⛔ 10-15 用户令「把供应商里面的限时供应商删了」：
+                           限时福利已由**云端管理面板**接管（勾选/保存/重启都在那边），
+                           再在「模型配置」里摆一份会让人以为要在两处各配一次。
+                           ⇒ 这里只做**渲染层过滤**（不删档案），引擎配置与云端通道不受影响。 */
+                        const visibleProviders = providersList.filter((p: any) => p.provider !== "limited-benefit");
                         const display = realPptoken
-                          ? [...providersList].sort((a, b) => (a.provider === "pptoken" ? 0 : 1) - (b.provider === "pptoken" ? 0 : 1))
-                          : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...providersList];
+                          ? [...visibleProviders].sort((a, b) => (a.provider === "pptoken" ? 0 : 1) - (b.provider === "pptoken" ? 0 : 1))
+                          : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...visibleProviders];
                         return display.map((p) => {
                           const isPseudoPptoken = p.provider === "pptoken" && !realPptoken;
                           const pseudoOff = isPseudoPptoken && pptokenCardOff;
@@ -97,7 +110,9 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                               </div>
                               <label
                                 className={`provider-switch ${p.enabled === false ? "off" : ""}`}
-                                title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : (customModel && customModel.provider !== p.provider ? `已有供应商「${customModel.name}」生效，一次只能启用一个——先停用它再启用这个` : "已禁用 · 点击启用"))}
+                                title={cloudLocked && !isPseudoPptoken
+                                  ? "云端模型模式已开启：本地供应商开关已锁定（如需使用本地供应商，请先到云端管理关闭「云端模型模式」）"
+                                  : (isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : (customModel && customModel.provider !== p.provider ? `已有供应商「${customModel.name}」生效，一次只能启用一个——先停用它再启用这个` : "已禁用 · 点击启用")))}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   // 启用/停用时**同步把右侧详情切到这个供应商**：原先开关只 stopPropagation，
@@ -112,7 +127,13 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                   }
                                 }}
                               >
-                                <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} disabled={!isPseudoPptoken && p.enabled === false && customModel != null && customModel.provider !== p.provider} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
+                                <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} disabled={cloudLocked || (!isPseudoPptoken && p.enabled === false && customModel != null && customModel.provider !== p.provider)} onChange={(event) => {
+                                  if (cloudLocked && !isPseudoPptoken) {
+                                    event.preventDefault();
+                                    return; // 云端模式下禁止改本地供应商开关（主进程侧同样会拒）
+                                  }
+                                  if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked);
+                                }} />
                                 <span className="provider-switch-ui" />
                               </label>
                               {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}

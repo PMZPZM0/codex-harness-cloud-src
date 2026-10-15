@@ -4640,7 +4640,7 @@
       "returns": "Promise<{ ok: boolean; provider?: { id: string; name: string; baseUrl: string; ready: boolean; hasProxyToken?: boolean }; models?: { id: string; name?: string; credits?: string; enabled?: boolean }[]; error?: string }>",
       "invokeArgs": "",
       "cast": null,
-      "note": "\u9650\u65f6\u798f\u5229\uff08limited-benefit \u57df\uff0c10-14\uff09\uff1a\u5e26\u8bbe\u5907\u4ee4\u724c\u62c9\u670d\u52a1\u7aef /models\uff08\u542b\u9010\u6a21\u578b\u52fe\u9009\u72b6\u6001\u4e0e\u79ef\u5206\u500d\u7387\uff09\u3002\u26d4 \u4e0d\u8fd4\u56de\u4efb\u4f55\u5bc6\u94a5\u4e0e\u4e0a\u6e38\u5730\u5740"
+      "note": "限时福利（limited-benefit 域，10-14）：带设备令牌拉服务端 /models（含逐模型勾选状态与积分倍率）。⛔ 不返回任何密钥与上游地址"
     },
     {
       "name": "limitedBenefitToken",
@@ -4650,7 +4650,7 @@
       "returns": "Promise<{ ok: boolean; token?: string; error?: string; reused?: boolean }>",
       "invokeArgs": "[input]",
       "cast": null,
-      "note": "\u9650\u65f6\u798f\u5229\uff1a\u53d6\u672c\u7528\u6237\u4ee3\u7406\u4ee4\u724c\uff08\u524d\u7f00 wap_\uff09\u3002\u26d4 \u660e\u6587\u4ec5\u672c\u901a\u9053\u8fd4\u56de\u4e00\u6b21\uff08\u6e32\u67d3\u5c42\u7acb\u5373\u5199\u8fdb\u4f9b\u5e94\u5546 apiKey\uff09\uff1bforce=true \u5f3a\u5236\u91cd\u65b0\u7b7e\u53d1"
+      "note": "限时福利：取本用户代理令牌（前缀 wap_）。⛔ 明文仅本通道返回一次（渲染层立即写进供应商 apiKey）；force=true 强制重新签发"
     },
     {
       "name": "limitedBenefitStatus",
@@ -4660,7 +4660,7 @@
       "returns": "Promise<{ paired: boolean; hasToken: boolean; provider: string }>",
       "invokeArgs": "",
       "cast": null,
-      "note": "\u9650\u65f6\u798f\u5229\uff1a\u672c\u673a\u72b6\u6001\uff08\u662f\u5426\u5df2\u914d\u5bf9 / \u662f\u5426\u5df2\u6709\u4ee3\u7406\u4ee4\u724c\uff09\uff0c\u4e0d\u8054\u7f51"
+      "note": "限时福利：本机状态（是否已配对 / 是否已有代理令牌），不联网"
     },
     {
       "name": "limitedBenefitApply",
