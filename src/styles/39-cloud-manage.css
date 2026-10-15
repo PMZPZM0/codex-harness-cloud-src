@@ -333,17 +333,16 @@
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel-2);
-  transition: background var(--dur-ui) ease, border-color var(--dur-ui) ease;
 }
-.cloud-mode-card.on {
-  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
-  background: color-mix(in srgb, var(--ok) 12%, transparent);
-}
+/* ⛔⛔ 开启态**不加**任何底色/描边（用户 10-16：「开启不要搞这种特色颜色，就正常开关就行」）——
+   第一版给整块卡片铺了 12% 的 --ok 绿底，视觉上像"选中了整行"，而不是一个开关。
+   状态一律由开关本体（.toggle-track / .toggle-thumb 的 on 态）表达，卡片只是它的容器。 */
 .cloud-mode-name { font-size: 13px; font-weight: 600; color: var(--text); }
 .cloud-mode-hint { flex: 1; min-width: 220px; font-size: 12px; color: var(--muted); }
 .cloud-mode-state { font-weight: 600; color: var(--muted); }
 /* 状态字不用 --ok：亮色主题下 --ok(#3fb36b) 落在浅底上对比度不足；
-   --green 是专门给绿字用的（亮 #1a7f37 / 暗 #4ec27a），两套主题都够读。 */
+   --green 是专门给绿字用的（亮 #1a7f37 / 暗 #4ec27a），两套主题都够读。
+   ⛔ 只给这几个字上色（是文字提示，不是色块）——用户反对的是整块染色。 */
 .cloud-mode-card.on .cloud-mode-state { color: var(--green); }
 
 /* 放大版开关（用户 10-15：「看着不明显」）：只覆盖尺寸与位移，
