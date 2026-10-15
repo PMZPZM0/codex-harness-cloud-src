@@ -22,7 +22,7 @@ import { defaultUserDataDir } from "./data-dir";
 import { mutableState } from "./main";
 import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, type SyncResult } from "./cloud-sync";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { unlinkSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
@@ -521,6 +521,16 @@ const pairedOnceFile = join(CHC_HOME, "paired-once");
 function saveDeviceToken(token: string): void {
   mkdirSync(CHC_HOME, { recursive: true });
   writeFileSync(deviceTokenFile, token, { mode: 0o600 });
+  /* ⛔ 20:5x 用户指出「频繁换账号，你这设计就有缺陷」——
+     配对/换绑只更新了 device-token，而**旧账号的限时福利凭据仍留在本机**
+     （cloudHome/limited-benefit-token 与 userData/api-key.txt）⇒ 新账号下的调用
+     仍带旧令牌 ⇒ **记账/扣分记到旧账号**（「我的积分」看到的账号与实际记账账号错位）。
+     ⇒ 换账号即作废旧凭据：下次打开云端管理面板会自动以**新账号**重新签发。
+     （删失败不影响配对本身，只记警告。） */
+  for (const stale of [join(CHC_HOME, "limited-benefit-token"), join(app.getPath("userData"), "api-key.txt")]) {
+    try { unlinkSync(stale); console.log(`[device] 换账号 ⇒ 已作废旧凭据 ${stale}`); }
+    catch { /* 不存在/已删：忽略 */ }
+  }
 }
 export function readDeviceToken(): string {
   try { return readFileSync(deviceTokenFile, "utf8").trim(); } catch { return ""; }
