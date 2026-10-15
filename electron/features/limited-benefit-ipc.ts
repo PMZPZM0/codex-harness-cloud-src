@@ -78,6 +78,11 @@ function readDeviceToken(): string {
 /** 代理令牌缓存文件（本域专属；明文 + safeStorage 双轨：能加密就加密）。 */
 function proxyTokenFile(): string { return path.join(cloudHome(), "limited-benefit-token"); }
 
+/** 供 boot 兜底：读本机已缓存的限时福利令牌（无则空串，不触发任何网络/写入）。 */
+export function readLimitedBenefitTokenForBoot(): string {
+  return readProxyToken();
+}
+
 function readProxyToken(): string {
   try {
     const raw = fs.readFileSync(proxyTokenFile(), "utf8");
@@ -93,6 +98,16 @@ function writeProxyToken(token: string) {
   fs.mkdirSync(dir, { recursive: true });
   const payload = safeStorage.isEncryptionAvailable() ? "enc:" + safeStorage.encryptString(token).toString("base64") : token;
   fs.writeFileSync(proxyTokenFile(), payload, { mode: 0o600 });
+  /* ⛔ 20:1x 用户实测「Key 又掉了」根因：令牌只落在这里（cloudHome），而 boot 给引擎注入
+     CODEX_HARNESS_API_KEY 时只读 `userData/api-key.txt` ⇒ 两个文件互不相通 ⇒ 每次重启
+     引擎都拿不到凭据 ⇒ 界面显示"上游限流/断流"（实际是没带 Key 被网关兜底页挡了）。
+     修法：签发/缓存令牌时**同步落地一份到 api-key.txt（0600）**，boot 的既有兜底链即自动生效；
+     ⛔ 这里必须明文（boot 只读明文，且与既有 api-key.txt 契约一致），权限锁 0600。 */
+  try {
+    fs.writeFileSync(path.join(app.getPath("userData"), "api-key.txt"), token, { mode: 0o600 });
+  } catch (error) {
+    console.warn("[limited-benefit] api-key.txt 落地失败（引擎可能拿不到 Key）：", error instanceof Error ? error.message : String(error));
+  }
 }
 
 export type ModelRow = {
