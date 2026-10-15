@@ -670,7 +670,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 它 portal 到 body ⇒ 放在 aside 里的位置不影响定位。 */}
             <CloseConfirmDialog />
             {/* ⛔ 10-13 云端管理面板：portal 到 body，放 aside 里不影响定位 */}
-            {cloudManageOpen ? <CloudManageDialog onClose={() => setCloudManageOpen(false)} onOpenSettings={onOpenSettings} /> : null}
+            {cloudManageOpen ? <CloudManageDialog onClose={() => setCloudManageOpen(false)} /> : null}
           </aside>
   );
 }
