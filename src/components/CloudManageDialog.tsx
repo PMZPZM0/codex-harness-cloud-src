@@ -120,45 +120,8 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
   /* 10-15 用户令：限时福利区加一个「?」教程按钮 —— 勾选后模型那边要怎么做
      （先刷新模型列表，再保存重启）。点击展开/收起，无遮罩不挡操作。 */
   const [tipsOpen, setTipsOpen] = useState(false);
-  /* 10-15 管理员接口配置：上游 API 地址/网关密钥（服务端 /admin/upstream，非 admin 403 ⇒ 整块隐藏）。 */
-  const [upstreamCfg, setUpstreamCfg] = useState<{ base: string; gatewayKey: string; hasKey: boolean; source: string } | null>(null);
-  const [upstreamForm, setUpstreamForm] = useState<{ base: string; key: string }>({ base: "", key: "" });
-  const [savingUpstream, setSavingUpstream] = useState(false);
 
-  const loadUpstream = useCallback(() => {
-    void fetch("/api/admin/upstream", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j: { ok?: boolean; base?: string; gatewayKey?: string; hasKey?: boolean; source?: string }) => {
-        if (j && j.ok && typeof j.base === "string") {
-          setUpstreamCfg({ base: j.base, gatewayKey: j.gatewayKey || "", hasKey: Boolean(j.hasKey), source: j.source || "env" });
-          setUpstreamForm({ base: j.base, key: "" });
-        } else {
-          setUpstreamCfg(null);   // 403（非管理员）或不可达 ⇒ 整块隐藏
-        }
-      })
-      .catch(() => setUpstreamCfg(null));
-  }, []);
-  const saveUpstream = () => {
-    setSavingUpstream(true);
-    void fetch("/api/admin/upstream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ base: upstreamForm.base, gatewayKey: upstreamForm.key }),
-    })
-      .then((r) => r.json())
-      .then((j: { ok?: boolean; base?: string; hasKey?: boolean; error?: string }) => {
-        if (j && j.ok) {
-          setNote("上游 API 已更新并热生效（无需重启服务）");
-          loadUpstream();
-        } else {
-          setNote("上游 API 保存失败：" + ((j && j.error) || "未知错误"));
-        }
-      })
-      .catch((error) => setNote("上游 API 保存失败：" + String((error as Error)?.message ?? error)))
-      .finally(() => setSavingUpstream(false));
-  };
   const refresh = useCallback(() => {
-    loadUpstream();
     void fetchCloudState().then((s) => setState(s));
     /* ⛔ 10-14：列表走**本机 /api/cloud-devices**（内部用设备令牌问服务器）——
        原先走 cloud:device/list 需要网页会话，本机没有 ⇒ 列表恒空（"绑定账号 admin 但设备/座位 暂无"）。 */
@@ -530,43 +493,6 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
           )}
         </section>
 
-        {upstreamCfg ? (
-          <section className="cloud-manage-sec">
-            <div className="cloud-manage-label">
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                <Cloud size={12} /> 上游 API（管理员）
-              </span>
-            </div>
-            <div className="cloud-manage-muted" style={{ marginBottom: 8 }}>
-              云端代理把限时福利的模型调用转发到这里配置的上游地址。当前来源：{upstreamCfg.source === "admin" ? "管理员配置" : "服务端环境变量"}
-              {upstreamCfg.hasKey ? " · 网关密钥已配置" : " · 网关密钥未配置"}
-            </div>
-            <label className="cloud-manage-field">
-              <span>上游 API 地址（https:// 开头）</span>
-              <input
-                value={upstreamForm.base}
-                onChange={(event) => setUpstreamForm((f) => ({ ...f, base: event.target.value }))}
-                placeholder="https://你的上游网关地址"
-                spellCheck={false}
-              />
-            </label>
-            <label className="cloud-manage-field">
-              <span>网关密钥{upstreamCfg.hasKey ? "（已保存，留空则不修改）" : ""}</span>
-              <input
-                type="password"
-                value={upstreamForm.key}
-                onChange={(event) => setUpstreamForm((f) => ({ ...f, key: event.target.value }))}
-                placeholder={upstreamCfg.hasKey ? "已安全保存，留空则不修改" : "上游网关的 API Key"}
-                spellCheck={false}
-              />
-            </label>
-            <div className="cloud-manage-actions">
-              <button type="button" className="cloud-manage-btn primary" disabled={savingUpstream} onClick={saveUpstream}>
-                {savingUpstream ? "保存中…" : "保存上游配置（热生效）"}
-              </button>
-            </div>
-          </section>
-        ) : null}
 
         <section className="cloud-manage-sec">
           <div className="cloud-manage-label">设备 / 座位</div>
