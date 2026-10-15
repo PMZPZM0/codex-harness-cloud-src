@@ -208,13 +208,13 @@ async function applyProvider(): Promise<{ ok: boolean; models: number; changed: 
   const catalog = await fetchCatalog();
   if (!catalog.ok) return { ok: false, models: 0, changed: false, promoted: false, error: catalog.error };
   if (!catalog.provider?.ready) return { ok: false, models: 0, changed: false, promoted: false, error: "provider-not-ready" };
-  /* ⛔ 20:5x 用户实测「模型配置里面显示的模型跟云端管理里面已勾选显示的不是同步的」：
-     旧写 `filter((m) => m.enabled)` —— 只把**用户已勾选**的写进档案 ⇒
-     「模型配置」的模型列表永远停在历史勾选上，与云端开放目录（/models 返回的那批）脱节。
-     正确语义：档案的 models = **开放目录的全量**（= 用户可选的清单）；
-     用户当前实际用哪个由 `model` 字段单独表示（下面按原逻辑取首个已勾选项，没勾则留空）。
-     ⇒ 这样两边口径一致：云端开放什么，「模型配置」里就能选什么。 */
-  const picked = (catalog.models || []);
+  /* ⛔ 20:5x 用户定案（并纠正我上一轮的误改）：
+     **「模型配置」的模型列表 = 用户在「限时福利」里已勾选的那几个** ——
+     勾选语义就是"哪些进下拉框"，所以这里必须 `filter(m => m.enabled)`。
+     （我一度改成写全量开放目录，导致「模型配置」把 18 个全列出来，用户实测指出"为什么之前可以，现在不行"。）
+     ⛔ 两处口径别混：云端「对用户开放」是 /models 的过滤口径（用户能看到哪些），
+        这里写档案的是"用户实际勾选要用的"（= 下拉框内容）。 */
+  const picked = (catalog.models || []).filter((m) => m.enabled);
   const token = (await issueProxyToken(false)).token || "";
 
   const list = await readCustomModels();
