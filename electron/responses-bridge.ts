@@ -215,11 +215,16 @@ export class ResponsesBridge {
       });
       upstream.once("error", (error) => {
         this.counters.failures += 1;
+        /* ⛔ 20:3x 用户令「那自动就是有弱点的，你要修」：
+           auto 模式**首次探测**若因**连不上**（ECONNREFUSED / 超时 / DNS）而失败，
+           旧行为是回 502 并判 handled ⇒ **整个请求废掉**，不会降级去试 chat。
+           而同类上游（服务端只提供 /v1/chat/completions）恰恰是 auto 要覆盖的场景。
+           ⇒ 探测阶段连接失败一律判 **unsupported**，交给 convert 用 chat 重放一次；
+             连 chat 也失败时，convert 自己会返回真实错误（不丢信息）。 */
         if (!res.headersSent) {
-          res.writeHead(502, { "content-type": "application/json" });
-          res.end(JSON.stringify({ error: { message: `协议桥无法连接上游：${error.message}` } }));
+          this.log(`[bridge] 探测连接失败（${error.message}），改判 unsupported，改用 chat 转换重试`);
         }
-        resolve("handled");
+        resolve("unsupported");
       });
       upstream.end(raw);
     });
