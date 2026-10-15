@@ -243,6 +243,9 @@ contextBridge.exposeInMainWorld("codex", {
   removeProviderModel: (input: { provider: string; modelId: string }) => __ipc("custom-model:remove-model", 1, [input]),
   setProviderEnabled: (input: { provider: string; enabled: boolean }) => __ipc("custom-model:set-enabled", 1, [input]),
   removeCustomModel: (providerId: string) => __ipc("custom-model:remove", 1, [providerId]),
+  /* 云端模型模式（10-15）：开启 = 只用云端目录里的模型，本地供应商停用且开关锁定。 */
+  modelSourceGet: () => __ipc("model-source:get", 0, []),
+  modelSourceSet: (input: { cloudModels: boolean }) => __ipc("model-source:set", 1, [input]),
   getChannelBot: () => __ipc("channel-bot:read", 0, []),
   saveChannelBot: (config: unknown) => __ipc("channel-bot:save", 1, [config]),
   testChannelBot: (config: unknown) => __ipc("channel-bot:test", 1, [config]),

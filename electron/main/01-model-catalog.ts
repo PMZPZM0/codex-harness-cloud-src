@@ -15,7 +15,7 @@ import { buildModelCatalog, probeCustomModel } from "../features/custom-model-pr
 // ⛔ 09-24 断环：原先这些符号全部 from "../main"，使 main.ts → runtime-refs → 本文件 → main.ts 成环。
 //    路径常量进叶子模块 ../runtime-paths，协议表进 ../upstream-protocols，McpOverrides 是本目录的类型，
 //    escapeToml 本就是 config-toml 的 escapeTomlString 的别名（本文件已 import config-toml）。
-import { codexHome, customModelFile, customModelsFile, modelCatalogFile } from "../runtime-paths";
+import { codexHome, customModelFile, customModelsFile, modelCatalogFile, modelSourceFile } from "../runtime-paths";
 import { syncUpstreamProtocols } from "../upstream-protocols";
 import type { McpOverrides } from "./06-mcp-overrides";
 export async function readCustomModel(): Promise<CustomModelFile | null> {
@@ -47,6 +47,16 @@ export async function readCustomModels(): Promise<CustomModelFile[]> {
     syncUpstreamProtocols(normalized);
     return normalized;
   } catch { return []; }
+}
+
+export type ModelSource = { cloudModels: boolean };
+/** 读「云端模型模式」开关（缺省 false = 本地供应商模式，向后兼容）。 */
+export async function readModelSource(): Promise<ModelSource> {
+  try { return { cloudModels: Boolean(JSON.parse(await fs.readFile(modelSourceFile, "utf8")).cloudModels) }; }
+  catch { return { cloudModels: false }; }
+}
+export async function writeModelSource(next: ModelSource) {
+  await fs.writeFile(modelSourceFile, JSON.stringify({ cloudModels: Boolean(next && next.cloudModels) }, null, 2), "utf8");
 }
 
 export async function writeCustomModels(list: CustomModelFile[]) {
