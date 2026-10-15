@@ -229,7 +229,11 @@ if (!mainSrc || !preloadSrc) {
         "【2】vite-env.d.ts 生成段与 manifest 逐字节一致"
       );
       const regSrc = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
-      const regCh = new Set([...regSrc.matchAll(/["']([\w-]+(?::[\w-]+)+)["']/g)].map((x) => x[1]));
+      /* ⛔ 通道名可能带斜杠（cloud 域全族 = `cloud:<组>/<动作>`，如 cloud:sync/status）。
+         原正则 `(?::[\w-]+)+` 不认 `/` ⇒ 这 14 条**永远读不到** ⇒ 恒报"未登记 14 个"，
+         把真漏登记也一起掩盖了（守卫自洽地错）。这里按 `组/动作` 可重复的形态精确匹配：
+         ⛔ 不能简单写成 `[\w/-]+` —— 那会把 "http://host" 也吞进来，白名单变宽。 */
+      const regCh = new Set([...regSrc.matchAll(/["']([\w-]+(?::[\w-]+(?:\/[\w-]+)*)+)["']/g)].map((x) => x[1]));
       const unregistered = [...new Set(manifest.channels.map((c) => c.channel))].filter((c) => !regCh.has(c));
       (unregistered.length === 0 ? ok : fail)(
         `【2】manifest 频道全部在 ipc-registry 登记（未登记 ${unregistered.length} 个：${unregistered.slice(0, 6).join(", ")}）`

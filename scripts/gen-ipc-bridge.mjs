@@ -385,7 +385,10 @@ function reportUnregistered(entries) {
   const regPath = join(ROOT, "electron", "ipc-registry.ts");
   if (!existsSync(regPath)) return;
   const regSrc = readFileSync(regPath, "utf8");
-  const known = new Set([...regSrc.matchAll(/["']([\w-]+(?::[\w-]+)+)["']/g)].map((x) => x[1]));
+  /* ⛔ 与 guards/01-build-ipc-css.mjs 的【2】判据必须同源：通道名可能带斜杠
+     （cloud 域全族 = `cloud:<组>/<动作>`）。旧正则 `(?::[\w-]+)+` 不认 `/`
+     ⇒ cloud 14 条恒被误报"未登记"，把真漏登记一起掩盖。两处要一起改，别再各写一份。 */
+  const known = new Set([...regSrc.matchAll(/["']([\w-]+(?::[\w-]+(?:\/[\w-]+)*)+)["']/g)].map((x) => x[1]));
   const missing = [...new Set(entries.map((c) => c.channel))].filter((c) => !known.has(c));
   if (!missing.length) return;
   const byPrefix = new Map();
