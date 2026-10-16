@@ -1224,6 +1224,10 @@ interface Window {
     /* 10-13 关闭确认弹窗：主进程推送「有任务在跑」时弹应用内确认卡（preload 手写桥，不在 manifest 清单） */
     onCloseConfirmAsk(handler: (payload: { busy: number; appName: string }) => void): () => void;
 
+    /* 10-16 主题变更广播：主进程 theme:apply 后推给所有窗口 ——
+       独立窗口 / 浏览器标签页的界面主题实时跟随主界面（preload 手写桥，不在 manifest 清单） */
+    onThemeChanged(listener: (theme: string) => void): () => void;
+
     // ---- 语音通话（本机离线识别与合成，旁挂新增） ----
 
 

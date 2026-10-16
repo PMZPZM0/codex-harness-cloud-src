@@ -10,34 +10,34 @@
  *    = 用户看到的仍是服务器上的旧界面（症状："改了没生效 / 老是不刷新 / 又是旧的"）。
  *   10-16 实证：服务器仍引用 index-BVVBGlrK.js（10-15 构建），本地新产物是 index-qhyaKyqe.js。
  *
- * 判据（离线、确定性，不联网）：
- *   本地 `dist/index.html` 的主入口资产指纹 == `.cloud-ui-deployed.json` 里记的那份
+ * 判据（离线、确定性，不联网）= **渲染层源码指纹**：
+ *   本地 `src/**` + `public/**` + `index.html` 的 sha256 == `.cloud-ui-deployed.json` 里记的那份
  *   （后者由部署脚本在**实测校验通过后**写入）。不等 ⇒ 红。
- * ⛔ 不用 mtime：checkout / 打包 / 复制都会改 mtime，误报率极高；资产哈希是内容指纹。
- * ⛔ 覆盖链：src 改 ⇒ 既有守卫报「渲染层产物已过期」（逼 build）⇒ build 后哈希变
- *    ⇒ 本守卫报红（逼部署）⇒ 部署脚本写记录 ⇒ 转绿。
+ * ⛔ 为什么不用 dist 的**产物**哈希（10-16 换掉）：产物哈希**不是构建起点无关的** ——
+ *   实测 `clean-dist` 后首次构建得到 `index-Df6B4kFT.js`，在旧产物上再构建得到
+ *   `index-B7BkQJSc.js`；而 `npm run check` 每次都先 clean 再 build ⇒ **任何一次 check 都会把
+ *   已部署的产物判成"变了"** ⇒ 守卫恒红、纯噪声（用户最烦的就是乱翻的判据）。
+ *   源码指纹只随**真的改了渲染层源码**变化：重建、换机器、复制目录都不影响。
+ *   ⛔ 也不用 mtime：checkout / 打包 / 复制都会改 mtime，误报率极高。
+ * ⛔ 覆盖链：src 改 ⇒ 既有守卫报「渲染层产物已过期」（逼 build）⇒ build 后源码指纹**不变**
+ *   ⇒ 本守卫仍报红（逼部署）⇒ 部署脚本写记录 ⇒ 转绿。
+ * ⛔ 指纹算法与部署脚本同源：两边都调 `scripts/lib/renderer-source-hash.mjs`，不许各写一份。
  */
-import { C, ROOT, existsSync, fail, join, ok, readFileSync } from "./_ctx.mjs";
-
-/** dist/index.html 的主入口资产指纹（排序后拼接，顺序无关）。 */
-function hashesOf(html) {
-  return (html.match(/assets\/index-[A-Za-z0-9]*\.(?:js|css)/g) || []).sort().join(",");
-}
+import { C, ROOT, fail, join, ok, readFileSync } from "./_ctx.mjs";
+import { rendererSourceHash } from "../lib/renderer-source-hash.mjs";
 
 export async function run() {
   console.log(C.bold("\n【288】云端界面已部署（云助手专有）"));
 
-  const distIndex = join(ROOT, "dist", "index.html");
-  if (!existsSync(distIndex)) {
-    /* 没 build ⇒ 无从判断（既有守卫会先报"产物过期"），这里不重复红。 */
-    console.log("  (跳过【288】：dist/index.html 不存在 —— 先 npm run build)");
-    return;
-  }
-  const local = hashesOf(readFileSync(distIndex, "utf8"));
+  const local = rendererSourceHash(ROOT);
   let state = null;
   try { state = JSON.parse(readFileSync(join(ROOT, ".cloud-ui-deployed.json"), "utf8")); } catch { state = null; }
-  const deployed = state?.assetHashes ?? "";
-  (local !== "" && local === deployed ? ok : fail)(
-    `【288】本地渲染层产物已部署到服务器（未部署 ⇒ 用户永远看不到；本地=${local || "(空)"}，已部署=${deployed || "从未部署"}；修：node scripts/deploy-cloud-ui.mjs）`
+  const deployed = typeof state?.sourceHash === "string" ? state.sourceHash : "";
+  if (!deployed) {
+    fail("【288】部署记录里没有 sourceHash（旧格式记录）—— 请重新跑一次 node scripts/deploy-cloud-ui.mjs");
+    return;
+  }
+  (local === deployed ? ok : fail)(
+    `【288】当前渲染层源码已部署到服务器（未部署 ⇒ 用户永远看不到最新界面；本地=${local.slice(0, 12)}…，已部署=${deployed.slice(0, 12)}…；修：node scripts/deploy-cloud-ui.mjs）`
   );
 }

@@ -31,7 +31,7 @@ import {
   testSshConnection, writeSshServers, SshSessionManager, type SshExecResult, type SshServer, type SshTestResult,
 } from "./ssh-servers";
 import {
-  allBusWindows, broadcastCodexEvent, broadcastHarnessEvent, isPopoutWindow,
+  allBusWindows, broadcastCodexEvent, broadcastHarnessEvent, broadcastToAll, isPopoutWindow,
   popoutBusWindows, registerBusWindow, sendToWindow, unregisterBusWindow,
 } from "./features/window-bus";
 import type { CustomModelFile, ProviderModel } from "./features/custom-model-types";
@@ -702,8 +702,19 @@ function applyWindowChrome(dark: boolean) {
  *       独立窗口（popout）相关的 4 个通道同理全不通。
  *  ⇒ 收进本函数，由 `app.whenReady()` 调用（那时 patch 早已生效，收集正常）。 */
 function registerShellTopLevelHandlers() {
-ipcMain.handle("theme:apply", (_event, theme: string) => {
-  themeDiag(`收到 theme:apply(theme=${JSON.stringify(theme)})`);
+ipcMain.handle("theme:apply", (event, theme: string) => {
+  const senderUrl = String((event as { sender?: { getURL?: () => string } } | null)?.sender?.getURL?.() ?? "(桥 / 无 sender URL)");
+  themeDiag(`收到 theme:apply(theme=${JSON.stringify(theme)}) from ${senderUrl.slice(0, 96)}`);
+  /* ⛔ 无头形态下**忽略来自 file:// 窗口的下发**（10-16 定位「开/关独立窗口后右上角看不见」）：
+     无头形态仍会建一个桌面版主窗（boot.ts 的 createWindow()，隐藏、加载 file:// 本地 dist），
+     它有自己的 localStorage 主题（默认浅色）⇒ 挂载即推会把助手窗已设好的深色符号色
+     刷成近黑（画在深色顶栏上 = 右上角那三个系统钮看不见）。
+     全局窗口外观的真相源只有一个：主进程落盘的 app-settings.theme。
+     ⛔ 桌面版（非助手形态）不受影响 —— 它的可见主窗本来就是 file:// 那条路径。 */
+  if (process.env.HARNESS_ASSISTANT === "1" && senderUrl.startsWith("file://")) {
+    themeDiag("  → 忽略（无头形态下 file:// 窗口不得驱动全局窗口外观）");
+    return { ok: false, ignored: true };
+  }
   const dark = theme === "dark";
   appThemeDark = dark;
   setAppThemeDark(dark);
@@ -712,6 +723,13 @@ ipcMain.handle("theme:apply", (_event, theme: string) => {
   /* 顺带落盘（10-16）：下次启动在窗口创建前就能读回，标题栏符号色不用等渲染层上报。
      ⛔ fire-and-forget：写盘失败不能影响主题切换本身（最坏结果 = 下次启动先跟随系统）。 */
   void saveAppSettings(app.getPath("userData"), { theme: dark ? "dark" : "light" }).catch(() => undefined);
+  /* ⛔ 广播给所有窗口（10-16 用户令「独立窗口的主题色要跟着主界面变」）：
+     独立窗口当初只在**打开时**对齐主题（壳里播种），主界面之后换主题它不会动。
+     这里把新主题推给全部窗口：独立窗口（真 preload，直收）/ 助手窗与浏览器标签页
+     （无头形态下 headless 把 webContents.send 包成 SSE 广播，客户端经 shim 收）。
+     渲染层订阅 onThemeChanged 后改自己的主题状态，再由 theme effect 落到
+     dataset/localStorage（全窗口一致）。同值重复推送无副作用（React 同值 setState 不重渲染）。 */
+  broadcastToAll("theme:changed", dark ? "dark" : "light");
   return { ok: true };
 });
 

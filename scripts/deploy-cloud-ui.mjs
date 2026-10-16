@@ -18,6 +18,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { rendererSourceHash } from "./lib/renderer-source-hash.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SSH_HOST = "tx";                                    // ~/.ssh/config 里的别名
@@ -70,7 +71,10 @@ run("scp", ["-o", "ConnectTimeout=10", versionFile, `${SSH_HOST}:${REMOTE_DIR}/v
 console.log("\n== 校验 ==");
 const shell = await fetch(`${PUBLIC_BASE}/index.html`, { cache: "no-store" }).then((r) => r.text());
 const localShell = fs.readFileSync(path.join(root, "dist/index.html"), "utf8");
-const hashOf = (h) => (h.match(/assets\/index-[A-Za-z0-9]*\.(?:js|css)/g) || []).sort().join(",");
+/* ⛔ 哈希字符集必须含 `-` 与 `_`（10-16 实测：产物名可能是 `index-DLfe-kQN.js`）——
+   只写 `[A-Za-z0-9]*` 会在 `-` 处截断 ⇒ 匹配为空 ⇒ 明明部署成功却报「哈希不一致」。
+   与守卫 20-cloud-ui-deploy.mjs 的 hashesOf 同一口径。 */
+const hashOf = (h) => (h.match(/assets\/index-[A-Za-z0-9_-]+\.(?:js|css)/g) || []).sort().join(",");
 const remoteHashes = hashOf(shell);
 const localHashes = hashOf(localShell);
 const versionJson = await fetch(`${PUBLIC_BASE}/version.json`, { cache: "no-store" }).then((r) => r.json()).catch(() => null);
@@ -91,6 +95,9 @@ console.log(bad === 0 ? "\n===== 部署完成：用户刷新/重启应用即可�
 if (bad === 0) {
   const statePath = path.join(root, ".cloud-ui-deployed.json");
   fs.writeFileSync(statePath, JSON.stringify({
+    /* ⛔ 判据是**渲染层源码指纹**（与守卫【288】同源同算法）：产物哈希不是构建起点无关的，
+       而 check 每次都先 clean 再 build ⇒ 拿产物哈希当判据会让守卫恒红（10-16 实测）。 */
+    sourceHash: rendererSourceHash(root),
     assetHashes: localHashes,
     builtAt: versionJson?.builtAt ?? new Date().toISOString().slice(0, 10),
     deployedAt: new Date().toISOString(),

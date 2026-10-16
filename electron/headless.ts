@@ -19,6 +19,7 @@
 import electron from "electron";
 import { app, ipcMain, shell } from "electron";
 import { defaultUserDataDir } from "./data-dir";
+import { readAppSettingsSync } from "./app-settings";
 import { mutableState } from "./main";
 import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, type SyncResult } from "./cloud-sync";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -28,6 +29,7 @@ import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
 import { openInBrowser, assistantUrl } from "./open-browser";
 import { getAssistantWindow, isAssistantWindowPending, showAssistantWindow } from "./assistant-window";
+import { isPopoutWindowPending } from "./features/window-factory";
 
 // ⛔ 本机 GPU 进程必崩（exit_code=-1073741819），崩 9 次后整个进程 FATAL 退出 ——
 //   与走查台同一配方，必须在 app 就绪**之前**挂上。
@@ -117,8 +119,10 @@ function broadcast(event: WSEvent) {
    `new BrowserWindow()` 内**同步**触发，晚于构造返回，所以必须用旗而不是事后比对）。 */
 
 app.on("browser-window-created", (_event: unknown, win: { hide: () => void; setSkipTaskbar: (v: boolean) => void; show: () => void; showInactive: () => void; maximize: () => void; restore: () => void; focus: () => void; webContents: { send: (channel: string, ...args: unknown[]) => void } }) => {
-  if (isAssistantWindowPending()) {
-    // 助手主窗口：保持可见与任务栏，只包事件广播（与隐藏窗口同一套广播，别处不套）
+  if (isAssistantWindowPending() || isPopoutWindowPending()) {
+    /* 助手主窗口 / 独立会话窗口：保持可见与任务栏，只包事件广播（与隐藏窗口同一套广播，别处不套）。
+       ⛔ 独立窗口（10-16 用户令「不要打开网页」）：它是**可见的真窗口**，与助手窗同源
+       （http://127.0.0.1:PORT/?popout=<id>），原先的"一律隐藏 + 弹浏览器标签页"已废除。 */
     try {
       const wc = win.webContents;
       const origSend = wc.send.bind(wc);
@@ -765,6 +769,8 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
      系统亮 + 应用暗时符号是近黑，画在深色顶栏上就完全看不见。
      这里只要能读到 localStorage 的主题就**无条件补一次**（幂等，与渲染层重复调用无副作用）。 */
   try {
+    /* ⛔ 主题种子由服务端下发的壳单独注入（见 shellHtml 的 themeSeed）——
+       不在这里播，因为独立窗带真 preload 时本 shim 可能整个不执行。 */
     var savedTheme = localStorage.getItem("theme");
     if (savedTheme === "dark" || savedTheme === "light") {
       codex.themeApply(savedTheme).catch(function (e) { console.error("[shim] themeApply", e); });
@@ -839,9 +845,27 @@ function shellHtml(shimJs: string, assetBase: string, html: string) {
       .replace(/font-src /g, `font-src ${cloudOrigin} `);
   }
   const cdnMark = `<script>window.__CHC_CDN__ = ${JSON.stringify(assetBase)};</script>\n`;
+  /* ⛔⛔ 主题种子（10-16，用户报「独立窗口主题不跟主应用 + 叉掉后右上角看不见」的根因修法）：
+     把主进程的**权威主题**（app-settings.theme —— theme:apply 顺带写的）在每一份由本机
+     下发的壳里、**应用脚本执行前**写进 localStorage。
+
+     为什么必须在这里、且必须独立于 shim：每个窗口（助手窗 / 独立窗 / 浏览器标签页）
+     加载后，渲染层会拿 `localStorage.theme` 当自己的主题并**推给主进程**
+     （src/.../02-chat-search-history.tsx 的 effect）。若这份 localStorage 与主进程的
+     权威主题不一致（例如独立窗自己 profile 里是旧值 / 从没写过 ⇒ 取默认），
+     它挂载时的 themeApply 就会把**所有窗口**的标题栏符号色刷反 —— 深色顶栏上近黑符号
+     = 右上角那三个系统钮看不见（实测：独立窗一开，主窗就变成 #1b1b1a）。
+     ⛔ 不能塞在 shim 里：独立窗带着真 preload（createPopoutWindow），它与 shim 抢
+     window.codex ⇒ shim 的主题分支可能整个不执行（实测：那条推送带真实 sender URL，
+     说明走的是 preload 而非桥）。所以种子必须是**独立的一小段内联脚本**，
+     与 shim 成不成功无关。真相源只有一个：主进程落盘的 app-settings.theme。 */
+  const seededTheme = readAppSettingsSync(app.getPath("userData")).theme;
+  const themeSeed = (seededTheme === "dark" || seededTheme === "light")
+    ? `<script>(function(){try{localStorage.setItem("theme",${JSON.stringify(seededTheme)})}catch(e){}})();</script>\n`
+    : "";
   // 云端登录门的 token 交接：/#t=<token>（fragment 不进服务器日志）→ localStorage → 抹掉 hash
   const handoff = `<script>(function(){var m=/^t=([0-9a-f]{16,})$/.exec(location.hash.slice(1));if(m){try{localStorage.setItem("chc-token",m[1])}catch(e){}history.replaceState(null,"",location.pathname+location.search)}})();</script>\n`;
-  return rewritten.replace("</head>", `${cdnMark}${handoff}<script>${shimJs}</script>\n</head>`);
+  return rewritten.replace("</head>", `${cdnMark}${themeSeed}${handoff}<script>${shimJs}</script>\n</head>`);
 }
 
 function route(req: IncomingMessage, res: ServerResponse, shimJs: string) {
@@ -1640,25 +1664,19 @@ listenWithRetry();
 // 真 main.ts：86 个域 / 真引擎 / 全部业务。⛔ 必须最后 require。
 require("./main");
 
-/* ── ⑥ 独立窗口的无头形态：弹到用户的浏览器 ───────────────────────────────
-   桌面版「独立窗口」= 新开一个 Electron 窗口；无头下窗口永远隐藏，浏览器用户
-   什么都看不到（实测 bug）。改为：真实通道照常执行（保留 popout 登记/事件路由），
-   然后**在用户默认浏览器里弹独立标签页** http://127.0.0.1:8917/?popout=<threadId>
-   —— 同一套 dist + 同一份 shim，浏览器标签页就是无头版的"独立窗口"。
-   ⛔ 必须在 require("./main") 之后包（handler 由域模块注册）。
-   弹浏览器动作收敛到 electron/open-browser.ts（启动自动弹 / 托盘项共用同一份实现）。 */
-const popoutHandler = invokeHandlers.get("window:popout-thread");
-if (popoutHandler) {
-  invokeHandlers.set("window:popout-thread", async (event, ...args) => {
-    const result = await popoutHandler(event, ...args);
-    const threadId = String(args[0] ?? "");
-    const url = `http://127.0.0.1:${PORT}/?popout=${encodeURIComponent(threadId)}`;
-    if (openInBrowser(url)) console.log(`[headless] 独立窗口 → 浏览器标签页 ${url}`);
-    return result;
-  });
-} else {
-  console.error("[headless] ⛔ window:popout-thread 无 handler，独立窗口桥未接线");
-}
+/* ── ⑥ 独立窗口（无头形态）：与桌面版语义一致 —— 新开一个**可见的应用窗口** ─────
+   ⛔ 10-16 用户令「这个云助手，不要打开网页啊」：此前无头形态把它实现成
+   "在默认浏览器里弹一个标签页"（理由是"无头下窗口永远隐藏"）——用户明确否决。
+   现在不再改写该通道：`window:popout-thread` 照常走 createPopoutWindow，
+   由 window-factory 在助手形态下加载**同一个 http origin**（?popout=<id>）——
+   同源 ⇒ 与助手窗口共享 localStorage ⇒ 主题天然一致，不会再各推各的刷反符号色。
+   可见性由 browser-window-created 按 isPopoutWindowPending() 放行（见 headless 顶部）。
+   本块只留一次接线自证：通道由 main.ts 的 registerShellTopLevelHandlers() 注册。 */
+app.whenReady().then(() => {
+  if (!invokeHandlers.get("window:popout-thread")) {
+    console.error("[headless] ⛔ window:popout-thread 无 handler，独立窗口桥未接线");
+  }
+});
 
 /* ── ⑦ 启动后把界面递给用户（10-12 两次迭代）────────────────────────────────
    0.0.2 症状：装完「什么都不出现」（无可见窗口 + 没人开浏览器 + 托盘没有入口）。
