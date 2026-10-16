@@ -568,7 +568,7 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
                   type="button"
                   className="cloud-manage-btn"
                   aria-expanded={tipsOpen}
-                  title="勾选后模型配置界面要怎么做"
+                  title="勾选之后要做什么（保存并重启 / 在哪选模型 / 云端模型模式）"
                   onClick={() => setTipsOpen((current) => !current)}
                 >
                   <HelpCircle size={13} /> 勾选后怎么用
@@ -576,12 +576,24 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
               </div>
               {tipsOpen ? (
                 <div className="cloud-manage-tips" role="note">
-                  <div className="cloud-manage-tipstitle">勾选后，模型配置界面要做的两步：</div>
+                  <div className="cloud-manage-tipstitle">勾选之后：</div>
                   <ol>
-                    <li><b>刷新模型列表</b> —— 到「模型配置」界面打开这个供应商，勾选的模型会自动出现；没出现就点一次刷新。</li>
-                    <li><b>保存并重启</b> —— 点底部「保存」，应用重启后新勾选的模型即可正常调用。</li>
+                    <li>
+                      <b>点本面板的「保存并重启」</b> —— 就在上面那一排按钮里，确认后应用自动重启，
+                      新勾选的模型即可调用（⛔ 不用再去模型配置界面点保存）。
+                    </li>
+                    <li>
+                      <b>在模型下拉框里选</b> —— 重启后输入框旁的模型列表只显示<b>已勾选</b>的这些，
+                      选中即可使用，按各自倍率扣积分。
+                    </li>
+                    <li>
+                      <b>可选：开「云端模型模式」</b> —— 打开上面那张卡片的开关，之后只用这里勾选的模型，
+                      本地其它供应商自动停用（模型配置里的开关会锁定）。
+                    </li>
                   </ol>
-                  <div className="cloud-manage-muted">提示：未勾选的模型不会出现在模型配置界面的下拉框里。</div>
+                  <div className="cloud-manage-muted">
+                    提示：未勾选的模型不会出现在下拉框里；取消勾选后同样要「保存并重启」才会生效。
+                  </div>
                 </div>
               ) : null}
             </>
@@ -672,25 +684,34 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
 
         {note ? <div className="cloud-manage-note">{note}</div> : null}
 
-        {/* 面板内确认（10-16）：替代 window.confirm，见上方 restartAsk 注释 */}
-        {restartAsk ? (
-          <div className="cloud-manage-confirm" role="dialog" aria-modal="true" aria-label="保存并重启应用">
-            <div className="cloud-manage-confirm-card">
-              <div className="cloud-manage-confirm-title">保存并重启应用？</div>
-              <div className="cloud-manage-confirm-text">
-                保存当前勾选的模型并重启应用，重启后新勾选的模型即可正常调用。
-              </div>
-              <div className="cloud-manage-confirm-actions">
-                <button type="button" className="cloud-manage-btn" disabled={restartBusy} onClick={() => setRestartAsk(false)}>
-                  取消
-                </button>
-                <button type="button" className="cloud-manage-btn primary" disabled={restartBusy} onClick={() => { void saveAndRestart(); }}>
-                  {restartBusy ? "重启中…" : "确定重启"}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        {/* 「保存并重启」的确认（10-16）：⛔ 走**全局确认框**（与 CloseConfirmDialog 同一套
+            `.close-confirm-*` / z-index 950，**portal 到 body**），不做面板内嵌 ——
+            用户明确「不要做内嵌的」。⛔ 必须 portal：带 transform 的祖先会成为 fixed 的
+            包含块，不 portal 会跟着面板跑。 */}
+        {restartAsk && typeof document !== "undefined"
+          ? createPortal(
+              <div className="close-confirm-backdrop" role="dialog" aria-modal="true" aria-label="保存并重启应用">
+                <div className="close-confirm-card">
+                  <div className="close-confirm-head">
+                    <span className="close-confirm-title">保存并重启应用？</span>
+                    <button type="button" className="close-confirm-x" aria-label="取消" onClick={() => setRestartAsk(false)}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <p className="close-confirm-desc">保存当前勾选的模型并重启应用，重启后新勾选的模型即可正常调用。</p>
+                  <div className="close-confirm-actions">
+                    <button type="button" className="close-confirm-btn" disabled={restartBusy} onClick={() => setRestartAsk(false)}>
+                      取消
+                    </button>
+                    <button type="button" className="close-confirm-btn primary" disabled={restartBusy} onClick={() => { void saveAndRestart(); }}>
+                      {restartBusy ? "重启中…" : "保存并重启"}
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
 
       </div>
     </div>,

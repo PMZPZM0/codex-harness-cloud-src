@@ -29,8 +29,6 @@
   color: var(--text);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
   animation: cloud-manage-in 0.2s cubic-bezier(0.22, 0.61, 0.36, 1);
-  /* 面板内确认层（.cloud-manage-confirm）用它当定位父级 */
-  position: relative;
 }
 
 @keyframes cloud-manage-fade { from { opacity: 0; } to { opacity: 1; } }
@@ -352,39 +350,7 @@
 .cloud-mode-switch .toggle-track { width: 52px; height: 28px; }
 .cloud-mode-switch .toggle-thumb { top: 2px; left: 2px; width: 22px; height: 22px; }
 .cloud-mode-switch.on .toggle-thumb { transform: translateX(24px); }
-
-/* ===== 面板内确认框（10-16 用户令「不要有这种系统弹窗」）=====================
-   ⛔ 替代 `window.confirm`：原生弹窗标题是页面 title（云助手里显示成
-      "Codex Harness Desktop"）、样式与产品无关，且阻塞式。
-   覆盖层**贴在面板卡片内部**（absolute inset 0，卡片已 position:relative）——
-   不 portal 到 body、不盖住整个应用，符合"在哪个面板操作就只在哪确认"。 */
-.cloud-manage-confirm {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  border-radius: inherit;
-  background: color-mix(in srgb, var(--text) 30%, transparent);
-}
-.cloud-manage-confirm-card {
-  width: 100%;
-  max-width: 320px;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-.cloud-manage-confirm-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
-.cloud-manage-confirm-text { margin-top: 8px; font-size: 12.5px; line-height: 1.7; color: var(--muted); }
-.cloud-manage-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-/* 主按钮：走品牌色（与 danger 同一套语义变体） */
-.cloud-manage-btn.primary {
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--text);
-}
-.cloud-manage-btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* 「保存并重启」的确认框（10-16）：⛔ **不做面板内嵌版** ——
+   用户明确「不要有这种系统弹窗」且「不要做内嵌的」⇒ 复用全局确认框
+   `.close-confirm-*`（见 38-close-confirm.css，portal 到 body、z-index 950），
+   与「关闭窗口」那张确认卡同一套观感。本文件不再自带确认框样式。 */
