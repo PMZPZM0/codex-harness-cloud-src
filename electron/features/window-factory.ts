@@ -231,12 +231,20 @@ export function showMainWindow() {
   win.focus();
 }
 
+/** 独立窗口「建窗中」旗（10-16）：browser-window-created 在 `new BrowserWindow()` 内**同步**
+ *  触发，那时还没有窗口实例可比对 ⇒ 只能用旗区分（与 assistant-window 的 pending 同一套办法）。
+ *  用途：无头形态下 headless 要按它**放行可见**（独立窗口是给用户看的真窗口，
+ *  不像桌面版主窗 / 宠物 / 截图遮罩那样必须藏起来）。 */
+let pendingPopout = false;
+export function isPopoutWindowPending(): boolean { return pendingPopout; }
+
 export function createPopoutWindow(threadId: string) {
   const windowIcon = path.join(
     app.getAppPath(),
     "build",
     process.platform === "win32" ? "icon.ico" : "icon.png",
   );
+  pendingPopout = true;
   const win = new BrowserWindow({
     // 1120 而非 1080：主布局在 ≤1080px 时隐藏消息刻度尺（media query），弹窗初始宽度
     // 必须避开这个断点，否则弹窗里看不到刻度线（用户截图反馈）。
@@ -264,6 +272,7 @@ export function createPopoutWindow(threadId: string) {
       webviewTag: false,
     },
   });
+  pendingPopout = false;
   // Windows 11 原生圆角（仅 win32；其余平台函数内静默跳过）。
   applyRoundedCorners(win);
   // ⛔ 导航收敛与主窗口同规则：弹窗永不导航，新窗口一律拒绝并转系统浏览器。
@@ -290,6 +299,14 @@ export function createPopoutWindow(threadId: string) {
   if (devUrl) {
     const sep = devUrl.includes("?") ? "&" : "?";
     void win.loadURL(devUrl + sep + query.slice(1));
+  } else if (process.env.HARNESS_ASSISTANT === "1") {
+    /* ⛔ 助手形态（10-16 用户令「这个云助手，不要打开网页啊」）：独立窗口 = **可见的真窗口**，
+       加载与助手主窗**同一个 http origin**。同源 ⇒ 与助手窗共享 localStorage ⇒
+       主题天然一致；此前"弹浏览器标签页"或"加载 file:// 本地 dist"都会各带一份
+       自己的主题，挂载时的 themeApply 会把主窗的标题栏符号色刷反（深色顶栏上 = 右上角看不见）。
+       可见性由 headless 的 browser-window-created 按 isPopoutWindowPending() 放行。 */
+    const port = Number(process.env.HARNESS_HEADLESS_PORT || 8917);
+    void win.loadURL(`http://127.0.0.1:${port}/${query}`);
   } else {
     void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { popout: threadId } });
   }
