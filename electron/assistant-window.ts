@@ -13,7 +13,8 @@
  * ⛔ 关窗 = 隐藏而不是退出：服务要继续给浏览器 / 手机端用；真退出走托盘「退出」。
  */
 import { BrowserWindow, app } from "electron";
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { assistantUrl } from "./open-browser";
 import { resolveWindowIcon } from "./app-icon";
 import { applyRoundedCorners } from "./win-rounded-corners";
@@ -30,6 +31,16 @@ type AssistantWin = {
   loadURL: (url: string) => Promise<void>;
   on: (event: string, cb: (e?: { preventDefault: () => void }) => void) => void;
 };
+
+/** 窗口外观诊断落盘（10-16 用户报障「右上角系统钮没跟着主题变，看不见了」）。
+ *  ⛔ 无头形态（`electron dist-electron/headless.js`）**没有可见终端**，stdout 直接丢
+ *     ⇒ 只写 console.log 等于没有日志，用户报障时无从查起。统一落
+ *     `~/Codex Assistant/theme-chrome.log`，跑完还能回看。 */
+function chromeDiag(msg: string) {
+  try {
+    appendFileSync(`${homedir()}/Codex Assistant/theme-chrome.log`, `${new Date().toISOString()} [assistant-window] ${msg}\n`);
+  } catch { /* 诊断写失败不影响功能 */ }
+}
 
 const WINDOW_TITLE = "Codex Assistant";
 
@@ -61,6 +72,9 @@ export async function createAssistantWindow(): Promise<boolean> {
   //   dist-electron（入口脚本目录）⇒ 不给 icon 就回退 electron.exe 默认图标。
   //   解析走 app-icon.ts 唯一真相源（多源兜底，含 __dirname 上溯）。
   const windowIcon = resolveWindowIcon();
+  /* 建窗时刻的 overlay 取值 = 由 `appThemeDark` 决定（null 时退系统主题）。
+     ⛔ 无头形态没有可见终端，stdout 拿不到 ⇒ 落文件才查得动「右上角系统钮没跟着主题变」。 */
+  const overlayAtCreate = titleBarOverlayOptions();
   try {
     created = new BrowserWindow({
       width: 1280,
@@ -98,7 +112,13 @@ export async function createAssistantWindow(): Promise<boolean> {
      实证：连 `/__events` 20 秒只收到握手 `__hello`、**零业务事件**（而引擎侧 rollout 一直在写）。
      ⛔ 登记后 headless 在 browser-window-created 里包的那层 webContents.send 才会被触发
      （它才是真正把事件写进 SSE 的那一环），两者缺一不可。 */
-  try { registerBusWindow(created, { primary: true }); } catch { /* 登记失败不阻断窗口创建 */ }
+  /* ⛔ 登记失败**不许静默**（10-16）：`applyWindowChrome` 只遍历 `allBusWindows()`，
+     没登记 ⇒ 目标窗口 = 0 ⇒ 标题栏符号色永远停在建窗时的值
+     （这正是"右上角三个系统钮没跟着主题变/看不见"的机制）。 */
+  let busRegistered = false;
+  try { registerBusWindow(created, { primary: true }); busRegistered = true; }
+  catch (e) { chromeDiag("registerBusWindow 失败（窗口将收不到主题下发）：" + String(e)); }
+  chromeDiag(`建窗完成：overlay.symbolColor=${overlayAtCreate.symbolColor}，登记到窗口总线=${busRegistered}`);
   created.once("closed", () => { try { unregisterBusWindow(created as BrowserWindow); } catch { /* 忽略 */ } });
   // ⛔ 任务栏图标重申（照抄桌面版主窗 09-27 的修法）：relaunch/快速重启场景下任务栏分组
   //   重建可能吞掉构造期的 icon ⇒ ready-to-show 后 setIcon 再申明一次，幂等、零成本。

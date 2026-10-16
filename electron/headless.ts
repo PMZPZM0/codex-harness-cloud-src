@@ -22,7 +22,7 @@ import { defaultUserDataDir } from "./data-dir";
 import { mutableState } from "./main";
 import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, type SyncResult } from "./cloud-sync";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { unlinkSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, unlinkSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
@@ -813,8 +813,7 @@ const CLOUD_APP_BASE = process.env.HARNESS_CLOUD_APP_BASE || "https://ppz123.asi
  *  资产哈希名自然与云端一致）；本地兜底模式才读 dist/index.html。
  *  ⛔ 曾经的写法是"取本地 index.html 把 ./ 改成云端基址" —— 本地与云端构建的资产哈希名
  *    不同 ⇒ 改写出一堆 404 ⇒ 黑屏（10-14 实测）。 */
-async function fetchShellHtml(assetBase: string): Promise<string> {
-  if (assetBase !== CLOUD_APP_BASE) return readFileSync(join(DIST_DIR, "index.html"), "utf8");
+async function fetchShellHtml(): Promise<string> {
   const r = await fetch(`${CLOUD_APP_BASE}/index.html`, { cache: "no-store" });
   if (!r.ok) throw new Error(`云端 index.html HTTP ${r.status}`);
   return r.text();
@@ -1524,10 +1523,25 @@ if (p === "/api/pair-code/refresh" && req.method === "POST") {
     void (async () => {
       let html: string;
       try {
-        html = await fetchShellHtml(assetBaseCache);
+        html = await fetchShellHtml();
       } catch (error) {
-        console.error("[headless] 云端壳获取失败，回落本地 dist：", (error as Error).message);
-        html = readFileSync(join(DIST_DIR, "index.html"), "utf8");
+        /* ⛔ 10-16 用户令「把本地兜底删了」：**不再**静默加载本机 dist。
+           旧行为的问题：取不到云端时用户看到的是一份**本机旧界面**且毫无提示 ——
+           这正是「改了没生效 / 又是旧的」这类问题最难查的来源（界面看着正常，其实不是最新的）。
+           现在取不到就给一张明确的错误页：说清界面托管在服务器上、当前取不到。 */
+        console.error("[headless] 云端壳获取失败（不再回落本地 dist）：", (error as Error).message);
+        diag("云端壳获取失败：" + String((error as Error).message));
+        res.writeHead(200, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" }).end(
+          `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>云端界面不可用</title></head>`
+          + `<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;`
+          + `font:14px 'Segoe UI',system-ui,sans-serif;background:#1b1b1a;color:#ececea">`
+          + `<div style="max-width:440px;text-align:center;line-height:1.8;padding:24px">`
+          + `<div style="font-size:15px;font-weight:600">云端界面暂时取不到</div>`
+          + `<div style="opacity:.75;margin-top:10px">本应用的界面资源托管在服务器上，当前没能取到（网络或服务器问题）。<br>请检查网络后刷新重试。</div>`
+          + `<div style="opacity:.45;margin-top:14px;font-size:12px">${String((error as Error).message || error)}</div>`
+          + `</div></body></html>`,
+        );
+        return;
       }
       res.writeHead(200, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" }).end(shellHtml(shimJs, assetBaseCache, html));
     })();
@@ -1544,7 +1558,18 @@ const shimJs = buildShim(manifest, onChannels, GATED);
 /* 云端选址：每 60s 重探一次 ⇒ 站长更新 /cloud/app/ 后，用户**下一次刷新页面**即新版，
    无需动本机任何东西。探测条件：version.json 可达 + protocolVersion 一致 +
    manifestSha256 与本机一致（UI 与主进程协议必须同源，否则本地兜底）。 */
-let assetBaseCache = "/__local";
+/** ⛔ 恒指向云端（10-16 用户令「把本地兜底删了」）：本机 dist **永远不再**作为界面来源 ——
+ *  它只会让用户拿到一份与服务器不同步的旧界面，而且**毫无提示**，这正是
+ *  「改了没生效 / 又是旧的」这类问题最难查的来源。取不到就走错误页。 */
+let assetBaseCache = CLOUD_APP_BASE;
+/** 界面选址 + 主题外观的落盘诊断（10-16）：无头形态没有可见终端，stdout 拿不到 ⇒ 必须落文件。 */
+function diag(msg: string) {
+  try {
+    const dir = join(homedir(), "Codex Assistant");
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, "theme-chrome.log"), `${new Date().toISOString()} [headless] ${msg}\n`);
+  } catch { /* 诊断写失败不影响功能 */ }
+}
 function probeAssetBase(): void {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
@@ -1558,16 +1583,23 @@ function probeAssetBase(): void {
             本地已退化成纯壳，那道闸只会让界面留在本机旧副本上，删。 */
       if (Number(meta.protocolVersion) === 1) {
         if (assetBaseCache !== CLOUD_APP_BASE) console.log(`[headless] 界面资产来自云端 ${CLOUD_APP_BASE}（本地只是壳，更新跟服务器走）`);
+        diag(`界面选址：云端 ${CLOUD_APP_BASE}（protocolVersion=1）`);
         assetBaseCache = CLOUD_APP_BASE;
       } else {
-        if (assetBaseCache !== "/__local") console.log(`[headless] 云端 UI 协议不匹配（远端 protocolVersion=${meta.protocolVersion}）→ 本地兜底`);
-        assetBaseCache = "/__local";
+        /* ⛔ 协议不匹配**也不再回本地**（10-16 用户令「把本地兜底删了」）：
+           回本地只会让用户拿到一份与服务器不同步的旧界面，把问题藏起来。
+           保持指向云端 ⇒ 拿壳时失败 ⇒ 落到上面那张「云端界面暂时取不到」错误页，如实告知。 */
+        console.log(`[headless] ⛔ 云端 UI 协议不匹配（远端 protocolVersion=${meta.protocolVersion}）`);
+        diag(`界面选址：协议不匹配（远端 protocolVersion=${meta.protocolVersion}）；仍指向云端，不再回落本地`);
+        assetBaseCache = CLOUD_APP_BASE;
       }
     })
-    .catch(() => {
+    .catch((e: unknown) => {
       clearTimeout(timer);
-      if (assetBaseCache !== "/__local") console.log("[headless] 云端不可达 → 本地兜底");
-      assetBaseCache = "/__local";
+      /* ⛔ 必须记原因：可能是超时 / DNS / 证书 / 代理拦。10-16 实测用户实例落在本机旧界面上，
+         只打一句"不可达"无从判断 —— 把 message 落盘才查得动。 */
+      diag(`界面选址：云端探测失败（仍指向云端，不再回落本地）；原因=${String((e as Error)?.message || e)}`);
+      assetBaseCache = CLOUD_APP_BASE;
     });
 }
 probeAssetBase();
