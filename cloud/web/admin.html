@@ -183,6 +183,30 @@
     </div>
   </div>
 
+  <div class="card" id="upstreamPanel" hidden>
+    <h2>上游 API <span class="tag" style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--g-brand-ink);color:#1e1e1d">热生效</span></h2>
+    <p class="hint" id="upInfo">读取中…</p>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+      <label style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:4px">
+        <span class="hint">上游 API 地址（https:// 开头）</span>
+        <input class="field" id="upBase" spellcheck="false" />
+      </label>
+      <label style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:4px">
+        <span class="hint">网关密钥（已保存则留空不改）</span>
+        <input class="field" id="upKey" type="password" spellcheck="false" />
+      </label>
+      <button class="btn act primary" id="upSave" style="height:36px">保存（热生效）</button>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <span class="hint" id="diskInfo" style="flex:1">服务器磁盘余量读取中…</span>
+      <button class="btn" id="diskRefresh" style="font-size:12px">刷新</button>
+    </div>
+    <div style="height:8px;border-radius:6px;background:var(--g-line);overflow:hidden;margin:8px 0 4px">
+      <div id="diskBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--g-ok),var(--g-warn) 75%,var(--g-bad));transition:width .4s"></div>
+    </div>
+    <p class="status" id="upStatus"></p>
+  </div>
+
   <div class="card" id="pointsPanel" hidden>
     <h2>积分管理</h2>
     <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
@@ -208,7 +232,7 @@
   <div class="card" id="panel" hidden>
     <div class="table-wrap">
     <table>
-      <thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>最近登录</th><th>操作</th></tr></thead>
+      <thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>最近登录</th><th>云存储配额（GB，保存即生效）</th><th>操作</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     </div>
@@ -272,6 +296,39 @@
       if (input) input.focus();
     });
   }
+
+  /* ── 上游 API 与磁盘余量（10-15）────────────────────────────────────── */
+  function gb(n) { return (n / 1073741824).toFixed(1); }
+  function loadUpstream() {
+    api("/admin/upstream").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { $("upstreamPanel").hidden = true; return; }
+      $("upstreamPanel").hidden = false;
+      $("upBase").value = r.j.base || "";
+      $("upKey").value = "";
+      $("upKey").placeholder = r.j.hasKey ? "已保存，留空则不修改" : "上游网关的 API Key";
+      $("upInfo").textContent = "当前来源：" + (r.j.source === "admin" ? "管理员配置" : "服务端环境变量") + (r.j.hasKey ? " · 网关密钥已配置" : " · 网关密钥未配置");
+    });
+  }
+  function loadDisk() {
+    $("diskInfo").textContent = "服务器磁盘余量读取中…";
+    api("/admin/disk").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { $("diskInfo").textContent = "磁盘余量读取失败：" + ((r.j && r.j.error) || r.status); return; }
+      var pct = Math.min(100, Math.round(r.j.usedBytes / r.j.totalBytes * 100));
+      $("diskBar").style.width = pct + "%";
+      $("diskInfo").textContent = "服务器磁盘：总 " + gb(r.j.totalBytes) + " GB · 已用 " + pct + "% · 剩余 " + gb(r.j.freeBytes) + " GB";
+    });
+  }
+  if ($("upSave")) $("upSave").onclick = function () {
+    var base = $("upBase").value.trim();
+    if (!/^https:\/\//.test(base)) { say("上游地址必须是 https:// 开头的完整 URL", "bad"); return; }
+    $("upSave").disabled = true;
+    api("/admin/upstream", { method: "POST", body: { base: base, gatewayKey: $("upKey").value.trim() } }).then(function (r) {
+      $("upSave").disabled = false;
+      if (r.ok && r.j && r.j.ok) { say("上游 API 已更新并热生效（下一条调用即走新地址）", "ok"); loadUpstream(); }
+      else { say("保存失败：" + ((r.j && r.j.error) || r.status), "bad"); }
+    }).catch(function () { $("upSave").disabled = false; say("网络错误", "bad"); });
+  };
+  if ($("diskRefresh")) $("diskRefresh").onclick = loadDisk;
 
   /* ── 积分管理 ─────────────────────────────────────────────────────── */
   function loadPoints(q) {
@@ -339,13 +396,32 @@
         td3.appendChild(Object.assign(document.createElement("span"), { className: "tag " + (u.disabled ? "off" : "on"), textContent: u.disabled ? "已停用" : "正常" }));
         tr.appendChild(td3);
         var td4 = document.createElement("td"); td4.textContent = fmtTime(u.lastLogin); tr.appendChild(td4);
+        var td5 = document.createElement("td");
+        var qwrap = document.createElement("div"); qwrap.className = "ops";
+        var qin = document.createElement("input");
+        qin.type = "number"; qin.min = "1"; qin.max = "1024";
+        qin.value = Math.round((u.quotaBytes || 0) / 1073741824 * 100) / 100;
+        qin.style.cssText = "width:90px;padding:5px 8px;border-radius:6px;border:1px solid var(--g-line);background:var(--g-field);font:inherit;font-size:12.5px";
+        var qgo = document.createElement("button"); qgo.className = "btn"; qgo.textContent = "保存";
+        qgo.onclick = function () {
+          var v = Number(qin.value);
+          if (!Number.isFinite(v) || v <= 0 || v > 1024) { say("配额必须是 0~1024 之间的 GB 数", "bad"); return; }
+          qgo.disabled = true;
+          api("/admin/users/storage", { method: "POST", body: { username: u.username, quotaGB: v } }).then(function (r) {
+            qgo.disabled = false;
+            if (r.ok && r.j && r.j.ok) { say(u.username + " 的云存储配额已设为 " + v + " GB（立即生效）", "ok"); load(); }
+            else { say("保存失败：" + ((r.j && r.j.error) || r.status), "bad"); }
+          }).catch(function () { qgo.disabled = false; say("网络错误", "bad"); });
+        };
+        if (u.quotaOverride) qwrap.appendChild(Object.assign(document.createElement("span"), { className: "hint", textContent: "自定义" }));
+        qwrap.appendChild(qin); qwrap.appendChild(qgo); td5.appendChild(qwrap); tr.appendChild(td5);
         var td5 = document.createElement("td"); td5.className = "ops";
         var toggle = document.createElement("button");
         toggle.className = "act"; toggle.textContent = u.disabled ? "启用" : "停用";
         toggle.onclick = function () {
           confirmBox(u.disabled ? "启用账号" : "停用账号", "确定要" + (u.disabled ? "启用" : "停用") + "「" + u.username + "」吗？" + (u.disabled ? "" : "该用户会立即被踢下线且无法登录。")).then(function (ok) {
             if (!ok) return;
-            api("/admin/users/" + encodeURIComponent(u.username) + "/" + (u.disabled ? "enable" : "disable"), { method: "POST" })
+            api("/admin/users/toggle", { method: "POST", body: { username: u.username, disabled: !u.disabled } })
               .then(function (r) { if (r.ok) { say("已" + (u.disabled ? "启用" : "停用") + " " + u.username, "ok"); load(); } else say(r.j && r.j.error || "失败", "bad"); });
           });
         };
@@ -355,7 +431,7 @@
         reset.onclick = function () {
           confirmBox("重置密码", "给「" + u.username + "」设置一个新密码（至少 8 位）：", "新密码").then(function (pw) {
             if (!pw) return;
-            api("/admin/users/" + encodeURIComponent(u.username) + "/reset-password", { method: "POST", body: { password: pw } })
+            api("/admin/users/reset", { method: "POST", body: { username: u.username, password: pw } })
               .then(function (r) { if (r.ok) { say("已重置 " + u.username + " 的密码", "ok"); } else say(r.j && r.j.error || "失败", "bad"); });
           });
         };
@@ -365,7 +441,7 @@
         del.onclick = function () {
           confirmBox("删除账号", "⚠ 不可恢复：确定删除「" + u.username + "」？").then(function (ok) {
             if (!ok) return;
-            api("/admin/users/" + encodeURIComponent(u.username) + "/delete", { method: "POST" })
+            api("/admin/users/delete", { method: "POST", body: { username: u.username } })
               .then(function (r) { if (r.ok) { say("已删除 " + u.username, "ok"); load(); } else say(r.j && r.j.error || "失败", "bad"); });
           });
         };
@@ -379,13 +455,13 @@
 
   function load() {
     if (typeof loadPoints === "function") loadPoints("");
+    loadUpstream(); loadDisk();
     api("/admin/users").then(function (r) {
-      if (r.status === 401 || r.status === 403) { showGate("会话已过期，请重新登录"); return; }
+      if (r.status === 401 || r.status === 403) { try { localStorage.removeItem("chc-session"); } catch (e) { /* 忽略 */ } window.location.replace("account.html#admin"); return; }
       if (!r.ok) { say(r.j && r.j.error || "加载失败", "bad"); return; }
-      api("/me").then(function (m) {
-        $("panel").hidden = false; $("gate").hidden = true;
-        render(r.j.users || [], m.j && m.j.account ? m.j.account.username : "?");
-      });
+      /* 10-15：管理功能已迁入用户中心，本页不再自渲染 */
+      window.location.replace("account.html#admin");
+      return;
     });
   }
 
@@ -405,7 +481,9 @@
       if (r.j.account.role !== "admin") { $("gate-status").textContent = "该账号不是管理员"; return; }
       session = r.j.token;
       try { localStorage.setItem("chc-session", session); } catch (e) { /* 忽略 */ }
-      load();
+
+    window.location.replace("account.html#admin");
+    return;      load();
     }).catch(function () { $("gate-status").textContent = "账号服务不可达"; });
   };
   $("p").addEventListener("keydown", function (e) { if (e.key === "Enter") $("go").click(); });
