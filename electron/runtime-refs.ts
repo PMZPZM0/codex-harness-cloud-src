@@ -11,6 +11,7 @@
  * ⛔ 本文件**不得** import "./main"（会成环，且整场收敛失效）。
  */
 import { app, BrowserWindow, nativeTheme } from "electron";
+import { appendFileSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
 import { CodexServer } from "./codex-server";
@@ -26,7 +27,7 @@ import { readCustomModel, readCustomModels, writeCustomModels } from "./main/01-
 import { describeNetworkError } from "./main/11-maintenance";
 import type { CustomModelFile } from "./features/custom-model-types";
 import { readAppSettings, readAppSettingsSync, saveAppSettings } from "./app-settings";
-import { broadcastHarnessEvent } from "./features/window-bus";
+import { sendToWindow } from "./features/window-bus";
 
 /* ── 域插件化后跨域取用的基座门面（10-03 阶段 2/3）───────────────────────────
    relay 域改 defineFeature 后，deps 不再由 main.ts 传参，而是经本门面取**活绑定**。
@@ -163,13 +164,33 @@ export async function syncEngineWatchdog() {
   else server.stopWatchdog();
 }
 
-/** 弹窗被关闭 → 通知主窗口（popout-closed 隐藏回侧栏 + popout-return 自动打开该会话）。 */
-export function notifyPopoutClosed(threadId: string) {
-  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+/** 窗口事件落盘诊断（10-16）：排查「关闭独立弹窗后主窗没反应」时发现，主进程侧的窗口
+ *  通知**一句日志都没有** ⇒ 用户报「没自动回来」时无法区分「通知没发出」「发给了空集合」
+ *  「渲染层没处理」三种情形（本次的真根因恰好是第一种，静默返回了一整轮）。
+ *  落 `userData/window-events.log`（与 theme-chrome.log 同一落盘纪律：无头形态没有可见终端）。 */
+function windowEventDiag(msg: string) {
   try {
-    mainWindow.webContents.send("harness:event", { type: "popout-closed", threadId, at: Date.now() });
-    mainWindow.webContents.send("harness:event", { type: "popout-return", threadId, at: Date.now() });
-  } catch { /* 主窗口可能已关 */ }
+    appendFileSync(path.join(app.getPath("userData"), "window-events.log"), `${new Date().toISOString()} ${msg}\n`);
+  } catch { /* 诊断写失败不影响功能 */ }
+}
+
+/** 弹窗被关闭 → 通知**主窗**（popout-closed 解锁侧栏 + popout-return 自动切回该会话）。
+ *
+ *  ⛔⛔ 必须走窗口总线的**主窗**通道，不能只发 `mainWindow`（10-16 用户报
+ *     「关闭独立弹窗后，没有自动回来，会话选不了」的真根因）：助手形态（headless）
+ *     **根本不创建桌面版主窗**（window-factory.createWindow 在助手形态直接返回）
+ *     ⇒ `mainWindow` 恒为 null ⇒ 原先那句 `if (!mainWindow …) return;` 让通知
+ *     **一次都发不出去**：侧栏那条会话永远停在「会话在独立窗口中」的灰态，
+ *     也不会自动切回主应用。
+ *  ⛔ 用 `sendToWindow`（= 总线里 { primary: true } 的窗口集合），而不是 broadcastToAll：
+ *     两种形态的主窗都登记为 primary（桌面版 = mainWindow；助手形态 = assistant-window）
+ *     ⇒ 一改两形态通吃；而 popout-return 若广播给**其它仍开着的**弹窗，
+ *     会让它们把自己的会话切走、并清掉自己的弹窗标识（弹窗壳整个坏掉）。
+ *  调用点已在 unregisterBusWindow 之后 ⇒ 已关的弹窗不会收到。 */
+export function notifyPopoutClosed(threadId: string) {
+  windowEventDiag(`弹窗已关 → 通知主窗（threadId=${threadId}）`);
+  sendToWindow("harness:event", { type: "popout-closed", threadId, at: Date.now() });
+  sendToWindow("harness:event", { type: "popout-return", threadId, at: Date.now() });
 }
 
 /** 「关闭窗口时最小化到托盘」（托盘右键菜单里的开关）。默认关。 */
@@ -216,3 +237,21 @@ export function titleBarOverlayOptions() {
 /* ⛔ appThemeDark 的取值在 main.ts 的 applyWindowChrome 维护——上面 titleBarOverlayOptions
  *   依赖它 ⇒ main.ts 每次设置主题时调 setAppThemeDark(dark)。symbolColor 的明暗两值
  *   原写在 main.ts 的 CHROME_SYMBOL_DARK/LIGHT 常量里，此处按原值内联。 */
+
+/** 把**当前主题**的原生外观应用到**单个**窗口（建窗后 / 首次显示后各补设一次）。
+ *
+ *  ⛔ 存在的理由（10-16 用户实测：「暗色主题下独立窗口右上角的系统缩小/全屏/叉掉看不见」，
+ *     主仓与 PPcode 同样复现）：建窗只在构造参数里读了一次 `titleBarOverlayOptions()`
+ *     （而且那时 appThemeDark 可能还是 null ⇒ 退到**系统**主题）。Windows 又会在窗口
+ *     **首次显示**时做边框延展，把构造期设好的属性覆盖掉 —— 与 `win-rounded-corners.ts`
+ *     记的圆角时序坑是同一件事。⇒ 暗色顶栏上画的是系统主题的近黑符号 = 看不见。
+ *     所以：建窗补一次、`show` 之后再补一次（幂等）。
+ *  ⛔ 与 applyWindowChrome 的区别：那个遍历**全部**总线窗口、由主题切换触发；
+ *     这个只管传入的那一个、由建窗/首显触发 —— 两者互补，缺一个就会出现
+ *     「新开的窗口外观不对 / 换了主题旧窗口不跟」。 */
+export function applyThemeToWindow(win: BrowserWindow): void {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+  const dark = appThemeDark ?? nativeTheme.shouldUseDarkColors;
+  try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch { /* 窗口可能正在销毁 */ }
+  try { win.setTitleBarOverlay(titleBarOverlayOptions()); } catch { /* overlay 未启用（非 win32 等）时忽略 */ }
+}
