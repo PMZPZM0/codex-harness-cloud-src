@@ -715,6 +715,54 @@ ipcMain.handle("theme:apply", (_event, theme: string) => {
   return { ok: true };
 });
 
+/** 当前窗口是否为独立会话弹窗：优先读登记表，URL query 兜底。 */
+ipcMain.handle("window:popout-id", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return null;
+  const registered = popoutThreadIds.get(win);
+  if (registered) return registered;
+  try {
+    return new URL(win.webContents.getURL()).searchParams.get("popout") ?? null;
+  } catch { return null; }
+});
+
+/** 所有独立会话弹窗锁定的会话 id 列表：主窗口据此在侧栏隐藏这些会话
+ *  （避免主窗口与弹窗重复渲染同一会话，用户 09-13 明确要求）。
+ *  读同步登记表（创建时立即写入），不受窗口 URL 加载时序影响。 */
+ipcMain.handle("window:popout-list", () => {
+  const ids: string[] = [];
+  for (const [win, id] of popoutThreadIds) {
+    if (!win.isDestroyed()) ids.push(id);
+  }
+  return ids;
+});
+
+/** 独立会话弹窗：按 threadId 打开一个新窗口（渲染层在顶栏/侧栏长按触发）。
+ *  允许同时存在多个弹窗；主窗口关闭不会带走弹窗（window-all-closed 只在全部窗口
+ *  关闭后触发，弹窗还开着时应用保持运行）。 */
+ipcMain.handle("window:popout-thread", (_event, threadId: unknown) => {
+  const tid = threadId == null ? "" : String(threadId);
+  if (!tid) throw new Error("缺少会话 ID");
+  // 同一会话已弹窗 → 聚焦已有窗口，不重复开（避免开着开着冒出几十个）。读同步登记表。
+  for (const [win, id] of popoutThreadIds) {
+    if (!win.isDestroyed() && id === tid) { win.focus(); return { ok: true, focused: true }; }
+  }
+  createPopoutWindow(tid);
+  return { ok: true };
+});
+
+/** 弹窗「返回主应用」：关闭该弹窗，并把主窗口带到指定会话（渲染层据此恢复视角）。 */
+ipcMain.handle("window:popout-close", (event, threadId: unknown) => {
+  const tid = threadId == null ? "" : String(threadId);
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && isPopoutWindow(win) && !win.isDestroyed()) win.close();
+  // ⛔ 不在这里发 popout-return：win.close() 会触发 closed → notifyPopoutClosed
+  // 统一发（含 popout-closed 解除侧栏隐藏），避免「返回按钮」路径重复 openThread。
+  if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
+  return { ok: true };
+});
+}
+
 // ── 单实例锁：防止启动两个应用前端（两份引擎 + 共享 codex-home 会互相打架） ──
 // 第二个实例启动时 requestSingleInstanceLock 返回 false → 立即退出；
 // 已运行实例收到 second-instance 事件 → 聚焦已有窗口（唤起）。
@@ -774,55 +822,6 @@ console.log(`[ipc-registry] ${IPC_DOMAINS.length} 个 IPC 域，${domainsStillIn
 /** 「当前能力链路」：同一件事有多个后端时，现在实际走哪条、其余为什么没走。
  *  为什么需要这个入口：原先这些规则散在技能文案与代码注释里，用户只能看到零散的安装状态，
  *  出问题时无法回答"到底走的哪条"（对标 Agent-Reach 的 doctor 思路）。 */
-
-/** 渲染层上报「当前正在查看哪个会话」：主进程据此只转发该会话的高频事件（P1）。 */
-/** 当前窗口是否为独立会话弹窗：优先读登记表，URL query 兜底。 */
-ipcMain.handle("window:popout-id", (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  if (!win || win.isDestroyed()) return null;
-  const registered = popoutThreadIds.get(win);
-  if (registered) return registered;
-  try {
-    return new URL(win.webContents.getURL()).searchParams.get("popout") ?? null;
-  } catch { return null; }
-});
-
-/** 所有独立会话弹窗锁定的会话 id 列表：主窗口据此在侧栏隐藏这些会话
- *  （避免主窗口与弹窗重复渲染同一会话，用户 09-13 明确要求）。
- *  读同步登记表（创建时立即写入），不受窗口 URL 加载时序影响。 */
-ipcMain.handle("window:popout-list", () => {
-  const ids: string[] = [];
-  for (const [win, id] of popoutThreadIds) {
-    if (!win.isDestroyed()) ids.push(id);
-  }
-  return ids;
-});
-
-
-/** 独立会话弹窗：按 threadId 打开一个新窗口（渲染层在顶栏/侧栏长按触发）。
- *  允许同时存在多个弹窗；主窗口关闭不会带走弹窗（window-all-closed 只在全部窗口
- *  关闭后触发，弹窗还开着时应用保持运行）。 */
-ipcMain.handle("window:popout-thread", (_event, threadId: unknown) => {  const tid = threadId == null ? "" : String(threadId);
-  if (!tid) throw new Error("缺少会话 ID");
-  // 同一会话已弹窗 → 聚焦已有窗口，不重复开（避免开着开着冒出几十个）。读同步登记表。
-  for (const [win, id] of popoutThreadIds) {
-    if (!win.isDestroyed() && id === tid) { win.focus(); return { ok: true, focused: true }; }
-  }
-  createPopoutWindow(tid);
-  return { ok: true };
-});
-
-/** 弹窗「返回主应用」：关闭该弹窗，并把主窗口带到指定会话（渲染层据此恢复视角）。 */
-ipcMain.handle("window:popout-close", (event, threadId: unknown) => {
-  const tid = threadId == null ? "" : String(threadId);
-  const win = BrowserWindow.fromWebContents(event.sender);
-  if (win && isPopoutWindow(win) && !win.isDestroyed()) win.close();
-  // ⛔ 不在这里发 popout-return：win.close() 会触发 closed → notifyPopoutClosed
-  // 统一发（含 popout-closed 解除侧栏隐藏），避免「返回按钮」路径重复 openThread。
-  if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
-  return { ok: true };
-});
-}
 
 // ── Codex 引擎在线更新（设置 → 控制台 → Codex 引擎更新） ──
 /**
