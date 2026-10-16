@@ -756,6 +756,20 @@ function buildShim(manifest: { channels: ManifestEntry[] }, onChannels: OnEntry[
 
   window.codex = codex;
   window.__chcReady = true;   // 界面桥就位（外壳超时兜底读它）
+
+  /* ⛔ 启动即同步窗口外观（10-16 用户报障「右上角系统钮没跟着主题变，看不见了」）：
+     渲染层确实也在主题变化时调 themeApply，但那依赖**聊天界面那个 effect 挂载**
+     （src/features/app-state/parts/part04/02-seg/02-chat-search-history.tsx）——
+     用户停在别的界面、或该分支没渲染时，主进程就永远收不到，
+     标题栏符号色便停在**窗口创建时**的值（跟随系统主题）；
+     系统亮 + 应用暗时符号是近黑，画在深色顶栏上就完全看不见。
+     这里只要能读到 localStorage 的主题就**无条件补一次**（幂等，与渲染层重复调用无副作用）。 */
+  try {
+    var savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "dark" || savedTheme === "light") {
+      codex.themeApply(savedTheme).catch(function (e) { console.error("[shim] themeApply", e); });
+    }
+  } catch (e) { /* localStorage 不可用时忽略（不影响界面） */ }
 })();
 `;
 }
