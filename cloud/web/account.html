@@ -39,7 +39,7 @@
   .side-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
   .side-foot b { color: var(--text); font-weight: 600; }
 
-  .main { padding: 28px 32px 64px; max-width: 860px; }
+  .main { padding: 28px 32px 64px; max-width: none; width: 100%; }
   .page-head { margin-bottom: 18px; }
   .page-head h1 { margin: 0 0 4px; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
   .page-head p { margin: 0; color: var(--muted); font-size: 13px; }
@@ -64,12 +64,12 @@
   .pill.bad { background: var(--bad-soft); color: var(--bad); }
   .pill.plain { background: var(--field); color: var(--muted); }
 
-  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
   .stat { background: var(--field); border: 1px solid var(--line-soft); border-radius: 10px; padding: 12px 14px; }
   .stat .n { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
   .stat .l { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 8px 16px;
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 8px 16px; white-space: nowrap;
     border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--text); font-size: 13.5px; font-weight: 550;
     transition: filter var(--dur) ease, transform var(--dur) ease, background var(--dur) ease; }
   .btn:hover:not(:disabled) { background: var(--field); }
@@ -97,8 +97,26 @@
   .bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--brand2), var(--brand)); }
   .bar.warn > i { background: linear-gradient(90deg, #f0b357, var(--warn)); }
   .bar.bad > i { background: linear-gradient(90deg, #e57a6d, var(--bad)); }
-  .sess { border-top: 1px solid var(--line-soft); padding: 11px 0; }
+  /* 行布局：左侧信息自适应，删除按钮贴右（10-15 用户令：删除放到行尾） */
+  .sess { border-top: 1px solid var(--line-soft); padding: 11px 0; display: flex; align-items: center; gap: 12px; }
   .sess:first-of-type { border-top: 0; }
+  .sess-body { flex: 1; min-width: 0; }
+  .sess > .btn { flex: none; }
+  /* 工具条：搜索（含清空按钮）/ 分类 / 排序 / 每页 / 翻页，间距走 4 的倍数 */
+  .sess-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+  .sess-tools .field { padding: 7px 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--field); font: inherit; font-size: 12.5px; color: var(--text); }
+  /* 搜索框固定宽度（不许 flex:1 撑满，否则后面的控件被挤到下一行） */
+  .sess-search { position: relative; flex: 0 1 260px; min-width: 180px; display: flex; }
+  .sess-search .field { width: 100%; padding-right: 32px; }
+  /* ⛔ 工具栏里的下拉框必须覆盖 .field 的 width:100%（否则每个都撑满整行 ⇒ 一层一个控件） */
+  .sess-tools > select, .sess-tools > select.field { flex: none; width: auto; min-width: 118px; }
+  .sess-search .field { width: 100%; }
+  .sess-x { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 3px 7px; border-radius: 5px; }
+  .sess-x:hover { background: var(--line-soft); color: var(--text); }
+  .sess-pager { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+  .sess-batch { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
+  .sess-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+  .sess-cb { width: 16px; height: 16px; flex: none; margin: 0; accent-color: var(--brand); }
   .sess .t { font-weight: 600; font-size: 13.5px; word-break: break-all; }
   .sess .m { color: var(--faint); font-size: 12px; margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
   .sess .m code { font-family: ui-monospace, Consolas, monospace; background: var(--field); padding: 0 5px; border-radius: 5px; }
@@ -117,6 +135,17 @@
     .grid2 { grid-template-columns: 1fr; }
     .row { align-items: flex-start; }
   }
+
+  .pt-ops { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px; flex-wrap: nowrap; }
+  .pt-ops .field { flex: 1 1 auto; min-width: 200px; max-width: 420px; }
+  .pt-ops .btn { flex: none; }
+  .pt-rows .row { min-height: 40px; border-bottom: 1px solid var(--line-soft); }
+  .pt-rows .row:last-child { border-bottom: 0; }
+  .pt-rows .row:hover { background: var(--field); }
+  
+  /* 记忆空间 / 知识库 是全屏型第三方应用：放开内容区 max-width，否则右侧被裁 */
+  main.main:has(section.tab[data-tab="memory"]:not([hidden])),
+  main.main:has(section.tab[data-tab="kb"]:not([hidden])) { max-width: none; }
 </style>
 </head>
 <body>
@@ -126,6 +155,8 @@
     <button class="nav-item" data-tab="user"><span class="dot"></span>用户中心</button>
     <button class="nav-item" data-tab="pair"><span class="dot"></span>配对中心</button>
     <button class="nav-item" data-tab="cloud"><span class="dot"></span>云端管理</button>
+    <button class="nav-item" data-tab="memory"><span class="dot"></span>记忆空间</button>
+    <button class="nav-item" data-tab="kb"><span class="dot"></span>知识库</button>
     <button class="nav-item" data-tab="admin" id="navAdmin" hidden><span class="dot"></span>用户管理</button>
     <div class="side-foot">
       <span id="whoami">读取中…</span>
@@ -203,6 +234,7 @@
     <section class="tab" data-tab="cloud" hidden>
       <div class="page-head"><h1>云端管理</h1><p>云端数据概览、同步配置与数据处置。</p></div>
 
+
       <div class="card">
         <h2>概览</h2>
         <div class="grid2">
@@ -242,6 +274,29 @@
 
       <div class="card">
         <h2>已上传会话 <span class="tag" id="sessCount">0</span></h2>
+        <div class="sess-tools">
+          <span class="sess-search" title="可搜索：会话 ID / 项目名 / 机器名">
+            <input class="field" id="sessQ" placeholder="搜索…" />
+            <button class="sess-x" id="sessQClear" type="button" title="清空搜索" aria-label="清空搜索">×</button>
+          </span>
+          <select class="field" id="sessProj" aria-label="按项目分类"><option value="">全部分类（项目）</option></select>
+          <select class="field" id="sessSort" aria-label="排序方式">
+            <option value="time">最近上传</option>
+            <option value="size">体积最大</option>
+            <option value="lines">行数最多</option>
+          </select>
+          <select class="field" id="sessPer" aria-label="每页条数">
+            <option value="10">每页 10</option>
+            <option value="20">每页 20</option>
+            <option value="50">每页 50</option>
+          </select>
+          <span class="sess-pager" id="sessPager"></span>
+        </div>
+        <div class="sess-batch" id="sessBatch" hidden>
+          <label class="sess-check"><input type="checkbox" id="sessAll" /> 全选本页</label>
+          <span class="hint" id="sessSelInfo">已选 0 条</span>
+          <button class="btn sm danger" id="sessDelSel" disabled>删除选中</button>
+        </div>
         <div id="sessList"><div class="empty">读取中…</div></div>
         <div class="hint" style="margin-top:8px">按项目批量删除：<span id="projDel"></span></div>
       </div>
@@ -253,7 +308,7 @@
           <input class="field" id="lbSearch" placeholder="搜索模型…" autocomplete="off" />
           <button class="btn sm" id="lbAll">全选</button>
           <button class="btn sm" id="lbNone">清空</button>
-          <button class="btn sm" id="lbReload">重新同步目录</button>
+          <button class="btn sm" id="lbReload">刷新</button>
         </div>
         <div id="lbList"><div class="empty">读取中…</div></div>
         <div class="btn-row"><span class="status" id="lbStatus"></span></div>
@@ -261,14 +316,6 @@
           勾选即生效，改动自动保存到账号（换台电脑登录也是同一份选择）。
           ⛔ 未勾选的模型即使被直接调用也会被服务端拒绝。
         </div>
-        <details style="margin-top:10px">
-          <summary class="hint" style="cursor:pointer">本机接入（高级）</summary>
-          <div class="hint" style="margin-top:8px">
-            地址填 <code id="lbBase">/cloud-api/proxy/v1</code>；密钥点下面签发（明文只显示这一次）。
-          </div>
-          <div class="btn-row"><button class="btn sm" id="lbToken">签发本机接入密钥</button></div>
-          <div class="hint" id="lbTokenOut" style="margin-top:8px;word-break:break-all"></div>
-        </details>
       </div>
 
       <div class="card">
@@ -279,9 +326,111 @@
         <div class="hint" style="margin-top:8px">云端数据处置（清空 / 导出 / 回收站）随后端同步服务一并开放。</div>
       </div>
     </section>
-  </main>
+  
+  <section class="tab" data-tab="memory" hidden>
+    <div class="page-head"><h1>记忆空间</h1>
+      <p>团队记忆库（Memory Hub）。<b>账号由管理员分配</b>——请向管理员索取你的 <b>User Key</b>（<code>sk-mem-…</code>），拿到后在下方页面用它登录；还没有账号请联系管理员开通。</p>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <iframe src="https://mem.ppz123.asia/" style="width:100%;height:calc(100vh - 190px);border:0;display:block" loading="lazy" referrerpolicy="no-referrer" title="记忆空间"></iframe>
+    </div>
+  </section>
+
+  <section class="tab" data-tab="kb" hidden>
+    <div class="page-head"><h1>知识库</h1>
+      <p>团队知识库（WeKnora）。<b>直接在下方填写邮箱和密码即可</b> —— 首次提交即完成注册并加入团队（页面上的“您被邀请加入…”就是凭证），已有账号就是登录。无需另开页面。</p></p>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <iframe src="https://kb.ppz123.asia/register?token=ul7Lnfihw5KMTShW26vcnEt8UlD2w4vlUmr_4egqYlI" style="width:100%;height:calc(100vh - 190px);border:0;display:block" loading="lazy" referrerpolicy="no-referrer" title="知识库"></iframe>
+    </div>
+  </section>
+
+<div class="tab" data-tab="admin" id="adminTab" hidden>
+    <div class="card">
+      <h2>上游 API <span class="pill ok">热生效</span></h2>
+      <p class="hint" id="auInfo">读取中…</p>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+        <label style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:4px">
+          <span class="hint">上游 API 地址（https:// 开头）</span>
+          <input class="field" id="auBase" spellcheck="false" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+        </label>
+        <label style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:4px">
+          <span class="hint">网关密钥（已保存则留空不改）</span>
+          <input class="field" id="auKey" type="password" spellcheck="false" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+        </label>
+        <button class="btn" id="auSave" style="height:38px">保存（热生效）</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span class="hint" id="auDiskInfo" style="flex:1">服务器磁盘余量读取中…</span>
+        <button class="btn" id="auDiskRefresh" style="font-size:12px">刷新</button>
+      </div>
+      <div style="height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin:8px 0 4px">
+        <div id="auDiskBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--ok),var(--warn) 75%,var(--bad));transition:width .4s"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>用户管理</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>最近登录</th><th>积分余额</th><th>云存储配额（GB）</th><th>操作</th></tr></thead>
+          <tbody id="auRows"></tbody>
+        </table>
+      </div>
+      <p class="status" id="auStatus"></p>
+    </div>
+
+
+
+    <div class="card">
+      <h2>积分管理 <span class="pill ok">发放 / 扣减</span></h2>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <input class="field" id="apq" placeholder="按用户名搜索…" style="flex:1;min-width:180px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+        <button class="btn" id="apSearch">搜索</button>
+        <button class="btn" id="apAll">全部</button>
+        <span class="hint" id="apSummary"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>用户名</th><th>积分余额</th><th>流水</th><th>最近变动</th><th>发放（正数增加 / 负数扣减）</th></tr></thead>
+          <tbody id="apRows"></tbody>
+        </table>
+      </div>
+      <p class="status" id="apStatus"></p>
+    </div>
+
+    <div class="card" id="amCard">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">模型管理 <span class="pill ok">管理员</span>
+        <button class="btn sm" id="amSync" style="margin-left:auto">重新同步目录</button>
+      </h2>
+      <p class="hint">
+        <b>倍率</b> = 调用该模型时按倍率扣积分（如 0.29 表示 1 积分额度按 0.29 计），<b>留空 = 免费</b>。
+        修改<b>即时生效</b>（下一条调用即按新倍率）。目录同步后新增的模型会出现在这里。
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>模型</th><th>ID</th><th>当前倍率</th><th>改为</th></tr></thead>
+          <tbody id="amRows"></tbody>
+        </table>
+      </div>
+      <p class="status" id="amStatus"></p>
+
+      <h2 style="margin-top:22px">对用户开放的模型 <span class="hint" style="font-weight:400">（勾选=用户端能看到并自行选择的模型；<b>不会替他们勾选</b>）</span></h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn sm" id="amRefresh">刷新模型列表</button>
+        <button class="btn sm" id="amAll">全选</button>
+        <button class="btn sm" id="amNone">清空</button>
+        <button class="btn sm" id="amSaveUser">保存（对用户开放这些模型）</button>
+        <span class="hint" id="amUserInfo"></span>
+      </div>
+      <div id="amToast" style="display:none;margin:0 0 10px;padding:8px 12px;border-radius:8px;font-size:12.5px;border:1px solid var(--line);background:var(--ok-soft,#e8f5ec);color:var(--ok,#1a7f37)"></div>
+      <div id="amUserModels" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px 14px"></div>
+    </div>
+  </div>
+</main>
 </div>
 
+
+  <script> void 0; </script>
 <script>(function () {
   "use strict";
   var API = "/cloud-api";
@@ -337,19 +486,21 @@
     if (tab === "user") loadPoints();
     if (tab === "pair") refreshPairing();
     if (tab === "cloud") refreshCloud();
+    if (tab === "admin") loadAdminPanel();
     try { history.replaceState(null, "", "#" + tab); } catch (e) { /* 忽略 */ }
     if (!found) show("user");
   }
   Array.prototype.forEach.call(document.querySelectorAll(".nav-item"), function (b) {
     b.onclick = function () {
       var t = b.getAttribute("data-tab");
-      if (t === "admin") { window.open("admin.html", "_blank"); return; }
+      if (t === "admin") { show("admin"); return; }
       show(t);
     };
   });
 
   /* ── 账号资料 ─────────────────────────────────────────────────── */
   var me = null;
+  var isAdmin = false;   /* 管理员判定（记忆空间/知识库入口的第二道防线） */
   api("/me").then(function (r) {
     if (!r.ok || !r.j || !r.j.ok) { try { localStorage.removeItem("chc-session"); } catch (e) { } window.location.replace("index.html"); return; }
     me = r.j.account;
@@ -362,11 +513,293 @@
     $("whoami").innerHTML = "当前账号：<b>" + me.username + "</b>";
     loadPoints();
     /* ⛔ 双保险：非管理员不仅 hidden，还**从 DOM 摘除**（不靠 CSS 兜底，也不在页面里留痕迹） */
-    if (me.role === "admin") { $("navAdmin").hidden = false; }
+    isAdmin = me.role === "admin";
+    /* ⛔ 19:0x 用户定案：记忆空间/知识库**不在用户中心内嵌**（iframe 的登录态是浏览器级 cookie，
+       同一浏览器上任何人都能借管理员的登录直接用 = 绕过授权，用户实测指出）。入口与面板已撤除，
+       管理员请直接访问 mem./kb.ppz123.asia（建议用无痕窗口）。 */
+    if (isAdmin) { $("navAdmin").hidden = false; }
     else { var a = $("navAdmin"); if (a && a.parentNode) a.parentNode.removeChild(a); }
     var start = (location.hash || "#user").slice(1);
-    show(["user", "pair", "cloud"].indexOf(start) >= 0 ? start : "user");
+    show(["user", "pair", "cloud", "memory", "kb", "admin"].indexOf(start) >= 0 ? start : "user");
   }).catch(function () { window.location.replace("index.html"); });
+
+  /* ── 用户管理（管理员，就地视图；10-15 从 admin.html 迁入并修正端点） ── */
+  function auSay(text, cls) { var st = $("auStatus"); st.textContent = text; st.className = "status" + (cls ? " " + cls : ""); }
+  function auGb(n) { return (n / 1073741824).toFixed(1); }
+  function loadUpstreamCfg() {
+    api("/admin/upstream").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { $("adminTab").hidden = true; return; }
+      $("auBase").value = r.j.base || "";
+      $("auKey").value = "";
+      $("auKey").placeholder = r.j.hasKey ? "已保存，留空则不修改" : "上游网关的 API Key";
+      $("auInfo").textContent = "当前来源：" + (r.j.source === "admin" ? "管理员配置" : "服务端环境变量") + (r.j.hasKey ? " · 网关密钥已配置" : " · 网关密钥未配置");
+    });
+  }
+  function loadDiskInfo() {
+    $("auDiskInfo").textContent = "服务器磁盘余量读取中…";
+    api("/admin/disk").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { $("auDiskInfo").textContent = "磁盘余量读取失败：" + ((r.j && r.j.error) || r.status); return; }
+      var pct = Math.min(100, Math.round(r.j.usedBytes / r.j.totalBytes * 100));
+      $("auDiskBar").style.width = pct + "%";
+      $("auDiskInfo").textContent = "服务器磁盘：总 " + auGb(r.j.totalBytes) + " GB · 已用 " + pct + "% · 剩余 " + auGb(r.j.freeBytes) + " GB";
+    });
+  }
+  function loadAdminPanel() {
+    loadUpstreamCfg(); loadDiskInfo(); loadAdminPoints(""); loadAdminModels();
+    api("/admin/users").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { auSay("用户列表读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
+      renderAdmin(r.j.users || []);
+    });
+  }
+  function renderAdmin(users) {
+    var box = $("auRows"); box.innerHTML = "";
+    function tag(text, kind) { return Object.assign(document.createElement("span"), { className: "pill " + kind, textContent: text }); }
+    users.forEach(function (u) {
+      var tr = document.createElement("tr");
+      var td1 = document.createElement("td");
+      td1.appendChild(Object.assign(document.createElement("span"), { className: "name", textContent: u.username }));
+      if (u.disabled) td1.appendChild(Object.assign(document.createElement("span"), { className: "hint", textContent: " （已停用）" }));
+      tr.appendChild(td1);
+      tr.appendChild(Object.assign(document.createElement("td"), { innerHTML: '<span class="pill' + (u.role === "admin" ? "" : " ok") + '">' + (u.role === "admin" ? "管理员" : "用户") + "</span>" }));
+      tr.appendChild(Object.assign(document.createElement("td"), { innerHTML: '<span class="pill ' + (u.disabled ? "bad" : "ok") + '">' + (u.disabled ? "已停用" : "正常") + "</span>" }));
+      tr.appendChild(Object.assign(document.createElement("td"), { textContent: fmt(u.lastLogin) }));
+      tr.appendChild(Object.assign(document.createElement("td"), { textContent: Number(u.balance === undefined || u.balance === null ? 0 : u.balance).toFixed(2).replace(/\.00$/, "") }));
+      var tdQ = document.createElement("td");
+      var qwrap = document.createElement("div"); qwrap.style.cssText = "display:flex;gap:6px;align-items:center";
+      var qin = document.createElement("input");
+      qin.type = "number"; qin.min = "1"; qin.max = "1024";
+      qin.value = Math.round((Number(u.quotaBytes) > 0 ? u.quotaBytes : 1073741824) / 1073741824 * 100) / 100;
+      qin.style.cssText = "width:84px;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px";
+      var qgo = document.createElement("button"); qgo.className = "btn"; qgo.textContent = "保存";
+      qgo.onclick = function () {
+        var v = Number(qin.value);
+        if (!Number.isFinite(v) || v <= 0 || v > 1024) { auSay("配额必须是 0~1024 之间的 GB 数", "bad"); return; }
+        qgo.disabled = true;
+        api("/admin/users/storage", { method: "POST", body: { username: u.username, quotaGB: v } }).then(function (r) {
+          qgo.disabled = false;
+          if (r.ok && r.j && r.j.ok) { auSay(u.username + " 的云存储配额已设为 " + v + " GB（立即生效）", "ok"); loadAdminPanel(); }
+          else { auSay("保存失败：" + ((r.j && r.j.error) || r.status), "bad"); }
+        }).catch(function () { qgo.disabled = false; auSay("网络错误", "bad"); });
+      };
+      if (u.quotaOverride) qwrap.appendChild(Object.assign(document.createElement("span"), { className: "hint", textContent: "自定义" }));
+      qwrap.appendChild(qin); qwrap.appendChild(qgo); tdQ.appendChild(qwrap); tr.appendChild(tdQ);
+      var tdOps = document.createElement("td");
+      var ops = document.createElement("div"); ops.style.cssText = "display:flex;gap:6px";
+      var mk = function (text, cls, fn) { var b = document.createElement("button"); b.className = cls; b.textContent = text; b.onclick = fn; return b; };
+      ops.appendChild(mk(u.disabled ? "启用" : "停用", "btn", function () {
+        var next = !u.disabled;
+        if (!window.confirm((next ? "启用" : "停用") + "「" + u.username + "」？" + (next ? "" : "该用户会立即被踢下线且无法登录。"))) return;
+        api("/admin/users/toggle", { method: "POST", body: { username: u.username, disabled: next } }).then(function (r) {
+          if (r.ok && r.j && r.j.ok) { auSay("已" + (next ? "启用" : "停用") + " " + u.username, "ok"); loadAdminPanel(); }
+          else { auSay("操作失败：" + ((r.j && r.j.error) || r.status), "bad"); }
+        }).catch(function () { auSay("网络错误", "bad"); });
+      }));
+      ops.appendChild(mk("重置密码", "btn", function () {
+        var pw = window.prompt("给「" + u.username + "」设置新密码（至少 8 位）：");
+        if (!pw) return;
+        if (pw.length < 8) { auSay("新密码至少 8 位", "bad"); return; }
+        api("/admin/users/reset", { method: "POST", body: { username: u.username, password: pw } }).then(function (r) {
+          if (r.ok && r.j && r.j.ok) { auSay("已重置 " + u.username + " 的密码（该用户已全部下线）", "ok"); }
+          else { auSay("重置失败：" + ((r.j && r.j.error) || r.status), "bad"); }
+        }).catch(function () { auSay("网络错误", "bad"); });
+      }));
+      if (u.role !== "admin") ops.appendChild(mk("删除", "btn", function () {
+        if (!window.confirm("⚠ 不可恢复：确定删除「" + u.username + "」？（连积分/勾选/令牌/配额/全部会话一起清除）")) return;
+        api("/admin/users/delete", { method: "POST", body: { username: u.username } }).then(function (r) {
+          if (r.ok && r.j && r.j.ok) { auSay("已删除 " + u.username, "ok"); loadAdminPanel(); }
+          else { auSay("删除失败：" + ((r.j && r.j.error) || r.status), "bad"); }
+        }).catch(function () { auSay("网络错误", "bad"); });
+      }));
+      tdOps.appendChild(ops); tr.appendChild(tdOps);
+      box.appendChild(tr);
+    });
+  }
+  if ($("auSave")) $("auSave").onclick = function () {
+    var base = $("auBase").value.trim();
+    if (!/^https:\/\//.test(base)) { auSay("上游地址必须是 https:// 开头的完整 URL", "bad"); return; }
+    $("auSave").disabled = true;
+    api("/admin/upstream", { method: "POST", body: { base: base, gatewayKey: $("auKey").value.trim() } }).then(function (r) {
+      $("auSave").disabled = false;
+      if (r.ok && r.j && r.j.ok) { auSay("上游 API 已更新并热生效（下一条调用即走新地址）", "ok"); loadUpstreamCfg(); loadDiskInfo(); }
+      else { auSay("保存失败：" + ((r.j && r.j.error) || r.status), "bad"); }
+    }).catch(function () { $("auSave").disabled = false; auSay("网络错误", "bad"); });
+  };
+  if ($("auDiskRefresh")) $("auDiskRefresh").onclick = loadDiskInfo;
+
+  /* ── 模型管理（管理员：倍率 + 每用户可用模型）── */
+  var amData = null;
+  function amSay(text, cls) { var st = $("amStatus"); st.textContent = text; st.className = "status" + (cls ? " " + cls : ""); }
+  function loadAdminModels() {
+    api("/admin/models").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { amSay("模型目录读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
+      amData = r.j;
+      /* 倍率表 */
+      var box = $("amRows"); box.innerHTML = "";
+      (r.j.list || []).forEach(function (m) {
+        var tr = document.createElement("tr");
+        tr.appendChild(Object.assign(document.createElement("td"), { textContent: m.name || m.id }));
+        var tdId = document.createElement("td");
+        tdId.appendChild(Object.assign(document.createElement("code"), { textContent: m.id, style: "font-size:12px;color:var(--muted)" }));
+        tr.appendChild(tdId);
+        tr.appendChild(Object.assign(document.createElement("td"), { textContent: m.credits ? m.credits : "免费" }));
+        var tdSet = document.createElement("td");
+        var wrap = document.createElement("div"); wrap.style.cssText = "display:flex;gap:6px;align-items:center";
+        var inp = document.createElement("input");
+        inp.type = "text"; inp.placeholder = "如 0.29，空=免费";
+        inp.value = m.credits ? String(m.credits).replace(/^x/i, "") : "";
+        inp.style.cssText = "width:110px;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px";
+        var go = document.createElement("button"); go.className = "btn sm"; go.textContent = "保存";
+        go.onclick = function () {
+          go.disabled = true;
+          api("/admin/models/credits", { method: "POST", body: { id: m.id, credits: inp.value.trim() } }).then(function (x) {
+            go.disabled = false;
+            if (x.ok && x.j && x.j.ok) { amSay((m.name || m.id) + " 的倍率已设为 " + (x.j.credits || "免费"), "ok"); loadAdminModels(); }
+            else amSay("保存失败：" + ((x.j && x.j.error) || x.status), "bad");
+          }).catch(function () { go.disabled = false; amSay("网络错误", "bad"); });
+        };
+        wrap.appendChild(inp); wrap.appendChild(go); tdSet.appendChild(wrap); tr.appendChild(tdSet);
+        box.appendChild(tr);
+      });
+      /* 用户下拉 */
+      renderUserModels();
+    });
+  }
+  /* 本卡作用于**全部用户**（用户令：不用加用户选择）——
+     勾选态以「第一个有配置的用户」为模板展示，保存时整集覆盖到所有账号。 */
+  /* 勾选态 = **对用户开放的目录**（modelCatalog.available）。
+     未设置过（null）⇒ 视为全部开放，避免首次进页面全空。 */
+  function currentUserIds() {
+    if (!amData) return [];
+    var avail = amData.available;
+    if (Array.isArray(avail)) return avail;
+    return (amData.list || []).map(function (m) { return m.id; });
+  }
+  function renderUserModels() {
+    if (!amData) return;   /* 用户下拉已移除：本卡作用于全部用户 */
+    var ids = currentUserIds();
+    var box = $("amUserModels"); box.innerHTML = "";
+    (amData.list || []).forEach(function (m) {
+      var lab = document.createElement("label");
+      lab.style.cssText = "display:flex;align-items:center;gap:7px;font-size:12.5px;padding:3px 0";
+      var cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = m.id; cb.checked = ids.indexOf(m.id) >= 0;
+      cb.style.cssText = "width:15px;height:15px;accent-color:var(--brand)";
+      lab.appendChild(cb);
+      lab.appendChild(Object.assign(document.createElement("span"), { textContent: (m.name || m.id) + (m.credits ? " · " + m.credits : " · 免费") }));
+      box.appendChild(lab);
+    });
+    $("amUserInfo").textContent = "已开放 " + ids.length + " / " + ((amData.list || []).length) + " 个模型（用户端可自行勾选）";
+  }
+  function amCollect() {
+    return Array.prototype.slice.call(document.querySelectorAll("#amUserModels input[type=checkbox]"))
+      .filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
+  }
+  if ($("amSync")) $("amSync").onclick = function () {
+    $("amSync").disabled = true; amSay("正在同步目录…");
+    api("/admin/models/sync", { method: "POST" }).then(function (x) {
+      $("amSync").disabled = false;
+      if (x.ok && x.j && x.j.ok) { amSay("目录已同步，共 " + ((x.j.list || []).length || x.j.total || 0) + " 个模型", "ok"); loadAdminModels(); }
+      else { amSay("同步失败：" + ((x.j && x.j.error) || x.status) + "（已保留现有目录）", "bad"); loadAdminModels(); }
+    }).catch(function () { $("amSync").disabled = false; amSay("网络错误", "bad"); });
+  };
+
+  /* 刷新模型列表：重新拉服务端目录，和当前列表对比，弹小提示告知新增/减少。
+     （用户令：后面有新增模型时要能刷新，刷新完给个提醒） */
+  function amToast(text, kind) {
+    var el2 = $("amToast"); if (!el2) return;
+    el2.textContent = text;
+    el2.style.display = "block";
+    el2.style.background = kind === "warn"
+      ? "var(--warn-soft,#fef3e2)" : "var(--ok-soft,#e8f5ec)";
+    el2.style.color = kind === "warn" ? "var(--warn,#b45309)" : "var(--ok,#1a7f37)";
+    clearTimeout(window.__amToastTimer);
+    window.__amToastTimer = setTimeout(function () { el2.style.display = "none"; }, 6000);
+  }
+  if ($("amRefresh")) $("amRefresh").onclick = function () {
+    var btn = $("amRefresh");
+    var before = ((amData || {}).list || []).map(function (m) { return m.id; });
+    btn.disabled = true; btn.textContent = "刷新中…";
+    api("/admin/models/sync", { method: "POST" }).then(function (x) {
+      btn.disabled = false; btn.textContent = "刷新模型列表";
+      if (!(x.ok && x.j && x.j.ok)) {
+        amSay("刷新失败：" + ((x.j && x.j.error) || x.status) + "（已保留现有目录）", "bad");
+        amToast("刷新失败，已保留现有列表", "warn");
+        return loadAdminModels();
+      }
+      var after = (x.j.list || []).map(function (m) { return m.id; });
+      var added = after.filter(function (id) { return before.indexOf(id) < 0; });
+      var removed = before.filter(function (id) { return after.indexOf(id) < 0; });
+      var parts = [];
+      if (added.length) parts.push("新增 " + added.length + " 个：" + added.slice(0, 5).join(", ") + (added.length > 5 ? " 等" : ""));
+      if (removed.length) parts.push("下线 " + removed.length + " 个");
+      amToast(parts.length ? "✓ 已刷新（" + parts.join("；") + "）" : "✓ 已刷新，目录无变化（共 " + after.length + " 个模型）",
+        removed.length ? "warn" : "ok");
+      loadAdminModels();
+    }).catch(function () {
+      btn.disabled = false; btn.textContent = "刷新模型列表";
+      amToast("刷新失败（网络错误），已保留现有列表", "warn");
+    });
+  };
+
+  if ($("amAll")) $("amAll").onclick = function () { Array.prototype.forEach.call(document.querySelectorAll("#amUserModels input[type=checkbox]"), function (c) { c.checked = true; }); };
+  if ($("amNone")) $("amNone").onclick = function () { Array.prototype.forEach.call(document.querySelectorAll("#amUserModels input[type=checkbox]"), function (c) { c.checked = false; }); };
+  if ($("amSaveUser")) $("amSaveUser").onclick = function () {
+    var ids = amCollect();
+    if (!window.confirm("把这 " + ids.length + " 个模型设为**对用户开放**？\n（只影响用户端能看到/可选的模型，不会改动他们各自的勾选）")) return;
+    $("amSaveUser").disabled = true;
+    api("/admin/models/available", { method: "POST", body: { ids: ids } }).then(function (x) {
+      $("amSaveUser").disabled = false;
+      if (x.ok && x.j && x.j.ok) { amSay("已开放 " + ids.length + " 个模型（用户端刷新后可见，可自行勾选）", "ok"); amToast("✓ 已保存：用户端刷新后能看到这 " + ids.length + " 个模型（勾选由用户自己决定）"); loadAdminModels(); }
+      else amSay("保存失败：" + ((x.j && x.j.error) || x.status), "bad");
+    }).catch(function () { $("amSaveUser").disabled = false; amSay("网络错误", "bad"); });
+  };
+
+  /* ── 积分管理（发放 / 扣减）── */
+  function loadAdminPoints(q) {
+    var box = $("apRows"); if (!box) return;
+    box.innerHTML = "";
+    api("/admin/points" + (q ? "?q=" + encodeURIComponent(q) : "")).then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { auSay("积分读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
+      $("apSummary").textContent = "共 " + r.j.total + " 个账号 · 注册赠送 " + r.j.signupGrant;
+      if (!r.j.users.length) { box.appendChild(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="5" class="hint">没有匹配的账号</td>' })); return; }
+      r.j.users.forEach(function (u) {
+        var tr = document.createElement("tr");
+        function td(text) { var d = document.createElement("td"); d.textContent = text; return d; }
+        var tdName = document.createElement("td");
+        tdName.appendChild(Object.assign(document.createElement("span"), { className: "name", textContent: u.username }));
+        if (u.disabled) tdName.appendChild(Object.assign(document.createElement("span"), { className: "hint", textContent: " （已停用）" }));
+        tr.appendChild(tdName);
+        tr.appendChild(td(Number(u.balance).toFixed(2).replace(/\.00$/, "")));
+        tr.appendChild(td(u.txnCount + " 条"));
+        tr.appendChild(td(u.lastAt ? fmt(u.lastAt) + " · " + u.lastNote : "—"));
+        var tdOps = document.createElement("td");
+        var wrap = document.createElement("div"); wrap.style.cssText = "display:flex;gap:6px;align-items:center";
+        var amt = document.createElement("input");
+        amt.type = "number"; amt.placeholder = "如 500 / -100"; amt.value = "500";
+        amt.style.cssText = "width:100px;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px";
+        var note = document.createElement("input");
+        note.placeholder = "备注（可选）";
+        note.style.cssText = "width:130px;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px";
+        var go = document.createElement("button"); go.className = "btn"; go.textContent = "发放";
+        go.onclick = function () {
+          var delta = Number(amt.value);
+          if (!Number.isFinite(delta) || delta === 0) { auSay("请输入非 0 的分值", "bad"); return; }
+          go.disabled = true;
+          api("/admin/points/grant", { method: "POST", body: { username: u.username, delta: delta, note: note.value } }).then(function (x) {
+            go.disabled = false;
+            if (x.ok && x.j && x.j.ok) { auSay("已给 " + u.username + " 发放 " + delta + "，余额 " + x.j.balance, "ok"); loadAdminPoints($("apq").value.trim()); }
+            else { auSay("发放失败：" + ((x.j && x.j.error) || x.status), "bad"); }
+          }).catch(function () { go.disabled = false; auSay("网络错误", "bad"); });
+        };
+        wrap.appendChild(amt); wrap.appendChild(note); wrap.appendChild(go);
+        tdOps.appendChild(wrap); tr.appendChild(tdOps);
+        box.appendChild(tr);
+      });
+    });
+  }
+  if ($("apSearch")) $("apSearch").onclick = function () { loadAdminPoints($("apq").value.trim()); };
+  if ($("apq")) $("apq").addEventListener("keydown", function (e) { if (e.key === "Enter") loadAdminPoints($("apq").value.trim()); });
+  if ($("apAll")) $("apAll").onclick = function () { $("apq").value = ""; loadAdminPoints(""); };
 
   /* ── 改密 ─────────────────────────────────────────────────────── */
   $("pwSave").onclick = function () {
@@ -514,35 +947,153 @@
         $("stLastSync").textContent = last ? ago(last) : "—";
       }
 
-      var box = $("sessList"); box.innerHTML = "";
-      var list = j.sessions || [];
+      var box = $("sessList");
+      var all = window.__sessAll = j.sessions || [];
       var projBox = $("projDel"); projBox.innerHTML = "";
-      if (!list.length) { box.appendChild(el("div", "empty", "还没有上传过会话。本机助手启动后会自动同步（每 5 分钟一次），也可点上面的「立即同步」。")); return; }
-      var projects = {};
-      list.forEach(function (row) {
-        if (row.project) projects[row.project] = (projects[row.project] || 0) + 1;
-        var d = el("div", "sess");
-        d.appendChild(el("div", "t", row.title || row.id));
-        var m = el("div", "m");
-        m.appendChild(el("span", null, "项目：" + (row.project || "—")));
-        m.appendChild(el("span", null, "机器：" + (row.machineName || "—") + " "));
-        var code = el("code", null, machineShort(row.machineId));
-        m.appendChild(code);
-        m.appendChild(el("span", null, "上传：" + fmt(row.uploadedAt)));
-        m.appendChild(el("span", null, fmtSize(row.sizeBytes) + " · " + (row.lines || 0) + " 行"));
-        d.appendChild(m);
-        var del = el("button", "btn sm danger", "删除");
-        del.style.marginTop = "8px";
-        del.onclick = function () {
-          if (!window.confirm("删除云端这条会话？（本机文件不受影响）")) return;
-          del.disabled = true;
-          api("/sync/delete", { method: "POST", body: { ids: [row.id] } }).then(function () { refreshSync(); }).catch(function () { del.disabled = false; });
+      if (!all.length) {
+        box.innerHTML = "";
+        box.appendChild(el("div", "empty", "还没有上传过会话。本机助手启动后会自动同步（每 5 分钟一次），也可点上面的「立即同步」。"));
+        return;
+      }
+      /* 项目分类下拉（保留当前选择） */
+      var projSel = $("sessProj");
+      if (projSel) {
+        var keep = projSel.value;
+        var counts = {};
+        all.forEach(function (r2) { var k = r2.project || "(无项目)"; counts[k] = (counts[k] || 0) + 1; });
+        projSel.innerHTML = '<option value="">全部分类（项目）</option>';
+        Object.keys(counts).sort().forEach(function (k) {
+          projSel.appendChild(Object.assign(document.createElement("option"), { value: k, textContent: k + "（" + counts[k] + "）" }));
+        });
+        if (keep) projSel.value = keep;
+      }
+
+      function renderSessPage() {
+        var q = ($("sessQ") && $("sessQ").value || "").trim().toLowerCase();
+        var pj = projSel ? projSel.value : "";
+        var list = all.filter(function (r2) {
+          if (pj && ((r2.project || "(无项目)") !== pj)) return false;
+          if (!q) return true;
+          return [r2.id, r2.title, r2.project, r2.machineName, machineShort(r2.machineId)].join(" ").toLowerCase().indexOf(q) >= 0;
+        });
+        var sort = ($("sessSort") && $("sessSort").value) || "time";
+        list = list.slice().sort(function (a, b) {
+          if (sort === "size") return (b.sizeBytes || 0) - (a.sizeBytes || 0);
+          if (sort === "lines") return (b.lines || 0) - (a.lines || 0);
+          return (b.updatedAt || b.uploadedAt || 0) - (a.updatedAt || a.uploadedAt || 0);
+        });
+        var per = Number(($("sessPer") && $("sessPer").value) || 10) || 10;
+        var pages = Math.max(1, Math.ceil(list.length / per));
+        var page = Math.min(window.__sessPage || 1, pages);
+        window.__sessPage = page;
+        box.innerHTML = "";
+        if (!list.length) {
+          box.appendChild(el("div", "empty",
+            q ? ("没有匹配「" + ($("sessQ").value || "") + "」的会话。可搜索：会话 ID / 项目名 / 机器名。")
+              : "该分类下还没有会话。"));
+        }
+        list.slice((page - 1) * per, page * per).forEach(function (row) {
+          var d = el("div", "sess");
+          var cb = document.createElement("input");
+          cb.type = "checkbox"; cb.className = "sess-cb"; cb.value = row.id;
+          cb.checked = window.__sessSel && window.__sessSel[row.id] ? true : false;
+          cb.onchange = function () {
+            window.__sessSel = window.__sessSel || {};
+            if (cb.checked) window.__sessSel[row.id] = 1; else delete window.__sessSel[row.id];
+            updateSelInfo();
+          };
+          d.appendChild(cb);
+          var body = el("div", "sess-body");
+          body.appendChild(el("div", "t", row.title || row.id));
+          var m = el("div", "m");
+          m.appendChild(el("span", null, "项目：" + (row.project || "—")));
+          m.appendChild(el("span", null, "机器：" + (row.machineName || "—") + " "));
+          m.appendChild(el("code", null, machineShort(row.machineId)));
+          m.appendChild(el("span", null, "上传：" + fmt(row.uploadedAt)));
+          m.appendChild(el("span", null, fmtSize(row.sizeBytes) + " · " + (row.lines || 0) + " 行"));
+          body.appendChild(m);
+          d.appendChild(body);
+          var del = el("button", "btn sm danger", "删除");
+          del.onclick = function () {
+            if (!window.confirm("删除云端这条会话？（本机文件不受影响）")) return;
+            del.disabled = true;
+            api("/sync/delete", { method: "POST", body: { ids: [row.id] } }).then(function () { refreshSync(); }).catch(function () { del.disabled = false; });
+          };
+          d.appendChild(del);
+          box.appendChild(d);
+        });
+        var pager = $("sessPager");
+        if (pager) {
+          pager.innerHTML = "";
+          var prev = el("button", "btn sm", "上一页"); prev.disabled = page <= 1;
+          prev.onclick = function () { window.__sessPage = page - 1; renderSessPage(); };
+          var label = el("span", "hint", page + " / " + pages + " 页（共 " + list.length + " 条）");
+          var next = el("button", "btn sm", "下一页"); next.disabled = page >= pages;
+          next.onclick = function () { window.__sessPage = page + 1; renderSessPage(); };
+          pager.appendChild(prev); pager.appendChild(label); pager.appendChild(next);
+        }
+      }
+      if ($("sessQ") && !$("sessQ").__bound) { $("sessQ").__bound = 1; $("sessQ").addEventListener("input", function () { window.__sessPage = 1; renderSessPage(); }); }
+      if (projSel && !projSel.__bound) { projSel.__bound = 1; projSel.addEventListener("change", function () { window.__sessPage = 1; renderSessPage(); }); }
+      window.__sessRender = renderSessPage;
+      window.__sessSel = window.__sessSel || {};
+
+      /* 选中信息 + 批量按钮状态（同步"本页全选"的勾选态） */
+      window.__updateSelInfo = function () {
+        var sel = Object.keys(window.__sessSel || {}).length;
+        var info = $("sessSelInfo"); if (info) info.textContent = "已选 " + sel + " 条";
+        var btn = $("sessDelSel"); if (btn) btn.disabled = sel === 0;
+        var cbs = document.querySelectorAll("#sessList .sess-cb");
+        var allOn = cbs.length > 0, anyOn = false;
+        Array.prototype.forEach.call(cbs, function (c) { if (c.checked) anyOn = true; else allOn = false; });
+        var allCb = $("sessAll");
+        if (allCb) { allCb.checked = allOn; allCb.indeterminate = anyOn && !allOn; }
+        var batch = $("sessBatch"); if (batch) batch.hidden = false;
+      };
+      var updateSelInfo = window.__updateSelInfo;
+
+      if ($("sessQClear") && !$("sessQClear").__bound) {
+        $("sessQClear").__bound = 1;
+        $("sessQClear").onclick = function () { $("sessQ").value = ""; window.__sessPage = 1; renderSessPage(); updateSelInfo(); };
+      }
+      if ($("sessSort") && !$("sessSort").__bound) {
+        $("sessSort").__bound = 1;
+        $("sessSort").onchange = function () { window.__sessPage = 1; renderSessPage(); updateSelInfo(); };
+      }
+      if ($("sessPer") && !$("sessPer").__bound) {
+        $("sessPer").__bound = 1;
+        $("sessPer").onchange = function () { window.__sessPage = 1; renderSessPage(); updateSelInfo(); };
+      }
+      if ($("sessAll") && !$("sessAll").__bound) {
+        $("sessAll").__bound = 1;
+        $("sessAll").onchange = function () {
+          var on = $("sessAll").checked;
+          Array.prototype.forEach.call(document.querySelectorAll("#sessList .sess-cb"), function (c) {
+            c.checked = on;
+            if (on) window.__sessSel[c.value] = 1; else delete window.__sessSel[c.value];
+          });
+          updateSelInfo();
         };
-        d.appendChild(del);
-        box.appendChild(d);
-      });
-      Object.keys(projects).forEach(function (name) {
-        var b = el("button", "btn sm danger", name + "（" + projects[name] + "）");
+      }
+      if ($("sessDelSel") && !$("sessDelSel").__bound) {
+        $("sessDelSel").__bound = 1;
+        $("sessDelSel").onclick = function () {
+          var ids = Object.keys(window.__sessSel || {});
+          if (!ids.length) return;
+          if (!window.confirm("删除选中的 " + ids.length + " 条云端会话？（本机文件不受影响）")) return;
+          $("sessDelSel").disabled = true;
+          api("/sync/delete", { method: "POST", body: { ids: ids } }).then(function () {
+            window.__sessSel = {}; refreshSync();
+          }).catch(function () { $("sessDelSel").disabled = false; });
+        };
+      }
+      renderSessPage();
+      updateSelInfo();
+      /* 按项目批量删除（沿用原有逻辑，用全量数据统计） */
+      var projCounts = {};
+      all.forEach(function (r2) { if (r2.project) projCounts[r2.project] = (projCounts[r2.project] || 0) + 1; });
+      Object.keys(projCounts).forEach(function (name) {
+        var b = el("button", "btn sm danger", name + "（" + projCounts[name] + "）");
         b.style.marginRight = "8px";
         b.onclick = function () {
           if (!window.confirm("删除项目「" + name + "」在云端的全部会话？")) return;
@@ -596,20 +1147,79 @@
         " · 明细 " + (j.txns ? j.txns.length : 0) + " 条";
       if ($("sidePoints")) $("sidePoints").textContent = "积分 " + Number(j.balance).toFixed(2).replace(/\.00$/, "");
       var box = $("ptList"); box.innerHTML = "";
-      if (!j.txns || !j.txns.length) { box.appendChild(el("div", "empty", "还没有积分变动")); return; }
-      j.txns.slice(0, 20).forEach(function (t) {
-        var row = el("div", "row");
-        var up = Number(t.delta) > 0;
-        var amt = el("span", "name", (up ? "+" : "") + Number(t.delta).toFixed(2).replace(/\.00$/, ""));
-        amt.style.color = up ? "var(--ok)" : "var(--bad)";
-        amt.style.minWidth = "74px";
-        row.appendChild(amt);
-        row.appendChild(el("span", "grow", t.note || t.kind));
-        var kindText = t.kind === "signup" ? "注册赠送" : t.kind === "grant" ? "管理员发放" : t.kind === "consume" ? "消费" : t.kind;
-        row.appendChild(el("span", "pill plain", kindText));
-        row.appendChild(el("span", "meta", fmt(t.at) + " · 余 " + Number(t.after).toFixed(2).replace(/\.00$/, "")));
-        box.appendChild(row);
+      /* 10-15：全量缓存到闭包，前端分页（每页 10 条）+ 清除记录 */
+      window.__ptAll = (j.txns || []);
+      window.__ptPage = 1;
+      window.__ptFilter = window.__ptFilter || "all";
+      if (!window.__ptAll.length) {
+        box.appendChild(el("div", "empty", "还没有积分变动"));
+        var clr0 = el("button", "btn", "清除记录"); clr0.disabled = true; box.appendChild(clr0);
+        return;
+      }
+      var bar = el("div", "pt-ops");
+      var clr = el("button", "btn", "清除记录");
+      clr.style.marginRight = "auto";
+      clr.onclick = function () {
+        if (!window.confirm("⚠ 确定清除全部积分变动记录吗？\n（只清记录，积分余额保持不变，不可恢复）")) return;
+        clr.disabled = true;
+        api("/points/clear", { method: "POST" }).then(function (r) {
+          clr.disabled = false;
+          if (r.ok && r.j && r.j.ok) { say("记录已清除", "ok"); loadPoints(); }
+          else { say("清除失败：" + ((r.j && r.j.error) || r.status), "bad"); }
+        }).catch(function () { clr.disabled = false; say("网络错误", "bad"); });
+      };
+      bar.appendChild(clr);
+      var filterSel = el("select", "field");
+      filterSel.style.cssText = "padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px";
+      [["all", "全部变动"], ["neg", "仅扣减（消耗）"], ["pos", "仅增加（发放）"]].forEach(function (o) {
+        var op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; filterSel.appendChild(op);
       });
+      filterSel.value = window.__ptFilter || "all";
+      filterSel.onchange = function () { window.__ptFilter = filterSel.value; window.__ptPage = 1; drawPage(); };
+      bar.appendChild(filterSel);
+      var pager = el("span", "hint"); pager.style.display = "inline-flex"; pager.style.gap = "8px"; pager.style.alignItems = "center";
+      var prev = el("button", "btn", "上一页"); prev.style.padding = "4px 10px";
+      var pageLabel = el("span", "", "");
+      var next = el("button", "btn", "下一页"); next.style.padding = "4px 10px";
+      pager.appendChild(prev); pager.appendChild(pageLabel); pager.appendChild(next);
+      bar.appendChild(pager);
+      box.appendChild(bar);
+      var rowsBox = el("div", "pt-rows");
+      box.appendChild(rowsBox);
+      function drawPage() {
+        var f = window.__ptFilter || "all";
+        var list = window.__ptAll.filter(function (t) {
+          var d = Number(t.delta);
+          if (f === "neg") return d < 0;
+          if (f === "pos") return d > 0;
+          return true;
+        });
+        var total = list.length;
+        var pages = Math.max(1, Math.ceil(total / 10));
+        if (window.__ptPage > pages) window.__ptPage = pages;
+        if (window.__ptPage < 1) window.__ptPage = 1;
+        rowsBox.innerHTML = "";
+        if (!total) { rowsBox.appendChild(el("div", "empty", "该筛选下没有记录")); }
+        list.slice((window.__ptPage - 1) * 10, window.__ptPage * 10).forEach(function (t) {
+          var row = el("div", "row");
+          var up = Number(t.delta) > 0;
+          var amt = el("span", "name", (up ? "+" : "") + Number(t.delta).toFixed(2).replace(/\.00$/, ""));
+          amt.style.color = up ? "var(--ok)" : "var(--bad)";
+          amt.style.minWidth = "74px";
+          row.appendChild(amt);
+          row.appendChild(el("span", "grow", t.note || t.kind));
+          var kindText = t.kind === "signup" ? "注册赠送" : t.kind === "grant" ? "管理员发放" : t.kind === "consume" ? "消费" : t.kind;
+          row.appendChild(el("span", "pill plain", kindText));
+          row.appendChild(el("span", "meta", fmt(t.at) + " · 余 " + Number(t.after).toFixed(2).replace(/\.00$/, "")));
+          rowsBox.appendChild(row);
+        });
+        pageLabel.textContent = window.__ptPage + " / " + pages + " 页（共 " + total + " 条）";
+        prev.disabled = window.__ptPage <= 1;
+        next.disabled = window.__ptPage >= pages;
+      }
+      prev.onclick = function () { window.__ptPage--; drawPage(); };
+      next.onclick = function () { window.__ptPage++; drawPage(); };
+      drawPage();
     }).catch(function () { $("ptTag").textContent = "读取失败"; });
   }
 
@@ -631,8 +1241,15 @@
       var row = el("label", "check");
       var cb = document.createElement("input");
       cb.type = "checkbox"; cb.checked = !!m.enabled; cb.dataset.id = m.id;
+      /* ⛔ 20:0x：勾选维护在**独立 Set**里，不再依赖 lbData——
+         lbData 会被 refreshCloud / 切 tab 触发的 lbLoad 整体替换，500ms 去抖窗口内
+         若发生重载，用户刚勾的会从新对象上丢失（"勾了 4 个只存住 1 个"的成因）。 */
+      window.__lbPicked = window.__lbPicked || new Set();
+      if (m.enabled) window.__lbPicked.add(m.id); else window.__lbPicked.delete(m.id);
       cb.onchange = function () {
         m.enabled = cb.checked;
+        if (cb.checked) window.__lbPicked.add(m.id); else window.__lbPicked.delete(m.id);
+        updateLbMeta();
         $("lbStatus").textContent = "保存中…"; $("lbStatus").className = "status";
         clearTimeout(lbTimer);
         lbTimer = setTimeout(lbSave, 500);
@@ -648,19 +1265,58 @@
       box.appendChild(row);
     });
   }
+  /* 顶部"已启用 N / 共 M"随勾选即时更新（不必等保存返回） */
+  function updateLbMeta() {
+    var meta = $("lbMeta"); if (!meta) return;
+    var picked = (window.__lbPicked || new Set()).size;
+    var total = (lbData && lbData.models || []).length;
+    meta.innerHTML = "内置供应商：登录即可用，无需自己配置密钥。已启用 <b>" + picked + "</b> / " + total + " 个模型" +
+      (lbData && lbData.syncedAt ? " · 目录同步于 " + ago(lbData.syncedAt) : "") +
+      " · 来源 " + ((lbData && lbData.source) || "—");
+  }
+
   function lbSave() {
-    var ids = ((lbData && lbData.models) || []).filter(function (m) { return m.enabled; }).map(function (m) { return m.id; });
+    var ids = Array.from(window.__lbPicked || []);
     api("/models/enabled", { method: "POST", body: { ids: ids } }).then(function (r) {
       if (r.ok && r.j && r.j.ok) { $("lbStatus").textContent = "已保存 ✓ 启用 " + r.j.enabledCount + " 个"; $("lbStatus").className = "status ok"; }
       else { $("lbStatus").textContent = "保存失败，已回滚"; $("lbStatus").className = "status bad"; lbLoad(); }
     }).catch(function () { $("lbStatus").textContent = "网络错误"; $("lbStatus").className = "status bad"; });
   }
-  function lbLoad(force) {
-    $("lbStatus").textContent = ""; $("lbStatus").className = "status";
+  if ($("lbReload")) $("lbReload").onclick = function () {
+    var b = $("lbReload");
+    if (b.disabled) return;
+    b.disabled = true;
+    var orig = b.textContent;
+    b.textContent = "刷新中…";
+    $("lbStatus").textContent = "正在刷新模型目录…";
+    $("lbStatus").className = "status";
+    lbLoad(false, function (ok, count, err) {
+      b.disabled = false; b.textContent = orig;
+      if (ok) {
+        $("lbStatus").textContent = "✓ 已刷新，共 " + count + " 个模型（已启用 " + ((window.__lbPicked || new Set()).size) + " 个）";
+        $("lbStatus").className = "status ok";
+      } else {
+        $("lbStatus").textContent = "刷新失败：" + (err || "未知错误");
+        $("lbStatus").className = "status bad";
+      }
+    });
+  };
+
+  function lbLoad(force, done) {
+    if (!done) { $("lbStatus").textContent = ""; $("lbStatus").className = "status"; }
     api(force ? "/admin/models/sync" : "/models").then(function (r) {
-      if (!r.ok || !r.j) { $("lbList").innerHTML = ""; $("lbList").appendChild(el("div", "empty", "读取失败")); return; }
-      if (r.j.ok === false) { $("lbList").innerHTML = ""; $("lbList").appendChild(el("div", "empty", "目录同步失败：" + (r.j.error || "未知"))); return; }
+      /* ⛔ 同步（force）失败时**降级读现有目录**——以前这里直接清空列表显示"读取失败"，
+         用户看起来像"模型全没了"（19:5x 用户实测：普通用户点同步 ⇒ 403 ⇒ 列表被清空）。 */
+      if (force && (!r.ok || !r.j || r.j.ok === false)) {
+        $("lbStatus").textContent = "同步未执行（" + ((r.j && r.j.error) || r.status) + "），已显示现有目录";
+        $("lbStatus").className = "status bad";
+        return lbLoad(false);
+      }
+      if (!r.ok || !r.j) { $("lbList").innerHTML = ""; $("lbList").appendChild(el("div", "empty", "读取失败（请稍后重试）")); if (typeof done === "function") done(false, 0, (r.j && r.j.error) || ("HTTP " + r.status)); return; }
+      if (r.j.ok === false) { $("lbList").innerHTML = ""; $("lbList").appendChild(el("div", "empty", "目录同步失败：" + (r.j.error || "未知"))); if (typeof done === "function") done(false, 0, r.j.error || "同步失败"); return; }
       lbData = r.j;
+      /* 以服务端为准重建选择集（仅加载时；保存过程中不重建） */
+      window.__lbPicked = new Set((r.j.models || []).filter(function (m) { return m.enabled; }).map(function (m) { return m.id; }));
       var st = $("lbState");
       st.textContent = (r.j.provider && r.j.provider.ready) ? "可用" : "待配置";
       st.style.background = (r.j.provider && r.j.provider.ready) ? "var(--ok-soft)" : "var(--warn-soft)";
@@ -669,22 +1325,13 @@
         "已启用 <b>" + (r.j.enabledCount || 0) + "</b> / " + (r.j.total || 0) + " 个模型" +
         (r.j.syncedAt ? " · 目录同步于 " + ago(r.j.syncedAt) : "") +
         " · 来源 " + (r.j.source || "—");
-      if (r.j.provider && r.j.provider.baseUrl) $("lbBase").textContent = r.j.provider.baseUrl;
       lbRender();
+      if (typeof done === "function") done(true, (r.j.models || []).length, null);
     }).catch(function () { $("lbList").innerHTML = ""; $("lbList").appendChild(el("div", "empty", "读取失败")); });
   }
   $("lbSearch").oninput = lbRender;
   $("lbAll").onclick = function () { ((lbData || {}).models || []).forEach(function (m) { m.enabled = true; }); lbRender(); lbSave(); };
   $("lbNone").onclick = function () { ((lbData || {}).models || []).forEach(function (m) { m.enabled = false; }); lbRender(); lbSave(); };
-  $("lbReload").onclick = function () { lbLoad(true); };
-  $("lbToken").onclick = function () {
-    var out = $("lbTokenOut"); out.textContent = "签发中…";
-    api("/proxy/token", { method: "POST" }).then(function (r) {
-      if (r.ok && r.j && r.j.token) { out.innerHTML = "本机接入密钥（<b>只显示这一次</b>，请立即保存）：<br><code>" + r.j.token + "</code>"; }
-      else { out.textContent = "签发失败：" + ((r.j && r.j.error) || "未知"); }
-    }).catch(function () { out.textContent = "网络错误"; });
-  };
-
   function refreshCloud() { refreshSync(); lbLoad(false); }
 
   function legacyRefreshCloud() {
