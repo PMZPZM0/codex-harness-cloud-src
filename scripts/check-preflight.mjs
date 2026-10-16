@@ -59,6 +59,10 @@ async function auditNegativeAsserts() {
 }
 
 const MODULES = [
+  /* ⛔ 必须排在最前：MODULES 里后面若干模块末尾自带 `process.exit`（历史写法），
+     一旦它们先跑完，后面的模块就再也执行不到 —— 【288】放末尾实测**一次都没跑**。
+     部署检查是"改动有没有真正生效"的最后一道闸，不能因为排序被跳过。 */
+  "20-cloud-ui-deploy",
   "01-build-ipc-css",
   "02-session-logic",
   "03-runtime-boot",

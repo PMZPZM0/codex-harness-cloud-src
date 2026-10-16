@@ -2,6 +2,43 @@
 
 本文件供 Codex 引擎读取：进到本项目（Codex Harness Desktop 桌面应用的源码 / 或本机运行环境）时，先读这里就知道「环境里有什么、缺什么怎么装、怎么调用」。保持简洁，详细手册见 `docs/TOOLCHAIN.md`（若存在）。
 
+## ⛔⛔ 改完必须部署到服务器 —— 本仓最高优先级纪律（10-16 用户令「应用本地不要 dist，只加载服务器上的」）
+
+> **本段为云助手仓独有**（云端架构专属），⛔ 不同步到桌面版 / PPcode —— 那两仓没有云端界面这套。
+
+本仓是「**本地壳 + 云端界面**」：助手窗加载 `http://127.0.0.1:<headless 端口>/`，而
+`electron/headless.ts` 在**云端模式**下把整份 `index.html` 与**全部资产**指向
+`https://ppz123.asia/cloud/app/`（常量 `CLOUD_APP_BASE`，源码注释即「服务器上有，本地就是一个壳」）。
+只有 `version.json` 不可达或 `protocolVersion` 不匹配时才回落本地 `dist/` —— **正常运行时永远不会走**。
+
+⇒ **改了 `src/**`（渲染层 / 样式 / 界面）而不部署到服务器 = 用户永远看不到。**
+症状「改了没生效 / 老是不刷新 / 又是旧的」根因几乎都是漏了这一步。10-16 实证：
+服务器上仍引用 `index-BVVBGlrK.js`（10-15 22:34 构建），本地刚 build 的是 `index-qhyaKyqe.js`，
+于是本地怎么改都是白做功。
+
+**一键部署**（build → 备份服务器旧版 → 上传 → 写 version.json → 实测校验）：
+```bash
+node scripts/deploy-cloud-ui.mjs                 # 完整流程
+node scripts/deploy-cloud-ui.mjs --skip-build    # 已 build 过，只上传
+```
+- 服务器：`ssh tx`（`~/.ssh/config`：124.220.63.4 / ubuntu / `~/.ssh/123.pem`）
+- 目标目录：`/var/www/codex-harness-cloud/app`（旧版自动备份为 `app.bak.<时间戳>`，可回滚）
+- ⛔ `app/version.json` 的 `protocolVersion` **必须恒为 1** —— 与 `headless.ts` 里
+  `Number(meta.protocolVersion) === 1` 判定同源。写错 ⇒ 所有客户端判协议不匹配
+  ⇒ **静默**回落本地 dist ⇒ 云端更新全部失效（最难查的一类：界面没变，且没有任何报错）。
+- 校验口径：服务器 `index.html` 里的 `assets/index-*.{js,css}` 哈希 == 本地 `dist/index.html`。
+
+**分侧生效范围（别搞混）**：
+
+| 改哪 | 产物 | 怎么才生效 |
+|---|---|---|
+| `src/**`（渲染层 / 样式 / 界面） | `dist/` | ⛔⛔ **必须部署到服务器**（上面的脚本）；本地 build 对用户无意义 |
+| `electron/**`（主进程 / IPC） | `dist-electron/` | 用户**本地重启**应用（`npm run build` 已含 `build:electron`） |
+| 云端账号 / 管理页面 | `account.html` / `admin.html` | 单独 scp 到 `/var/www/codex-harness-cloud/` |
+
+⚠️ 已知遗留：助手窗标题显示的是共用界面里的 `Codex Harness Desktop`（不是 `Codex Assistant`），
+因为窗口标题来自云端那份 index.html 的 `<title>`；要改请在 headless 注入壳时替换（未修，待用户定夺）。
+
 ## 🔁 多仓协作与发版（**AI 协作者必读**：跨仓改动的同步、推送、PPcode 发版全流程）
 
 完整步骤见 **`docs/REPO-WORKFLOW.md`** —— 要点：三个源码仓（桌面版 `D://Codex Harness Desktop` = 开发主线；PPcode `D://PPcode` = 远端 `PMZPZM0/PPcode`，源码与发布页合一、旧私有仓 ppcode-src 已删；云助手本仓 `D://Codex Assistant` = 远端 `PMZPZM0/codex-harness-cloud-src`）之间走「主仓 diff → 逐文件 apply 预检 → 副本验证」；PPcode 发版 = 版本对齐 4 处 → mac 审计 → check → tag → CI 三端构建发布到本仓 Release；三仓 `AGENTS.md` 的通用段逐字镜像，改一边必须同步另一边。
