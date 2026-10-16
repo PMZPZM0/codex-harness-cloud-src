@@ -659,12 +659,27 @@ let appThemeDark: boolean | null = null;
  *  会让它在深色模式下控制钮符号仍是近黑的 #1b1b1a，而顶栏也是深色 ⇒「看不见但能点」
  *  （09-21 用户实测）。日志打「已下发的符号色 + 覆盖窗口数」——⛔ Electron 本版**没有
  *  getTitleBarOverlay 读回接口**（写出来 TS 直接报 TS2551），所以真机是否可见只能看窗口右上角。 */
+/** 主题→窗口外观的**落盘诊断**（10-16 用户报障「右上角系统钮没跟着主题变，看不见了」）。
+ *  ⛔ 无头形态（`electron dist-electron/headless.js`）没有可见终端，stdout 直接丢了 ⇒
+ *     只 console.log 等于没日志，用户报障时无从查起。落 userData/theme-chrome.log，事后可回看。
+ *  记录三类事实：① handler 有没有收到 theme:apply ② 下发时**目标窗口数**（0 = 窗口没登记进总线）
+ *  ③ 每个窗口 setTitleBarOverlay 成功还是抛错。 */
+function themeDiag(msg: string) {
+  try {
+    appendFileSync(path.join(app.getPath("userData"), "theme-chrome.log"), `${new Date().toISOString()} ${msg}\n`);
+  } catch { /* 诊断写失败不影响功能 */ }
+}
+
 function applyWindowChrome(dark: boolean) {
   const symbol = dark ? CHROME_SYMBOL_DARK : CHROME_SYMBOL_LIGHT;
   const targets = allBusWindows().filter((win) => Boolean(win && !win.isDestroyed()));
+  themeDiag(`applyWindowChrome(dark=${dark}) 目标窗口=${targets.length} 期望符号色=${symbol}`);
   for (const win of targets) {
-    try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch { /* 窗口可能正在销毁 */ }
-    try { win.setTitleBarOverlay({ color: "#00000000", symbolColor: symbol, height: 43 }); } catch { /* overlay 未启用（非 win32 等）时忽略 */ }
+    try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch (e) { themeDiag("  setBackgroundColor 失败：" + String(e)); }
+    try {
+      win.setTitleBarOverlay({ color: "#00000000", symbolColor: symbol, height: 43 });
+      themeDiag("  → setTitleBarOverlay 已调用（无异常）");
+    } catch (e) { themeDiag("  setTitleBarOverlay 抛错：" + String(e)); }
   }
   if (targets.length) console.log(`[theme] 窗口外观 → ${dark ? "dark" : "light"}；已给 ${targets.length} 个窗口下发标题栏符号色 ${symbol}`);
 }
@@ -674,7 +689,21 @@ function applyWindowChrome(dark: boolean) {
 // 避免深色模式下「外边框/滚轮」残留浅色。
 // ⛔ 多主题扩展点（09-24，主题清单见 src/lib/themes.ts）：这里只有"暗/不暗"二元 ——
 //    新增非暗色系主题无需动这里；新增**暗色系**第三主题时，把判定换成注册表口径。
+/** ⛔⛔ 下面这几个通道必须**延迟到 boot 阶段**注册（10-16 定位到的真根因）——
+ *  headless（`electron dist-electron/headless.js`）会 patch `ipcMain.handle` 来收集
+ *  `/__ipc` 能转发的通道，patch 在它第 83 行同步执行；但 headless 顶部
+ *  `import { mutableState } from "./main"`（以及经 assistant-window 的间接 import）
+ *  被 ES 规则**提升**到最前 ⇒ **main.ts 先于 patch 加载** ⇒ 这里顶层注册的 5 个 handler
+ *  **绕过了收集** ⇒ 桥上访问一律返回
+ *  `{"ok":false,"error":{"message":"no handler: theme:apply"}}`（实测）。
+ *  而渲染层那侧是 `void window.codex.themeApply(...).catch(() => undefined)` ——
+ *  错误被吞掉 ⇒ **静默失效**。
+ *  症状：云助手里切主题，右上角系统钮不跟着变（符号色停在建窗值，暗色顶栏上看不见）；
+ *       独立窗口（popout）相关的 4 个通道同理全不通。
+ *  ⇒ 收进本函数，由 `app.whenReady()` 调用（那时 patch 早已生效，收集正常）。 */
+function registerShellTopLevelHandlers() {
 ipcMain.handle("theme:apply", (_event, theme: string) => {
+  themeDiag(`收到 theme:apply(theme=${JSON.stringify(theme)})`);
   const dark = theme === "dark";
   appThemeDark = dark;
   setAppThemeDark(dark);
@@ -702,7 +731,9 @@ app.on("second-instance", () => {
 });
 
 // ── 启动编排（app.whenReady 里那一大段）已按域拆到 features/boot.ts；仍在此处注册以保持时机不变 ──
-app.whenReady().then(() => bootApp());
+/* ⛔ 顺序有意义：先注册「顶层 5 通道」（headless 的 ipcMain patch 需要抓到它们，
+   见 registerShellTopLevelHandlers 的注释），再走正常启动编排。 */
+app.whenReady().then(() => { registerShellTopLevelHandlers(); bootApp(); });
 
 // ── 系统托盘（09-23 用户：「要在系统托盘里面常驻，系统托盘右键功能菜单齐全一下」）──
 // 与 bootApp 分开注册：托盘是**可选**副作用，起不来（缺图标 / 平台限制）只打日志，不拖垮启动链。
@@ -791,6 +822,7 @@ ipcMain.handle("window:popout-close", (event, threadId: unknown) => {
   if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
   return { ok: true };
 });
+}
 
 // ── Codex 引擎在线更新（设置 → 控制台 → Codex 引擎更新） ──
 /**
