@@ -206,6 +206,11 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
   /* 10-15 用户令：云端模型模式开关（开启 = 只用云端目录里的模型，本地供应商停用且开关锁定） */
   const [cloudMode, setCloudMode] = useState<{ cloudModels: boolean } | null>(null);
   const [togglingCloud, setTogglingCloud] = useState(false);
+  /* 「保存并重启」的**面板内确认**（10-16 用户令「不要有这种系统弹窗」）：
+     ⛔ 不用 window.confirm —— 原生弹窗标题取页面 title（云助手里显示成
+     "Codex Harness Desktop"）、样式与本产品无关，且阻塞主线程。 */
+  const [restartAsk, setRestartAsk] = useState(false);
+  const [restartBusy, setRestartBusy] = useState(false);
   useEffect(() => {
     /* ⛔ 必须 null 安全：老版本 dev/未重启主进程时 modelSourceGet 不存在，
        旧写法 `?.().then()` 会在 undefined 上调 then ⇒ 抛异常 ⇒ 状态卡在 null（开关永远禁用）。 */
@@ -228,6 +233,32 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
         } else { setModels(null); setModelsErr(j?.error === "no-device-token" ? "未绑定账号" : (j?.error || "读取失败")); }
       })
       .catch(() => { setModels(null); setModelsErr("网络错误"); });
+  }
+  /* 「保存并重启」的执行体。⛔⛔ 保存失败**不能**吞掉重启 ——
+     旧写法把 `relaunchApp()` 与保存塞进同一个 try，`saveCustomModel()` 一旦 reject
+     就静默跳过重启：用户点了「确定」却什么都没发生（10-16 用户实测报障「确认之后没有重启应用，假的」）。
+     这两件事本就独立 —— 本地档案保存失败，云端勾选照样该生效。 */
+  async function saveAndRestart() {
+    setRestartBusy(true);
+    setNote("");
+    const api = window.codex as unknown as {
+      saveCustomModel?: () => Promise<unknown>;
+      relaunchApp?: () => Promise<void> | void;
+    };
+    if (typeof api.relaunchApp !== "function") {
+      /* ⛔ 不静默：API 缺失时说清楚，否则又变成"点了没反应" */
+      setRestartBusy(false);
+      setNote("当前版本不支持一键重启，请手动退出应用后重新打开。");
+      return;
+    }
+    try { await api.saveCustomModel?.(); }
+    catch (e) { console.warn("[cloud-manage] 保存模型档案失败（仍继续重启）：", e); }
+    try { await api.relaunchApp(); }
+    catch (e) {
+      console.warn("[cloud-manage] 重启调用失败：", e);
+      setRestartBusy(false);
+      setNote("重启失败：" + ((e as Error)?.message || "未知错误"));
+    }
   }
   /* ── 一键刷新（积分余额 + 消耗流水 + 模型目录）──────────────────────────────
      10-14 用户令：「加一个使用日志刷新功能，还有积分同步功能」+「积分也没有用了就刷新」。
@@ -529,17 +560,7 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
                   className="cloud-manage-btn"
                   disabled={savingModels || !models.provider?.ready}
                   title="保存当前勾选并重启应用（与模型配置的保存重启同逻辑）"
-                  onClick={() => {
-                    if (!window.confirm("保存当前勾选的模型并重启应用？\n重启后新勾选的模型即可正常调用。")) return;
-                    void (async () => {
-                      try {
-                        const saveCustomModel = (window.codex as unknown as { saveCustomModel?: () => Promise<unknown> }).saveCustomModel;
-                        const relaunchApp = (window.codex as unknown as { relaunchApp?: () => void }).relaunchApp;
-                        if (saveCustomModel) await saveCustomModel();
-                        setTimeout(() => { relaunchApp?.(); }, 600);
-                      } catch { /* 保存失败由 preload 的 notice 提示 */ }
-                    })();
-                  }}
+                  onClick={() => setRestartAsk(true)}
                 >
                   <RotateCw size={13} /> 保存并重启
                 </button>
@@ -650,6 +671,26 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
         </section>
 
         {note ? <div className="cloud-manage-note">{note}</div> : null}
+
+        {/* 面板内确认（10-16）：替代 window.confirm，见上方 restartAsk 注释 */}
+        {restartAsk ? (
+          <div className="cloud-manage-confirm" role="dialog" aria-modal="true" aria-label="保存并重启应用">
+            <div className="cloud-manage-confirm-card">
+              <div className="cloud-manage-confirm-title">保存并重启应用？</div>
+              <div className="cloud-manage-confirm-text">
+                保存当前勾选的模型并重启应用，重启后新勾选的模型即可正常调用。
+              </div>
+              <div className="cloud-manage-confirm-actions">
+                <button type="button" className="cloud-manage-btn" disabled={restartBusy} onClick={() => setRestartAsk(false)}>
+                  取消
+                </button>
+                <button type="button" className="cloud-manage-btn primary" disabled={restartBusy} onClick={() => { void saveAndRestart(); }}>
+                  {restartBusy ? "重启中…" : "确定重启"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
       </div>
     </div>,

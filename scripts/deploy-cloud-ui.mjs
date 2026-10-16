@@ -28,6 +28,8 @@ const PUBLIC_BASE = "https://ppz123.asia/cloud/app";
 const PROTOCOL_VERSION = 1;
 const skipBuild = process.argv.includes("--skip-build");
 
+/** @param {{ shell?: boolean }} [opts] ⛔ Windows 上 `npm` 是 .cmd，不经 shell 会 EINVAL
+ *  （errno -4071，与 scripts/watch-electron.mjs 踩的是同一个坑）。 */
 function run(cmd, args, opts = {}) {
   console.log(`$ ${cmd} ${args.join(" ")}`);
   const r = spawnSync(cmd, args, { cwd: root, stdio: "inherit", shell: false, ...opts });
@@ -39,7 +41,7 @@ function ssh(script) {
   return (r.stdout || "").trim();
 }
 
-if (!skipBuild) run("npm", ["run", "build"]);
+if (!skipBuild) run("npm", ["run", "build"], { shell: process.platform === "win32" });
 
 // ① 备份旧版（可回滚）+ 建干净目录
 const stamp = new Date().toISOString().slice(5, 16).replace(/[-:T]/g, "");
