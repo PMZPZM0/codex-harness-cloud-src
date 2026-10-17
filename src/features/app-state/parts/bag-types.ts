@@ -234,6 +234,9 @@ export interface Bag {
   executeEffortFallbackRetry: () => Promise<void>;
   scheduleRateLimitRetry: (threadId: string, attempt: number) => void;
   compactPendingRef: React.RefObject<Set<string>>;
+  /* 排队待压缩的会话（10-17）：回合运行中不能调 thread/compact/start（会中断回合），
+     先入队，turn/completed（引擎空闲）时再发起。 */
+  deferredCompactRef: React.RefObject<Set<string>>;
   interrupting: boolean;
   setInterrupting: React.Dispatch<React.SetStateAction<boolean>>;
   optimisticInput: import("../../../lib/thread-item.ts").ThreadItem | null;
@@ -666,18 +669,22 @@ export interface Bag {
   setUpdateProgress: React.Dispatch<React.SetStateAction<number>>;
   updateNotice: { version?: string | undefined; changelog?: string | undefined; size?: number | undefined; mandatory?: boolean | undefined; } | null;
   setUpdateNotice: React.Dispatch<React.SetStateAction<{ version?: string | undefined; changelog?: string | undefined; size?: number | undefined; mandatory?: boolean | undefined; } | null>>;
-  /** 更新状态机快照（10-11 云助手自动更新）：主进程 `updates:state` 推送 / `updates:state-read` 拉取。
-   *  ⛔ 单一真相源在主进程；渲染层只渲染相位与数字，不自己推断进度/是否已完成。 */
-  updateState: { phase: "idle" | "checking" | "available" | "downloading" | "downloaded" | "installing" | "done" | "error"; percent: number; receivedBytes: number; totalBytes: number; speedBytesPerSec: number; etaSeconds: number | null; version?: string | undefined; changelog?: string | undefined; filename?: string | undefined; error?: string | undefined; deferredVersion?: string | undefined; onBattery?: boolean | undefined; product?: string | undefined; channel?: string | undefined; };
-  setUpdateState: React.Dispatch<React.SetStateAction<{ phase: "idle" | "checking" | "available" | "downloading" | "downloaded" | "installing" | "done" | "error"; percent: number; receivedBytes: number; totalBytes: number; speedBytesPerSec: number; etaSeconds: number | null; version?: string | undefined; changelog?: string | undefined; filename?: string | undefined; error?: string | undefined; deferredVersion?: string | undefined; onBattery?: boolean | undefined; product?: string | undefined; channel?: string | undefined; }>>;
-  /** 更新面板动作（10-11）：取消下载 / 稍后安装 / 跳过此版本。实现见 part02c2（挂 bag 供
-   *  01-sidebar-shell 的「检查更新」子页调用；三个动作都只调主进程通道，UI 不自己改相位）。 */
-  runUpdateCancel: () => Promise<void>;
-  runUpdateDefer: () => Promise<void>;
-  runUpdateSkip: () => Promise<void>;
   accountMenuRef: React.RefObject<HTMLDivElement | null>;
   runUpdateCheck: () => Promise<void>;
   runUpdateDownload: () => Promise<void>;
+  /** 10-12：更新包已就绪（后台静默下载完成 / 手动检查发现已下好）⇒ 左下角弹窗。 */
+  updateReady: boolean;
+  setUpdateReady: React.Dispatch<React.SetStateAction<boolean>>;
+  updateReadyVersion: string;
+  setUpdateReadyVersion: React.Dispatch<React.SetStateAction<string>>;
+  updateRestarting: boolean;
+  setUpdateRestarting: React.Dispatch<React.SetStateAction<boolean>>;
+  /** 用户「取消」时记下压住的是**哪个版本**（换版本仍会重新弹）。 */
+  dismissedVersionRef: React.RefObject<string>;
+  armUpdateReady: (version?: string|undefined) => void;
+  dismissUpdateReady: () => void;
+  restartAndInstall: () => Promise<void>;
+  tryArmUpdateReady: () => Promise<void>;
   openFeedbackPage: () => void;
   uiLang: string;
   setUiLang: React.Dispatch<React.SetStateAction<string>>;
