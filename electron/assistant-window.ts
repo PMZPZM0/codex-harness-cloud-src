@@ -17,7 +17,7 @@ import { appendFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { assistantUrl } from "./open-browser";
 import { resolveWindowIcon } from "./app-icon";
-import { applyRoundedCorners } from "./win-rounded-corners";
+import { applyRoundedCorners } from "./window/win-rounded-corners";
 import { titleBarOverlayOptions } from "./runtime-refs";
 import { registerBusWindow, unregisterBusWindow } from "./features/window-bus";
 import { mutableState } from "./main";
