@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Cloud, CloudDownload, CloudUpload, Coins, Gift, HelpCircle, RefreshCw, RotateCw, Search, Unplug, X } from "lucide-react";
-import { syncLimitedBenefitQuiet } from "../features/limited-benefit";
+import {syncLimitedBenefitQuiet, syncLimitedBenefit } from "../features/limited-benefit";
 /* ⛔ 胶囊开关一律走统一 ToggleSwitch（守卫【234】⑧）：颜色/暗色适配由它一处负责，
    不在业务组件里手写轨道与圆点（手写必然各写各的色值 ⇒ 主题一变就露馅）。 */
 import { ToggleSwitch } from "./SettingsWidgets";
@@ -253,6 +253,12 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
     }
     try { await api.saveCustomModel?.(); }
     catch (e) { console.warn("[cloud-manage] 保存模型档案失败（仍继续重启）：", e); }
+    /* ⛔⛔ 重启前必须等「云端勾选 → 本机档案」同步写完（10-16 用户实测的最后一环）：
+       写档案的是 syncLimitedBenefit（主进程 limited-benefit:apply）。此前它是以静默不等待方式发起的，
+       而这里紧接着 relaunch ⇒ **重启抢在写盘之前**，新进程读到的还是旧档案 ⇒ 用户看到「勾选后下拉不更新」。
+       ⛔ 同步失败仍继续重启（与上面 saveCustomModel 同款语义）：本地失败不该挡住用户已保存的云端勾选。 */
+    try { await syncLimitedBenefit(); }
+    catch (e) { console.warn("[cloud-manage] 勾选同步失败（仍继续重启）：", e); }
     try { await api.relaunchApp(); }
     catch (e) {
       console.warn("[cloud-manage] 重启调用失败：", e);

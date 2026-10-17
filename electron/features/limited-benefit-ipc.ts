@@ -280,6 +280,20 @@ async function applyProvider(): Promise<{ ok: boolean; models: number; changed: 
 
   if (index >= 0) list[index] = finalRow; else list.push(finalRow);
   if (!same) await writeCustomModels(list);
+    /* ⛔⛔ 勾选写的是复数列表（custom-models.json），而 custom-model:read 读的是单数生效档案
+       （custom-model.json）—— 两者此前没有任何同步 ⇒ 生效档案停在旧集合，底栏下拉与勾选
+       永远不一致（10-16 用户实测：勾 5 个、下拉 15 个；更早是勾 N 个、下拉只有 2 个）。
+       因此这里写完列表后，**无条件**把生效档案对齐：若生效档案正是本供应商，
+       覆盖它的 models；当前模型不在集合里则回退到第一个可用模型。 */
+    const activeFile = await readCustomModel();
+    if (activeFile && activeFile.provider === LIMITED_BENEFIT_PROVIDER) {
+      const enabledIds = models.map((m) => m.id);
+      await fs.promises.writeFile(
+        customModelFile,
+        JSON.stringify({ ...activeFile, models, model: enabledIds.includes(activeFile.model) ? activeFile.model : (enabledIds[0] ?? "") }, null, 2),
+        "utf8",
+      );
+    }
 
   const promoted = await promoteIfVacant(finalRow);
   return { ok: true, models: models.length, changed: !same, promoted };

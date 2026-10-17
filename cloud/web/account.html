@@ -58,7 +58,9 @@
   .row .name { font-weight: 600; }
   .row .meta { color: var(--faint); font-size: 12px; }
   .row .grow { flex: 1; }
-  .pill { font-size: 11px; padding: 2px 9px; border-radius: 999px; font-weight: 600; }
+  /* ⛔ 必须 nowrap：胶囊是"一个整体标签"，断行后 "管理员" 会变成 "管理/员"（用户 10-16 截图圈出）。
+     inline-block 让 padding 在单元格里按整体盒参与布局，⛔ 不要改成 flex（会让相邻胶囊挤成一条）。 */
+  .pill { font-size: 11px; padding: 2px 9px; border-radius: 999px; font-weight: 600; white-space: nowrap; display: inline-block; line-height: 1.5; }
   .pill.ok { background: var(--ok-soft); color: var(--ok); }
   .pill.warn { background: var(--warn-soft); color: var(--warn); }
   .pill.bad { background: var(--bad-soft); color: var(--bad); }
@@ -76,7 +78,9 @@
   .btn:active:not(:disabled) { transform: translateY(1px); }
   .btn:disabled { opacity: .5; cursor: default; }
   .btn.primary { background: linear-gradient(135deg, var(--brand2), var(--brand)); border-color: transparent; color: #fff; font-weight: 600; }
-  .btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+  /* ⛔ 主按钮悬停必须自带背景：`.btn:hover:not(:disabled)` 的特异性高于 `.btn.primary`，
+     只写 filter 的话背景会被那条通用 hover 刷成浅色，而文字仍是 #fff ⇒ 白底白字=整块空白（10-16 用户实测）。 */
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: linear-gradient(135deg, var(--brand2), var(--brand)); }
   .btn.danger { color: var(--bad); border-color: #f0d5d1; }
   .btn.danger:hover:not(:disabled) { background: var(--bad-soft); }
   .btn.block { width: 100%; }
@@ -144,8 +148,57 @@
   .pt-rows .row:hover { background: var(--field); }
   
   /* 记忆空间 / 知识库 是全屏型第三方应用：放开内容区 max-width，否则右侧被裁 */
-  main.main:has(section.tab[data-tab="memory"]:not([hidden])),
-  main.main:has(section.tab[data-tab="kb"]:not([hidden])) { max-width: none; }
+  /* 记忆空间 / 知识库已换成自制轻页（不再是 iframe）⇒ 不再需要放宽 max-width */
+  /* 我的权益：一行一项（左标题+说明，右按钮/状态） */
+  .ent-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line, rgba(127,127,127,.18)); }
+  .ent-row:last-of-type { border-bottom: 0; }
+  /* 知识库检索结果片段 */
+  .kb-hit { padding: 10px 0; border-bottom: 1px solid var(--line, rgba(127,127,127,.18)); line-height: 1.6; }
+  .kb-hit:last-of-type { border-bottom: 0; }
+  /* ── 表格（10-16：原先一条样式都没有，全靠浏览器默认 ⇒ 又挤又不齐。用户指定**全部居中**）── */
+  .table-wrap { width: 100%; overflow-x: auto; }
+  .table-wrap table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table-wrap th, .table-wrap td { padding: 10px 12px; text-align: center; vertical-align: middle; border-bottom: 1px solid var(--line); }
+  .table-wrap thead th { font-weight: 500; font-size: 12px; color: var(--muted); white-space: nowrap; background: rgba(127,127,127,.06); }
+  .table-wrap tbody tr:hover { background: rgba(127,127,127,.05); }
+  .table-wrap tbody tr:last-child td { border-bottom: 0; }
+  /* 表格里的数字用等宽、右对齐会与"全部居中"冲突 ⇒ 统一居中但保持等宽数字 */
+  .table-wrap td { font-variant-numeric: tabular-nums; }
+  /* 单元格里的控件/按钮组同样居中 */
+  .table-wrap .ent-cell { align-items: center; text-align: center; }
+  .table-wrap .ent-cell .ops { justify-content: center; }
+  /* 单元格里的行内控件组（如「配额输入 + 保存」「停用/重置/删除」）**整体**居中；
+     ⛔ 别给组里的输入框加 margin:auto —— 在 flex 行里会让它自己偏移，整格看起来是歪的（10-16 用户报）。 */
+  .table-wrap td > div { justify-content: center; align-items: center; }
+  .table-wrap td .field { width: 104px; max-width: 40%; margin: 0; text-align: center; }
+  .table-wrap td .btn { white-space: nowrap; }
+  /* 管理卡内的分区标题（一张卡三段：用户 / 权益 / 积分），用分隔线而非新卡片，减少视觉碎片 */
+  .card h3.sub { font-size: 14px; font-weight: 600; margin: 22px 0 10px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .card h3.sub:first-of-type { margin-top: 8px; padding-top: 0; border-top: 0; }
+  /* 权益单元格：状态徽标**可点** → 详情/操作弹窗；不再在表格里堆按钮（10-16 用户：按钮老气、改额度看不懂） */
+  .ent-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 999px;
+    padding: 5px 12px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: filter .15s ease, box-shadow .15s ease; }
+  .ent-pill.on { background: linear-gradient(135deg, var(--brand2), var(--brand)); color: #fff; }
+  .ent-pill.off { background: rgba(127,127,127,.12); color: var(--muted); border-color: var(--line); }
+  .ent-pill:hover { filter: brightness(1.06); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  .ent-pill::after { content: "›"; font-size: 14px; opacity: .7; line-height: 1; }
+  .ent-cell .meta { margin-top: 6px; }
+  /* 批量操作栏 */
+  .bulk-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--line);
+    border-radius: 10px; background: rgba(127,127,127,.05); margin-bottom: 12px; }
+  .bulk-bar .field { width: auto; min-width: 96px; margin: 0; }
+  .table-wrap td.adm-cb { width: 40px; }
+  .table-wrap .btn-row { justify-content: center; margin-top: 0; }
+  /* 权益表格单元格：状态行 → 元信息行 → 操作行（同容器内边距一致、按钮同高、数字等宽） */
+  .ent-cell { display: flex; flex-direction: column; gap: 8px; min-width: 240px; }
+  .ent-cell .meta { color: var(--muted); font-size: 12px; line-height: 1.7; font-variant-numeric: tabular-nums; }
+  /* ⛔ white-space:nowrap 只加在**行**上，不加在 .meta 上 —— 加在容器上会把整块压成一行。
+     数字与单位（0 / 1024 MB）必须整体不可断，否则窄列里会出现 "0 /" 换行 + "1024 MB"。 */
+  .ent-cell .meta .meta-line { display: block; white-space: nowrap; }
+  .ent-cell .ops { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ent-cell .ops .btn { min-height: 32px; min-width: 64px; }
+  /* 示例数据横幅（记忆页预览用；接入真实数据后应移除） */
+  .demo-banner { background: #fff7e6; border: 1px solid #ffe0a3; color: #8a5a00; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -187,6 +240,15 @@
         <div style="margin-top:12px">
           <div class="hint" style="margin-bottom:6px">最近变动</div>
           <div id="ptList"><div class="empty">读取中…</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>我的权益 <span class="tag" id="entTag">读取中…</span></h2>
+        <div id="entList"><div class="empty">读取中…</div></div>
+        <div class="hint" style="margin-top:8px">
+          知识库：让 Codex 直接检索你上传的资料。记忆：让对话自动记住要点。
+          两项都按「时长 + 额度」开通，到期或用完即停，可随时续期。
         </div>
       </div>
 
@@ -329,20 +391,16 @@
   
   <section class="tab" data-tab="memory" hidden>
     <div class="page-head"><h1>记忆空间</h1>
-      <p>团队记忆库（Memory Hub）。<b>账号由管理员分配</b>——请向管理员索取你的 <b>User Key</b>（<code>sk-mem-…</code>），拿到后在下方页面用它登录；还没有账号请联系管理员开通。</p>
+      <p>让对话自动记住要点。管理员授权后解锁；未开通时下方是锁态。</p>
     </div>
-    <div class="card" style="padding:0;overflow:hidden">
-      <iframe src="https://mem.ppz123.asia/" style="width:100%;height:calc(100vh - 190px);border:0;display:block" loading="lazy" referrerpolicy="no-referrer" title="记忆空间"></iframe>
-    </div>
+    <div id="memTab"><div class="empty">读取中…</div></div>
   </section>
 
   <section class="tab" data-tab="kb" hidden>
     <div class="page-head"><h1>知识库</h1>
-      <p>团队知识库（WeKnora）。<b>直接在下方填写邮箱和密码即可</b> —— 首次提交即完成注册并加入团队（页面上的“您被邀请加入…”就是凭证），已有账号就是登录。无需另开页面。</p></p>
+      <p>上传你自己的资料，Codex 会在回答时直接检索到它。管理员授权后解锁。</p>
     </div>
-    <div class="card" style="padding:0;overflow:hidden">
-      <iframe src="https://kb.ppz123.asia/register?token=ul7Lnfihw5KMTShW26vcnEt8UlD2w4vlUmr_4egqYlI" style="width:100%;height:calc(100vh - 190px);border:0;display:block" loading="lazy" referrerpolicy="no-referrer" title="知识库"></iframe>
-    </div>
+    <div id="kbTab"><div class="empty">读取中…</div></div>
   </section>
 
 <div class="tab" data-tab="admin" id="adminTab" hidden>
@@ -369,33 +427,108 @@
       </div>
     </div>
     <div class="card">
-      <h2>用户管理</h2>
+      <h2>用户 · 权益 · 积分 <span class="pill ok">一处管理</span></h2>
+      <div class="hint" style="margin-bottom:4px">一个账号的全部管理动作都在这里：账号本身、知识库/记忆授权（按时长+额度）、积分发放与扣减。</div>
+
+      <h3 class="sub">账号一览</h3>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <input class="field" id="admq" placeholder="按用户名搜索…" style="flex:0 1 260px;min-width:160px" />
+        <button class="btn" id="admSearch">搜索</button>
+        <button class="btn" id="admAll">全部</button>
+        <button class="btn" id="admRefresh">刷新</button>
+        <span class="hint" id="admSummary"></span>
+      </div>
+      <div class="bulk-bar">
+        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="admAllPick" aria-label="全选" /><span class="hint">全选</span></label>
+        <span class="hint" id="admPicked">未选账号</span>
+        <span style="width:1px;height:20px;background:var(--line)"></span>
+        <select class="field" id="admFeature" aria-label="作用对象">
+          <option value="knowledge">知识库</option>
+          <option value="memory">记忆</option>
+          <option value="both">知识库 + 记忆</option>
+        </select>
+        <input class="field" id="admDays" type="number" min="1" step="30" value="30" aria-label="续期天数" />
+        <button class="btn sm primary" id="admBulkGrant">批量开通 / 续期</button>
+        <input class="field" id="admQuota" type="number" min="0" step="128" placeholder="MB" aria-label="容量 MB" />
+        <button class="btn sm" id="admBulkQuota">批量改容量</button>
+        <button class="btn sm danger" id="admBulkOff">批量停用</button>
+      </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>最近登录</th><th>积分余额</th><th>云存储配额（GB）</th><th>操作</th></tr></thead>
-          <tbody id="auRows"></tbody>
+          <thead><tr>
+            <th class="adm-cb"></th>
+            <th>用户名</th><th>角色</th><th>状态</th><th>最近登录</th><th>积分余额</th>
+            <th>发积分</th><th>云存储（GB）</th><th>知识库</th><th>记忆</th><th>操作</th>
+          </tr></thead>
+          <tbody id="admRows"></tbody>
         </table>
       </div>
-      <p class="status" id="auStatus"></p>
+      <p class="status" id="admStatus"></p>
+
+      <!-- ⛔ 旧的三分区（① 用户 / ② 权益 / ③ 积分）：数据仍由原渲染器维护，但界面已由上面这张
+           「账号一览」合并表接管 ⇒ 这里整体隐藏，仅保留 id 以免旧渲染器取空报错。下一轮可整体删除。 -->
+      <div hidden>
+        <table><tbody id="auRows"></tbody></table>
+        <table><tbody id="auEntRows"></tbody></table>
+        <table><tbody id="apRows"></tbody></table>
+        <input id="apq" /><button id="apSearch"></button><button id="apAll"></button><span id="apSummary"></span>
+        <p id="auStatus"></p><p id="auEntStatus"></p><p id="apStatus"></p>
+      </div>
     </div>
 
-
-
-    <div class="card">
-      <h2>积分管理 <span class="pill ok">发放 / 扣减</span></h2>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-        <input class="field" id="apq" placeholder="按用户名搜索…" style="flex:1;min-width:180px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
-        <button class="btn" id="apSearch">搜索</button>
-        <button class="btn" id="apAll">全部</button>
-        <span class="hint" id="apSummary"></span>
+    <div class="card" id="ivCard">
+      <!-- ⛔ 局部样式（类前缀 iv-）：生成行用 grid 对齐，⛔ 不用 flex-wrap 硬挤 ——
+           上一版三行标签各自折行、统计数字又挤在按钮右边，整块看着"上下乱行"（用户 10-16 截图）。 -->
+      <style>
+        #ivCard .iv-form { display: grid; grid-template-columns: minmax(200px, 1fr) 120px 130px auto; gap: 10px 12px; align-items: end; margin: 12px 0 10px; }
+        #ivCard .iv-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        #ivCard .iv-field > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #ivCard .iv-form > button { height: 34px; white-space: nowrap; }
+        #ivCard .iv-totals { margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+        #ivCard .iv-totals b { color: var(--text); }
+        #ivCard .iv-notes { line-height: 1.7; }
+        @media (max-width: 900px) {
+          #ivCard .iv-form { grid-template-columns: minmax(160px, 1fr) 110px 120px; }
+          #ivCard .iv-form > button { grid-column: 1 / -1; }
+        }
+      </style>
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">邀请码 <span class="pill ok">管理员</span>
+        <button class="btn sm" id="ivRefresh" style="margin-left:auto">刷新</button>
+      </h2>
+      <p class="hint iv-notes">
+        用途：<b>监控注册来源</b> + <b>管控每个码的名额</b>。<br>
+        一个码可被多个账号使用；账号侧只记来源码，可反查到人。<br>
+        ⛔ 停用 / 过期 / 名额用完只挡<b>新注册</b>，已注册账号不受影响 · ⛔ 删号<b>不回收名额</b>。
+      </p>
+      <div class="iv-form">
+        <label class="iv-field">
+          <span class="hint">备注（来源标记，≤40 字）</span>
+          <input class="field" id="ivNote" maxlength="40" placeholder="例：B站-3月推广 / 内测群" />
+        </label>
+        <label class="iv-field">
+          <span class="hint">可用次数（0=不限）</span>
+          <input class="field" id="ivUses" type="number" min="0" max="10000" step="1" value="10" />
+        </label>
+        <label class="iv-field">
+          <span class="hint">有效期 天（0=永久）</span>
+          <input class="field" id="ivDays" type="number" min="0" max="3650" step="7" value="30" />
+        </label>
+        <button class="btn primary" id="ivCreate">生成邀请码</button>
       </div>
+      <p class="hint iv-totals" id="ivTotals"></p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>用户名</th><th>积分余额</th><th>流水</th><th>最近变动</th><th>发放（正数增加 / 负数扣减）</th></tr></thead>
-          <tbody id="apRows"></tbody>
+          <thead><tr>
+            <th>邀请码</th><th>备注（来源）</th><th>已用 / 上限</th><th>在册</th><th>状态</th><th>有效期至</th><th>最近使用</th><th>操作</th>
+          </tr></thead>
+          <tbody id="ivRows"></tbody>
         </table>
       </div>
-      <p class="status" id="apStatus"></p>
+      <p class="status" id="ivStatus"></p>
+      <p class="hint">
+        · 「在册」= 这个码当前还能查到几个账号；与「已用」不一致说明有账号被删过（额度不回收）。<br>
+        · 点「账号」展开该码注册的账号明细（用户名 / 注册时间 / 最近登录 / 积分）；点「改额度」可随时调名额。
+      </p>
     </div>
 
     <div class="card" id="amCard">
@@ -498,6 +631,644 @@
     };
   });
 
+  /* ── 我的权益（知识库 / 记忆：按时长 + 额度，未开通可自助扣积分激活）───────
+     ⛔ 判定权在服务端（/entitlements）；这里只做展示与发起开通，别在前端复刻规则。 */
+  function entDate(ts) { return ts ? new Date(ts).toLocaleDateString() : "永久"; }
+  function loadEntitlements() {
+    var box = $("entList"); if (!box) return;
+    api("/entitlements").then(function (r) {
+      if (!r || !r.ok || !r.j || !r.j.ok) { box.innerHTML = '<div class="empty">读取失败</div>'; return; }
+      var ents = r.j.entitlements || {}, prices = r.j.pricing || {}, labels = r.j.labels || {};
+      var rows = "", onCount = 0;
+      ["knowledge", "memory"].forEach(function (f) {
+        var st = ents[f] || {}, pr = prices[f] || {}, label = labels[f] || f, on = !!st.enabled;
+        if (on) onCount++;
+        var detail = on
+          ? ("到期：" + entDate(st.expiresAt) +
+             (st.quotaMb ? "　容量：" + Math.round(st.usedMb || 0) + " / " + st.quotaMb + " MB" : "") +
+             (st.quota ? "　次数：" + (st.usedCount || 0) + " / " + st.quota : ""))
+          : (st.expired ? "已到期（" + entDate(st.expiresAt) + "），续期后恢复" : "未开通");
+        rows += '<div class="ent-row"><div><b>' + label + '</b><div class="hint">' + detail + '</div></div>' +
+          (on
+            ? '<span class="tag">已开通</span>'
+            : '<button class="btn primary" data-ent="' + f + '">' + (st.expired ? "续期" : "激活") +
+              (pr.points ? "（" + pr.points + " 积分 / " + pr.days + " 天）" : "") + '</button>') +
+          '</div>';
+      });
+      box.innerHTML = rows;
+      $("entTag").textContent = onCount + " / 2 项已开通";
+      Array.prototype.forEach.call(box.querySelectorAll("button[data-ent]"), function (btn) {
+        btn.addEventListener("click", function () {
+          var feature = btn.getAttribute("data-ent");
+          btn.disabled = true; var old = btn.textContent; btn.textContent = "开通中…";
+          api("/entitlements/activate", { method: "POST", body: { feature: feature } }).then(function (x) {
+            var j = (x && x.j) || {};
+            if (!x || !x.ok || !j.ok) {
+              alert(j.error === "insufficient-points"
+                ? ("积分不足：需要 " + j.need + "，当前 " + j.balance + "。可在「云端管理」里查看获取方式。")
+                : ("开通失败：" + (j.error || (x && x.status) || "未知错误")));
+              btn.disabled = false; btn.textContent = old; return;
+            }
+            loadEntitlements(); loadPoints();
+          })["catch"](function () { alert("开通失败：网络错误"); btn.disabled = false; btn.textContent = old; });
+        });
+      });
+    })["catch"](function () { box.innerHTML = '<div class="empty">读取失败</div>'; });
+  }
+
+  /* ── 记忆空间 / 知识库：锁态 + 轻界面（10-16 用户令：原产品界面不透给普通用户）──
+     ⛔ 锁在服务端：未授权时后端一律 403，这里只是把状态如实画出来，不是"前端藏起来"。 */
+  function adminHint() { return isAdmin ? "你是管理员，可在「用户管理」里为任意用户开通/续期。" : ""; }
+  function activateFeature(feature, after) {
+    return api("/entitlements/activate", { method: "POST", body: { feature: feature } }).then(function (x) {
+      var j = (x && x.j) || {};
+      if (!x || !x.ok || !j.ok) {
+        alert(j.error === "insufficient-points" ? ("积分不足：需要 " + j.need + "，当前 " + j.balance) : ("开通失败：" + (j.error || "未知错误")));
+        return false;
+      }
+      if (after) after(); else { loadEntitlements(); loadFeatureTabs(); }
+      return true;
+    })["catch"](function () { alert("开通失败：网络错误"); return false; });
+  }
+  function bindLock(root) {
+    Array.prototype.forEach.call(root.querySelectorAll("button[data-lock]"), function (b) {
+      b.addEventListener("click", function () {
+        b.disabled = true; var old = b.textContent; b.textContent = "开通中…";
+        activateFeature(b.getAttribute("data-lock"), loadFeatureTabs).then(function (okDone) { if (!okDone) { b.disabled = false; b.textContent = old; } });
+      });
+    });
+  }
+  function lockCard(feature, label, desc, st, pr) {
+    var expired = !!(st && st.expired);
+    return '<div class="card"><h2>' + label + ' <span class="pill">' + (expired ? "已到期" : "未开通") + '</span></h2>' +
+      '<div class="hint" style="margin-bottom:10px">' + desc + '</div>' +
+      (adminHint() ? '<div class="hint" style="margin-bottom:10px">' + adminHint() + '</div>' : "") +
+      '<div class="btn-row"><button class="btn primary" data-lock="' + feature + '">' + (expired ? "续期" : "激活") +
+      (pr && pr.points ? "（" + pr.points + " 积分 / " + pr.days + " 天）" : "") + '</button></div>' +
+      '<div class="hint" style="margin-top:8px">' + (expired ? "已于 " + entDate(st.expiresAt) + " 到期，" : "") + '开通后立即解锁，无需重启应用。</div></div>';
+  }
+  function statusCard(label, st, parts) {
+    var bits = ["到期：" + entDate(st.expiresAt)];
+    (parts || []).forEach(function (x) { if (x) bits.push(x); });
+    return '<div class="card"><h2>' + label + ' <span class="tag">已开通</span></h2><div class="hint" style="margin-bottom:12px">' + bits.join("　·　") + '</div>';
+  }
+  /* 通用弹窗（预览正文 / 看示例用）：不进页面布局、不占空间，点空白或「关闭」收起。 */
+  function showModal(title, bodyHtml) {
+    var old = $("mbModal"); if (old && old.parentNode) old.parentNode.removeChild(old);
+    var wrap = document.createElement("div");
+    wrap.id = "mbModal";
+    wrap.setAttribute("style", "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px");
+    wrap.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:820px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)">' +
+      '<b style="font-size:15px">' + title + '</b><button class="btn sm" id="mbClose">关闭</button></div>' +
+      '<div style="padding:16px 18px;overflow:auto;line-height:1.75;font-size:13.5px">' + bodyHtml + '</div></div>';
+    wrap.addEventListener("click", function (ev) { if (ev.target === wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap); });
+    document.body.appendChild(wrap);
+    $("mbClose").addEventListener("click", function () { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); });
+  }
+  function esc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  /* 文档预览：图片直接显示图；文本类显示分块正文（后端已校验"是你的库里的"）。 */
+  function isImageName(name) { return /\.(png|jpe?g|gif|bmp|webp|heic|heif|tiff?|svg)$/i.test(String(name || "")); }
+  function previewDoc(id, title) {
+    if (isImageName(title)) {
+      showModal("预览 · " + esc(title), '<div class="empty">读取图片中…</div>');
+      /* ⛔ <img> 带不了 Authorization 头 ⇒ 先用 fetch 取 blob 再转 objectURL（同一条会话鉴权）。 */
+      fetch("/cloud-api/kb/file?id=" + encodeURIComponent(id), { headers: { Authorization: "Bearer " + session } })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+        .then(function (blob) {
+          var objUrl = URL.createObjectURL(blob);
+          showModal("预览 · " + esc(title),
+            '<div style="text-align:center"><img src="' + objUrl + '" alt="' + esc(title) + '" style="max-width:100%;max-height:62vh;border-radius:10px;border:1px solid var(--line)" />' +
+            '<div class="hint" style="margin-top:10px">原图 ' + Math.round(blob.size / 1024) + ' KB</div></div>');
+        })["catch"](function (e) { showModal("预览 · " + esc(title), '<div class="empty">图片读取失败：' + esc(e && e.message ? e.message : e) + '</div>'); });
+      return;
+    }
+    showModal("预览 · " + esc(title), '<div class="empty">读取中…</div>');
+    api("/kb/doc?id=" + encodeURIComponent(id)).then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { showModal("预览 · " + esc(title), '<div class="empty">读取失败：' + esc(j.error || r.status) + '</div>'); return; }
+      var body = (j.chunks || []).map(function (c) {
+        return '<div style="padding:10px 0;border-bottom:1px solid var(--line)"><div class="hint">分块 #' + (c.seq || "") + '</div><div style="white-space:pre-wrap">' + esc(c.text) + '</div></div>';
+      }).join("") || '<div class="empty">这份文档还没有解析出内容</div>';
+      showModal("预览 · " + esc(title), body);
+    })["catch"](function () { showModal("预览 · " + esc(title), '<div class="empty">读取失败：网络错误</div>'); });
+  }
+
+  function renderKbTab(st, pr) {
+    var host = $("kbTab"); if (!host) return;
+    if (!st || !st.enabled) {
+      host.innerHTML = lockCard("knowledge", "知识库", "上传 PDF / Word / Excel / Markdown / txt，Codex 回答时会直接检索到这些资料。", st, pr);
+      bindLock(host); return;
+    }
+    host.innerHTML = statusCard("知识库", st, [st.quotaMb ? ("容量：" + Math.round(st.usedMb || 0) + " / " + st.quotaMb + " MB") : ""]) +
+      '<div class="field-row"><input class="field" id="kbQuery" placeholder="检索你的资料，例如：内部暗号是什么" /></div>' +
+      '<div class="btn-row"><button class="btn primary" id="kbSearch">检索</button>' +
+      '<button class="btn" id="kbPick">上传文件</button><button class="btn" id="kbRefresh">刷新列表</button>' +
+      '<button class="btn" id="kbDemo">示例预览</button>' +
+      '<input type="file" id="kbFile" style="display:none" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.txt,.csv,.html,.json,image/*" multiple /></div>' +
+      '<div class="status" id="kbMsg"></div>' +
+      '<div style="margin-top:14px"><div class="hint" style="margin-bottom:6px">检索结果</div><div id="kbHits"><div class="empty">输入关键词后点「检索」</div></div></div>' +
+      '<div style="margin-top:14px"><div class="hint" style="margin-bottom:6px">我的文档</div><div id="kbDocs"><div class="empty">读取中…</div></div></div></div>';
+    function say(t, cls) { var m = $("kbMsg"); m.textContent = t || ""; m.className = "status" + (cls ? " " + cls : ""); }
+    function loadDocs() {
+      var box = $("kbDocs");
+      api("/kb/docs").then(function (r) {
+        var j = (r && r.j) || {};
+        if (!r.ok || !j.ok) { box.innerHTML = '<div class="empty">读取失败：' + (j.error || r.status) + '</div>'; return; }
+        if (!j.docs || !j.docs.length) { box.innerHTML = '<div class="empty">还没有文档，点「上传文件」加第一份</div>'; return; }
+        box.innerHTML = j.docs.map(function (d) {
+          var label = d.status === "completed" ? "已完成" : (d.status === "failed" ? "解析失败" : "解析中");
+          return '<div class="ent-row"><div><b><a href="#" data-view="' + d.id + '" data-title="' + esc(d.title) + '" style="color:inherit;text-decoration:none;border-bottom:1px dashed var(--line)">' + esc(d.title) + '</a></b><div class="hint">' + label + '　·　' +
+            (d.size ? Math.round(d.size / 1024) + " KB" : "") + (d.note ? "　·　" + esc(d.note) : "") + '</div></div>' +
+            '<button class="btn danger" data-del="' + d.id + '">删除</button></div>';
+        }).join("");
+        Array.prototype.forEach.call(box.querySelectorAll("a[data-view]"), function (a) {
+          a.addEventListener("click", function (ev) {
+            ev.preventDefault();
+            previewDoc(a.getAttribute("data-view"), a.getAttribute("data-title") || "文档");
+          });
+        });
+        Array.prototype.forEach.call(box.querySelectorAll("button[data-del]"), function (b) {
+          b.addEventListener("click", function () {
+            if (!confirm("删除这份文档？删除后 Codex 就检索不到它了。")) return;
+            var old = b.textContent;
+            b.disabled = true; b.textContent = "删除中…";
+            api("/kb/delete", { method: "POST", body: { id: b.getAttribute("data-del") } }).then(function (r) {
+              var j = (r && r.j) || {};
+              if (!r.ok || !j.ok) {
+                b.disabled = false; b.textContent = old;
+                say("删除失败：" + (j.reason || j.error || ("HTTP " + r.status)), "err");
+                return;
+              }
+              say("已提交删除（后台任务，列表稍后自动刷新）", "ok");
+              /* ⛔ WeKnora 删除是**异步任务**：立刻刷一次往往还在，因此隔几秒连刷三次，
+                 否则用户会以为"删不掉"（10-16 用户报障）。 */
+              loadDocs();
+              [3, 8, 15].forEach(function (sec) { setTimeout(function () { loadDocs(); }, sec * 1000); });
+            })["catch"](function () { b.disabled = false; b.textContent = old; say("删除失败：网络错误", "err"); });
+          });
+        });
+      })["catch"](function () { box.innerHTML = '<div class="empty">读取失败</div>'; });
+    }
+    $("kbRefresh").addEventListener("click", function () { loadDocs(); say("已刷新"); });
+    $("kbDemo").addEventListener("click", function () {
+      showModal("知识库 · 示例预览（示例数据，非真实内容）",
+        '<div class="demo-banner">⚠️ 示例数据（非真实内容），用来看"资料多起来之后"的界面长什么样。</div>' +
+        '<div class="hint" style="margin-top:14px;margin-bottom:6px">我的文档（示例）</div>' +
+        [["产品 FAQ.pdf", "已完成", "412 KB"], ["接口约定.md", "已完成", "18 KB"], ["客服话术-2026Q3.docx", "解析中", "96 KB"]]
+          .map(function (d) {
+            return '<div class="ent-row"><div><b>' + d[0] + '</b><div class="hint">' + d[1] + '　·　' + d[2] + '</div></div><span class="tag">示例</span></div>';
+          }).join("") +
+        '<div class="hint" style="margin-top:14px;margin-bottom:6px">检索「退款要几天到账」的命中（示例）</div>' +
+        '<div class="kb-hit"><div class="hint">产品 FAQ.pdf　·　相关度 0.962</div><div>…退款申请通过后 3–5 个工作日原路退回；节假日顺延。如超时未到账，请提供订单号…</div></div>' +
+        '<div class="hint" style="margin-top:14px">真实使用时：点文档标题可预览分块正文；命中片段会由 Codex 带原文引用回答。</div>');
+    });
+    $("kbPick").addEventListener("click", function () { $("kbFile").click(); });
+    $("kbFile").addEventListener("change", function () {
+      var files = Array.prototype.slice.call($("kbFile").files || []);
+      if (!files.length) return;
+      var index = 0, okCount = 0, failCount = 0, lastErr = "";
+      function next() {
+        if (index >= files.length) {
+          say("上传完成：成功 " + okCount + " 份" + (failCount ? ("，失败 " + failCount + " 份 —— " + lastErr) : "") + "（解析需要一点时间，稍后点「刷新列表」）", failCount ? "err" : "ok");
+          $("kbFile").value = ""; loadDocs(); return;
+        }
+        var f = files[index++];
+        if (f.size > 12 * 1024 * 1024) { failCount++; lastErr = "「" + f.name + "」超过单份上限 12 MB"; say(lastErr, "err"); next(); return; }
+        say("上传中（" + index + "/" + files.length + "）：" + f.name + " 0%");
+        var fr = new FileReader();
+        fr.onload = function () {
+          var b64 = String(fr.result || "").split(",")[1] || "";
+          /* ⛔ 用 XHR 而不是 fetch：只有 XHR 能拿到**上传字节进度**（fetch 没有这个事件）。
+             没有进度反馈时用户会以为卡住/失败了（10-16 用户反馈）。 */
+          var xhr = new XMLHttpRequest();
+          xhr.open("POST", "/cloud-api/kb/upload");
+          xhr.setRequestHeader("Content-Type", "application/json");
+          xhr.setRequestHeader("Authorization", "Bearer " + session);
+          xhr.upload.onprogress = function (ev) {
+            if (!ev.lengthComputable) return;
+            var pct = Math.min(99, Math.round((ev.loaded / ev.total) * 100));
+            say("上传中（" + index + "/" + files.length + "）：" + f.name + " " + pct + "%");
+          };
+          xhr.onload = function () {
+            var j = null; try { j = JSON.parse(xhr.responseText); } catch (e) { /* 非 JSON */ }
+            var okHttp = xhr.status >= 200 && xhr.status < 300;
+            if (!okHttp || !j || !j.ok) {
+              failCount++;
+              lastErr = "「" + f.name + "」" + ((j && (j.reason || j.error)) || ("HTTP " + xhr.status));
+              say(lastErr, "err");
+            } else {
+              okCount++;
+              say("「" + f.name + "」已上传，正在解析…", "ok");
+            }
+            next();
+          };
+          xhr.onerror = function () { failCount++; lastErr = "「" + f.name + "」网络错误"; say(lastErr, "err"); next(); };
+          xhr.send(JSON.stringify({ name: f.name, contentB64: b64 }));
+        };
+        fr.readAsDataURL(f);
+      }
+      next();
+      /* 上传后自动刷列表几轮：让用户看到「解析中 → 已完成」，不用自己点刷新。 */
+      [4, 10, 20, 35].forEach(function (sec) { setTimeout(function () { loadDocs(); }, sec * 1000); });
+    });
+    $("kbSearch").addEventListener("click", function () {
+      var q = ($("kbQuery").value || "").trim(); if (!q) return;
+      var box = $("kbHits"); box.innerHTML = '<div class="empty">检索中…</div>';
+      api("/kb/search", { method: "POST", body: { query: q } }).then(function (r) {
+        var j = (r && r.j) || {};
+        if (!r.ok || !j.ok) { box.innerHTML = '<div class="empty">检索失败：' + (j.error || r.status) + '</div>'; return; }
+        if (!j.hits || !j.hits.length) { box.innerHTML = '<div class="empty">没有命中，换个说法或先上传资料</div>'; return; }
+        box.innerHTML = j.hits.map(function (h) {
+          return '<div class="kb-hit"><div class="hint">' + (h.title || "文档") + '　·　相关度 ' + (h.score || 0).toFixed(3) + '</div><div>' + h.snippet + '</div></div>';
+        }).join("");
+      })["catch"](function () { box.innerHTML = '<div class="empty">检索失败：网络错误</div>'; });
+    });
+    loadDocs();
+  }
+  function renderMemTab(st, pr) {
+    var host = $("memTab"); if (!host) return;
+    if (!st || !st.enabled) {
+      host.innerHTML = lockCard("memory", "记忆空间", "让 Codex 在对话里自动记住要点（项目背景、你的偏好、结论），下次对话自动带上。", st, pr);
+      bindLock(host); return;
+    }
+    host.innerHTML = statusCard("记忆空间", st, [
+      st.quotaMb ? ("容量：" + (Math.round((st.usedMb || 0) * 10) / 10) + " / " + st.quotaMb + " MB") : "",
+      st.quota ? ("次数：" + (st.usedCount || 0) + " / " + st.quota) : "",
+    ]) +
+      '<div class="hint" style="margin-bottom:12px">记忆由对话自动沉淀，无需手工维护。接入后可搜索、查看来源、单独删除。</div>' +
+      '<div class="btn-row"><button class="btn" id="memDemo">示例预览</button>' +
+      '<span class="hint" style="align-self:center">功能仍在接入中 —— 点左边看界面示例（<b>示例数据</b>，非真实内容）</span></div></div>';
+    $("memDemo").addEventListener("click", function () {
+      showModal("记忆空间 · 示例预览（示例数据，非真实内容）", memDemoHtml());
+      Array.prototype.forEach.call(document.querySelectorAll("#mbModal [data-memitem]"), function (el) {
+        el.addEventListener("click", function () {
+          showModal("记忆条目 · 示例（非真实内容）",
+            '<div class="demo-banner">⚠️ 示例数据</div>' +
+            '<div class="hint" style="margin-top:12px">来源：「项目规范讨论」· 2 天前 · 由对话自动沉淀</div>' +
+            '<div style="margin-top:8px">Codex Harness 项目内部暗号是橘子七号</div>');
+        });
+      });
+    });
+  }
+  /* 记忆页的示例内容（只用于预览界面；接入真实数据后整体删除本函数与入口按钮）。 */
+  function memDemoHtml() {
+    var demo = [
+      ["L1 要点", [
+        ["Codex Harness 项目内部暗号是橘子七号", "2 天前 · 来自「项目规范讨论」"],
+        ["负责人代号 PPZ", "2 天前 · 来自「项目规范讨论」"],
+        ["云助手的界面资源一律走服务器，本地不留 dist", "5 天前 · 来自「发版排障」"],
+      ]],
+      ["L2 场景", [
+        ["排查「改了不生效」时，先要构建指纹再定位", "3 天前 · 来自「发版排障」"],
+      ]],
+      ["L3 画像", [
+        ["偏好中文回答；要硬指标，不接受「跑绿」当通过", "1 周前 · 来自「日常协作」"],
+      ]],
+    ];
+    return '<div class="demo-banner">⚠️ 以下是<b>示例数据</b>（非真实内容）。记忆服务接入后，这里会换成你自己的记忆，并开放搜索、来源追溯与删除。</div>' +
+      demo.map(function (g) {
+        return '<div style="margin-top:14px"><div class="hint" style="margin-bottom:6px">' + g[0] + '　' + g[1].length + ' 条</div>' +
+          g[1].map(function (it) {
+            return '<div class="ent-row" data-memitem="1" style="cursor:pointer"><div><b>' + it[0] + '</b><div class="hint">' + it[1] + '</div></div><span class="tag">示例</span></div>';
+          }).join("") + '</div>';
+      }).join("") +
+      '<div class="hint" style="margin-top:14px">接入后：点任意条目可查看它的来源对话；右侧可单独删除。</div>';
+  }
+  function loadFeatureTabs() {
+    api("/entitlements").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) return;
+      var ents = j.entitlements || {}, pr = j.pricing || {};
+      renderKbTab(ents.knowledge, pr.knowledge);
+      renderMemTab(ents.memory, pr.memory);
+    });
+  }
+
+  /* ── 权益管理（管理员）：给任意账号开通/续期/停用「知识库 / 记忆」────────────
+     ⛔ 规则判定全在服务端（/admin/entitlements）；这里只发起请求并刷新。 */
+  function auEntSay(t, cls) { var st = $("auEntStatus"); if (!st) return; st.textContent = t || ""; st.className = "status" + (cls ? " " + cls : ""); }
+  function closeModal() { var m = $("mbModal"); if (m && m.parentNode) m.parentNode.removeChild(m); }
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") closeModal(); });
+
+  function entCellHtml(st, feature) {
+    var on = !!(st && st.enabled);
+    var meta = [];
+    if (on) {
+      meta.push("到期 " + entDate(st.expiresAt));
+      meta.push("容量 " + (Math.round((st.usedMb || 0) * 10) / 10) + " / " + (st.quotaMb || 0) + " MB");
+      if (feature === "memory" && st.quota) meta.push("次数 " + (st.usedCount || 0) + " / " + st.quota);
+    } else {
+      /* ⛔ 未开通时不再重复写「未开通」—— 上面那颗胶囊已经写了（用户 10-16 截图里就是重复两遍）。 */
+      if (st && st.expired) meta.push("已于 " + entDate(st.expiresAt) + " 到期");
+      if (st && st.quotaMb) meta.push("预设容量 " + st.quotaMb + " MB");
+    }
+    return '<div class="ent-cell">' +
+      '<button type="button" class="ent-pill ' + (on ? "on" : "off") + '" data-entopen="' + feature + '">' +
+      (st && st.expired ? "已到期" : (on ? "已开通" : "未开通")) + '</button>' +
+      /* ⛔ 每项独立一行：窄列里 "容量 0 / 1024 MB" 曾经被从斜杠处劈开、
+         "次数 0 / 2000" 更被劈成上一行结尾的「·」+ 下一行「2000」（用户 10-16 截图）。 */
+      '<div class="meta">' + meta.map(function (line) { return '<span class="meta-line">' + line + "</span>"; }).join("") + '</div></div>';
+  }
+
+  /* 权益详情 / 操作弹窗：容量、次数、续期、停用都在这里（取代表格里那排按钮）。 */
+  function openEntActions(username, feature, st, after) {
+    var isKb = feature === "knowledge";
+    var label = isKb ? "知识库" : "记忆";
+    var on = !!(st && st.enabled);
+    function refresh() { loadAdminAll($("admq") ? $("admq").value : ""); if (after) after(); }
+    function body() {
+      return '<div class="hint" style="margin-bottom:12px">账号 <b>' + esc(username) + '</b> · ' + label +
+        (on ? '　<span class="tag">已开通</span>' : (st && st.expired ? '　<span class="pill">已到期</span>' : '　<span class="pill">未开通</span>')) + '</div>' +
+        (on ? '<div class="hint" style="margin-bottom:12px">到期：<b>' + entDate(st.expiresAt) + '</b>　·　已用容量 ' + (Math.round((st.usedMb || 0) * 10) / 10) + ' MB' +
+          (isKb ? "" : ("　·　已用次数 " + (st.usedCount || 0))) + '</div>' : "") +
+        '<label for="mbCap" style="display:block;font-size:13px;margin-bottom:6px">容量上限（MB）</label>' +
+        '<input id="mbCap" class="field" type="number" min="0" step="128" value="' + (st.quotaMb || 0) + '" style="width:100%" aria-describedby="mbCapHint" />' +
+        '<div id="mbCapHint" class="hint" style="margin-top:6px">填 0 表示不限。</div>' +
+        (isKb ? "" :
+          '<label for="mbTimes" style="display:block;font-size:13px;margin:14px 0 6px">检索次数上限</label>' +
+          '<input id="mbTimes" class="field" type="number" min="0" step="100" value="' + (st.quota || 0) + '" style="width:100%" />') +
+        '<div class="btn-row" style="margin-top:16px;justify-content:flex-end;flex-wrap:wrap">' +
+        '<button class="btn sm" id="entSave">保存额度</button>' +
+        '<button class="btn sm primary" id="entGrant30">' + (on ? "续期 30 天" : "开通 30 天") + '</button>' +
+        (on ? '<button class="btn sm danger" id="entOff">停用</button>' : "") +
+        '</div>';
+    }
+    function open() {
+      showModal(label + " · " + esc(username), body());
+      $("entSave").addEventListener("click", function () {
+        var p = { username: username, feature: feature, quotaMb: Math.max(0, parseInt($("mbCap").value, 10) || 0) };
+        if (!isKb) p.quota = Math.max(0, parseInt($("mbTimes").value, 10) || 0);
+        api("/admin/entitlements", { method: "POST", body: p }).then(function (x) {
+          if (!x.ok || !x.j || !x.j.ok) { admSay("保存失败：" + ((x.j && x.j.error) || x.status), "err"); return; }
+          admSay("已更新「" + username + "」的" + label + "额度", "ok"); closeModal(); refresh();
+        });
+      });
+      $("entGrant30").addEventListener("click", function () {
+        api("/admin/entitlements", { method: "POST", body: { username: username, feature: feature, enabled: true, days: 30 } }).then(function () {
+          admSay("已为 " + username + (on ? " 续期 " : " 开通 ") + "30 天 " + label, "ok"); closeModal(); refresh();
+        });
+      });
+      if (on) $("entOff").addEventListener("click", function () {
+        if (!confirm("停用「" + username + "」的" + label + "？数据不会删除，续期即恢复。")) return;
+        api("/admin/entitlements", { method: "POST", body: { username: username, feature: feature, enabled: false } }).then(function () {
+          admSay("已停用 " + username + " 的" + label, "ok"); closeModal(); refresh();
+        });
+      });
+    }
+    open();
+  }
+
+  /* 改额度：知识库=容量(MB)；记忆=容量(MB) + 检索次数上限。两项**互相独立**。
+     只改额度、不动到期时间（后端 days 不传即保留）。 */
+  function quotaDialog(username, feature, st, after) {
+    var isKb = feature === "knowledge";
+    var capMb = st.quotaMb || 0;
+    var times = st.quota || 0;
+    var usedCap = (Math.round((st.usedMb || 0) * 10) / 10);
+    showModal("调整额度 · " + esc(username) + " · " + (isKb ? "知识库" : "记忆空间"),
+      '<label for="mbCap" style="display:block;font-size:13px;margin-bottom:6px">容量上限（MB）</label>' +
+      '<input id="mbCap" class="field" type="number" min="0" step="128" value="' + capMb + '" style="width:100%" aria-describedby="mbCapHint" />' +
+      '<div id="mbCapHint" class="hint" style="margin-top:6px">已用 ' + usedCap + ' MB；填 0 表示不限。</div>' +
+      (isKb ? "" :
+        '<label for="mbTimes" style="display:block;font-size:13px;margin:14px 0 6px">检索次数上限</label>' +
+        '<input id="mbTimes" class="field" type="number" min="0" step="100" value="' + times + '" style="width:100%" aria-describedby="mbTimesHint" />' +
+        '<div id="mbTimesHint" class="hint" style="margin-top:6px">已用 ' + (st.usedCount || 0) + ' 次；填 0 表示不限。</div>') +
+      '<div class="hint" style="margin-top:12px">' + (st && st.enabled
+        ? "只调整额度，<b>到期时间不变</b>。"
+        : "当前<b>未开通</b>：这里设的是预设额度，开通后生效（不会因此自动开通）。") + '</div>' +
+      '<div class="btn-row" style="justify-content:flex-end"><button class="btn" id="mbQuotaCancel">取消</button><button class="btn primary" id="mbQuotaSave">保存</button></div>');
+    $("mbCap").focus();
+    $("mbQuotaCancel").addEventListener("click", closeModal);
+    $("mbQuotaSave").addEventListener("click", function () {
+      var body = { username: username, feature: feature, quotaMb: Math.max(0, parseInt($("mbCap").value, 10) || 0) };
+      if (!isKb) body.quota = Math.max(0, parseInt($("mbTimes").value, 10) || 0);
+      api("/admin/entitlements", { method: "POST", body: body }).then(function (x) {
+        var j = (x && x.j) || {};
+        if (!x || !x.ok || !j.ok) { auEntSay("保存失败：" + (j.error || x.status), "err"); return; }
+        closeModal(); auEntSay("已更新「" + username + "」的额度", "ok");
+        if (after) after(); else loadEntAdmin();
+      })["catch"](function () { auEntSay("保存失败：网络错误", "err"); });
+    });
+  }
+  /* ── 账号一览：一张表一行管一个用户（账号 + 积分 + 权益）────────────────────────
+     数据来自两个接口（/admin/users、/admin/entitlements），按用户名合并成一行。
+     ⛔ 取代原先「① 用户 / ② 权益 / ③ 积分」三张表（那三块已 hidden，仅留 id 兼容旧渲染器）。 */
+  /* ── 批量操作：勾选账号 → 一次对多账号执行（开通/续期、改额度、停用）──────────── */
+  function bulkPicked() {
+    var out = [];
+    Array.prototype.forEach.call(document.querySelectorAll("#admRows tr[data-user]"), function (tr) {
+      var cb = tr.querySelector(".adm-pick");
+      if (cb && cb.checked) out.push(tr.getAttribute("data-user"));
+    });
+    return out;
+  }
+  function bulkSync() {
+    var names = bulkPicked();
+    if ($("admPicked")) $("admPicked").textContent = names.length ? ("已选 " + names.length + " 个账号") : "未选账号";
+  }
+  var bulkBound = false;
+  function bindBulkBar() {
+    if (bulkBound) return; bulkBound = true;
+    var all = $("admAllPick");
+    if (all) all.addEventListener("change", function () {
+      Array.prototype.forEach.call(document.querySelectorAll("#admRows .adm-pick"), function (cb) { cb.checked = all.checked; });
+      bulkSync();
+    });
+    function bind(id, fn) { if ($(id)) $(id).addEventListener("click", fn); }
+    bind("admBulkGrant", function () { bulkApply("grant", parseInt(($("admDays") && $("admDays").value) || "30", 10) || 30); });
+    bind("admBulkQuota", function () { bulkApply("quota", 0, Math.max(0, parseInt(($("admQuota") && $("admQuota").value) || "0", 10) || 0)); });
+    bind("admBulkOff", function () { bulkApply("off"); });
+    bind("admSearch", function () { loadAdminAll($("admq") ? $("admq").value : ""); });
+    bind("admAll", function () { if ($("admq")) $("admq").value = ""; loadAdminAll(""); });
+    bind("admRefresh", function () { loadAdminAll($("admq") ? $("admq").value : ""); });
+    bind("admq", function () { });
+  }
+  function bulkApply(mode, days, quotaMb) {
+    var names = bulkPicked();
+    if (!names.length) { admSay("先勾选要操作的账号", "err"); return; }
+    var featSel = ($("admFeature") && $("admFeature").value) || "knowledge";
+    var features = featSel === "both" ? ["knowledge", "memory"] : [featSel];
+    var featLabel = featSel === "both" ? "知识库+记忆" : (featSel === "knowledge" ? "知识库" : "记忆");
+    var what = mode === "grant" ? ("开通/续期 " + days + " 天") : (mode === "quota" ? ("把容量改成 " + quotaMb + " MB") : "停用");
+    if (!confirm("对 " + names.length + " 个账号的「" + featLabel + "」执行：" + what + "？")) return;
+    var queue = [];
+    names.forEach(function (n) { features.forEach(function (f) { queue.push({ username: n, feature: f }); }); });
+    var i = 0, failed = [];
+    admSay("批量处理中 0/" + queue.length + " …");
+    (function next() {
+      if (i >= queue.length) {
+        admSay("批量完成：成功 " + (queue.length - failed.length) + " 项" + (failed.length ? ("，失败 " + failed.length + " 项") : ""), failed.length ? "err" : "ok");
+        loadAdminAll($("admq") ? $("admq").value : "");
+        return;
+      }
+      var item = queue[i++];
+      var body = { username: item.username, feature: item.feature };
+      if (mode === "grant") { body.enabled = true; body.days = days; }
+      else if (mode === "off") { body.enabled = false; }
+      else { body.quotaMb = quotaMb; }
+      api("/admin/entitlements", { method: "POST", body: body }).then(function (x) {
+        if (!x.ok || !x.j || !x.j.ok) failed.push(item.username + "/" + item.feature);
+        admSay("批量处理中 " + i + "/" + queue.length + " …");
+        next();
+      })["catch"](function () { failed.push(item.username); next(); });
+    })();
+  }
+
+  function admSay(t, cls) { var st = $("admStatus"); if (!st) return; st.textContent = t || ""; st.className = "status" + (cls ? " " + cls : ""); }
+  function loadAdminAll(filter) {
+    var box = $("admRows"); if (!box) return;
+    bindBulkBar();
+    box.innerHTML = '<tr><td colspan="11" class="empty">读取中…</td></tr>';
+    Promise.all([api("/admin/users"), api("/admin/entitlements")]).then(function (res) {
+      var usersRes = (res[0] && res[0].j) || {}, entRes = (res[1] && res[1].j) || {};
+      if (!res[0].ok || !usersRes.ok) { box.innerHTML = '<tr><td colspan="10" class="empty">读取失败：' + esc(usersRes.error || res[0].status) + '</td></tr>'; return; }
+      var entMap = {}, rows = usersRes.users || [];
+      (entRes.users || []).forEach(function (r) { entMap[r.username] = r.entitlements || {}; });
+      var q = String(filter || "").trim().toLowerCase();
+      if (q) rows = rows.filter(function (r) { return String(r.username).toLowerCase().indexOf(q) >= 0; });
+      if (!rows.length) { box.innerHTML = '<tr><td colspan="10" class="empty">没有匹配的账号</td></tr>'; return; }
+      box.innerHTML = rows.map(function (row) {
+        var ent = entMap[row.username] || {};
+        return '<tr data-user="' + esc(row.username) + '">' +
+          '<td class="adm-cb"><input type="checkbox" class="adm-pick" aria-label="选择 ' + esc(row.username) + '" /></td>' +
+          '<td><b>' + esc(row.username) + '</b></td>' +
+          '<td><span class="pill' + (row.role === "admin" ? "" : " ok") + '">' + (row.role === "admin" ? "管理员" : "用户") + '</span></td>' +
+          '<td><span class="pill ' + (row.disabled ? "bad" : "ok") + '">' + (row.disabled ? "已停用" : "正常") + '</span></td>' +
+          '<td>' + fmt(row.lastLogin) + '</td>' +
+          '<td>' + Number(row.balance || 0).toFixed(2).replace(/\.00$/, "") + '</td>' +
+          '<td><div style="display:flex;gap:6px"><input class="field" data-pt type="number" placeholder="±分" style="width:84px" /><button class="btn sm" data-ptgo>发放</button></div></td>' +
+          '<td><div style="display:flex;gap:6px"><input class="field" data-gb type="number" min="0" step="1" style="width:72px" value="' + (row.quotaGB === undefined || row.quotaGB === null ? "" : row.quotaGB) + '" placeholder="GB" /><button class="btn sm" data-gbgo>保存</button></div></td>' +
+          '<td>' + entCellHtml(ent.knowledge, "knowledge") + '</td>' +
+          '<td>' + entCellHtml(ent.memory, "memory") + '</td>' +
+          '<td><div class="btn-row" style="flex-wrap:nowrap;margin:0">' +
+            '<button class="btn sm" data-toggle>' + (row.disabled ? "启用" : "停用") + '</button>' +
+            '<button class="btn sm" data-reset>重置密码</button>' +
+            (row.role === "admin" ? "" : '<button class="btn sm danger" data-deluser>删除</button>') +
+          '</div></td></tr>';
+      }).join("");
+      admSay("共 " + rows.length + " 个账号");
+
+      Array.prototype.forEach.call(box.querySelectorAll("tr[data-user]"), function (tr) {
+        var username = tr.getAttribute("data-user");
+        var ent = entMap[username] || {};
+        /* ⛔ 必须 querySelectorAll：一行里同一种按钮有**两个**（知识库徽标 + 记忆徽标），
+           用 querySelector 只会绑上第一个 ⇒ 第二个永远点不动（10-16 用户报"记忆点击没反应"）。 */
+        function act(sel, fn) {
+          Array.prototype.forEach.call(tr.querySelectorAll(sel), function (b) {
+            b.addEventListener("click", function () { fn(b); });
+          });
+        }
+        act("[data-ptgo]", function (b) {
+          var input = tr.querySelector("[data-pt]");
+          var delta = Number(input.value);
+          if (!Number.isFinite(delta) || !delta) { admSay("请填一个非 0 的分值", "err"); return; }
+          b.disabled = true;
+          api("/admin/points/grant", { method: "POST", body: { username: username, delta: delta, note: "管理员 " + (me ? me.username : "") + " 操作" } }).then(function (r) {
+            b.disabled = false;
+            if (!r.ok || !r.j || !r.j.ok) { admSay("发放失败：" + ((r.j && r.j.error) || r.status), "err"); return; }
+            admSay("已为 " + username + (delta > 0 ? " 增加 " : " 扣减 ") + Math.abs(delta) + " 积分", "ok");
+            loadAdminAll($("admq") ? $("admq").value : "");
+          });
+        });
+        act("[data-gbgo]", function (b) {
+          var gb = Number(tr.querySelector("[data-gb]").value);
+          if (!Number.isFinite(gb) || gb < 0) { admSay("云存储配额要填非负整数（GB）", "err"); return; }
+          b.disabled = true;
+          api("/admin/users/storage", { method: "POST", body: { username: username, quotaGB: gb } }).then(function (r) {
+            b.disabled = false;
+            if (!r.ok) { admSay("保存失败：HTTP " + r.status, "err"); return; }
+            admSay("已把 " + username + " 的云存储配额设为 " + gb + " GB", "ok");
+          });
+        });
+        /* 权益列：徽标可点 → 弹窗里改容量/续期/停用（原来那排按钮已撤） */
+        act("[data-entopen]", function (b) {
+          var feature = b.getAttribute("data-entopen");
+          openEntActions(username, feature, ent[feature] || {});
+        });
+        /* 勾选后同步批量栏计数 */
+        var pick = tr.querySelector(".adm-pick");
+        if (pick) pick.addEventListener("change", function () { bulkSync(); });
+        act("[data-toggle]", function (b) {
+          b.disabled = true;
+          api("/admin/users/toggle", { method: "POST", body: { username: username, disabled: !(tr.querySelector("[data-toggle]").textContent === "停用") } }).then(function () {
+            loadAdminAll($("admq") ? $("admq").value : "");
+          });
+        });
+        act("[data-reset]", function () {
+          resetPasswordDialog(username, function () { loadAdminAll($("admq") ? $("admq").value : ""); });
+        });
+        act("[data-deluser]", function () {
+          if (!confirm("删除账号「" + username + "」？该账号的云端数据会一并处置，不可恢复。")) return;
+          api("/admin/users/delete", { method: "POST", body: { username: username } }).then(function (r) {
+            if (!r.ok) { admSay("删除失败：HTTP " + r.status, "err"); return; }
+            admSay("已删除 " + username, "ok");
+            loadAdminAll($("admq") ? $("admq").value : "");
+          });
+        });
+      });
+    })["catch"](function () { box.innerHTML = '<tr><td colspan="10" class="empty">读取失败：网络错误</td></tr>'; });
+  }
+
+  /* 重置密码：弹窗输入（项目惯例不用 window.prompt）。 */
+  function resetPasswordDialog(username, after) {
+    showModal("重置密码 · " + esc(username),
+      '<label for="mbPw" style="display:block;font-size:13px;margin-bottom:6px">新密码（至少 8 位）</label>' +
+      '<input id="mbPw" class="field" type="password" style="width:100%" autocomplete="new-password" />' +
+      '<div class="btn-row" style="justify-content:flex-end"><button class="btn" id="mbPwCancel">取消</button><button class="btn primary" id="mbPwSave">重置</button></div>');
+    $("mbPw").focus();
+    $("mbPwCancel").addEventListener("click", closeModal);
+    $("mbPwSave").addEventListener("click", function () {
+      var pw = $("mbPw").value || "";
+      if (pw.length < 8) { admSay("新密码至少 8 位", "err"); $("mbPw").focus(); return; }
+      api("/admin/users/reset", { method: "POST", body: { username: username, password: pw } }).then(function (r) {
+        if (!r.ok || !r.j || !r.j.ok) { admSay("重置失败：" + ((r.j && r.j.error) || r.status), "err"); return; }
+        closeModal(); admSay("已重置 " + username + " 的密码", "ok"); if (after) after();
+      });
+    });
+  }
+
+  function loadEntAdmin() {
+    var box = $("auEntRows"); if (!box) return;
+    api("/admin/entitlements").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { box.innerHTML = '<tr><td colspan="3" class="empty">读取失败：' + (j.error || r.status) + '</td></tr>'; return; }
+      var prices = j.pricing || {};
+      box.innerHTML = (j.users || []).map(function (u) {
+        var e = u.entitlements || {};
+        return '<tr data-user="' + u.username + '"><td><b>' + u.username + '</b>' +
+          (u.role === "admin" ? ' <span class="pill">管理员</span>' : "") + (u.disabled ? ' <span class="pill">已停用</span>' : "") + '</td>' +
+          '<td>' + entCellHtml(e.knowledge, "knowledge") + '</td>' +
+          '<td>' + entCellHtml(e.memory, "memory") + '</td></tr>';
+      }).join("");
+      Array.prototype.forEach.call(box.querySelectorAll("button[data-entgrant],button[data-entoff],button[data-entquota]"), function (b) {
+        b.addEventListener("click", function () {
+          var row = b.closest("tr"), username = row && row.getAttribute("data-user"); if (!username) return;
+          if (b.hasAttribute("data-entquota")) {
+            var entry = ((j.users || []).find(function (u) { return u.username === username; }) || {}).entitlements || {};
+            quotaDialog(username, b.getAttribute("data-entquota"), entry[b.getAttribute("data-entquota")] || {});
+            return;
+          }
+          var feature = b.getAttribute("data-entgrant") || b.getAttribute("data-entoff");
+          var turningOff = b.hasAttribute("data-entoff");
+          var days = parseInt(b.getAttribute("data-days") || "30", 10) || 30;
+          if (turningOff && !confirm("停用「" + username + "」的" + (feature === "knowledge" ? "知识库" : "记忆") + "？数据不会删除，续期即恢复。")) {
+            return;
+          }
+          b.disabled = true; auEntSay("处理中…");
+          api("/admin/entitlements", { method: "POST", body: { username: username, feature: feature, enabled: !turningOff, days: days } }).then(function (x) {
+            var jj = (x && x.j) || {};
+            if (!x || !x.ok || !jj.ok) { auEntSay("失败：" + (jj.error || x.status), "err"); b.disabled = false; return; }
+            auEntSay(turningOff ? ("已停用 " + username + " 的该项权益") : ("已为 " + username + " 开通 " + days + " 天"), "ok");
+            loadEntAdmin();
+          })["catch"](function () { auEntSay("失败：网络错误", "err"); b.disabled = false; });
+        });
+      });
+      auEntSay("共 " + (j.users || []).length + " 个账号");
+    })["catch"](function () { box.innerHTML = '<tr><td colspan="3" class="empty">读取失败</td></tr>'; });
+  }
+
   /* ── 账号资料 ─────────────────────────────────────────────────── */
   var me = null;
   var isAdmin = false;   /* 管理员判定（记忆空间/知识库入口的第二道防线） */
@@ -512,12 +1283,14 @@
     ]);
     $("whoami").innerHTML = "当前账号：<b>" + me.username + "</b>";
     loadPoints();
+    loadEntitlements();
+    loadFeatureTabs();
     /* ⛔ 双保险：非管理员不仅 hidden，还**从 DOM 摘除**（不靠 CSS 兜底，也不在页面里留痕迹） */
     isAdmin = me.role === "admin";
     /* ⛔ 19:0x 用户定案：记忆空间/知识库**不在用户中心内嵌**（iframe 的登录态是浏览器级 cookie，
        同一浏览器上任何人都能借管理员的登录直接用 = 绕过授权，用户实测指出）。入口与面板已撤除，
        管理员请直接访问 mem./kb.ppz123.asia（建议用无痕窗口）。 */
-    if (isAdmin) { $("navAdmin").hidden = false; }
+    if (isAdmin) { $("navAdmin").hidden = false; loadAdminAll(); }
     else { var a = $("navAdmin"); if (a && a.parentNode) a.parentNode.removeChild(a); }
     var start = (location.hash || "#user").slice(1);
     show(["user", "pair", "cloud", "memory", "kb", "admin"].indexOf(start) >= 0 ? start : "user");
@@ -545,7 +1318,7 @@
     });
   }
   function loadAdminPanel() {
-    loadUpstreamCfg(); loadDiskInfo(); loadAdminPoints(""); loadAdminModels();
+    loadUpstreamCfg(); loadDiskInfo(); loadAdminPoints(""); loadAdminModels(); loadInvites();
     api("/admin/users").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { auSay("用户列表读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
       renderAdmin(r.j.users || []);
@@ -625,6 +1398,113 @@
     }).catch(function () { $("auSave").disabled = false; auSay("网络错误", "bad"); });
   };
   if ($("auDiskRefresh")) $("auDiskRefresh").onclick = loadDiskInfo;
+
+  /* ── 邀请码（管理员）：生成 / 记录 / 账号明细 / 额度监控 ── */
+  var ivInvites = [];
+  function ivSay(text, cls) { var st = $("ivStatus"); st.textContent = text || ""; st.className = "status" + (cls ? " " + cls : ""); }
+  function ivStatusOf(i) {
+    if (i.disabled) return ["已停用", "bad"];
+    if (i.expired) return ["已过期", "bad"];
+    if (i.maxUses !== 0 && i.usedCount >= i.maxUses) return ["额度用尽", "warn"];
+    return ["生效", "ok"];
+  }
+  function loadInvites() {
+    api("/admin/invites").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { ivSay("邀请码读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
+      ivInvites = r.j.invites || [];
+      var t = r.j.totals || {};
+      /* ⛔ 拆成独立 chip：上一版是一整串长句挤在按钮右边，窄屏直接乱行（用户 10-16 截图）。 */
+      $("ivTotals").innerHTML =
+        "<span>邀请码 <b>" + (t.codes || 0) + "</b> 个（生效 <b>" + (t.activeCodes || 0) + "</b>）</span>" +
+        "<span>累计注册 <b>" + (t.uses || 0) + "</b> 次</span>" +
+        "<span>有来源的账号 <b>" + (t.accounts || 0) + "</b> 个</span>" +
+        (r.j.inviteRequired
+          ? "<span class='pill ok'>注册需要邀请码</span>"
+          : "<span class='pill bad'>⚠ 当前无码也无主码，注册仍开放</span>");
+      renderInvites();
+    }).catch(function () { ivSay("网络错误", "bad"); });
+  }
+  function renderInvites() {
+    var box = $("ivRows"); box.innerHTML = "";
+    if (!ivInvites.length) {
+      var tr0 = document.createElement("tr"), td0 = document.createElement("td");
+      td0.colSpan = 8; td0.className = "hint"; td0.textContent = "还没有邀请码 —— 上面填个备注生成一个，之后注册就必须带码。";
+      tr0.appendChild(td0); box.appendChild(tr0); return;
+    }
+    ivInvites.forEach(function (i) {
+      var tr = document.createElement("tr");
+      tr.appendChild(Object.assign(document.createElement("td"), { innerHTML: '<code style="font-size:12.5px">' + i.code + "</code>" }));
+      tr.appendChild(Object.assign(document.createElement("td"), { textContent: i.note || "—" }));
+      var pct = i.maxUses === 0 ? null : Math.round(Math.min(1, i.usedCount / i.maxUses) * 100);
+      tr.appendChild(Object.assign(document.createElement("td"), {
+        innerHTML: "<b>" + i.usedCount + "</b> / " + (i.maxUses === 0 ? "不限" : i.maxUses) +
+          (pct === null ? "" : '<div style="height:4px;border-radius:3px;background:var(--line);margin-top:4px"><div style="height:100%;width:' + pct + '%;border-radius:3px;background:var(--ok)"></div></div>'),
+      }));
+      var tdReg = Object.assign(document.createElement("td"), { textContent: String(i.registeredCount) });
+      if (i.registeredCount !== i.usedCount) tdReg.title = "累计用过 " + i.usedCount + " 次，现存 " + i.registeredCount + " 个账号（差额 " + (i.usedCount - i.registeredCount) + " 个已被删除；额度不回收）";
+      tr.appendChild(tdReg);
+      var st = ivStatusOf(i);
+      tr.appendChild(Object.assign(document.createElement("td"), { innerHTML: '<span class="pill ' + st[1] + '">' + st[0] + "</span>" }));
+      tr.appendChild(Object.assign(document.createElement("td"), { textContent: i.expiresAt ? fmt(i.expiresAt) : "永久" }));
+      tr.appendChild(Object.assign(document.createElement("td"), { textContent: i.lastUsedAt ? fmt(i.lastUsedAt) : "—" }));
+      var ops = document.createElement("div"); ops.style.cssText = "display:flex;gap:6px;flex-wrap:wrap";
+      var mk = function (text, fn) { var b = document.createElement("button"); b.className = "btn sm"; b.textContent = text; b.onclick = fn; return b; };
+      ops.appendChild(mk("复制", function () {
+        try { navigator.clipboard.writeText(i.code); ivSay("已复制 " + i.code + " —— 发给要注册的人即可", "ok"); }
+        catch (e) { ivSay("复制失败，请手动选中 " + i.code, "bad"); }
+      }));
+      ops.appendChild(mk("账号", function () { loadInviteAccounts(i.code); }));
+      ops.appendChild(mk("改额度", function () {
+        var v = window.prompt("「" + i.code + "」新的可用次数（0 = 不限）：", String(i.maxUses));
+        if (v === null) return;
+        api("/admin/invites/update", { method: "POST", body: { code: i.code, maxUses: Number(v) } }).then(function (r) {
+          if (r.ok && r.j && r.j.ok) { ivSay("已把 " + i.code + " 的名额改为 " + (Number(v) === 0 ? "不限" : v), "ok"); loadInvites(); }
+          else ivSay("改额度失败：" + ((r.j && r.j.error) || r.status), "bad");
+        }).catch(function () { ivSay("网络错误", "bad"); });
+      }));
+      ops.appendChild(mk(i.disabled ? "恢复" : "停用", function () {
+        api("/admin/invites/update", { method: "POST", body: { code: i.code, disabled: !i.disabled } }).then(function (r) {
+          if (r.ok && r.j && r.j.ok) { ivSay("已" + (i.disabled ? "恢复" : "停用") + " " + i.code + (i.disabled ? "" : "（已注册账号不受影响）"), "ok"); loadInvites(); }
+          else ivSay("操作失败：" + ((r.j && r.j.error) || r.status), "bad");
+        }).catch(function () { ivSay("网络错误", "bad"); });
+      }));
+      var tdOps = document.createElement("td"); tdOps.appendChild(ops); tr.appendChild(tdOps);
+      box.appendChild(tr);
+      var detail = document.createElement("tr"); detail.id = "ivDetail-" + i.code; detail.hidden = true;
+      var tdD = document.createElement("td"); tdD.colSpan = 8; detail.appendChild(tdD); box.appendChild(detail);
+    });
+  }
+  function loadInviteAccounts(code) {
+    var holder = $("ivDetail-" + code);
+    if (!holder) return;
+    if (!holder.hidden) { holder.hidden = true; return; }
+    var td = holder.firstChild;
+    holder.hidden = false; td.innerHTML = '<span class="hint">读取中…</span>';
+    api("/admin/invites/accounts?code=" + encodeURIComponent(code)).then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { td.innerHTML = '<span class="hint">读取失败</span>'; return; }
+      var rows = r.j.accounts || [];
+      if (!rows.length) { td.innerHTML = '<span class="hint">这个码还没有注册过账号。</span>'; return; }
+      td.innerHTML = '<div class="hint" style="margin-bottom:6px">「' + code + '」注册的账号（累计使用 ' + r.j.usedCount + ' 次，现存 ' + rows.length + ' 个）：</div>' +
+        rows.map(function (a) {
+          return '<div style="display:flex;gap:14px;align-items:center;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px">' +
+            '<b style="min-width:150px">' + a.username + "</b>" +
+            '<span class="hint">注册 ' + fmt(a.createdAt) + "</span>" +
+            '<span class="hint">最近登录 ' + fmt(a.lastLogin) + "</span>" +
+            '<span class="hint">积分 ' + Number(a.balance || 0).toFixed(2).replace(/\.00$/, "") + "</span>" +
+            (a.disabled ? '<span class="pill bad">已停用</span>' : "") + "</div>";
+        }).join("");
+    }).catch(function () { td.innerHTML = '<span class="hint">网络错误</span>'; });
+  }
+  if ($("ivCreate")) $("ivCreate").onclick = function () {
+    var btn = $("ivCreate"); btn.disabled = true;
+    api("/admin/invites", { method: "POST", body: { note: $("ivNote").value.trim(), maxUses: Number($("ivUses").value), expiresInDays: Number($("ivDays").value) } })
+      .then(function (r) {
+        btn.disabled = false;
+        if (r.ok && r.j && r.j.ok) { $("ivNote").value = ""; ivSay("已生成邀请码 " + r.j.invite.code + " —— 发给要注册的人即可", "ok"); loadInvites(); }
+        else ivSay("生成失败：" + ((r.j && r.j.error) || r.status), "bad");
+      }).catch(function () { btn.disabled = false; ivSay("网络错误", "bad"); });
+  };
+  if ($("ivRefresh")) $("ivRefresh").onclick = loadInvites;
 
   /* ── 模型管理（管理员：倍率 + 每用户可用模型）── */
   var amData = null;

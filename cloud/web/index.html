@@ -370,6 +370,12 @@
     var passInput = document.createElement("input");
     passInput.className = "field"; passInput.id = "acct-pass"; passInput.type = "password";
     passInput.placeholder = "密码（至少 8 位）"; passInput.autocomplete = "current-password";
+    /* 邀请码：⛔ 只在**注册**时出现（登录不需要），且与后端同一套归一化（去空白/转小写）。
+       它是"注册来源"的唯一抓手 —— 见 docs/CLOUD-INVITE-CODES.md。 */
+    var inviteInput = document.createElement("input");
+    inviteInput.className = "field"; inviteInput.id = "acct-invite";
+    inviteInput.placeholder = "邀请码（8 位，向管理员索取）"; inviteInput.autocomplete = "off";
+    inviteInput.maxLength = 12; inviteInput.hidden = true;
 
     var status = document.createElement("p"); status.className = "status";
     var go = document.createElement("button");
@@ -385,13 +391,17 @@
       link.onclick = function () { mode.v = mode.v === "login" ? "register" : "login"; status.textContent = ""; renderMode(); };
       alt.appendChild(link);
       passInput.setAttribute("autocomplete", mode.v === "login" ? "current-password" : "new-password");
+      inviteInput.hidden = mode.v === "login";
+      if (mode.v === "login") inviteInput.value = "";
     }
     function submit() {
       var username = (userInput.value || "").trim();
       var password = passInput.value || "";
+      var invite = (inviteInput.value || "").trim().toLowerCase();
       if (!username || !password) { status.textContent = "请填用户名和密码"; status.className = "status warn"; return; }
+      if (mode.v === "register" && !invite) { status.textContent = "请填邀请码（没有的话找管理员要一个）"; status.className = "status warn"; inviteInput.focus(); return; }
       go.disabled = true; status.textContent = mode.v === "login" ? "正在登录…" : "正在注册…"; status.className = "status";
-      accountFetch(mode.v === "login" ? "/login" : "/register", { method: "POST", body: { username: username, password: password } })
+      accountFetch(mode.v === "login" ? "/login" : "/register", { method: "POST", body: mode.v === "login" ? { username: username, password: password } : { username: username, password: password, invite: invite } })
         .then(function (res) {
           if (!res.ok || !res.j || !res.j.ok || !res.j.token) {
             status.textContent = (res.j && res.j.error) || "失败（" + res.status + "）";
@@ -411,6 +421,7 @@
     go.onclick = submit;
     userInput.addEventListener("keydown", function (e) { if (e.key === "Enter") passInput.focus(); });
     passInput.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
+    inviteInput.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
 
     /* 品牌头（10-13 界面重构）：紫渐变方块 + 渐变字（与桌面版品牌同源） */
     var brandRow = document.createElement("div"); brandRow.className = "brand-row";
@@ -426,6 +437,7 @@
     login.appendChild(userInput);
     login.appendChild(document.createElement("br"));
     login.appendChild(passInput);
+    login.appendChild(inviteInput);
     login.appendChild(go);
     login.appendChild(status);
     login.appendChild(alt);
@@ -694,16 +706,17 @@
     }).catch(function () { renderAccount(preset, presetClaim); });
   }
 
-  /** 账号就绪后：找本机助手 → 配对步；找不到就给"启动指引"（可重试）。 */
+  /** 账号就绪后：**直接进账号页**。
+   *  ⛔⛔ 用户 10-16 定稿：「把这个检测直接删了不就好了」「就正常注册界面」
+   *    ⇒ 彻底删掉「找本机助手 → 配对步」这段检测。分工改为：
+   *      · 未登录 / 未注册 ⇒ renderAccount（就是那个正常的注册 / 登录界面）
+   *      · 已登录          ⇒ account.html（改密码 / 积分 / 模型勾选 / 设备 / 知识库，
+   *                          配对也在那一页的「配对中心」里做 —— ⛔ 能力没有丢失）
+   *    ⛔ 为什么删而不是"加一条出口"：探测本机助手只决定**往哪送**，账号功能一个都不依赖它；
+   *      留着它唯一的实际效果就是把已登录用户挡在门外（用户两次实名反馈）。 */
   function afterAccount(preset, presetClaim) {
-    say("正在寻找本机助手…");
-    boot.hidden = false; login.hidden = true;
-    findAgent().then(function (agent) {
-      if (!agent) { showAssistantGate(); return; }
-      renderPairing(agent.base, preset, presetClaim);
-    }).catch(function (error) {
-      showGate("连接失败", String(error && error.message ? error.message : error), null);
-    });
+    void preset; void presetClaim;
+    window.location.replace("account.html");
   }
 
   /* ── ② 选资产基址 ────────────────────────────────────────────────────────
@@ -797,11 +810,33 @@
     row.appendChild(dl);
     gate.appendChild(row);
 
+    /* ⛔ extra 必须真的调用：此前它**只出现在形参里**，传进来的回调从来没被执行过
+       （10-16 发现：连带"界面没有渲染出来"那一处的 replay 重放、以及"不需要助手也能进账户管理"
+       的出口，全都静默不显示）。放在按钮行之后、排查说明之前 —— 出口要显眼。 */
+    if (typeof extra === "function") extra(gate);
+
     var why = document.createElement("p");
     why.className = "why";
     why.textContent = "排查：桌面助手只监听本机 127.0.0.1，必须在这台电脑上启动；" +
       "若浏览器装了拦截本地请求的扩展，请放行。";
     gate.appendChild(why);
+  }
+
+  /** 「不需要助手」的出口。
+   *  ⛔ 为什么必须有：助手没跑时整页会被 showAssistantGate / probeAndMount 拦住，
+   *    但**账户管理是纯网页功能**（改密码 / 积分流水 / 模型勾选 / 设备 / 知识库 / 记忆），
+   *    它只要账号服务在线即可 —— 不该被"本机助手在不在线"绑架。
+   *    用户 10-16 实名反馈：「不打开云助手就访问不了用户中心，这个限制要去了」。 */
+  function accountEscape(box) {
+    var p = document.createElement("p");
+    p.className = "why";
+    p.style.marginTop = "12px";
+    var a = document.createElement("a");
+    a.href = "account.html";
+    a.textContent = "先不管助手 —— 直接进入账户管理（改密码 / 积分流水 / 模型勾选 / 设备与知识库）→";
+    a.style.cssText = "cursor:pointer;text-decoration:underline;color:inherit";
+    p.appendChild(a);
+    box.appendChild(p);
   }
 
   /** 本机助手没在运行的引导（终用户版：没有人该看到 npm 命令）。 */
@@ -811,7 +846,7 @@
       "你的账号已就绪。干活的助手跑在这台电脑上 —— 现在没有检测到它。\n" +
       "已安装过：双击桌面上的「Codex Assistant」图标启动，然后点下面的重新检测。\n" +
       "还没安装：点「去下载桌面助手」。",
-      null
+      accountEscape
     );
   }
 
@@ -840,7 +875,7 @@
         showGate(
           "没找到本地伴生服务",
           "界面在云端，干活的身子在你电脑上 —— 现在这台电脑上没有检测到它。请先在「这台电脑」上启动它：",
-          null
+          accountEscape
         );
         return;
       }

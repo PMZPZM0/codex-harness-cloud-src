@@ -269,13 +269,28 @@ bag.customModelOption = customModelOption as typeof bag.customModelOption;
     };
     // 当前生效供应商：models 列表 + 生效 model（排最前）
     const activeProvider = bag.customModel?.provider;
-    const activeModels = [...new Set([...(bag.customModel?.models ?? []).filter((m) => m.enabled !== false).map((m) => m.id), bag.customModel?.model].filter(Boolean))] as string[];
+    /* ⛔ 下拉只列**已启用**（enabled !== false）的模型。
+       原先这里把 `bag.customModel.model`（当前模型）**无条件**并进列表 —— 于是在云端取消勾选某个模型后，
+       本机档案虽然已标记未启用，它却仍以"当前模型"的身份留在下拉里 ⇒ 用户实测「已勾选 1 个，下拉还是两个」（10-16）。
+       语义定为：**列表 = 可用的模型集合**；当前模型若已不可用，应由用户/联动改选，而不是继续挂在列表里。 */
+    /* ⛔ 下拉列表的单一真相 = 可用集合（enabled !== false）；且其中必须有且只需一个可用的「当前模型」。
+       原先把 bag.customModel.model 无条件并进来，会出两种坏状态：
+       (a) 该模型已被取消勾选却仍留在列表里（用户实测「已勾选 1 个、下拉还是两个」）；
+       (b) 主进程取消勾选时会把它清空（limited-benefit-ipc.ts 写 model 空串），清空后列表与底栏失去
+           「当前项」、停在旧状态（用户实测「勾选后下拉不更新」）。
+       改法：当前模型不可用（空 / 已禁用）时**回退到第一个可用模型**，列表始终自洽。 */
+    const enabledIdsOf = (list: ProviderModelConfig[] | undefined) => (list ?? []).filter((m) => m.enabled !== false).map((m) => m.id);
+    const activeEnabled = enabledIdsOf(bag.customModel?.models);
+    const activeCurrent = activeEnabled.indexOf(bag.customModel?.model ?? "") >= 0 ? bag.customModel?.model : activeEnabled[0];
+    const activeModels = [...new Set([activeCurrent, ...activeEnabled].filter(Boolean))] as string[];
     if (activeModels.length) pushModels(activeProvider ?? "custom", bag.customModel?.name ?? "自定义供应商", bag.customModel?.models, activeModels, true);
     // 其他启用供应商：providersList 里 enabled !== false 且 provider !== 当前
     for (const p of bag.providersList) {
       if (p.provider === activeProvider) continue;
       if (p.enabled === false) continue;
-      const models = [...new Set([...(p.models ?? []).filter((m) => m.enabled !== false).map((m) => m.id), p.model].filter(Boolean))] as string[];
+      const pEnabled = enabledIdsOf(p.models);
+      const pCurrent = pEnabled.indexOf(p.model ?? "") >= 0 ? p.model : pEnabled[0];
+      const models = [...new Set([pCurrent, ...pEnabled].filter(Boolean))] as string[];
       if (models.length) pushModels(p.provider, p.name, p.models, models, false);
     }
     // 没有已配置模型时回退到探测到的模型列表
