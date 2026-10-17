@@ -28,6 +28,7 @@ import type { IpcHost } from "../ipc-host";
 import {
   checkLatestUpdate,
   defaultDownloadDir,
+  pruneOldInstallers,
   downloadUpdate,
   fileExists,
   installUpdate,
@@ -76,6 +77,15 @@ export const updatesFeature = defineFeature<null>({
     if (!ipcHost) throw new Error("updates: 缺少 ipc 服务（宿主未提供）");
 
     // ★ 更新链的主进程侧权威（09-13 审计 P0）：下载地址与安装路径**不再由渲染层决定**。
+    /* ⛔⛔ 启动即清**旧安装包**（10-17 用户令「更新重启完成后把旧的安装包去了」）。
+      放在"重启后"而不是"安装完立刻"：安装包拉起后本进程马上退出，那一刻删不掉
+      （自己还握着句柄）；**新版本跑起来的这一刻**才是安全清理点。
+      ⛔ 静默 + 幂等：清不掉就留着，绝不影响启动。 */
+    try {
+      const swept = pruneOldInstallers(defaultDownloadDir(app.getPath("downloads")));
+      if (swept.removed > 0) console.log(`[updates] 已清理 ${swept.removed} 个旧安装包（约 ${Math.round(swept.bytes / 1048576)}MB）`);
+    } catch { /* 清不掉不影响启动 */ }
+
     let lastUpdateInfo: { downloadUrl?: string; sha256?: string; version?: string; filename?: string } | null = null;
     let lastVerifiedUpdatePath = "";
     let state: UpdateState = { phase: "idle", percent: 0, receivedBytes: 0, totalBytes: 0, speedBytesPerSec: 0, etaSeconds: null };
