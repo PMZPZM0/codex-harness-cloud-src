@@ -470,10 +470,6 @@
 .account-menu-error { padding: 6px 12px; font-size: 11px; color: #dc2626; background: rgba(220, 38, 38, 0.08); border-radius: 6px; margin: 4px 6px; }
 .account-menu-success { display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; color: var(--accent); }
 .account-menu-changelog { padding: 6px 12px; font-size: 11px; color: var(--muted); white-space: pre-wrap; max-height: 96px; overflow: auto; background: var(--panel-2); border-radius: 6px; margin: 0 6px 4px; line-height: 1.4; }
-/* 更新进度条 + 提示（10-11 自动更新）：只在「检查更新」子页里出现，用主题变量不吃暗色 */
-.account-menu-progress { height: 6px; border-radius: 3px; background: var(--panel-2); margin: 8px 12px 6px; overflow: hidden; }
-.account-menu-progress-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width .18s linear; }
-.account-menu-hint { padding: 4px 12px; font-size: 11px; color: var(--warn, #d97706); margin: 0 6px 4px; }
 .account-menu-item.primary { color: var(--accent); }
 .account-menu-item.primary:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .account-menu-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; margin-left: 4px; flex: none; animation: account-menu-dot-pulse 1.6s ease-in-out infinite; }
@@ -1236,6 +1232,14 @@
 }
 .browser-pane-omni::placeholder { color: var(--faint); }
 .browser-pane-menu-wrap { position: relative; display: flex; }
+/* 收藏夹列表（10-17：从“只开首项”改为真实列表——逐条打开 / 单条删除） */
+.browser-pane-bookmarks { border-top: 1px solid var(--line-soft); margin-top: 4px; padding-top: 4px; }
+.browser-pane-bookmarks-head { display: flex; align-items: center; gap: 5px; padding: 4px 12px 2px; font-size: 10.5px; color: var(--faint); }
+.browser-pane-bookmark-row { display: flex; align-items: center; gap: 2px; }
+.browser-pane-bookmark-row > button[role=menuitem] { flex: 1; min-width: 0; }
+.browser-pane-bookmark-row > button[role=menuitem] > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browser-pane-bookmark-del { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; color: var(--faint); }
+.browser-pane-bookmark-del:hover { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
 .browser-pane-menu {
   position: absolute;
   top: calc(100% + 4px);
