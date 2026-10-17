@@ -632,7 +632,9 @@ export async function run() {
       && /executeEffortFallbackRetry\(\)/.test(appNC))
       ? ok("【32】档位不被支持时自动降档重发（删掉手动声明后的兜底）")
       : fail("【32】没有「档位不支持 → 自动降档重发」的兜底 —— 用户选到不支持的档位只能干瞪眼");
-    (/clearEffortUnsupported\(selectedModel\?\.model \?\? modelName\(modelId\), effort\)/.test(appNC))
+/* 10-17：取模型表达式已统一为 resolveStartModel(bag)（模型迁移校验，见 send.tsx）⇒ 锚点跟着走。
+   ⛔ appNC 会剥 `bag.` 前缀（旧锚点没有 bag. 就是证据）⇒ 两种形态都要认。 */
+    (/clearEffortUnsupported\(resolveStartModel\((bag)?\), (bag\.)?effort\)/.test(appNC))
       ? ok("【32】发送成功即清掉该档位的「不支持」记录（自愈，不永久标灰）")
       : fail("【32】没有自愈：一次失败会把档位永久标灰，用户强制选回成功也抹不掉");
     (/modelId=\{currentModelId\}/.test(appNC)
@@ -4877,8 +4879,13 @@ export async function run() {
     (/let keep = keepId;/.test(part04Prune) && /keep = String\(last\?\.id \?\? ""\);/.test(part04Prune) ? ok : fail)(
       "【165】prune 空 id 也收敛（保留最后一条）——否则多余压缩项留在时间线里 = 多条线"
     );
-    (/status !== \"inProgress\" && it\?\.status !== \"running\"/.test(timeline) ? ok : fail)(
-      "【165】归位只取**已完成**的压缩 item（进行中的转圈由 compact toast 负责，不抢位置）"
+    /* 10-17 用户令推翻旧契约：压缩期**必须有可见线**（in-progress 项归位渲染 running 线），否则像卡死；
+       compact toast 转圈只兜"引擎没落 in-progress 项"的底（两者条件互斥，不同屏）。 */
+    ((/runningCompactionTurnId/.test(timeline) && /it\?\.status === "inProgress" \|\| it\?\.status === "running"/.test(timeline)) ? ok : fail)(
+      "【165】归位**优先**渲染运行中的压缩线（in-progress 项所在回合）——压缩期必须有可见提示，否则像卡死"
+    );
+    ((/compact-divider--running/.test(timeline) && /停止压缩/.test(timeline)) ? ok : fail)(
+      "【165】运行中压缩线带转圈 + 可手动停止（与运行状态条同款语义，09-26 用户要求）"
     );
     /* 10-07 新增链（当前引擎压缩不发 item 事件）：主进程侦测 → 落盘 → 广播 → resume 重播 → 渲染层第三源。
        ⛔ 10-07 二次修正：首版「非渲染层回合才查」已被大会话实测证伪 —— 自动压缩是**内联**在用户回合里
