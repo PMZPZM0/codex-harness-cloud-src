@@ -13,7 +13,7 @@ import { BrowserWindow, app, dialog, shell } from "electron";
 import { isAssistantRuntime } from "../updates";
 import { showAssistantWindow } from "../assistant-window";
 import { existsSync } from "node:fs";
-import { applyRoundedCorners } from "../win-rounded-corners";
+import { applyRoundedCorners } from "../window/win-rounded-corners";
 import { resolveWindowIcon } from "../app-icon";
 import { popoutBusWindows, registerBusWindow, unregisterBusWindow } from "../features/window-bus";
 import { flushBootTiming, markBoot } from "../boot-timing";
