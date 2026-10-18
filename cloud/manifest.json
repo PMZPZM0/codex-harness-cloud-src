@@ -1,0 +1,16 @@
+{
+  "version": "1.1.0",
+  "releasedAt": "2026-10-18",
+  "repo": "PMZPZM0/codex-harness-cloud-src",
+  "notes": "发版清单：改这里就够，脚本与服务端都读它（不再硬编码文件列表）。",
+  "files": [
+    { "src": "cloud/VERSION", "kind": "server", "as": "VERSION" },
+    { "src": "cloud/server-account/server.js", "kind": "server", "as": "server.js" },
+    { "src": "cloud/web/account.html", "kind": "web", "as": "account.html" },
+    { "src": "cloud/web/index.html", "kind": "web", "as": "index.html" },
+    { "src": "cloud/web/app.js", "kind": "web", "as": "app.js" },
+    { "src": "cloud/web/styles.css", "kind": "web", "as": "styles.css" },
+    { "src": "cloud/web/admin.html", "kind": "web", "as": "admin.html" },
+    { "src": "cloud/web/fnos-guide.html", "kind": "web", "as": "fnos-guide.html" }
+  ]
+}
