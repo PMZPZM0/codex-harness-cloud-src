@@ -764,6 +764,17 @@ function deviceIdOf(codeHash) { return codeHash.slice(0, 8); }
 /* ── 云端同步存储（P0：会话上传 + 索引；按账号分目录落盘） ─────────────────
    布局：<SYNC_DIR>/<username>/sessions/<sessionId>.jsonl  +  <SYNC_DIR>/<username>/index.json
    ⛔ 与本地 rollout 同构（逐行可比）；索引只存元数据（标题/项目/机器/时间/字节数/行数）。 */
+/** 会话 id 归一化（10-18 安全修复）。
+ *  ⛔⛔ 必须过滤：客户端可传 `../../data` 之类，`path.join` 会**把它规范化成越界路径**
+ *      ⇒ 登录用户就能读写 sync 根之外的文件。
+ *  ⛔ 只允许 [A-Za-z0-9_.-]，并显式拒绝 `/` `\\` `..`；返回空串 = 非法，调用方必须拒绝。 */
+function syncId(raw) {
+  const s = String(raw == null ? "" : raw).trim();
+  if (!s || s.includes("/") || s.includes("\\") || s.includes("..")) return "";
+  const clean = s.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 128);
+  if (!clean || clean === ".") return "";
+  return clean;
+}
 function syncUserDir(username) { return path.join(SYNC_DIR, String(username || "unknown").replace(/[^A-Za-z0-9_.-]/g, "_")); }
 function syncIndexFile(username) { return path.join(syncUserDir(username), "index.json"); }
 function readSyncIndex(username) {
@@ -1466,7 +1477,8 @@ const server = http.createServer(async (req, res) => {
     if (p === "/sync/session" && req.method === "GET") {
       const who = syncAuth();
       if (!who) return send(401, { ok: false, error: "unauthorized" });
-      const id = String(url.searchParams.get("id") || "").trim();
+      const id = syncId(url.searchParams.get("id"));
+      if (!id) return send(400, { ok: false, error: "bad-id" });
       const index = readSyncIndex(who.username);
       const row = index[id];
       if (!row) return send(404, { ok: false, error: "not-found" });
@@ -1485,7 +1497,7 @@ const server = http.createServer(async (req, res) => {
       let used = syncUsageBytes(who.username);
       const results = [];
       for (const item of incoming) {
-        const id = String(item && item.id || "").trim();
+        const id = syncId(item && item.id);
         if (!id) continue;
         const lines = Array.isArray(item.lines) ? item.lines.map((l) => String(l)) : [];
         const from = Math.max(0, Number(item.fromOrdinal || 0));
@@ -1525,7 +1537,7 @@ const server = http.createServer(async (req, res) => {
       if (!who) return send(401, { ok: false, error: "unauthorized" });
       const body = await readBody();
       const index = readSyncIndex(who.username);
-      const ids = Array.isArray(body && body.ids) ? body.ids.map(String) : [];
+      const ids = (Array.isArray(body && body.ids) ? body.ids : []).map(syncId).filter(Boolean);
       const project = String(body && body.project || "");
       const targets = Object.keys(index).filter((id) => (ids.includes(id)) || (project && index[id] && index[id].project === project));
       for (const id of targets) {
