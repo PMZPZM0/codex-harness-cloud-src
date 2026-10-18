@@ -95,10 +95,22 @@ const DESKTOP_INSTRUCTIONS =
  *    所以必须写成条件式，否则模型会去调不存在的工具、把「没开」误判成「坏了」。
  *  - playwright-cli 降级为**兜底**通道（nuphus 不可用时仍能干活）。
  *  - cloakbrowser 仍是可选增强，可能根本没装 —— 必须先看环境变量再决定。
+ * ⛔⛔ 10-12 改（引擎日志实证 + 用户与真实用户同报「任务跑不完、自动断」）：
+ *  - **首选改为 `playwright-cli`**。原因：`browser_*` 走引擎内置 MCP 注册，而**引擎 0.157 起
+ *    内置 MCP 工具面对模型是「延迟暴露」** —— 列表里看得到、**调用必报 `unsupported call`**
+ *    （实证：`ERROR codex_core::tools::router: error=unsupported call: browser_navigate`）；
+ *    宿主的能力网关 `harness_tools`（25 个能力）也**不含**浏览器工具 ⇒ 该通道当前对模型不可达。
+ *  - 旧文案把 `browser_*` 写成 PREFERRED、把 CLI 写成 fallback：弱模型（deepseek 系）不会去核对
+ *    工具列表，直接照 PREFERRED 调 ⇒ 失败 ⇒ 换招重试 ⇒ **整个回合耗死在工具选择上**
+ *    （用户看到的就是「跑一半自己断」）。
+ *  - 现在：主线写 playwright-cli（PATH 上有、确定可用）；`browser_*` 只留一句「首次调用成功才继续」
+ *    并要求**失败立即转 CLI、绝不重试**。
  */
 const BROWSER_INSTRUCTIONS =
-  "\n2) Browser automation — two channels; pick by what is ACTUALLY in your tool list:\n   a) PREFERRED — the nuphus MCP browser tools (prefix `browser_`). If `browser_navigate` appears in your tool list, use these: one call per action instead of a process spawn per action, `browser_snapshot` returns only the accessibility tree's interactive elements (token-cheap), `browser_exec` batches several steps into ONE round trip, `browser_import_cookies` can reuse the user's existing Chrome login (use only with their knowledge). Loop: snapshot → act → `browser_wait_for`/re-snapshot to verify.\n   b) FALLBACK — `playwright-cli` (on PATH), for when the `browser_*` tools are NOT present (e.g. desktop automation is switched off in app settings, so nuphus is not registered). Workflow: `playwright-cli open <url>` → `playwright-cli snapshot` for element refs → `click e12` / `type` / `fill` / `press` / `screenshot`; named sessions with -s=name; consult `playwright-cli --help`.\n3) cloakbrowser — OPTIONAL anti-detection fingerprint Chromium (drop-in Playwright replacement that passes Cloudflare Turnstile, reCAPTCHA, FingerprintJS). It is downloadable on demand and may NOT be installed: check `process.env.CLOAKBROWSER_ENTRY` first. If it is unset, cloakbrowser is not installed — do NOT try to install it and do NOT treat it as broken; use the channel from (2) instead and tell the user it can be downloaded from Settings → Developer Tools. When it is set: `const { launch } = await import(process.env.CLOAKBROWSER_ENTRY)` then `await launch({ headless: false, humanize: true })`, driven with the standard Playwright API. Use it ONLY for bot-protected sites.\nBROWSERS: default browsing surface is the app's BUILT-IN browser view (right-side Chromium panel); CloakBrowser only opens its own separate fingerprint window. Full usage guides live in your skills `desktop-automation` and `browser-skill`. Do NOT wrap `require(\"playwright\")` yourself — the CLI and MCP channels are the only supported entry points.";
-
+  "\n2) Browser automation — use playwright-cli (on PATH) for ALL web work: it is the ONLY channel that works on current engine builds. " +
+  "⛔ Do NOT call browser_* (the nuphus MCP tools) even if those names appear in your tool list — every such call fails with unsupported call; " +
+  "if one already failed, do not retry it and do not keep switching channels: continue with playwright-cli immediately. " +
+  "Detailed commands, per-action cheat sheet, login/cookie reuse and the cloakbrowser upgrade path are in your skill browser-skill — load it when the task actually needs a browser.";
 /**
  * 内置媒体插件说明（生图 / 视觉辅助）。只在用户配置并启用对应插件后注入——
  * 引擎从而「知道」这些能力并通过 harness-media.mjs 命令行真实调用。
