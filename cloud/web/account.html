@@ -2457,14 +2457,24 @@
       $("stDevices").textContent = String(list.length);
       var dq = $("devQuota");
       if (dq) { dq.textContent = list.length + " / 3"; dq.style.background = list.length >= 3 ? "var(--warn-soft)" : "var(--brand-soft)"; dq.style.color = list.length >= 3 ? "var(--warn)" : "var(--brand-ink)"; }
-      if (!list.length) { box.appendChild(el("div", "empty", "还没有设备配对过。用上面的配对码把这台电脑绑上来。")); return; }
+      if (!list.length) { box.appendChild(el("div", "empty", "还没有任何设备。登录云账号后本机会自动登记为「仅登录」，用配对码绑定的则显示为「已配对」。")); return; }
       list.forEach(function (d) {
         var row = el("div", "row");
-        row.appendChild(el("span", "name grow", d.name || "未命名设备"));
-        row.appendChild(el("span", "meta", "认领 " + fmt(d.claimedAt) + " · 最后在线 " + ago(d.lastSeen)));
-        var un = el("button", "btn sm danger", "解除配对");
+        /* ⛔ 10-18 用户令「打标记，方便区别」：
+           · `via: "pair"`（配对设备）= 有自己的 device token，可独立鉴权；
+           · `via: "login"`（登录设备）= 只在登录时自动登记，**鉴权走账号会话**，不能独立连云端。
+           两者在列表里必须一眼能分，否则用户会误以为"登录设备"也能像配对设备那样离线用。 */
+        var isLogin = (d.via || "pair") === "login";
+        row.appendChild(el("span", "name grow", (d.name || "未命名设备") + (isLogin ? "  🖥 仅登录" : "  🔗 已配对")));
+        row.appendChild(el("span", "meta",
+          (d.machineId ? "机器 " + d.machineId + " · " : "") +
+          (isLogin ? "登录时自动登记 · " : "配对认领 " + fmt(d.claimedAt) + " · ") +
+          "最后在线 " + ago(d.lastSeen)));
+        var un = el("button", "btn sm danger", isLogin ? "移除记录" : "解除配对");
         un.onclick = function () {
-          if (!window.confirm("解除这台设备的配对？该设备需要重新配对才能再连云端。")) return;
+          if (!window.confirm(isLogin
+            ? "从列表移除这台登录设备的记录？它下次登录会重新出现（不会影响账号在其他设备上的使用）。"
+            : "解除这台设备的配对？该设备需要重新配对才能再连云端。")) return;
           un.disabled = true;
           api("/device/revoke", { method: "POST", body: { id: d.id } }).then(function (x) {
             if (x.ok && x.j && x.j.ok) { loadDevices(); probeAgent(); } else { un.disabled = false; }
