@@ -433,6 +433,17 @@
       </div>
       <div id="updResult" style="display:none;margin-top:10px"></div>
     </div>
+    <!-- 功能开关（10-18 用户令「管理员可以开关，关闭后用户就不能同步会话」）——
+         ⛔ 只管"同步"，关闭后登录/积分/模型调用都不受影响。 -->
+    <div class="card" id="featCard">
+      <h2>用户功能开关</h2>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;flex-wrap:wrap">
+        <input type="checkbox" id="featSync">
+        <span>允许用户把会话同步到云端</span>
+        <span class="hint">（关闭后用户端显示「管理员已关闭云端会话同步」，不影响登录与模型调用）</span>
+      </label>
+      <p class="status" id="featStatus"></p>
+    </div>
     <div class="card">
       <h2>上游 API <span class="pill ok">热生效</span></h2>
       <p class="hint" id="auInfo">读取中…</p>
@@ -1538,6 +1549,25 @@
         .catch(function () { updSay("复制失败，请手动复制：" + cmd, "bad"); });
     } else { updSay("请手动复制：" + cmd, "bad"); }
   };
+  /* ── 功能开关（10-18）：会话同步总闸 ── */
+  function featSay(t, c) { var el = $("featStatus"); if (!el) return; el.textContent = t || ""; el.className = "status" + (c ? " " + c : ""); }
+  function loadFeatures() {
+    if (!$("featSync")) return;
+    api("/admin/features").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { featSay("读取失败（HTTP " + r.status + "）", "bad"); return; }
+      $("featSync").checked = r.j.features.sessionSync !== false;
+    }).catch(function () { featSay("读取失败：网络错误", "bad"); });
+  }
+  if ($("featSync")) $("featSync").onchange = function () {
+    var on = this.checked, self = this;
+    self.disabled = true; featSay("保存中…");
+    /* ⛔ 失败要把勾选**改回去**，否则界面显示"关了"但服务端没关（最坏的一种不一致）。 */
+    api("/admin/features", { method: "POST", body: { sessionSync: on } }).then(function (r) {
+      self.disabled = false;
+      if (r.ok && r.j && r.j.ok) featSay(on ? "已开启：用户可同步会话" : "已关闭：用户下次同步会收到 403（session-sync-disabled）", "ok");
+      else { featSay("保存失败：" + ((r.j && r.j.error) || r.status), "bad"); self.checked = !on; }
+    }).catch(function () { self.disabled = false; featSay("保存失败：网络错误", "bad"); self.checked = !on; });
+  };
   function loadUpstreamCfg() {
     api("/admin/upstream").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { $("adminTab").hidden = true; return; }
@@ -1565,7 +1595,7 @@
     });
   }
   function loadAdminPanel() {
-    loadVersion(); loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites();
+    loadVersion(); loadFeatures(); loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites();
     api("/admin/users").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { auSay("用户列表读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
       renderAdmin(r.j.users || []);
