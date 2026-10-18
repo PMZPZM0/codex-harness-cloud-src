@@ -2373,10 +2373,19 @@ const server = http.createServer(async (req, res) => {
       if (!body || body.confirm !== true) return send(400, { ok: false, error: "需要确认（confirm: true）" });
       const repoRoot = path.resolve(__dirname, "..");
       if (!fs.existsSync(path.join(repoRoot, ".git"))) {
+        /* ⛔ 非 git 部署（例如 server.js 摊平在目录里、web 在另一个目录）：
+           面板**不**自动覆盖生产文件 —— 一次下载失败就会让服务挂掉，这个权力不该给浏览器。
+           改为给一条**可直接执行**的自助更新命令（脚本 = 下载→备份→覆盖→重启，
+           且"下载不全则整体中止"，不会出现覆盖一半）。 */
+        const scriptPath = [path.join(__dirname, "selfupdate.sh"), path.join(repoRoot, "selfupdate.sh")]
+          .find((p) => { try { return fs.existsSync(p); } catch { return false; } }) || "";
         return send(400, {
           ok: false,
           error: "当前安装不是 git 部署（目录里没有 .git），无法一键更新。",
-          hint: "两种做法：① 用分发包的方式重装（git clone + deploy/install.sh）；② 手动把新版 server-account/ 与 web/ 覆盖过来，再点「重启服务」。",
+          hint: scriptPath
+            ? `在服务器上执行这一条即可（下载 → 备份 → 覆盖 → 重启；下载不全则整体中止，不会覆盖一半）：\n    sudo bash ${scriptPath}`
+            : "运行仓库里的 cloud/scripts/selfupdate.sh（或手动覆盖 server-account 与 web 后点「重启服务」）。",
+          scriptPath,
         });
       }
       const { execFile } = require("node:child_process");
