@@ -680,6 +680,20 @@
       </div>
       <p class="status" id="admStatus"></p>
 
+      <!-- 10-18 用户令：应用连接地址 + 复制（部署完自动生成，不硬编码） -->
+      <div class="card" style="margin-top:14px">
+        <h2>应用连接地址</h2>
+        <p class="hint" style="margin:0 0 10px">
+          把下面这个地址填到桌面端「设置 → 云账号 → 服务地址」，用户就能连上这台服务器。
+          <b>它由当前访问域名自动推导</b> —— 换域名或上 HTTPS 后会自动跟着变，不需要改配置。
+        </p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <code id="appEndpoint" style="padding:9px 12px;border-radius:9px;background:var(--field);border:1px solid var(--line);font-size:13px;word-break:break-all;">读取中…</code>
+          <button class="btn sm" id="appEndpointCopy">复制</button>
+          <span class="hint" id="appEndpointMsg"></span>
+        </div>
+      </div>
+
       <!-- ⛔ 旧的三分区（① 用户 / ② 权益 / ③ 积分）：数据仍由原渲染器维护，但界面已由上面这张
            「账号一览」合并表接管 ⇒ 这里整体隐藏，仅保留 id 以免旧渲染器取空报错。下一轮可整体删除。 -->
       <div hidden>
@@ -3101,6 +3115,44 @@
   });
 
   poll();
+})();
+</script>
+<script>
+/* 10-18 应用连接地址：读 /api/app-endpoint（服务端按当前 host 推导）+ 复制。
+   ⛔ 复制必须带 execCommand 兜底 —— 内网 http 部署时 navigator.clipboard 不可用。 */
+(function () {
+  var el = document.getElementById("appEndpoint");
+  var btn = document.getElementById("appEndpointCopy");
+  var msg = document.getElementById("appEndpointMsg");
+  if (!el || typeof api !== "function") return;
+  var value = "";
+
+  api("/api/app-endpoint").then(function (x) {
+    if (x && x.j && x.j.ok && x.j.apiBase) { value = x.j.apiBase; el.textContent = value; }
+    else el.textContent = "读取失败（需管理员权限）";
+  }).catch(function () { el.textContent = "读取失败"; });
+
+  function copyText(t) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t);
+    return new Promise(function (resolve, reject) {
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0"; ta.style.left = "-9999px";
+        document.body.appendChild(ta); ta.select();
+        var ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        ok ? resolve() : reject(new Error("execCommand"));
+      } catch (e) { reject(e); }
+    });
+  }
+
+  if (btn) btn.addEventListener("click", function () {
+    if (!value) return;
+    copyText(value).then(function () {
+      msg.textContent = "已复制 ✓"; msg.className = "hint ok";
+      setTimeout(function () { msg.textContent = ""; msg.className = "hint"; }, 1600);
+    }).catch(function () { msg.textContent = "复制失败"; msg.className = "hint bad"; });
+  });
 })();
 </script>
 </body>
