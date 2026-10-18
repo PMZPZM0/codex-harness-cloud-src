@@ -143,9 +143,13 @@ export async function runCloudSyncOnce(deps: SyncDeps): Promise<SyncResult> {
       body: JSON.stringify({ sessions: payload }),
       signal: AbortSignal.timeout(30000),
     });
-    const body = (await res.json().catch(() => null)) as { ok?: boolean; results?: { id: string; ok: boolean; error?: string }[]; usedBytes?: number; limitBytes?: number; error?: string } | null;
+    /* ⛔ `message` 是服务端给的**人话**（如"管理员已关闭云端会话同步"），`error` 是技术码
+       （如 `session-sync-disabled`）。原来只取 `error` ⇒ 界面会显示一串英文码，
+       用户根本不知道发生了什么（10-18 管理员总闸上线后必然踩到）⇒ 优先取 message。 */
+    const body = (await res.json().catch(() => null)) as { ok?: boolean; message?: string; results?: { id: string; ok: boolean; error?: string }[]; usedBytes?: number; limitBytes?: number; error?: string } | null;
     if (!res.ok || !body?.ok) {
-      return { ok: false, reason: body?.error || `http-${res.status}`, error: body?.error };
+      const human = body?.message || body?.error || `http-${res.status}`;
+      return { ok: false, reason: human, error: human };
     }
     let quotaExceeded = false;
     for (const row of body.results || []) {
