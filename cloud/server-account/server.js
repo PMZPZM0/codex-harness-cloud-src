@@ -1768,15 +1768,27 @@ const server = http.createServer(async (req, res) => {
                   这样"闲时倍率调低多少"仍然生效，但基数不会偏离上游。 */
             const upCredit = (credit !== null && Number.isFinite(credit) && credit > 0) ? credit : null;
             const ratio = normalRate > 0 ? rate / normalRate : 1;
-            if (upCredit !== null) {
+            /* ⛔⛔ 10-18 17:1x 用户确认的**双轨**语义（原话：
+               「如果我修改倍率，就以我修改的倍率为准对吧，如果没修改就以上游积分消耗为准是吧」）：
+               · **改过**该模型倍率（`creditsLocked === true`）⇒ 按**你设的倍率**算：
+                 `tokens/1000 × 倍率`（闲时倍率直接替换倍率，同既有语义）。
+               · **没改过** ⇒ 以上游 `credit` 为准（× 闲时比值）。
+               · 上游没给 credit ⇒ 回落本地倍率（日志写明）。
+               ⛔ `creditsLocked` 就是"管理员是否显式改过"的标记 —— 改过即钉住，
+                  同步目录也不会覆盖（这正是它存在的意义，拿它当判据最准）。 */
+            const locked = Boolean(item && item.creditsLocked === true);
+            if (locked && totalTokens > 0 && Number.isFinite(rate) && rate > 0) {
+              credit = Math.round((totalTokens / 1000) * rate * 100) / 100;
+              console.log(`[points] 计价：${wantedModel} ${totalTokens} tokens × ${rate} = ${credit}（你改过倍率 ⇒ 按你的倍率）`);
+            } else if (upCredit !== null) {
               credit = Math.round(upCredit * ratio * 100) / 100;
               const offNote = peak
                 ? `（闲时${peak.label ? `「${peak.label}」` : ""}，按倍率比 ${ratio.toFixed(3)} 折算）`
                 : "";
-              console.log(`[points] 计价：${wantedModel} 上游 credit ${upCredit}${offNote} → 扣 ${credit}（基准=上游）`);
+              console.log(`[points] 计价：${wantedModel} 上游 credit ${upCredit}${offNote} → 扣 ${credit}（没改倍率 ⇒ 基准=上游）`);
             } else if (totalTokens > 0 && Number.isFinite(rate) && rate > 0) {
               credit = Math.round((totalTokens / 1000) * rate * 100) / 100;
-              console.log(`[points] 计价：${wantedModel} ${totalTokens} tokens × ${rate} = ${credit}（上游没给 credit，回落到本地倍率）`);
+              console.log(`[points] 计价：${wantedModel} ${totalTokens} tokens × ${rate} = ${credit}（上游没给 credit，回落本地倍率）`);
             } else if (!(credit > 0)) {
               credit = 0;
             }
