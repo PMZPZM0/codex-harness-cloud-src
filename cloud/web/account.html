@@ -418,7 +418,7 @@
       <p class="hint" id="auInfo">读取中…</p>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
         <label style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:4px">
-          <span class="hint">上游 API 地址（https:// 开头）</span>
+          <span class="hint">上游 API 地址（https:// · http:// · 裸主机皆可；可带端口与路径前缀）</span>
           <input class="field" id="auBase" spellcheck="false" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
         </label>
         <label style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:4px">
@@ -426,7 +426,17 @@
           <input class="field" id="auKey" type="password" spellcheck="false" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
         </label>
         <button class="btn" id="auSave" style="height:38px">保存（热生效）</button>
+        <button class="btn" id="auTest" style="height:38px">测试连通性</button>
       </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+        <label style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:4px">
+          <span class="hint">目录同步地址（可选：留空 = 与上游同址；「重新同步目录」走这里）</span>
+          <input class="field" id="auCatalogBase" spellcheck="false" placeholder="留空 = 用上面的地址"
+                 style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+        </label>
+      </div>
+      <!-- 连通性测试结果（10-18）：逐端点列出状态码/耗时/原因，管理员不必去翻服务器日志 -->
+      <div id="auTestResult" style="display:none;margin-bottom:10px"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
         <span class="hint" id="auDiskInfo" style="flex:1">服务器磁盘余量读取中…</span>
         <button class="btn" id="auDiskRefresh" style="font-size:12px">刷新</button>
@@ -434,6 +444,57 @@
       <div style="height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin:8px 0 4px">
         <div id="auDiskBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--ok),var(--warn) 75%,var(--bad));transition:width .4s"></div>
       </div>
+    </div>
+    <!-- 知识库 / 记忆空间的上游（10-18 用户令「预留可配置的接口，以便自行配置飞牛OS」）——
+         ⛔ 留空 = 回退服务端环境变量；保存后**热生效**。对接步骤见 docs/FNOS-INTEGRATION.md。 -->
+    <div class="card" id="svcCard">
+      <h2>知识库 · 记忆空间 <span class="pill ok">热生效</span></h2>
+      <p class="hint" id="svcInfo">读取中…</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-bottom:12px">
+        <div>
+          <h3 class="sub" style="margin-top:0">知识库（WeKnora 兼容）</h3>
+          <label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+            <span class="hint">服务地址（留空 = 用环境变量；支持 http / 内网 IP / 端口）</span>
+            <input class="field" id="svcKbBase" spellcheck="false" placeholder="如 http://192.168.1.10:8080"
+                   style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+            <span class="hint">租户 API Key（留空 = 不修改；请求头 X-API-Key）</span>
+            <input class="field" id="svcKbKey" type="password" spellcheck="false"
+                   style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+          </label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <label style="flex:1;min-width:90px;display:flex;flex-direction:column;gap:4px"><span class="hint">LLM 模型 id</span><input class="field" id="svcKbLlm" spellcheck="false" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px" /></label>
+            <label style="flex:1;min-width:90px;display:flex;flex-direction:column;gap:4px"><span class="hint">嵌入模型 id</span><input class="field" id="svcKbEmbed" spellcheck="false" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px" /></label>
+            <label style="flex:1;min-width:90px;display:flex;flex-direction:column;gap:4px"><span class="hint">视觉模型 id</span><input class="field" id="svcKbVlm" spellcheck="false" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px" /></label>
+          </div>
+        </div>
+        <div>
+          <h3 class="sub" style="margin-top:0">记忆空间（MemHub 兼容）</h3>
+          <label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+            <span class="hint">服务地址（留空 = 用环境变量）</span>
+            <input class="field" id="svcMemBase" spellcheck="false" placeholder="如 http://192.168.1.10:8090"
+                   style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+            <span class="hint">检索代理地址（MCP 网关；留空 = 用环境变量）</span>
+            <input class="field" id="svcMemProxy" spellcheck="false"
+                   style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+          </label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <label style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:4px"><span class="hint">实例名</span><input class="field" id="svcMemInstance" spellcheck="false" placeholder="default" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px" /></label>
+            <label style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:4px"><span class="hint">API Key（留空 = 不修改）</span><input class="field" id="svcMemKey" type="password" spellcheck="false" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px" /></label>
+          </div>
+          <p class="hint" style="margin:0">⛔ 记忆的「读取」走检索代理地址；它填错会让对话带不上记忆（写入仍走服务地址）。</p>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn" id="svcSave">保存（热生效）</button>
+        <button class="btn" id="svcTestKb" style="font-size:12px">测试知识库</button>
+        <button class="btn" id="svcTestMem" style="font-size:12px">测试记忆</button>
+        <span class="hint" id="svcStatus"></span>
+      </div>
+      <div id="svcTestResult" style="display:none;margin-top:10px"></div>
     </div>
     <div class="card">
       <h2>用户 · 权益 · 积分 <span class="pill ok">一处管理</span></h2>
@@ -1347,9 +1408,17 @@
     api("/admin/upstream").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { $("adminTab").hidden = true; return; }
       $("auBase").value = r.j.base || "";
+      if ($("auCatalogBase")) $("auCatalogBase").value = r.j.catalogBase || "";
       $("auKey").value = "";
       $("auKey").placeholder = r.j.hasKey ? "已保存，留空则不修改" : "上游网关的 API Key";
-      $("auInfo").textContent = "当前来源：" + (r.j.source === "admin" ? "管理员配置" : "服务端环境变量") + (r.j.hasKey ? " · 网关密钥已配置" : " · 网关密钥未配置");
+      /* ⛔ 这段文字是管理员排查"到底在用哪个地址"的唯一入口 —— 必须把
+         「来源 / 实际生效的目录地址 / 环境变量值 / http 明文警告」都摊开。 */
+      var bits = ["来源：" + (r.j.source === "admin" ? "管理员配置" : "服务端环境变量")];
+      bits.push(r.j.hasKey ? "网关密钥已配置" : "网关密钥未配置");
+      if (r.j.effectiveCatalogBase && r.j.effectiveCatalogBase !== r.j.base) bits.push("目录同步走 " + r.j.effectiveCatalogBase);
+      if (r.j.source === "env" && r.j.envBase) bits.push("环境变量地址 " + r.j.envBase);
+      if (r.j.insecure) bits.push("⚠️ http 明文（仅建议内网）");
+      $("auInfo").textContent = bits.join(" · ");
     });
   }
   function loadDiskInfo() {
@@ -1362,7 +1431,7 @@
     });
   }
   function loadAdminPanel() {
-    loadUpstreamCfg(); loadDiskInfo(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites();
+    loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites();
     api("/admin/users").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { auSay("用户列表读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
       renderAdmin(r.j.users || []);
@@ -1433,15 +1502,131 @@
   }
   if ($("auSave")) $("auSave").onclick = function () {
     var base = $("auBase").value.trim();
-    if (!/^https:\/\//.test(base)) { auSay("上游地址必须是 https:// 开头的完整 URL", "bad"); return; }
+    if (!base) { auSay("请先填上游地址", "bad"); return; }
     $("auSave").disabled = true;
-    api("/admin/upstream", { method: "POST", body: { base: base, gatewayKey: $("auKey").value.trim() } }).then(function (r) {
+    /* ⛔ 前端**不再**强制 https：协议适配已放宽到 http / 裸主机 / 内网 / 端口 / 路径前缀，
+       合法性统一由服务端 normalizeUpstreamBase 判定（前端只挡空值，避免两处规则漂移）。 */
+    api("/admin/upstream", { method: "POST", body: { base: base, catalogBase: $("auCatalogBase") ? $("auCatalogBase").value.trim() : "", gatewayKey: $("auKey").value.trim() } }).then(function (r) {
       $("auSave").disabled = false;
-      if (r.ok && r.j && r.j.ok) { auSay("上游 API 已更新并热生效（下一条调用即走新地址）", "ok"); loadUpstreamCfg(); loadDiskInfo(); }
+      if (r.ok && r.j && r.j.ok) {
+        auSay("上游 API 已更新并热生效（下一条调用即走新地址）" + (r.j.warning ? " · " + r.j.warning : ""), "ok");
+        loadUpstreamCfg(); loadDiskInfo();
+      }
       else { auSay("保存失败：" + ((r.j && r.j.error) || r.status), "bad"); }
     }).catch(function () { $("auSave").disabled = false; auSay("网络错误", "bad"); });
   };
+  /* 连通性测试（10-18 用户令）：把「哪个端点通 / 状态码 / 耗时 / 原因」逐行摊开，
+     ⛔ 不弹 alert（管理员要能对照着看），结果就地渲染在 #auTestResult。 */
+  if ($("auTest")) $("auTest").onclick = function () {
+    var base = $("auBase").value.trim();
+    if (!base) { auSay("先填上游地址再测", "bad"); return; }
+    var btn = $("auTest"); btn.disabled = true; btn.textContent = "测试中…";
+    auSay("测试中（最多约 16 秒）…");
+    api("/admin/upstream/test", { method: "POST", body: { base: base, gatewayKey: $("auKey").value.trim() } }).then(function (r) {
+      btn.disabled = false; btn.textContent = "测试连通性";
+      var box = $("auTestResult");
+      var j = r.j || {};
+      if (!r.ok || !j.probes) {
+        box.style.display = "";
+        box.innerHTML = '<div style="padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--bad)">测试失败：'
+          + esc(j.error || ("HTTP " + r.status)) + "</div>";
+        auSay("测试失败", "bad");
+        return;
+      }
+      var rows = (j.probes || []).map(function (p) {
+        var col = p.ok ? "var(--ok)" : "var(--bad)";
+        return '<div style="padding:7px 0;border-top:1px solid var(--line-soft)">'
+          + '<b style="color:' + col + '">' + (p.ok ? "✓" : "✗") + " " + esc(p.name) + "</b>"
+          + '<span class="hint" style="margin-left:6px">HTTP ' + (p.status || "—") + " · " + p.ms + "ms"
+          + (p.count != null ? " · " + p.count + " 个模型" : "") + "</span>"
+          + (p.hint ? '<div class="hint" style="margin-top:3px">' + esc(p.hint) + "</div>" : "")
+          + "</div>";
+      }).join("");
+      box.style.display = "";
+      box.innerHTML = '<div style="padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field)">'
+        + '<div style="font-weight:600;color:' + (j.ok ? "var(--ok)" : "var(--bad)") + '">' + esc(j.message || "") + "</div>"
+        + '<div class="hint" style="margin:4px 0 6px">地址 ' + esc(j.base) + " · 总耗时 " + j.elapsedMs + "ms"
+        + (j.warning ? " · ⚠️ " + esc(j.warning) : "") + (j.hasKey ? "" : " · 未带网关密钥") + "</div>"
+        + rows + "</div>";
+      auSay(j.ok ? "连通性正常" : "不可达（看上方逐行原因）", j.ok ? "ok" : "bad");
+    }).catch(function () {
+      btn.disabled = false; btn.textContent = "测试连通性"; auSay("网络错误", "bad");
+    });
+  };
   if ($("auDiskRefresh")) $("auDiskRefresh").onclick = loadDiskInfo;
+
+  /* ── 知识库 / 记忆空间上游（10-18）：回显 + 保存（热生效）+ 单服务测试 ──
+     ⛔ 留空的字段由服务端解释为"回退环境变量 / 不修改"，前端不要自己补默认值。 */
+  function svcSay(text, cls) { var el = $("svcStatus"); if (!el) return; el.textContent = text || ""; el.className = "hint" + (cls ? " " + cls : ""); }
+  function loadServices() {
+    if (!$("svcKbBase")) return;
+    api("/admin/services").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { svcSay("读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
+      var kb = r.j.kb || {}, mem = r.j.memory || {};
+      $("svcKbBase").value = kb.base || "";
+      $("svcKbKey").value = "";
+      $("svcKbKey").placeholder = kb.hasKey ? "已保存（" + (kb.key || "") + "），留空不改" : "租户 API Key";
+      $("svcKbLlm").value = kb.llmModelId || "";
+      $("svcKbEmbed").value = kb.embedModelId || "";
+      $("svcKbVlm").value = kb.vlmModelId || "";
+      $("svcMemBase").value = mem.base || "";
+      $("svcMemProxy").value = mem.proxyBase || "";
+      $("svcMemInstance").value = mem.instance || "";
+      $("svcMemKey").value = "";
+      $("svcMemKey").placeholder = mem.hasKey ? "已保存，留空不改" : "API Key";
+      /* ⛔ 这行是管理员排查"到底在用哪个地址"的唯一入口 —— 生效值必须摊开 */
+      var bits = [];
+      bits.push("知识库生效 " + (kb.effectiveBase || "—") + (kb.effectiveHasKey ? "（key 已配）" : "（key 未配 ⇒ 知识库不可用）"));
+      bits.push("记忆生效 " + (mem.effectiveBase || "—") + " / 代理 " + (mem.effectiveProxyBase || "—") + (mem.effectiveHasKey ? "（key 已配）" : "（key 未配）"));
+      if (!kb.base && kb.envBase) bits.push("知识库走环境变量 " + kb.envBase);
+      $("svcInfo").textContent = bits.join(" · ");
+    }).catch(function () { svcSay("读取失败：网络错误", "bad"); });
+  }
+  function svcRenderTest(j) {
+    var box = $("svcTestResult"); if (!box) return;
+    box.style.display = "";
+    var rows = (j.probes || []).map(function (p) {
+      var col = p.ok ? "var(--ok)" : "var(--bad)";
+      return '<div style="padding:7px 0;border-top:1px solid var(--line-soft)">'
+        + '<b style="color:' + col + '">' + (p.ok ? "✓" : "✗") + " " + esc(p.name) + "</b>"
+        + '<span class="hint" style="margin-left:6px">HTTP ' + (p.status || "—") + " · " + p.ms + "ms" + (p.count != null ? " · " + p.count + " 条" : "") + "</span>"
+        + (p.hint ? '<div class="hint" style="margin-top:3px">' + esc(p.hint) + "</div>" : "") + "</div>";
+    }).join("");
+    box.innerHTML = '<div style="padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field)">'
+      + '<div style="font-weight:600;color:' + (j.ok ? "var(--ok)" : "var(--bad)") + '">' + esc(j.message || "") + "</div>"
+      + '<div class="hint" style="margin:4px 0 6px">地址 ' + esc(j.base) + " · 总耗时 " + j.elapsedMs + "ms"
+      + (j.warning ? " · ⚠️ " + esc(j.warning) : "") + (j.hasKey ? "" : " · 未带密钥") + "</div>" + rows + "</div>";
+  }
+  function svcTest(which) {
+    var baseInput = which === "kb" ? $("svcKbBase") : $("svcMemBase");
+    var keyInput = which === "kb" ? $("svcKbKey") : $("svcMemKey");
+    svcSay("测试中（最多约 8 秒）…");
+    api("/admin/services/test", { method: "POST", body: { which: which, base: baseInput.value.trim(), key: keyInput.value.trim() } }).then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.probes) { svcSay("测试失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      svcRenderTest(j);
+      svcSay(j.ok ? "连通性正常" : "不可达（看下方逐行原因）", j.ok ? "ok" : "bad");
+    }).catch(function () { svcSay("测试失败：网络错误", "bad"); });
+  }
+  if ($("svcTestKb")) $("svcTestKb").onclick = function () { svcTest("kb"); };
+  if ($("svcTestMem")) $("svcTestMem").onclick = function () { svcTest("memory"); };
+  if ($("svcSave")) $("svcSave").onclick = function () {
+    var btn = $("svcSave"); btn.disabled = true; svcSay("保存中…");
+    api("/admin/services", { method: "POST", body: {
+      kb: {
+        base: $("svcKbBase").value.trim(), key: $("svcKbKey").value.trim(),
+        llmModelId: $("svcKbLlm").value.trim(), embedModelId: $("svcKbEmbed").value.trim(), vlmModelId: $("svcKbVlm").value.trim(),
+      },
+      memory: {
+        base: $("svcMemBase").value.trim(), proxyBase: $("svcMemProxy").value.trim(),
+        key: $("svcMemKey").value.trim(), instance: $("svcMemInstance").value.trim(),
+      },
+    } }).then(function (r) {
+      btn.disabled = false;
+      if (r.ok && r.j && r.j.ok) { svcSay("已保存并热生效（下一次知识库/记忆调用即走新地址）", "ok"); loadServices(); }
+      else { svcSay("保存失败：" + ((r.j && r.j.error) || r.status), "bad"); }
+    }).catch(function () { btn.disabled = false; svcSay("保存失败：网络错误", "bad"); });
+  };
 
   /* ── 邀请码（管理员）：生成 / 记录 / 账号明细 / 额度监控 ── */
   var ivInvites = [];
