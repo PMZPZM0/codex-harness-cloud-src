@@ -132,11 +132,13 @@ if [ -n "$NO_RESTART" ]; then
   say "⑤ 跳过重启（--no-restart：由调用方自己重启）"
 else
   say "⑤ 重启服务（$SVC）"
-  if systemctl list-unit-files 2>/dev/null | grep -q "^${SVC}.service"; then
+  # ⛔ 用 `systemctl cat` 判断单元是否存在 —— `list-unit-files | grep` 在部分环境匹配不到
+  #    （实测：单元明明在，grep 却失败 ⇒ 静默跳过重启 ⇒ 面板显示的还是旧版本号）。
+  if systemctl cat "$SVC" >/dev/null 2>&1; then
     systemctl restart "$SVC"; sleep 2
     systemctl is-active --quiet "$SVC" && say "   ✓ 已重启并运行中" || say "   ⚠ 未起来：journalctl -u $SVC -n 50 --no-pager"
   else
-    say "   ⚠ 没找到 $SVC.service —— 请手动重启"
+    say "   ⚠ 没找到 $SVC 这个 systemd 单元 —— 请手动重启你的服务"
   fi
 fi
 
