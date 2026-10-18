@@ -36,6 +36,15 @@
         语义不同，做成胶囊会让人以为是"开关"而不是"勾选"。
      ⛔ 用 appearance:none 自绘：浏览器默认方框在暗色下永远按浅色 UA 绘制（白底），
         这一点在本项目踩过（见 08/13/18 号样式惯例）。 */
+  /* 更新进度条（10-18 用户令「更新能不能加进度条反馈」） */
+  .upd-track { height: 6px; border-radius: 999px; background: var(--line-soft); overflow: hidden; }
+  .upd-fill {
+    height: 100%; width: 0%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--brand2), var(--brand));
+    transition: width .45s cubic-bezier(.4,0,.2,1);
+    box-shadow: 0 0 8px rgba(139,92,246,.5);
+  }
+  .upd-fill.err { background: var(--bad); box-shadow: none; }
   .switch {
     appearance: none; -webkit-appearance: none;
     width: 42px; height: 24px; border-radius: 999px;
@@ -507,6 +516,11 @@
         <button class="btn sm" id="updRestart">重启服务</button>
         <button class="btn sm" id="updCopy">复制部署命令</button>
         <span class="hint" id="updStatus"></span>
+      </div>
+      <!-- 10-18 更新进度条：只有真的在更新/刚更新完时才出现 -->
+      <div id="updBar" style="display:none;margin-top:12px">
+        <div class="upd-track"><div class="upd-fill" id="updFill"></div></div>
+        <span class="hint" id="updLabel" style="display:block;margin-top:6px"></span>
       </div>
       <!-- 10-18 用户令：自动更新开关**放版本更新卡里**（它属于更新语义，不该挤在功能开关卡） -->
       <label style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer;flex-wrap:wrap;margin-top:12px">
@@ -3042,6 +3056,51 @@
       }
     }).catch(function () { box.checked = !box.checked; alert("保存失败：网络错误"); });
   });
+})();
+</script>
+<script>
+/* 10-18 更新进度轮询：⛔ 页面加载就先查一次 —— 更新过程中页面会因服务重启短暂失联，
+   用户刷新后应该能立刻看到"正在重启/已完成"，而不是以为没动静。 */
+(function () {
+  var bar = document.getElementById("updBar");
+  var fill = document.getElementById("updFill");
+  var label = document.getElementById("updLabel");
+  if (!bar || typeof api !== "function") return;
+  var timer = null;
+
+  function paint(p) {
+    if (!p) { bar.style.display = "none"; return; }
+    bar.style.display = "block";
+    fill.style.width = Math.max(0, Math.min(100, p.pct || 0)) + "%";
+    fill.classList.toggle("err", Boolean(p.error));
+    label.textContent = p.label + (p.error ? "（" + p.error.split("
+").slice(-1)[0] + "）" : "");
+  }
+
+  function poll() {
+    api("/api/updates/progress").then(function (x) {
+      var p = x && x.j && x.j.progress;
+      paint(p);
+      if (p && !p.done) { timer = setTimeout(poll, 800); }
+      else if (p && p.done) {
+        /* 完成后 6 秒自动收起，避免长期占位 */
+        setTimeout(function () { bar.style.display = "none"; }, 6000);
+      }
+    }).catch(function () {
+      /* 服务正在重启 ⇒ 连不上是正常的，继续重试 */
+      timer = setTimeout(poll, 1200);
+    });
+  }
+
+  /* 点「立即更新并重启」时立刻开始轮询 */
+  var applyBtn = document.getElementById("updApply");
+  if (applyBtn) applyBtn.addEventListener("click", function () {
+    paint({ pct: 3, label: "已提交，等待开始…" });
+    if (timer) clearTimeout(timer);
+    setTimeout(poll, 400);
+  });
+
+  poll();
 })();
 </script>
 </body>
