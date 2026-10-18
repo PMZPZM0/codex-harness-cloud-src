@@ -508,6 +508,12 @@
         <button class="btn sm" id="updCopy">复制部署命令</button>
         <span class="hint" id="updStatus"></span>
       </div>
+      <!-- 10-18 用户令：自动更新开关**放版本更新卡里**（它属于更新语义，不该挤在功能开关卡） -->
+      <label style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer;flex-wrap:wrap;margin-top:12px">
+        <input type="checkbox" id="featAutoUpdate" class="switch">
+        <span>自动更新并在有新版本时重启</span>
+        <span class="hint">（每 6 小时检查一次；仅当检测到确实有新版本才覆盖并重启，重启期间约 3 秒不可用）</span>
+      </label>
       <div id="updResult" style="display:none;margin-top:10px"></div>
     </div>
     <!-- 功能开关（10-18 用户令「管理员可以开关，关闭后用户就不能同步会话」）——
@@ -518,12 +524,6 @@
         <input type="checkbox" id="featSync" class="switch">
         <span>允许用户把会话同步到云端</span>
         <span class="hint">（关闭后用户端显示「管理员已关闭云端会话同步」，不影响登录与模型调用）</span>
-      </label>
-      <!-- 10-18 用户令「加自动更新重启，方便用户那边自动更新」 -->
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;flex-wrap:wrap;margin-top:14px">
-        <input type="checkbox" id="featAutoUpdate" class="switch">
-        <span>自动更新并在有新版本时重启</span>
-        <span class="hint">（每 6 小时检查一次；仅当检测到确实有新版本才覆盖并重启，重启期间约 3 秒不可用）</span>
       </label>
       <p class="status" id="featStatus"></p>
     </div>
