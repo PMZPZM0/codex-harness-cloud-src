@@ -3031,7 +3031,25 @@
   }
 
   function refreshPairing() { probeAgent(); loadDevices(); }
-})();</script>
+})();
+  /* ── 10-18 自动更新开关（**必须在主 IIFE 内**：api() 与 session 都是这里的局部变量，
+     放到外部 <script> 里会永远读不到 —— 实测表现是"读取中…"或点了没反应）── */
+  (function () {
+    var box = document.getElementById("featAutoUpdate");
+    if (!box) return;
+    api("/admin/features").then(function (x) {
+      if (x && x.ok && x.j && x.j.features) box.checked = Boolean(x.j.features.autoUpdate);
+    }).catch(function () { /* 忽略 */ });
+    box.addEventListener("change", function () {
+      api("/admin/features", { method: "POST", body: { autoUpdate: box.checked } }).then(function (x) {
+        if (!(x && x.ok && x.j && x.j.ok)) {
+          box.checked = !box.checked;
+          alert("保存失败：" + ((x && x.j && x.j.error) || "未知"));
+        }
+      }).catch(function () { box.checked = !box.checked; alert("保存失败：网络错误"); });
+    });
+  })();
+</script>
 <script>
 /* 10-18 主题开关（侧栏内，非悬浮）。checked = 亮色；apply() 反向同步 box.checked，
    否则从 localStorage 恢复时开关位置会与实际主题相反。 */
@@ -3049,28 +3067,6 @@
     var next = box.checked ? "light" : "dark";
     apply(next);
     try { localStorage.setItem(KEY, next); } catch (e) { /* 忽略 */ }
-  });
-})();
-</script>
-<script>
-/* 10-18 自动更新开关：/api/features 既有 GET 也有 POST，这里只负责这两件事。
-   ⛔ 与 .switch 的保存逻辑解耦（那个走面板既有流程），避免互相覆盖对方字段。 */
-(function () {
-  var box = document.getElementById("featAutoUpdate");
-  if (!box) return;
-  /* ⛔ 走面板自己的 api()：它负责加 /cloud-api 前缀与鉴权头。
-     直接 fetch("/admin/features") 会打到站点根（没有该路由）⇒ 404。 */
-  if (typeof api !== "function") return;
-  api("/admin/features").then(function (x) {
-    if (x && x.ok && x.j && x.j.features) box.checked = Boolean(x.j.features.autoUpdate);
-  }).catch(function () { /* 忽略 */ });
-  box.addEventListener("change", function () {
-    api("/admin/features", { method: "POST", body: { autoUpdate: box.checked } }).then(function (x) {
-      if (!(x && x.ok && x.j && x.j.ok)) {
-        box.checked = !box.checked;
-        alert("保存失败：" + ((x && x.j && x.j.error) || "未知"));
-      }
-    }).catch(function () { box.checked = !box.checked; alert("保存失败：网络错误"); });
   });
 })();
 </script>
@@ -3126,13 +3122,20 @@
   var el = document.getElementById("appEndpoint");
   var btn = document.getElementById("appEndpointCopy");
   var msg = document.getElementById("appEndpointMsg");
-  if (!el || typeof api !== "function") return;
+  if (!el) return;
   var value = "";
 
-  api("/api/app-endpoint").then(function (x) {
-    if (x && x.j && x.j.ok && x.j.apiBase) { value = x.j.apiBase; el.textContent = value; }
-    else el.textContent = "读取失败（需管理员权限）";
-  }).catch(function () { el.textContent = "读取失败"; });
+  /* ⛔ 不能用面板的 api()：它是另一段 <script> 里的**局部函数**，从这里访问不到
+     （表现就是永远停在"读取中…"，连 catch 都不触发）。
+     这个接口已在服务端改为公开（不带 Authorization 也 200），直接 fetch 即可。
+     ⛔ 前缀写 /cloud-api：这是标准部署的反代前缀；换前缀时这里与 api() 一起改。 */
+  fetch("/cloud-api/api/app-endpoint", { credentials: "same-origin" })
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (j && j.ok && j.apiBase) { value = j.apiBase; el.textContent = value; }
+      else el.textContent = "读取失败：" + ((j && j.error) || "接口无返回");
+    })
+    .catch(function () { el.textContent = "读取失败（网络或前缀不对）"; });
 
   function copyText(t) {
     if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t);
