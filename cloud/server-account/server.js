@@ -1103,17 +1103,47 @@ const server = http.createServer(async (req, res) => {
      ⛔ 不自己 spawn 新进程（会出现两个实例抢 data.json）：调 selfupdate.sh 覆盖文件后
        `process.exit(0)`，由 systemd 的 `Restart=always` 拉起。这是唯一安全的自我更新方式。
      ⛔ 先回响应再退出，否则客户端只看到"连接被重置"。⛔ 仅 admin。 */
+  /* 更新进度（前端轮询）：只回最近一次 apply 的状态，⛔ 不暴露脚本全文 */
+  if (p === "/api/updates/progress" && req.method === "GET") {
+    const g = db.updateProgress || null;
+    return send(200, { ok: true, progress: g ? { pct: g.pct || 0, label: g.label || "", done: Boolean(g.done), at: g.at || 0, error: g.error || "" } : null, version: APP_VERSION });
+  }
+
   if (p === "/api/updates/apply" && req.method === "POST") {
     if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
     const script = [path.join(__dirname, "selfupdate.sh"), path.join(__dirname, "..", "selfupdate.sh")].find((f) => { try { return fs.existsSync(f); } catch { return false; } });
     if (!script) return send(400, { ok: false, error: "找不到 selfupdate.sh —— 这个部署方式不支持应用内更新" });
-    const { execFile } = require("node:child_process");
-    execFile("bash", [script, "--no-restart"], { cwd: path.dirname(script), timeout: 240000, maxBuffer: 4194304 }, (err, stdout) => {
-      const log = String(stdout || "").split("\n").filter((l) => /采用最高|VERSION →|✓|✗|error/i.test(l)).slice(-12).join("\n");
-      if (err) return send(500, { ok: false, error: String(err.message || err).slice(0, 300), log });
-      send(200, { ok: true, log, restarting: true });
+    /* ⛔ 用 spawn 而不是 execFile：要**流式**拿每一行输出，才能把进度推给前端。
+       阶段映射（不精确到字节，但足以让用户知道在干什么）：
+         采用最高版本 → 10% · 每个 ✓ 文件 → 递增至 80% · VERSION → 92% · 即将重启 → 100% */
+    const { spawn } = require("node:child_process");
+    db.updateProgress = { pct: 5, label: "准备中…", at: Date.now(), done: false };
+    persist();
+    const child = spawn("bash", [script, "--no-restart"], { cwd: path.dirname(script) });
+    let done = 0, total = 8, tail = [];
+    const bump = (label, pct) => { db.updateProgress = { pct, label, at: Date.now(), done: false }; };
+    const onLine = (line) => {
+      if (!line.trim()) return;
+      tail.push(line); if (tail.length > 14) tail.shift();
+      if (/采用最高版本/.test(line)) bump("已获取最新版本，开始下载…", 10);
+      else if (/✓/.test(line)) { done += 1; bump(`下载并校验 ${done}/${total}…`, Math.min(80, 10 + Math.round((done / total) * 70))); }
+      else if (/VERSION →/.test(line)) bump("写入完成，准备重启…", 92);
+    };
+    let buf = "";
+    child.stdout.on("data", (d) => { buf += d.toString(); const parts = buf.split("\n"); buf = parts.pop(); parts.forEach(onLine); });
+    child.stderr.on("data", (d) => { buf += d.toString(); });
+    child.on("close", (code) => {
+      if (buf) onLine(buf);
+      if (code !== 0) {
+        db.updateProgress = { pct: 0, label: "更新失败", at: Date.now(), done: true, error: tail.slice(-6).join("\n") };
+        persist();
+        return send(500, { ok: false, error: `selfupdate 退出码 ${code}`, log: tail.join("\n") });
+      }
+      db.updateProgress = { pct: 100, label: "更新完成，正在重启…", at: Date.now(), done: true };
+      persist();
+      send(200, { ok: true, log: tail.join("\n"), restarting: true });
       console.log(`[update] ${me.username} 触发应用更新，即将退出交给 systemd`);
-      setTimeout(() => process.exit(0), 800);
+      setTimeout(() => process.exit(0), 1200);
     });
     return;
   }
