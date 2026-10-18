@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>飞牛OS 对接指南 · 知识库与记忆空间</title>
+<style>
+  :root {
+    --bg:#f6f6f4; --card:#fff; --field:#fafaf8; --line:#e6e6e1; --line-soft:#efefeb;
+    --text:#22221f; --muted:#6a6a64; --faint:#9a9a93;
+    --brand:#7c3aed; --brand-soft:#f1ebfe; --brand-ink:#4c1d95;
+    --ok:#1a7f37; --ok-soft:#e8f5ec; --warn:#b45309; --warn-soft:#fef3e2; --bad:#c0392b; --bad-soft:#fdecea;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.75 Inter, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 28px 22px 80px; }
+  h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.01em; }
+  h2 { font-size: 16px; margin: 30px 0 10px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h2:first-of-type { border-top: 0; padding-top: 0; }
+  h3 { font-size: 14px; margin: 18px 0 8px; }
+  p { margin: 0 0 10px; }
+  ul, ol { margin: 0 0 12px; padding-left: 22px; }
+  li { margin: 4px 0; }
+  code { background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 12.5px; }
+  pre { background: #22221f; color: #f2f2ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto;
+    font-size: 12.5px; line-height: 1.65; margin: 0 0 12px; }
+  pre code { background: none; border: 0; color: inherit; padding: 0; }
+  .lead { color: var(--muted); font-size: 13.5px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; }
+  .warn { background: var(--warn-soft); border: 1px solid #f0d9b5; border-radius: 10px; padding: 12px 14px; margin: 0 0 12px; font-size: 13px; }
+  .ok { background: var(--ok-soft); border: 1px solid #cfe9d8; border-radius: 10px; padding: 12px 14px; margin: 0 0 12px; font-size: 13px; }
+  .bad { background: var(--bad-soft); border: 1px solid #f5cdc7; border-radius: 10px; padding: 12px 14px; margin: 0 0 12px; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 0 0 12px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th { background: var(--field); font-weight: 600; }
+  .step { display: flex; gap: 12px; align-items: baseline; margin: 0 0 8px; }
+  .step .n { flex: 0 0 22px; height: 22px; border-radius: 50%; background: var(--brand-soft); color: var(--brand-ink);
+    font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    background: var(--brand-soft); color: var(--brand-ink); }
+  a { color: var(--brand); }
+</style>
+</head>
+<body>
+<main>
+  <h1>飞牛OS 对接指南：知识库与记忆空间</h1>
+  <p class="lead">
+    对应面板：<code>account.html#/admin</code> → 「知识库 · 记忆空间」卡。
+    本文可**直接整段交给另一个 AI**（第 8 节是作业单），也可由人照着做。
+  </p>
+
+  <div class="warn">
+    <b>先理解职责，不然一定会配错：</b>账号服务（本服务）<b>不存</b>知识库内容、<b>不存</b>记忆。
+    它只是<b>网关 + 权限闸</b>。你真正要装的是<b>两个独立服务</b>（知识库 = WeKnora 兼容、记忆 = MemHub 兼容），
+    装完把它们的地址填进面板。
+  </div>
+
+  <h2>1. 需要安装什么（一句话版）</h2>
+  <table>
+    <thead><tr><th>要装的东西</th><th>作用</th><th>端口示例</th><th>鉴权头</th></tr></thead>
+    <tbody>
+      <tr><td><b>WeKnora</b>（或兼容其 v1 API 的实现）</td><td>存文档、切块、检索、给每个账号发只读 MCP 检索端点</td><td>8080</td><td><code>X-API-Key</code></td></tr>
+      <tr><td><b>MemHub</b>（或兼容其 v1 API 的实现）</td><td>存记忆条目、按会话召回、提供 MCP 读写端点</td><td>8090</td><td><code>Authorization: Bearer</code></td></tr>
+    </tbody>
+  </table>
+  <div class="bad">
+    <b>⛔ 最容易错的一处：</b>知识库用 <code>X-API-Key</code>，记忆用 <code>Bearer</code>。
+    把租户 Key 塞进 <code>Authorization: Bearer</code> 会稳定返回
+    <code>401 invalid or expired token</code>（那不是 key 错，是<b>头的类型错了</b>）。
+  </div>
+
+  <h2>2. 飞牛OS 上的前提</h2>
+  <ul>
+    <li>飞牛OS 能开容器（Docker / Compose）或装套件；两个服务各占一个<b>固定端口</b>。</li>
+    <li>给 NAS 一个<b>固定的局域网 IP</b>（下文用 <code>192.168.1.10</code> 举例）。</li>
+    <li><b>账号服务所在的机器必须能直连这两个地址</b> —— 同内网最简单。</li>
+    <li>⛔ 不要填 <code>localhost</code> / <code>127.0.0.1</code>：账号服务通常不在 NAS 上，
+        回环地址指向它自己（实测：账号服务在公网服务器上时，<code>127.0.0.1:7864</code> 是那台服务器自己的 7864）。</li>
+    <li>如果账号服务在公网云服务器、NAS 在家里：需要打通（VPN / 内网穿透），
+        或把账号服务也放到内网。</li>
+  </ul>
+
+  <h2>3. 装知识库（WeKnora）</h2>
+
+  <h3>3.1 先看飞牛OS 应用中心有没有</h3>
+  <p>如果有现成的「知识库 / WeKnora / RAG」类应用：直接装，记下<b>访问地址与端口</b>，跳到 3.3。</p>
+
+  <h3>3.2 没有就自己跑容器</h3>
+  <p>把下面模板里的镜像名换成本项目发布页给出的镜像（<b>本文不写死镜像名</b>，
+     因为上游发布页才是唯一真相源）：</p>
+<pre><code># /vol1/docker/weknora/docker-compose.yml
+services:
+  weknora:
+    image: &lt;上游发布页给出的镜像&gt;:&lt;版本&gt;
+    container_name: weknora
+    restart: unless-stopped
+    ports:
+      - "8080:8080"          # 左边是 NAS 端口，右边是容器端口（以镜像文档为准）
+    environment:
+      # 上游要求的管理员/租户初始化参数（以发布页为准）
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/data</code></pre>
+<pre><code>cd /vol1/docker/weknora &amp;&amp; docker compose up -d
+docker compose logs -f --tail=50      # 看到 "listening"/"started" 之类即成功</code></pre>
+  <div class="warn">
+    <b>判据（不看文档也能确认它在跑）：</b>在 NAS 上执行
+<pre><code>curl -sS -o /dev/null -w '%{http_code}\n' http://192.168.1.10:8080/api/v1/knowledge-bases?page_size=1</code></pre>
+    <code>401</code> / <code>403</code> = <b>服务活着</b>（只是没带 key）→ 进 3.3；<br>
+    <code>404</code> = 端口通了但路径不对（少了 <code>/api</code> 前缀，或版本不同）；<br>
+    超时 / 连接被拒 = 容器没起或端口映射错。
+  </div>
+
+  <h3>3.3 拿到「租户 API Key」</h3>
+  <ol>
+    <li>浏览器打开 <code>http://192.168.1.10:8080</code>，按上游首次启动向导建管理员/租户。</li>
+    <li>在「租户 / 设置 / API」里创建或复制一个 <b>租户 API Key</b>（不是登录 JWT）。</li>
+    <li>用它验证：</li>
+  </ol>
+<pre><code>curl -sS -H "X-API-Key: &lt;租户KEY&gt;" \
+  'http://192.168.1.10:8080/api/v1/knowledge-bases?page_size=1' | head -c 300
+# 期望：JSON（可能是空列表），HTTP 200</code></pre>
+  <div class="bad">若这里 401：key 复制错了，或用了 JWT 而不是租户 Key。</div>
+
+  <h3>3.4 本服务会调它的哪些接口（兼容性对照）</h3>
+  <table>
+    <thead><tr><th>方法</th><th>路径</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>GET</td><td><code>/api/v1/knowledge-bases?page_size=1</code></td><td>连通性探测 / 列库</td></tr>
+      <tr><td>POST</td><td><code>/api/v1/knowledge-bases</code></td><td>给账号建库</td></tr>
+      <tr><td>PUT</td><td><code>/api/v1/initialization/config/{kbId}</code></td><td>配 LLM / 嵌入 / 视觉模型</td></tr>
+      <tr><td>POST</td><td><code>/api/v1/mcp-endpoints</code></td><td>建只读检索端点</td></tr>
+      <tr><td>GET / POST</td><td><code>/api/v1/knowledge-bases/{id}/knowledge[/file]</code></td><td>列 / 上传文档</td></tr>
+      <tr><td>POST</td><td><code>/api/v1/knowledge-search</code></td><td>检索</td></tr>
+    </tbody>
+  </table>
+
+  <h2>4. 装记忆（MemHub）</h2>
+
+  <h3>4.1 同 3.1 / 3.2</h3>
+  <p>应用中心有就装；没有就用容器跑，端口示例 <code>8090</code>。</p>
+
+  <h3>4.2 判据</h3>
+<pre><code>curl -sS -o /dev/null -w '%{http_code}\n' http://192.168.1.10:8090/
+# 任何 &lt; 500 的状态码（含 404）都说明 HTTP 栈活着</code></pre>
+  <p>记忆服务没有统一的公开健康端点，所以「能收到 HTTP 响应」就算通。</p>
+
+  <h3>4.3 拿 API Key</h3>
+  <p>在 MemHub 的管理界面/环境变量里拿到 API Key，验证：</p>
+<pre><code>curl -sS -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer &lt;KEY&gt;" http://192.168.1.10:8090/
+# 401 = key 不对；200/404/405 = 服务在（MemHub 在建用户端点上是 POST，GET 会 405，属正常）</code></pre>
+
+  <h3>4.4 两个地址的区别（配错会让"记忆带不上"）</h3>
+  <table>
+    <thead><tr><th>面板字段</th><th>走什么</th><th>填错的表现</th></tr></thead>
+    <tbody>
+      <tr><td>服务地址</td><td>建用户、写记忆</td><td>开通记忆直接报错</td></tr>
+      <tr><td>检索代理地址（MCP 网关）</td><td><b>读取</b>记忆</td><td>能开通、能写，但新会话<b>带不上</b>记忆</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5. 在面板上填</h2>
+  <p><code>https://&lt;你的域名&gt;/account.html#/admin</code> → 「知识库 · 记忆空间」卡</p>
+  <table>
+    <thead><tr><th>字段</th><th>填什么</th><th>留空会怎样</th></tr></thead>
+    <tbody>
+      <tr><td>知识库 · 服务地址</td><td><code>http://192.168.1.10:8080</code></td><td>回退环境变量 <code>WEKNORA_BASE</code></td></tr>
+      <tr><td>知识库 · 租户 API Key</td><td>3.3 拿到的 key</td><td>回退凭据 <code>weknora-admin-key</code></td></tr>
+      <tr><td>知识库 · LLM / 嵌入 / 视觉 模型 id</td><td>上游模型 id（如 <code>qwen2.5:7b</code>）</td><td>回退 <code>WEKNORA_*_MODEL_ID</code></td></tr>
+      <tr><td>记忆 · 服务地址</td><td><code>http://192.168.1.10:8090</code></td><td>回退 <code>MEMHUB_BASE</code></td></tr>
+      <tr><td>记忆 · 检索代理地址</td><td>MCP 网关地址</td><td>回退 <code>MEMHUB_PROXY_BASE</code></td></tr>
+      <tr><td>记忆 · 实例名</td><td>一般 <code>default</code></td><td>回退 <code>MEMHUB_INSTANCE</code></td></tr>
+      <tr><td>记忆 · API Key</td><td>4.3 拿到的 key</td><td>回退 <code>memhub-admin-key</code></td></tr>
+    </tbody>
+  </table>
+  <div class="ok">
+    <b>地址支持</b>：<code>https://</code> · <code>http://</code> · 裸主机（自动补 https）· 内网 IP ·
+    自定义端口 · 路径前缀。⛔ 内网请<b>显式写 <code>http://</code></b>（否则会被补成 https，多半连不上）。
+  </div>
+  <p><b>顺序</b>：填地址 → 点「测试知识库 / 测试记忆」→ 看到 <code>✓</code> → 点「保存（热生效）」。
+     保存后<b>不需要重启账号服务</b>。卡头会一直显示「知识库生效 … · 记忆生效 …」，那是<b>当前真正在用</b>的地址。</p>
+
+  <h2>6. 排错对照表</h2>
+  <table>
+    <thead><tr><th>现象</th><th>原因</th><th>处置</th></tr></thead>
+    <tbody>
+      <tr><td>超时（8s）</td><td>地址/端口不对、防火墙、不同网段</td><td>在<b>账号服务那台机器</b>上 curl 该地址</td></tr>
+      <tr><td>连接被拒绝</td><td>容器没起 / 端口没映射</td><td><code>docker ps</code>、<code>ss -lntp | grep 8080</code></td></tr>
+      <tr><td>DNS 解析失败</td><td>用了域名但没 DNS</td><td>换内网 IP</td></tr>
+      <tr><td>TLS / 证书错误</td><td>自签证书</td><td>内网改 <code>http://</code>，或换正式证书</td></tr>
+      <tr><td>401 / 403</td><td>key 错 / 头类型错</td><td>知识库 <code>X-API-Key</code>；记忆 <code>Bearer</code></td></tr>
+      <tr><td>404</td><td>少了路径前缀 / 版本不同</td><td>试 <code>http://ip:port</code> 与 <code>http://ip:port/api</code></td></tr>
+      <tr><td>测试 200 但开通仍失败</td><td>上游端点不全（只实现了一部分）</td><td>对照 3.4 的接口表，缺的补上或换实现</td></tr>
+    </tbody>
+  </table>
+
+  <h2>7. 验收清单（以用户侧为准）</h2>
+  <ol>
+    <li>面板「用户 · 权益 · 积分」给某账号<b>开通知识库</b>。</li>
+    <li>用该账号登录云助手 →「知识库」标签：应显示<b>已开通</b>，不是"未开通/未授权"。</li>
+    <li>上传一个 <code>.txt</code> → 列表里出现该文档。</li>
+    <li>就文档内容提问 → 回答能引用到（说明 MCP 检索端点通了）。</li>
+    <li>「记忆空间」：对话几轮后新开会话，应能带上之前的要点。</li>
+  </ol>
+
+  <h2>8. 交给 AI 的作业单（可整段复制给另一个 AI）</h2>
+  <div class="card">
+    <p><b>你的任务</b>：在这台飞牛OS（fnOS）上把「知识库」和「记忆空间」两个上游服务跑起来，
+       并让「账号服务」能连上它们。按下面顺序做，<b>每一步都要先验证再进下一步</b>。</p>
+    <div class="step"><span class="n">1</span><div>确认环境：<code>docker --version</code> 有输出；<code>ip -4 addr</code> 记下 NAS 的局域网 IP（记作 <code>NAS_IP</code>）。</div></div>
+    <div class="step"><span class="n">2</span><div>查应用中心是否已有知识库/记忆类应用；有则装，记录 <code>KB_PORT</code> 与 <code>MEM_PORT</code>。</div></div>
+    <div class="step"><span class="n">3</span><div>没有则按第 3.2 / 4.1 节用 compose 起容器；<b>镜像名必须从上游发布页取，不许猜</b>。</div></div>
+    <div class="step"><span class="n">4</span><div>验证知识库：<code>curl -o /dev/null -w '%{http_code}' http://&lt;NAS_IP&gt;:&lt;KB_PORT&gt;/api/v1/knowledge-bases?page_size=1</code>
+        ⇒ 期望 <b>401/403</b>（服务活着、只是没 key）。得到 200 也可以。</div></div>
+    <div class="step"><span class="n">5</span><div>验证记忆：<code>curl -o /dev/null -w '%{http_code}' http://&lt;NAS_IP&gt;:&lt;MEM_PORT&gt;/</code>
+        ⇒ 期望 <b>&lt;500</b>。</div></div>
+    <div class="step"><span class="n">6</span><div>在知识库管理界面建租户、取 <b>租户 API Key</b>；用 <code>-H "X-API-Key: …"</code> 复验得到 <b>200</b>。</div></div>
+    <div class="step"><span class="n">7</span><div>在记忆管理界面取 API Key；用 <code>-H "Authorization: Bearer …"</code> 复验（401 即 key 错）。</div></div>
+    <div class="step"><span class="n">8</span><div>回到面板 <code>/account.html#/admin</code> → 「知识库 · 记忆空间」：按第 5 节填字段 →
+        点两个「测试」按钮 → 都必须出现 <code>✓</code> → 点「保存（热生效）」。</div></div>
+    <div class="step"><span class="n">9</span><div>按第 7 节做 5 条验收。任一条不过，用第 6 节的表定位。</div></div>
+    <p style="margin:10px 0 0"><b>硬约束（违反会静默失效）</b>：</p>
+    <ul style="margin:6px 0 0">
+      <li>⛔ 地址不许填 <code>localhost</code> / <code>127.0.0.1</code>（除非账号服务与上游同机）。</li>
+      <li>⛔ 知识库的鉴权头必须是 <code>X-API-Key</code>，记忆必须是 <code>Bearer</code>。</li>
+      <li>⛔ 内网地址要显式写 <code>http://</code>（裸主机默认补 https）。</li>
+      <li>⛔ 改完必须点「保存（热生效）」；只点「测试」不会保存。</li>
+    </ul>
+  </div>
+
+  <h2>9. 与「模型池 / 闲时倍率」的边界</h2>
+  <p>知识库/记忆用的模型（LLM / 嵌入 / 视觉）是<b>上游服务自己</b>去调的，<b>不走</b>本服务的「限时福利」网关，因此：</p>
+  <ul>
+    <li><b>不受</b> 闲时倍率（<code>offPeak</code>）影响</li>
+    <li><b>不从</b> 本服务积分账本扣分</li>
+  </ul>
+  <p>若希望它们也走本服务网关，需要在 WeKnora / MemHub 里把模型 base URL 指向
+     <code>https://&lt;你的域名&gt;/cloud-api/proxy/v1</code> 并使用网关密钥。这是<b>可选</b>做法，配错会两头不通。</p>
+</main>
+</body>
+</html>
