@@ -1,16 +1,64 @@
 {
-  "version": "1.1.0",
+  "version": "1.1.1",
   "releasedAt": "2026-10-18",
   "repo": "PMZPZM0/codex-harness-cloud-src",
   "notes": "发版清单：改这里就够，脚本与服务端都读它（不再硬编码文件列表）。",
   "files": [
-    { "src": "cloud/VERSION", "kind": "server", "as": "VERSION" },
-    { "src": "cloud/server-account/server.js", "kind": "server", "as": "server.js" },
-    { "src": "cloud/web/account.html", "kind": "web", "as": "account.html" },
-    { "src": "cloud/web/index.html", "kind": "web", "as": "index.html" },
-    { "src": "cloud/web/app.js", "kind": "web", "as": "app.js" },
-    { "src": "cloud/web/styles.css", "kind": "web", "as": "styles.css" },
-    { "src": "cloud/web/admin.html", "kind": "web", "as": "admin.html" },
-    { "src": "cloud/web/fnos-guide.html", "kind": "web", "as": "fnos-guide.html" }
+    {
+      "src": "cloud/VERSION",
+      "kind": "server",
+      "as": "VERSION",
+      "sha256": "cc52f678848b814373757b460383bf61960e4943c203735adde0a350b3e50989",
+      "bytes": 6
+    },
+    {
+      "src": "cloud/server-account/server.js",
+      "kind": "server",
+      "as": "server.js",
+      "sha256": "5f43c86e45c73ef655e0e16e0e63d27948c525306dcb1f66b3354bb962c38b8c",
+      "bytes": 181662
+    },
+    {
+      "src": "cloud/web/account.html",
+      "kind": "web",
+      "as": "account.html",
+      "sha256": "f8621fc6c88875e24167cbe60c688e64f5252ac9d253194b32322cac16079bb1",
+      "bytes": 191228
+    },
+    {
+      "src": "cloud/web/index.html",
+      "kind": "web",
+      "as": "index.html",
+      "sha256": "9e69308cd0a7958158648d6a0ed479d86b268b0c4f2944e067c7ffd9dce9c0c3",
+      "bytes": 50627
+    },
+    {
+      "src": "cloud/web/app.js",
+      "kind": "web",
+      "as": "app.js",
+      "sha256": "b50b4d909fcd3105ef889d4f10558afccc4e47dab68c4e5dd614444c52d24cd0",
+      "bytes": 55324
+    },
+    {
+      "src": "cloud/web/styles.css",
+      "kind": "web",
+      "as": "styles.css",
+      "sha256": "a89672f56024051699a5a36695c6b9bc872d0aca7f00c6bdd400a84caafb0a34",
+      "bytes": 20628
+    },
+    {
+      "src": "cloud/web/admin.html",
+      "kind": "web",
+      "as": "admin.html",
+      "sha256": "e38082ace1cb04933be2f30b0974e4ffca07fafa3930aae1af4fa2282bed1523",
+      "bytes": 27628
+    },
+    {
+      "src": "cloud/web/fnos-guide.html",
+      "kind": "web",
+      "as": "fnos-guide.html",
+      "sha256": "3a9e42e2a4b3e2e2064bdf0fb87054da4f96f14c2ce884bbf272e7ac8c6ad766",
+      "bytes": 16520
+    }
   ]
 }
