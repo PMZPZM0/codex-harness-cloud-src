@@ -47,6 +47,9 @@
   .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); padding: 20px 22px; margin-bottom: 16px; }
   .card h2 { margin: 0 0 14px; font-size: 14px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
   .card h2 .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-ink); }
+  /* 表头里的「?」：鼠标悬停显示口径说明（时段/语义），⛔ 不写死文案，title 由 JS 按当前配置填。 */
+  .qm { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 4px; border-radius: 50%; border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; cursor: help; vertical-align: 1px; }
+  .qm:hover { border-color: var(--brand); color: var(--brand-ink); }
   .hint { color: var(--faint); font-size: 12.5px; }
 
   .kv { display: grid; grid-template-columns: 92px 1fr; gap: 9px 16px; font-size: 13.5px; }
@@ -543,7 +546,7 @@
       </p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>模型</th><th>ID</th><th>当前倍率</th><th>改为</th><th>闲时倍率</th><th>闲时改为</th></tr></thead>
+          <thead><tr><th>模型</th><th>ID</th><th>高峰倍率<span class="qm" id="qmPeak" title="时段加载中…">?</span></th><th>改为</th><th>闲时倍率<span class="qm" id="qmOff" title="时段加载中…">?</span></th><th>闲时改为</th></tr></thead>
           <tbody id="amRows"></tbody>
         </table>
       </div>
@@ -562,24 +565,24 @@
     </div>
 
     <div class="card" id="opCard">
-      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">闲时时段 · 默认系数 <span class="pill ok">管理员</span>
-        <label style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12.5px;font-weight:400;cursor:pointer" title="只对**没单独配**闲时系数的模型生效；已单独配的模型不受这个开关影响">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">闲时时段 <span class="pill ok">管理员</span>
+        <label style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12.5px;font-weight:400;cursor:pointer" title="总闸：只影响「没单独设闲时倍率」的模型 —— 单独设过的模型一律按自己的值，不受它影响">
           <input type="checkbox" id="opEnabled"> 启用
         </label>
       </h2>
       <p class="hint">
-        <b>闲时系数 = 折扣系数，乘在模型倍率之上</b>：某时段实际倍率 = <b>模型倍率 × 闲时系数</b>。
-        例：某模型 ×0.79，夜间系数 0.5 ⇒ 该时段实际按 ×0.395 扣分。
-        ⛔ 它不改模型倍率本身（模型倍率仍是上面那张表里的唯一真相源）。<br>
-        <b>这里是「默认系数」</b>：某个模型想用自己的折扣 ⇒ 到<b>上面模型表的「闲时改为」列单独填</b>。
-        单独配过的模型<b>一律按自己的系数算，不受下面这个「启用」开关影响</b>（配了就该生效，
-        否则就是"配了没用"）；没单独配的模型才按这里的默认系数，且要总闸勾上。<br>
+        <b>这里只定义「哪些时间算闲时」</b>。闲时按多少倍率计费，去<b>上面模型表的「闲时改为」列</b>逐个模型填。
+        ⛔⛔ 闲时倍率是<b>直接倍率、不是折扣</b>：高峰 0.11、闲时填 0.05 ⇒ 闲时直接按 <b>0.05</b> 扣
+        （<b>不是</b> 0.11×0.05 = 0.0055）。<br>
+        <b>下面的「默认倍率」是可选的兜底</b>：某时段留空 ⇒ 该时段里没单独设的模型沿用<b>自己的高峰倍率</b>（该时段不优惠）；
+        填了 ⇒ 这些模型在该时段按这个默认值。<b>单独设过的模型一律按自己的值，不受上面「启用」开关影响</b>
+        （配了就该生效，否则就是"配了没用"）。<br>
         时段按<b>服务器时间</b>判断；<b>起点含、终点不含</b>（如 0–8 = 00:00 到 07:59）；
         起点大于终点表示<b>跨零点</b>（如 22 → 6）。命中多段时取<b>排在上面的那段</b>。
       </p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>名称</th><th>起始（点）</th><th>结束（点）</th><th>折扣系数</th><th></th></tr></thead>
+          <thead><tr><th>名称</th><th>起始（点）</th><th>结束（点）</th><th>默认倍率（可留空）</th><th></th></tr></thead>
           <tbody id="opRows"></tbody>
         </table>
       </div>
@@ -1568,13 +1571,15 @@
         inp.type = "text"; inp.placeholder = "如 0.29，空=免费";
         inp.value = m.credits ? String(m.credits).replace(/^x/i, "") : "";
         inp.style.cssText = "width:110px;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px";
-        /* 闲时系数（**每模型**，10-18 用户令「每个模型单独的配置」）——
+        /* 闲时**倍率**（**每模型**，10-18 用户令「每个模型单独的配置」）——
+           ⛔⛔ 语义是**替换**不是折扣：高峰 0.11、这里填 0.05 ⇒ 闲时直接按 0.05 计费
+              （不是 0.11×0.05）。用户原话「不是我填 0.5 就打 5 折」。
            ⛔ 与倍率共用右边那个「保存」按钮：一行一个动作。分两个按钮必然出现
               「只存了倍率、闲时没存」的错觉（两个请求还可能一成一败）。
-           ⛔ 空串必须**显式提交**：服务端把空串当"清除=跟随全局"，不传则是"这次不改"——
+           ⛔ 空串必须**显式提交**：服务端把空串当"清除=不设"，不传则是"这次不改"——
               两者语义不同，漏传会让旧值永远清不掉。 */
         var opInp = document.createElement("input");
-        opInp.type = "text"; opInp.placeholder = "如 0.5，空=跟随全局";
+        opInp.type = "text"; opInp.placeholder = "如 0.05，空=不设";
         opInp.value = (m.offPeakRate === undefined || m.offPeakRate === null) ? "" : String(m.offPeakRate);
         opInp.style.cssText = inp.style.cssText;
         var go = document.createElement("button"); go.className = "btn sm"; go.textContent = "保存";
@@ -1583,8 +1588,8 @@
           api("/admin/models/credits", { method: "POST", body: { id: m.id, credits: inp.value.trim(), offPeakRate: opInp.value.trim() } }).then(function (x) {
             go.disabled = false;
             if (x.ok && x.j && x.j.ok) {
-              var opTxt = (x.j.offPeakRate === null || x.j.offPeakRate === undefined) ? "跟随全局" : "×" + x.j.offPeakRate;
-              amSay((m.name || m.id) + " 的倍率已设为 " + (x.j.credits || "免费") + "、闲时系数 " + opTxt + "（已钉，同步不会覆盖）", "ok");
+              var opTxt = (x.j.offPeakRate === null || x.j.offPeakRate === undefined) ? "不设（闲时沿用高峰倍率）" : String(x.j.offPeakRate);
+              amSay((m.name || m.id) + " 的高峰倍率设为 " + (x.j.credits || "免费") + "、闲时倍率 " + opTxt + "（已钉，同步不会覆盖）", "ok");
               loadAdminModels();
             }
             else amSay("保存失败：" + ((x.j && x.j.error) || x.status), "bad");
@@ -1605,13 +1610,14 @@
           wrap.appendChild(rs);
         }
         tdSet.appendChild(wrap); tr.appendChild(tdSet);
-        /* 「闲时倍率」：当前生效值 —— 单独配过就显示 ×N 并标「单独」，否则「跟随全局」 */
+        /* 「闲时倍率」：该模型在闲时时段生效的**倍率**。单独设过就显示数值，否则「未单独设」
+           （= 沿用高峰倍率，该时段不优惠）。⛔ 不写「跟随全局」—— 现在只有**时段**是全局的。 */
         var tdOpCur = document.createElement("td");
         if (m.offPeakRate === undefined || m.offPeakRate === null) {
-          tdOpCur.appendChild(Object.assign(document.createElement("span"), { textContent: "跟随全局", style: "color:var(--muted)" }));
+          tdOpCur.appendChild(Object.assign(document.createElement("span"), { textContent: "未单独设", style: "color:var(--muted)" }));
         } else {
-          tdOpCur.appendChild(Object.assign(document.createElement("span"), { textContent: "×" + m.offPeakRate }));
-          tdOpCur.appendChild(Object.assign(document.createElement("span"), { textContent: "单独", className: "pill ok", style: "margin-left:6px;font-size:11px" }));
+          tdOpCur.appendChild(Object.assign(document.createElement("span"), { textContent: String(m.offPeakRate) }));
+          tdOpCur.appendChild(Object.assign(document.createElement("span"), { textContent: "闲时", className: "pill ok", style: "margin-left:6px;font-size:11px" }));
         }
         tr.appendChild(tdOpCur);
         /* 「闲时改为」的输入框挂在这格，但保存按钮在左两格 —— 提交时一起读（见上面的 go.onclick） */
@@ -1714,8 +1720,9 @@
     }).catch(function () { $("amSaveUser").disabled = false; amSay("网络错误", "bad"); });
   };
 
-  /* ── 闲时倍率（管理员：折扣系数 × 模型倍率）──────────────────────────
-     ⛔ 前端只做"收集/回显"；时段合法性由服务端再校验一遍（信任边界）。 */
+  /* ── 闲时时段（管理员：定义"哪些时间算闲时" + 可选的默认倍率）
+     ⛔⛔ 10-18 语义修正：`rate` 是**直接倍率**，不是折扣系数（高峰 0.11、闲时 0.05 ⇒ 按 0.05 扣）。
+     前端只做"收集/回显"；时段合法性由服务端再校验一遍（信任边界）。 */
   var opData = null;
   function opSay(text, cls) { var st = $("opStatus"); if (!st) return; st.textContent = text; st.className = "status" + (cls ? " " + cls : ""); }
   function opInput(value, type, width, ph) {
@@ -1734,7 +1741,9 @@
     var tdLabel = document.createElement("td"); tdLabel.appendChild(opInput(w.label || "", "text", 110, "如 夜间")); tr.appendChild(tdLabel);
     var tdS = document.createElement("td"); tdS.appendChild(opInput(w.start === undefined ? 0 : w.start, "number", 80, "0")); tr.appendChild(tdS);
     var tdE = document.createElement("td"); tdE.appendChild(opInput(w.end === undefined ? 0 : w.end, "number", 80, "8")); tr.appendChild(tdE);
-    var tdR = document.createElement("td"); tdR.appendChild(opInput(w.rate === undefined ? 0.5 : w.rate, "number", 90, "0.5")); tr.appendChild(tdR);
+    /* ⛔ 默认**留空**（= 该时段不设默认倍率，没单独设的模型沿用高峰倍率）。
+       绝不预填 0.5 —— 旧语义下 0.5 是"5 折"，新语义下它就是"倍率 0.5"（会把 0.11 的模型涨 4.5 倍）。 */
+    var tdR = document.createElement("td"); tdR.appendChild(opInput(w.rate === undefined || w.rate === null ? "" : w.rate, "number", 90, "留空=不优惠")); tr.appendChild(tdR);
     var tdX = document.createElement("td");
     var del = document.createElement("button"); del.className = "btn sm"; del.textContent = "删除";
     del.onclick = function () { box.removeChild(tr); opSay("已删除一行，点「保存」后生效"); };
@@ -1748,19 +1757,42 @@
       if (i.length < 4) return;
       out.push({
         id: tr.getAttribute("data-id") || "",
-        label: i[0].value.trim(), start: Number(i[1].value), end: Number(i[2].value), rate: Number(i[3].value),
+        label: i[0].value.trim(), start: Number(i[1].value), end: Number(i[2].value),
+        /* ⛔⛔ 留空必须传 **null**，不能 `Number("")` —— 那是 0，等于该时段所有没单独设的模型**免费**白送。
+           （新语义下"默认倍率"是可选的；空 = 不设默认，用各自的高峰倍率。） */
+        rate: i[3].value.trim() === "" ? null : Number(i[3].value),
       });
     });
     return out;
   }
+  /* 表头「高峰倍率 ?」「闲时倍率 ?」的说明：按**当前时段配置**生成。
+     ⛔ 时段是管理员可改的，文案写死就迟早对不上（到时候又变成"说明在骗人"）。 */
+  function applyOffPeakTips(windows) {
+    var wins = Array.isArray(windows) ? windows : [];
+    var txt = wins.length
+      ? wins.map(function (w) { return (w.label || "时段") + " " + w.start + "–" + w.end + " 点"; }).join("、")
+      : "（尚未设置任何闲时时段）";
+    var off = $("qmOff");
+    if (off) off.title = "闲时时段：" + txt
+      + "（按服务器时间；起点含、终点不含；跨零点用 start>end 表示）\n"
+      + "命中时段 ⇒ 该模型按「闲时倍率」计费；这一列没填 ⇒ 该时段若有默认倍率就用它，否则沿用高峰倍率。\n"
+      + "⛔ 闲时倍率是直接倍率、不是折扣：高峰 0.11、闲时填 0.05 ⇒ 闲时按 0.05 扣（不是 0.11×0.05）。";
+    var peak = $("qmPeak");
+    if (peak) peak.title = "高峰时段 = 上面那些闲时时段之外的所有时间。\n"
+      + "当前闲时：" + txt + "\n"
+      + "高峰时按这一列的倍率计费（= 模型目录里的基准倍率，可在此直接改）。";
+  }
   function opShowNow(d) {
+    applyOffPeakTips(d && d.windows);
     var el = $("opNow"); if (!el) return;
     d = d || opData || {};
     var hour = d.serverHour === undefined ? new Date().getHours() : d.serverHour;
     var a = d.active;
     var status = d.enabled === true
-      ? (a ? "命中「" + (a.label || "时段") + "」×" + a.rate : "未命中任何时段，按原倍率")
-      : "未启用（当前不折扣）";
+      ? (a
+        ? "命中「" + (a.label || "时段") + "」" + (a.rate === null || a.rate === undefined ? "（该时段未设默认倍率，各模型按自己的闲时倍率）" : "，默认倍率 " + a.rate)
+        : "未命中任何时段")
+      : "总闸已关（只影响没单独设闲时倍率的模型）";
     el.textContent = "服务器现在 " + hour + " 点 · " + status;
   }
   function loadOffPeak() {
@@ -1774,7 +1806,7 @@
       opSay("");
     }).catch(function () { opSay("闲时倍率读取失败：网络错误", "bad"); });
   }
-  if ($("opAdd")) $("opAdd").onclick = function () { opAddRow({ label: "", start: 0, end: 0, rate: 0.5 }); opSay("已加一行，填好后点「保存」"); };
+  if ($("opAdd")) $("opAdd").onclick = function () { opAddRow({ label: "", start: 0, end: 0, rate: null }); opSay("已加一行，填好时段后点「保存」（默认倍率可留空）"); };
   if ($("opEnabled")) $("opEnabled").onchange = function () { opSay($("opEnabled").checked ? "开关已打开，点「保存」后生效" : "开关已关闭，点「保存」后生效"); };
   if ($("opSave")) $("opSave").onclick = function () {
     var rows = opReadRows();
