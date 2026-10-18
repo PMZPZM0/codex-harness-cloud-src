@@ -1444,29 +1444,38 @@
     }).catch(function () { $("updInfo").textContent = "版本读取失败：网络错误"; });
   }
   if ($("updCheck")) $("updCheck").onclick = function () {
-    var btn = $("updCheck"); btn.disabled = true; updSay("查询 GitHub…");
+    var btn = $("updCheck"); btn.disabled = true; updSay("查询中（国内镜像优先，逐个试）…");
     $("updResult").style.display = "none";
-    fetch(CLOUD_DEPLOY_REPO.replace("github.com", "api.github.com/repos") + "/tags", { headers: { Accept: "application/vnd.github+json" } })
-      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-      .then(function (list) {
-        btn.disabled = false;
-        var latest = (list && list[0] && list[0].name) || "";
-        if (!latest) { updSay("仓库里还没有 tag", "bad"); return; }
-        var cur = window.__CCA_VER || "dev";
-        var upToDate = cur === latest;
-        var box = $("updResult"); box.style.display = "";
+    /* ⛔ 由**服务端**多源查询：浏览器直连 api.github.com 会 **403（匿名限流 60/h/IP）**，
+       国内还常连不上。服务端按「国内镜像 → 直连」顺序试，读 raw 的 VERSION（不占 API 配额）。 */
+    api("/api/updates").then(function (r) {
+      btn.disabled = false;
+      var j = r.j || {};
+      var box = $("updResult"); box.style.display = "";
+      if (!r.ok || !j.ok) {
+        var rows = (j.tried || []).map(function (t) {
+          return '<div class="hint" style="padding:4px 0;border-top:1px solid var(--line-soft)">'
+            + (t.ok ? "✓ " : "✗ ") + esc(t.name) + " · " + (t.status || "ERR") + " · " + t.ms + "ms"
+            + (t.error ? " · " + esc(t.error) : "") + "</div>";
+        }).join("");
         box.innerHTML = '<div style="padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field)">'
-          + '<div style="font-weight:600;color:' + (upToDate ? "var(--ok)" : "var(--warn)") + '">'
-          + (upToDate ? "已是最新（" + esc(latest) + "）" : "有新版本 " + esc(latest) + "（当前 " + esc(cur) + "）") + "</div>"
-          + '<div class="hint" style="margin-top:6px">升级在服务器上执行（面板不会替你重启服务）：</div>'
-          + '<pre style="margin:6px 0 0;background:#22221f;color:#f2f2ee;border-radius:8px;padding:10px 12px;overflow-x:auto;font-size:12px">'
-          + "cd /opt/codex-cloud-admin &amp;&amp; sudo git pull &amp;&amp; sudo systemctl restart codex-cloud-admin</pre></div>";
-        updSay(upToDate ? "已是最新" : "可升级到 " + latest, upToDate ? "ok" : "warn");
-      })
-      .catch(function (e) {
-        btn.disabled = false;
-        updSay("查询失败：" + (e && e.message ? e.message : "网络错误") + "（国内网络常被拦，改用命令行 git fetch --tags）", "bad");
-      });
+          + '<div style="font-weight:600;color:var(--bad)">' + esc(j.message || "查询失败") + "</div>"
+          + '<div class="hint" style="margin-top:4px">当前 ' + esc(j.current || "?") + " · 已试 " + (j.tried || []).length + " 个源</div>"
+          + rows + "</div>";
+        updSay("所有源都失败（含国内镜像）", "bad");
+        return;
+      }
+      var latest = j.latest || "", cur = j.current || "dev";
+      var upToDate = cur === latest || cur === ("v" + latest).replace(/^vv/, "v");
+      box.innerHTML = '<div style="padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field)">'
+        + '<div style="font-weight:600;color:' + (upToDate ? "var(--ok)" : "var(--warn)") + '">'
+        + (upToDate ? "已是最新（" + esc(latest) + "）" : "有新版本 " + esc(latest) + "（当前 " + esc(cur) + "）") + "</div>"
+        + '<div class="hint" style="margin-top:4px">来源：' + esc(j.source || "?") + "</div>"
+        + '<div class="hint" style="margin-top:6px">升级在服务器上执行（面板不会替你重启服务）：</div>'
+        + '<pre style="margin:6px 0 0;background:#22221f;color:#f2f2ee;border-radius:8px;padding:10px 12px;overflow-x:auto;font-size:12px">'
+        + "cd /opt/codex-cloud-admin &amp;&amp; sudo git pull &amp;&amp; sudo systemctl restart codex-cloud-admin</pre></div>";
+      updSay(upToDate ? "已是最新" : "可升级到 " + latest, upToDate ? "ok" : "warn");
+    }).catch(function () { btn.disabled = false; updSay("查询失败：网络错误", "bad"); });
   };
   if ($("updCopy")) $("updCopy").onclick = function () {
     var cmd = "git clone " + CLOUD_DEPLOY_REPO + ".git && cd codex-cloud-assistant && sudo bash deploy/install.sh";

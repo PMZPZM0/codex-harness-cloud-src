@@ -19,6 +19,25 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const PORT = Number(process.env.HARNESS_ACCOUNTS_PORT || 8091);
+/* 本服务版本（10-18「云端管理加更新功能」）：读包根 VERSION，读不到就 dev。
+   ⛔ 不写死在代码里 —— 否则每次发版要改两处，迟早不一致。 */
+const APP_VERSION = (() => {
+  try { return String(fs.readFileSync(path.join(__dirname, "..", "VERSION"), "utf8")).trim() || "dev"; } catch { return "dev"; }
+})();
+/** 可自部署的那个仓（面板「获取可部署版本」与更新检查都指向它）。 */
+const DEPLOY_REPO = "https://github.com/PMZPZM0/codex-cloud-assistant";
+/** 更新检查的源（10-18 用户令「**默认走国内镜像**更新」）：
+ *  **国内镜像优先**，直连放最后兜底。按顺序试、第一个成功的就用。
+ *  ⛔ 用镜像的 raw 透传（`<mirror>https://raw.githubusercontent.com/...`）——
+ *     raw 不计 GitHub API 配额；⛔ 它只读一个 VERSION 文本，不涉及代码与执行。 */
+const UPDATE_MIRRORS = [
+  { name: "ghfast（国内）", prefix: "https://ghfast.top/" },
+  { name: "gh-proxy（国内）", prefix: "https://gh-proxy.com/" },
+  { name: "ghproxy.net（国内）", prefix: "https://ghproxy.net/" },
+  { name: "gitmirror（国内）", prefix: "https://hub.gitmirror.com/" },
+  { name: "moeyy（国内）", prefix: "https://github.moeyy.xyz/" },
+  { name: "直连（兜底）", prefix: "" },
+];
 const DATA_FILE = process.env.HARNESS_ACCOUNTS_FILE || path.join(__dirname, "data.json");
 /* ── 配额（单一真相源；界面文案从 /sync/usage 与 /device/list 读，别在前端再写一份） ── */
 const DEVICE_LIMIT = Number(process.env.HARNESS_DEVICE_LIMIT || 3);                       // 每账号最多绑定机器数
@@ -910,21 +929,42 @@ const server = http.createServer(async (req, res) => {
      ⛔⛔ 必须放在 `send` 定义**之后** —— 放前面会踩 `const` 暂时性死区（TDZ），
         handler 抛 ReferenceError、连接直接断，`curl` 只看到空响应（实测踩过）。
      ⛔ **公开**端点（无需鉴权）：面板、运维脚本、监控都要能读到当前版本。
-     ⛔ 只回版本与仓地址，**不回**任何配置/密钥/路径。
-     · 本站（作者自用）读不到 VERSION ⇒ 显示 dev；分发包（codex-cloud-assistant）读得到。
-     · `deployRepo` 恒定指向**可自部署**的那个仓 —— 面板据此给"部署到我自己的服务器"入口。 */
+     ⛔ 只回版本与仓地址，**不回**任何配置/密钥/路径。 */
   if (p === "/api/version" && req.method === "GET") {
-    let ver = "dev";
-    try { ver = String(fs.readFileSync(path.join(__dirname, "..", "VERSION"), "utf8")).trim() || "dev"; } catch { /* 自用站点没有 VERSION */ }
     return send(200, {
       ok: true,
       name: "codex-cloud-assistant",
-      version: ver,
-      repo: "https://github.com/PMZPZM0/codex-cloud-assistant",
-      deployRepo: "https://github.com/PMZPZM0/codex-cloud-assistant",
+      version: APP_VERSION,
+      repo: DEPLOY_REPO,
+      deployRepo: DEPLOY_REPO,
       uptimeSec: Math.round(process.uptime()),
       node: process.version,
     });
+  }
+  /* ── 检查更新（10-18 用户令「加上国内镜像更新」）──────────────────────────
+     ⛔ 为什么不在浏览器里查 GitHub：
+        ① 匿名 API 限 **60 次/小时/IP**，超了就是 **403** —— 很容易被误读成"被墙"
+           （实测：面板点「检查更新」直接 403，提示语也写错了）；
+        ② 国内浏览器直连 github.com / api.github.com 经常超时。
+     ⇒ 由**服务端**依次试「直连 + 国内镜像」的 **raw 文件**：raw 不计 API 配额，
+        镜像只做透传。⛔ 只读一个 VERSION 文本，不拉代码、不执行任何东西。 */
+  if (p === "/api/updates" && req.method === "GET") {
+    const rawUrl = DEPLOY_REPO.replace("https://github.com/", "https://raw.githubusercontent.com/") + "/main/VERSION";
+    const tried = [];
+    for (const m of UPDATE_MIRRORS) {
+      const url = m.prefix + rawUrl;
+      const t0 = Date.now();
+      try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(6000), headers: { "Cache-Control": "no-cache" } });
+        const text = r.ok ? (await r.text()).trim() : "";
+        const latest = (text.match(/^v?\d+\.\d+\.\d+/) || [])[0] || "";
+        tried.push({ name: m.name, ok: Boolean(latest), status: r.status, ms: Date.now() - t0, error: latest ? "" : explainProbeStatus(r.status) });
+        if (latest) return send(200, { ok: true, current: APP_VERSION, latest, source: m.name, tried, repo: DEPLOY_REPO });
+      } catch (error) {
+        tried.push({ name: m.name, ok: false, status: 0, ms: Date.now() - t0, error: classifyFetchError(error) });
+      }
+    }
+    return send(200, { ok: false, current: APP_VERSION, tried, repo: DEPLOY_REPO, message: "所有源都失败（含国内镜像）—— 直接打开仓库页看最新 tag" });
   }
   const readBody = () => new Promise((resolve, reject) => {
     let raw = ""; req.on("data", (c) => { raw += c; if (raw.length > 64 * 1024) { reject(new Error("too-large")); req.destroy(); } });
