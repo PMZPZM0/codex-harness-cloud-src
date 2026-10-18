@@ -1,5 +1,5 @@
 {
-  "version": "1.1.9",
+  "version": "1.2.0",
   "releasedAt": "2026-10-18",
   "repo": "PMZPZM0/codex-harness-cloud-src",
   "notes": "发版清单：改这里就够，脚本与服务端都读它（不再硬编码文件列表）。",
@@ -15,22 +15,22 @@
       "src": "cloud/server-account/server.js",
       "kind": "server",
       "as": "server.js",
-      "sha256": "af817da540276d71e8949d5bbfa466317306ab932984c2204914ae1c2b58dfa2",
-      "bytes": 188465
+      "sha256": "eb57b3a89a577848e1f3856299617c5421c9f31dc9fb2b9abbee8c9e6d354d99",
+      "bytes": 192075
     },
     {
       "src": "cloud/web/account.html",
       "kind": "web",
       "as": "account.html",
-      "sha256": "750912caa9d2a39b6a94551c45eb235b76ac72eb52c929cfd915e6ba55a2cb81",
-      "bytes": 195097
+      "sha256": "8b56d7b11ddb2ebda9759af16e3e39e8ae501fbc5c74d1ce67733a6d3e32fce4",
+      "bytes": 198196
     },
     {
       "src": "cloud/web/index.html",
       "kind": "web",
       "as": "index.html",
-      "sha256": "2d8cab9fdc98574050b89ead8812bfcdbf6ff0cae05942f15d6fb35e493aeb7e",
-      "bytes": 50922
+      "sha256": "ba345accf3d23694b07396101de3ef5f4640a60c4c87836e81b413861089c71a",
+      "bytes": 51094
     },
     {
       "src": "cloud/web/app.js",
@@ -50,15 +50,15 @@
       "src": "cloud/web/admin.html",
       "kind": "web",
       "as": "admin.html",
-      "sha256": "8a488ee20b6261972364139726ae58dbbaccfbd4bcba3fb059714ca25d517066",
-      "bytes": 27923
+      "sha256": "223463ccc92828dbe28cdf4a0eb116b6dcf70812050c9a9cfa8923fc2ce76cd7",
+      "bytes": 28095
     },
     {
       "src": "cloud/web/fnos-guide.html",
       "kind": "web",
       "as": "fnos-guide.html",
-      "sha256": "06da0d09a4d628c40d6b306796e93499ad645e391374c7ee24d2e02df3f1ed7b",
-      "bytes": 16815
+      "sha256": "e6ef26c3fc7652f8ec0a6f5637f246419c18aae2ecbed6073a711a1fd5024668",
+      "bytes": 16987
     },
     {
       "src": "cloud/web/favicon-32.png",

@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <!-- 10-18 用户令：网页加 logo（原来标签页是空白方块） -->
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png" />
+    <!-- 10-18 用户令：网页加 logo；后改为**可自定义**（管理员上传覆盖，默认沿用内置图标）。
+         ⛔ 只留一条动态 link：/cloud-api/api/favicon 由服务端决定发自定义还是默认，
+            这样前端不需要 onerror 兜底，也不会在换图标后还命中旧静态文件的强缓存。 -->
+    <link rel="icon" href="/cloud-api/api/favicon" />
     <link rel="apple-touch-icon" href="favicon-256.png" />
 <title>控制台 · Codex Assistant</title>
 <!-- ⛔ 自足页：只依赖本文件与 /cloud-api/*、本机 127.0.0.1（探测助手）—— 云端原样托管即可用。
@@ -449,6 +450,19 @@
         <span class="hint">（关闭后用户端显示「管理员已关闭云端会话同步」，不影响登录与模型调用）</span>
       </label>
       <p class="status" id="featStatus"></p>
+    </div>
+    <!-- 站点图标（10-18 用户令「做成自定义图标，管理员可以上传改，默认现在的可以」） -->
+    <div class="card" id="brandCard">
+      <h2>站点图标</h2>
+      <p class="hint" style="margin:0 0 8px">浏览器标签页上显示的图标。<b>不传则用内置默认图标</b>；上传后立即覆盖，刷新页面即生效。</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="file" id="brandFile" accept="image/png,image/jpeg,image/svg+xml" style="display:none" />
+        <button class="btn sm" id="brandPick">选择图片上传</button>
+        <button class="btn sm" id="brandReset">恢复默认</button>
+        <button class="btn sm" id="brandPreview">预览当前</button>
+        <span class="hint" id="brandMsg"></span>
+      </div>
+      <p class="hint" style="margin:8px 0 0">支持 PNG / JPEG / SVG，≤ 512KB。建议正方形 32×32 或 64×64（放大后浏览器会自动缩放）。</p>
     </div>
     <div class="card">
       <h2>上游 API <span class="pill ok">热生效</span></h2>
@@ -1600,6 +1614,37 @@
       else { featSay("保存失败：" + ((r.j && r.j.error) || r.status), "bad"); self.checked = !on; }
     }).catch(function () { self.disabled = false; featSay("保存失败：网络错误", "bad"); self.checked = !on; });
   };
+  /* ── 站点图标（10-18）：管理员上传覆盖，默认沿用内置 ── */
+  function brandMsg(t, c) { var el = $("brandMsg"); if (!el) return; el.textContent = t || ""; el.className = "hint" + (c ? " " + c : ""); }
+  if ($("brandPick")) {
+    $("brandPick").onclick = function () { $("brandFile").click(); };
+    $("brandFile").onchange = function () {
+      var f = this.files && this.files[0];
+      if (!f) return;
+      if (f.size > 512 * 1024) { brandMsg("图片过大（上限 512KB）", "bad"); this.value = ""; return; }
+      var self = this;
+      var r = new FileReader();
+      r.onload = function () {
+        brandMsg("上传中…");
+        /* ⛔ 传 base64 data URL：服务端校验类型白名单 + 大小，落盘文件名固定（不用客户端文件名） */
+        api("/admin/favicon", { method: "POST", body: { data: String(r.result) } }).then(function (x) {
+          if (x.ok && x.j && x.j.ok) brandMsg("已更新（刷新页面看标签页）", "ok");
+          else brandMsg("上传失败：" + ((x.j && x.j.error) || ("HTTP " + x.status)), "bad");
+          self.value = "";
+        }).catch(function () { brandMsg("上传失败：网络错误", "bad"); self.value = ""; });
+      };
+      r.readAsDataURL(f);
+    };
+    $("brandReset").onclick = function () {
+      if (!window.confirm("恢复成内置默认图标？当前上传的图标会被删除。")) return;
+      brandMsg("处理中…");
+      api("/admin/favicon", { method: "DELETE" }).then(function (x) {
+        brandMsg(x.ok && x.j && x.j.ok ? "已恢复默认（刷新页面看标签页）" : "恢复失败", x.ok ? "ok" : "bad");
+      }).catch(function () { brandMsg("恢复失败：网络错误", "bad"); });
+    };
+    /* 预览：加时间戳绕开浏览器对 favicon 的强缓存 */
+    $("brandPreview").onclick = function () { window.open("/cloud-api/api/favicon?t=" + Date.now(), "_blank"); };
+  }
   function loadUpstreamCfg() {
     api("/admin/upstream").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { $("adminTab").hidden = true; return; }

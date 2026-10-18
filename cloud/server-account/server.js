@@ -995,6 +995,56 @@ const server = http.createServer(async (req, res) => {
       node: process.version,
     });
   }
+  /* ── 站点图标（10-18 用户令「做成自定义图标，管理员可以上传改这个图标，默认现在的可以」）──
+     ⛔ 设计取舍：
+        · 存储放 `<data 目录>/branding/favicon.<ext>` —— 与 data.json 同级，
+          ⛔ 不放 web 目录：那样会被 selfupdate 的覆盖流程当成"自己的文件"管起来。
+        · `GET /api/favicon` 是**公开**端点：有自定义就发自定义，否则发内置默认
+          （`HARNESS_WEB_DIR/favicon-32.png`）⇒ 前端只需一个 link，永远有内容、不用 onerror 兜底。
+        · `POST /admin/favicon` 收 **base64**（不解析 multipart，省一个依赖）；
+          校验类型白名单 + ≤512KB，文件名固定 `favicon.<ext>`，⛔ 绝不按客户端文件名落盘。
+     · `DELETE /admin/favicon` 恢复默认。 */
+  if (p === "/api/favicon" && req.method === "GET") {
+    const dir = path.join(path.dirname(DATA_FILE), "branding");
+    const custom = ["png", "jpeg", "svg"].map((e) => path.join(dir, "favicon." + e)).find((f) => { try { return fs.existsSync(f); } catch { return false; } });
+    const builtin = path.join(String(process.env.HARNESS_WEB_DIR || "/var/www/codex-harness-cloud"), "favicon-32.png");
+    const file = custom || builtin;
+    try {
+      const buf = fs.readFileSync(file);
+      const mime = file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".jpeg") ? "image/jpeg" : "image/png";
+      /* 自定义图标缓存 5 分钟便于管理员改完即时生效；默认图标可长缓存 */
+      res.writeHead(200, { "Content-Type": mime, "Cache-Control": custom ? "public, max-age=300" : "public, max-age=86400" });
+      res.end(buf);
+    } catch {
+      send(404, { ok: false, error: "favicon-missing" });
+    }
+    return;
+  }
+  if (p === "/admin/favicon" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBodyLarge(2 * 1024 * 1024);
+    const data = String((body && body.data) || "");
+    const m = /^data:image\/(png|jpeg|svg\+xml);base64,([A-Za-z0-9+/=]+)$/.exec(data);
+    if (!m) return send(400, { ok: false, error: "格式不对：请上传 PNG/JPEG/SVG 的 base64 data URL" });
+    const ext = m[1] === "svg+xml" ? "svg" : m[1];
+    const buf = Buffer.from(m[2], "base64");
+    if (!buf.length) return send(400, { ok: false, error: "内容为空" });
+    if (buf.length > 512 * 1024) return send(400, { ok: false, error: "图标过大（上限 512KB）" });
+    /* ⛔ 固定文件名 + 白名单扩展名：绝不使用客户端给的文件名（路径穿越） */
+    const dir = path.join(path.dirname(DATA_FILE), "branding");
+    fs.mkdirSync(dir, { recursive: true });
+    for (const e of ["png", "jpeg", "svg"]) { try { fs.rmSync(path.join(dir, "favicon." + e), { force: true }); } catch { /* 忽略 */ } }
+    fs.writeFileSync(path.join(dir, "favicon." + ext), buf, { mode: 0o644 });
+    console.log(`[branding] ${me.username} 上传站点图标（${ext}, ${buf.length} B）`);
+    return send(200, { ok: true, ext, bytes: buf.length });
+  }
+  if (p === "/admin/favicon" && req.method === "DELETE") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const dir = path.join(path.dirname(DATA_FILE), "branding");
+    for (const e of ["png", "jpeg", "svg"]) { try { fs.rmSync(path.join(dir, "favicon." + e), { force: true }); } catch { /* 忽略 */ } }
+    console.log(`[branding] ${me.username} 恢复默认站点图标`);
+    return send(200, { ok: true });
+  }
   /* ── 检查更新（10-18 用户令「加上国内镜像更新」）──────────────────────────
      ⛔ 为什么不在浏览器里查 GitHub：
         ① 匿名 API 限 **60 次/小时/IP**，超了就是 **403** —— 很容易被误读成"被墙"
