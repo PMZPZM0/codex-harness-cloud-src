@@ -1,5 +1,5 @@
 {
-  "version": "1.2.4",
+  "version": "1.2.5",
   "releasedAt": "2026-10-18",
   "repo": "PMZPZM0/codex-harness-cloud-src",
   "notes": "发版清单：改这里就够，脚本与服务端都读它（不再硬编码文件列表）。",
@@ -57,8 +57,8 @@
       "src": "cloud/web/fnos-guide.html",
       "kind": "web",
       "as": "fnos-guide.html",
-      "sha256": "21165f85f5f71cdbe4188a34527342c95c1e90903199655b64806fd13ac66cad",
-      "bytes": 21188
+      "sha256": "184982ee67726953df71050c04014bd682de42919bdb970d3182a369a2577b7a",
+      "bytes": 12740
     },
     {
       "src": "cloud/web/favicon-32.png",
