@@ -50,9 +50,11 @@ const UPDATE_REPO = (() => {
   return (!isGit && hasSelfUpdate) ? "PMZPZM0/codex-harness-cloud-src" : "PMZPZM0/codex-cloud-assistant";
 })();
 const UPDATE_REPO_URL = "https://github.com/" + UPDATE_REPO;
-/** 版本文件在两仓里的位置不同：云助手仓是 `cloud/VERSION`，分发仓是根 `VERSION`。
- *  ⛔ 路径写错的话，所有镜像都会 404，面板就永远"查不到最新版"。 */
-const UPDATE_VERSION_PATH = UPDATE_REPO === "PMZPZM0/codex-harness-cloud-src" ? "cloud/VERSION" : "VERSION";
+/** 版本信息的来源（10-18 改**清单驱动**）：
+ *  · 云助手仓 ⇒ `cloud/manifest.json`（含 version + 文件列表，发版只改它）
+ *  · 分发仓   ⇒ 根 `VERSION`（它是 git 部署，清单由 git 自己管）
+ *  ⛔ 路径写错的话所有镜像都会 404，面板就永远"查不到最新版"。 */
+const UPDATE_VERSION_PATH = UPDATE_REPO === "PMZPZM0/codex-harness-cloud-src" ? "cloud/manifest.json" : "VERSION";
 /** 更新检查的源（10-18 用户令「**默认走国内镜像**更新」）：
  *  **国内镜像优先**，直连放最后兜底。按顺序试、第一个成功的就用。
  *  ⛔ 用镜像的 raw 透传（`<mirror>https://raw.githubusercontent.com/...`）——
@@ -997,7 +999,15 @@ const server = http.createServer(async (req, res) => {
         /* ⛔ 带时间戳 query：镜像/CDN 会缓存 raw 文件，不加更容易读到上一版 */
         const r = await fetch(m.prefix + rawUrl + "?t=" + Date.now(), { signal: AbortSignal.timeout(6000), headers: { "Cache-Control": "no-cache" } });
         const text = r.ok ? (await r.text()).trim() : "";
-        const latest = (text.match(/^v?\d+\.\d+\.\d+/) || [])[0] || "";
+        /* ⛔ 清单是 JSON（取 `version`）；分发包的 VERSION 是纯文本 ⇒ 先按 JSON 试，失败回落文本 */
+        const latest = (() => {
+          if (!text) return "";
+          try {
+            const j = JSON.parse(text);
+            if (j && j.version) return String(j.version).trim().replace(/^v/, "");
+          } catch { /* 不是 JSON：按纯文本处理 */ }
+          return ((text.match(/^v?\d+\.\d+\.\d+/) || [])[0] || "").replace(/^v/, "");
+        })();
         return { name: m.name, ok: Boolean(latest), status: r.status, ms: Date.now() - t0, latest, error: latest ? "" : explainProbeStatus(r.status) };
       } catch (error) {
         return { name: m.name, ok: false, status: 0, ms: Date.now() - t0, latest: "", error: classifyFetchError(error) };
