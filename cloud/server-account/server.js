@@ -2327,6 +2327,60 @@ const server = http.createServer(async (req, res) => {
           : "不可达：看下面每一行的原因",
       });
     }
+    /* ── 运维：更新 / 重启（10-18 用户令「加上更新，重启功能」）────────────────
+       ⛔⛔ 高危接口（能改代码、能杀进程），三条硬约束：
+          ① 仅 admin；② 必须显式 `{ confirm: true }`；③ 更新只做 `git pull --ff-only`
+             （不 merge、不 rebase —— 冲突时宁可失败也不要在生产目录里留下半截合并）。
+       ⛔ 重启用 `process.exit(0)` 交给 systemd 的 `Restart=always` 拉起，
+          **不要**自己 spawn 新进程：那会出现两个实例抢同一份 data.json。
+       ⛔ 必须**先 send 响应再退出**，否则前端只看到"连接被重置"。 */
+    if (p === "/admin/system/restart" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      if (!body || body.confirm !== true) return send(400, { ok: false, error: "需要确认（confirm: true）" });
+      console.log(`[ops] ${me.username} 请求重启服务`);
+      send(200, { ok: true, restarting: true, message: "正在重启，约 3 秒后自动恢复" });
+      setTimeout(() => process.exit(0), 400);
+      return;
+    }
+    if (p === "/admin/system/update" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      if (!body || body.confirm !== true) return send(400, { ok: false, error: "需要确认（confirm: true）" });
+      const repoRoot = path.resolve(__dirname, "..");
+      if (!fs.existsSync(path.join(repoRoot, ".git"))) {
+        return send(400, {
+          ok: false,
+          error: "当前安装不是 git 部署（目录里没有 .git），无法一键更新。",
+          hint: "两种做法：① 用分发包的方式重装（git clone + deploy/install.sh）；② 手动把新版 server-account/ 与 web/ 覆盖过来，再点「重启服务」。",
+        });
+      }
+      const { execFile } = require("node:child_process");
+      const run = (args) => new Promise((resolve) => {
+        execFile("git", args, { cwd: repoRoot, timeout: 60000 }, (err, stdout, stderr) => {
+          resolve({ ok: !err, out: String(stdout || "").trim(), err: String(stderr || (err && err.message) || "").trim() });
+        });
+      });
+      const before = await run(["rev-parse", "--short", "HEAD"]);
+      const pull = await run(["pull", "--ff-only"]);
+      if (!pull.ok) {
+        /* 兜底：ff-only 失败一般不会改工作区，但仍回到 pull 前的 commit，避免留下脏树 */
+        await run(["reset", "--hard", "ORIG_HEAD"]);
+        console.log(`[ops] ${me.username} 更新失败：${pull.err.slice(0, 200)}`);
+        return send(500, { ok: false, error: "更新失败：" + (pull.err || "未知错误"), detail: pull.out });
+      }
+      const after = await run(["rev-parse", "--short", "HEAD"]);
+      const changed = before.out !== after.out;
+      console.log(`[ops] ${me.username} 更新${changed ? `成功 ${before.out}→${after.out}` : "检查完成（无变化）"}`);
+      send(200, {
+        ok: true, restarting: true, changed,
+        from: before.out, to: after.out,
+        output: pull.out.slice(0, 1200),
+        message: changed ? `已更新 ${before.out} → ${after.out}，正在重启` : "代码已是最新（无变化），正在重启",
+      });
+      setTimeout(() => process.exit(0), 400);
+      return;
+    }
     /* ── 邀请码：用户侧校验 + 管理端生成/监控（10-16）────────────────────────── */
     if (p === "/invite/check" && req.method === "GET") {
       /* ⛔ 必须限流：这是**未鉴权**端点 —— 不限流就等于给出"批量枚举有效码"的通道
