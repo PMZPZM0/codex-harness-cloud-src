@@ -52,7 +52,7 @@
   .qm:hover { border-color: var(--brand); color: var(--brand-ink); }
   /* 闲时选项行（10-18 用户令：不单独一张卡片，精简进「模型管理」标题行）——
      ⛔ 只做排版，不写死色值（全部走主题变量，亮/暗自动跟随）。 */
-  .op-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 400; color: var(--muted); }
+  .op-inline { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12.5px; font-weight: 400; color: var(--muted); }
   .op-inline .op-label { display: inline-flex; align-items: center; font-weight: 600; color: var(--text); }
   .op-inline .op-toggle { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
   .op-inline .op-summary { font-size: 12px; }
@@ -552,7 +552,7 @@
           <span class="op-summary" id="opSummary">—</span>
           <button class="btn sm" id="opEdit">设置</button>
         </span>
-        <button class="btn sm" id="amSync" style="margin-left:auto">重新同步目录</button>
+        <button class="btn sm" id="amSync">重新同步目录</button>
       </h2>
       <p class="hint">
         <b>倍率</b> = 调用该模型时按倍率扣积分（如 0.29 表示 1 积分额度按 0.29 计），<b>留空 = 免费</b>。
