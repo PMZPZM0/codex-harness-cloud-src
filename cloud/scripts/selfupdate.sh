@@ -41,6 +41,7 @@ command -v git >/dev/null 2>&1 || die "需要 git（apt-get install -y git）"
 command -v node >/dev/null 2>&1 || die "需要 node（用于覆盖后的语法检查）"
 
 SOURCES=(
+  "cloud/VERSION"
   "cloud/server-account/server.js"
   "cloud/web/account.html"
   "cloud/web/index.html"
@@ -87,6 +88,12 @@ cp "$STAGE/server.js" "${SERVER_JS}.new"
 [ -f "$SERVER_JS" ] && cp "$SERVER_JS" "${SERVER_JS}.bak-${STAMP}"
 mv "${SERVER_JS}.new" "$SERVER_JS"
 say "   server.js → $SERVER_JS（备份 ${SERVER_JS}.bak-${STAMP}）"
+
+# 版本号：⛔ 必须一起更新 —— 否则服务重启后版本仍是旧的，面板会一直提示"有新版本"（用户实测）
+if [ -f "$STAGE/VERSION" ]; then
+  cp "$STAGE/VERSION" "$(dirname "$SERVER_JS")/VERSION"
+  say "   VERSION → $(dirname "$SERVER_JS")/VERSION（$(cat "$STAGE/VERSION")）"
+fi
 
 for f in account.html index.html app.js styles.css admin.html fnos-guide.html; do
   [ -f "$STAGE/$f" ] || continue

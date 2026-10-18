@@ -19,13 +19,40 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const PORT = Number(process.env.HARNESS_ACCOUNTS_PORT || 8091);
-/* 本服务版本（10-18「云端管理加更新功能」）：读包根 VERSION，读不到就 dev。
-   ⛔ 不写死在代码里 —— 否则每次发版要改两处，迟早不一致。 */
+/* 本服务版本（10-18「云端管理加更新功能」）：
+   ⛔⛔ 读**自己这份部署**的 VERSION —— 先看 server.js 同目录（摊平部署），再看上级（分发包的 server-account/）。
+      曾经只读 `..`，主站的 `..` 是 `/home/ubuntu`（没有 VERSION）⇒ 版本恒为 dev，
+      而比对的是分发仓的版本号 ⇒ **永远显示"有新版本"**（用户实测）。
+   ⛔ 不写死在代码里：否则每次发版要改两处，迟早不一致。 */
 const APP_VERSION = (() => {
-  try { return String(fs.readFileSync(path.join(__dirname, "..", "VERSION"), "utf8")).trim() || "dev"; } catch { return "dev"; }
+  for (const p of [path.join(__dirname, "VERSION"), path.join(__dirname, "..", "VERSION")]) {
+    try {
+      const v = String(fs.readFileSync(p, "utf8")).trim();
+      if (v) return v;
+    } catch { /* 继续找下一个 */ }
+  }
+  return "dev";
 })();
-/** 可自部署的那个仓（面板「获取可部署版本」与更新检查都指向它）。 */
+/** 可自部署的那个仓（面板「获取可部署版本」指向它）。 */
 const DEPLOY_REPO = "https://github.com/PMZPZM0/codex-cloud-assistant";
+/** **该跟谁比版本**（10-18）：分发包比自己的仓；主站（非 git + 有 selfupdate.sh）比云助手仓。
+ *  ⛔ 拿分发仓的版本号去比主站，必然"永远有新版本" —— 这是之前那个 bug 的第二半。 */
+const UPDATE_REPO = (() => {
+  const envRepo = String(process.env.HARNESS_UPDATE_REPO || "").trim();
+  if (envRepo) return envRepo.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/+$/, "");
+  const isGit = (() => { try { return fs.existsSync(path.join(__dirname, "..", ".git")); } catch { return false; } })();
+  const hasSelfUpdate = (() => {
+    for (const p of [path.join(__dirname, "selfupdate.sh"), path.join(__dirname, "..", "selfupdate.sh")]) {
+      try { if (fs.existsSync(p)) return true; } catch { /* ignore */ }
+    }
+    return false;
+  })();
+  return (!isGit && hasSelfUpdate) ? "PMZPZM0/codex-harness-cloud-src" : "PMZPZM0/codex-cloud-assistant";
+})();
+const UPDATE_REPO_URL = "https://github.com/" + UPDATE_REPO;
+/** 版本文件在两仓里的位置不同：云助手仓是 `cloud/VERSION`，分发仓是根 `VERSION`。
+ *  ⛔ 路径写错的话，所有镜像都会 404，面板就永远"查不到最新版"。 */
+const UPDATE_VERSION_PATH = UPDATE_REPO === "PMZPZM0/codex-harness-cloud-src" ? "cloud/VERSION" : "VERSION";
 /** 更新检查的源（10-18 用户令「**默认走国内镜像**更新」）：
  *  **国内镜像优先**，直连放最后兜底。按顺序试、第一个成功的就用。
  *  ⛔ 用镜像的 raw 透传（`<mirror>https://raw.githubusercontent.com/...`）——
@@ -948,6 +975,9 @@ const server = http.createServer(async (req, res) => {
       version: APP_VERSION,
       repo: DEPLOY_REPO,
       deployRepo: DEPLOY_REPO,
+      /* ⛔ 该跟谁比版本（主站比云助手仓、分发包比自己的仓）—— 面板据此显示正确的"最新版" */
+      updateRepo: UPDATE_REPO,
+      updateRepoUrl: UPDATE_REPO_URL,
       uptimeSec: Math.round(process.uptime()),
       node: process.version,
     });
@@ -960,7 +990,7 @@ const server = http.createServer(async (req, res) => {
      ⇒ 由**服务端**依次试「直连 + 国内镜像」的 **raw 文件**：raw 不计 API 配额，
         镜像只做透传。⛔ 只读一个 VERSION 文本，不拉代码、不执行任何东西。 */
   if (p === "/api/updates" && req.method === "GET") {
-    const rawUrl = DEPLOY_REPO.replace("https://github.com/", "https://raw.githubusercontent.com/") + "/main/VERSION";
+    const rawUrl = UPDATE_REPO_URL.replace("https://github.com/", "https://raw.githubusercontent.com/") + "/main/" + UPDATE_VERSION_PATH;
     const probeOne = async (m) => {
       const t0 = Date.now();
       try {
