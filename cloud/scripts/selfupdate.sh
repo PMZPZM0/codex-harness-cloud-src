@@ -52,20 +52,23 @@ jget() {  # jget <file> <dotted-path>  —— 极简取值，避免依赖 jq
   ' "$1" "$2"
 }
 
-say "① 取发版清单（多镜像，缓存旧版会被 sha256 拒绝）"
-mf_ok=0
+say "① 取发版清单（多镜像，**取 version 最高**）"
+# ⛔ 清单本身也会被镜像 CDN 缓存 —— 只取"第一个能下到的"会拿到旧版（实测：本地已 1.1.2，镜像返 1.1.1）。
+#    ⇒ 所有镜像都取一遍，用 version 比较取最高。
+mf_ok=0; MF_VERSION=""
 for m in "${MIRRORS[@]}"; do
-  if curl -fsSL --max-time 15 -o "$STAGE/mf.json" "${m}${RAW}/${MANIFEST_REL}" 2>/dev/null; then
-    v="$(jget "$STAGE/mf.json" version)"
+  if curl -fsSL --max-time 15 -o "$STAGE/mf.try" "${m}${RAW}/${MANIFEST_REL}" 2>/dev/null; then
+    v="$(jget "$STAGE/mf.try" version)"
     if [ -n "$v" ]; then
-      MF_VERSION="$v"; mf_ok=1
-      say "   ✓ ${m:-直连}：version=$v"
-      break
+      if [ -z "$MF_VERSION" ] || [ "$(printf '%s\n%s\n' "$MF_VERSION" "$v" | sort -V | tail -1)" = "$v" ]; then
+        MF_VERSION="$v"; cp "$STAGE/mf.try" "$STAGE/mf.json"; mf_ok=1
+      fi
+      printf '   · %-16s version=%s\n' "${m:-直连}" "$v"
     fi
-    say "   ⚠ ${m:-直连} 的清单解析不出 version，换源"
   fi
 done
 [ "$mf_ok" = "1" ] || die "所有镜像都拿不到 $MANIFEST_REL —— 网络或仓里缺清单"
+say "   ✓ 采用最高版本 $MF_VERSION"
 
 CUR_VERSION="$(cat "$(dirname "$SERVER_JS")/VERSION" 2>/dev/null || echo '?')"
 say "   当前 $CUR_VERSION → 目标 $MF_VERSION"
@@ -135,8 +138,15 @@ else
   # ⛔ 用 `systemctl cat` 判断单元是否存在 —— `list-unit-files | grep` 在部分环境匹配不到
   #    （实测：单元明明在，grep 却失败 ⇒ 静默跳过重启 ⇒ 面板显示的还是旧版本号）。
   if systemctl cat "$SVC" >/dev/null 2>&1; then
-    systemctl restart "$SVC"; sleep 2
-    systemctl is-active --quiet "$SVC" && say "   ✓ 已重启并运行中" || say "   ⚠ 未起来：journalctl -u $SVC -n 50 --no-pager"
+    # ⛔ 非 root 时要 sudo；没有免密 sudo 就会失败（面板路径不走到这里——它是 --no-restart）
+    SUDO=""
+    [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+    if $SUDO systemctl restart "$SVC" 2>/dev/null; then
+      sleep 2
+      systemctl is-active --quiet "$SVC" && say "   ✓ 已重启并运行中" || say "   ⚠ 未起来：journalctl -u $SVC -n 50 --no-pager"
+    else
+      say "   ⚠ 重启失败（需要 sudo 权限）。请手动执行：sudo systemctl restart $SVC"
+    fi
   else
     say "   ⚠ 没找到 $SVC 这个 systemd 单元 —— 请手动重启你的服务"
   fi
