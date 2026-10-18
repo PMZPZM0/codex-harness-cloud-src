@@ -1490,7 +1490,12 @@ const server = http.createServer(async (req, res) => {
     if (p === "/sync/push" && req.method === "POST") {
       const who = syncAuth();
       if (!who) return send(401, { ok: false, error: "unauthorized" });
-      if (!who.device) return send(403, { ok: false, error: "device-token-required" });
+      /* ⛔ 10-18（用户拍板方案 A）：device token 由「必需」改为「可选」。
+         依据：同步存储按 `syncUserDir(who.username)` **按用户隔离**，device 只用于标记
+         "哪台机器传的"，**不是隔离凭据** ⇒ 桌面版用云账号 token 直接上传是安全的。
+         ⛔ 仍然要求已登录：`who` 来自 `syncAuth()`，匿名请求在这一步之前就被拦掉了。
+         ⛔ 桌面版没有配对流程（`readDeviceToken` 只在云助手的 headless 里），
+            这条 403 会让桌面版的「上传会话」永远失败 —— 这是放开它的直接原因。 */
       const body = await readBodyLarge();
       const incoming = Array.isArray(body && body.sessions) ? body.sessions : [];
       const index = readSyncIndex(who.username);
