@@ -423,6 +423,8 @@
       <p class="hint" id="updInfo">读取版本中…</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="btn sm" id="updCheck">检查更新</button>
+        <button class="btn sm" id="updApply">立即更新并重启</button>
+        <button class="btn sm" id="updRestart">重启服务</button>
         <button class="btn sm" id="updCopy">复制部署命令</button>
         <span class="hint" id="updStatus"></span>
       </div>
@@ -1476,6 +1478,51 @@
         + "cd /opt/codex-cloud-admin &amp;&amp; sudo git pull &amp;&amp; sudo systemctl restart codex-cloud-admin</pre></div>";
       updSay(upToDate ? "已是最新" : "可升级到 " + latest, upToDate ? "ok" : "warn");
     }).catch(function () { btn.disabled = false; updSay("查询失败：网络错误", "bad"); });
+  };
+  /* 重启后等它自己回来（systemd Restart=always 拉起）。
+     ⛔ 轮询用**公开**的 /api/version，不用旧会话 —— 重启后会话可能已失效。 */
+  function waitBackup(label) {
+    var t0 = Date.now();
+    var tick = function () {
+      if (Date.now() - t0 > 30000) {
+        updSay(label + "：30 秒内没回来 —— 去服务器看 journalctl -u codex-cloud-admin -n 50 --no-pager", "bad");
+        return;
+      }
+      fetch("/cloud-api/api/version", { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
+        .then(function (j) {
+          if (j && j.ok) {
+            updSay(label + "完成：已恢复（版本 " + (j.version || "?") + "，已运行 " + Math.round(j.uptimeSec || 0) + " 秒）", "ok");
+            if ($("updApply")) $("updApply").disabled = false;
+            if ($("updRestart")) $("updRestart").disabled = false;
+            loadVersion();
+          } else { setTimeout(tick, 1000); }
+        })
+        .catch(function () { setTimeout(tick, 1000); });
+    };
+    setTimeout(tick, 1500);
+  }
+  if ($("updApply")) $("updApply").onclick = function () {
+    if (!window.confirm("将执行 git pull --ff-only 并重启服务。\n\n影响：约 3–5 秒不可用；更新失败会自动回到当前 commit。\n\n继续？")) return;
+    var btn = $("updApply"); btn.disabled = true; updSay("更新中…");
+    api("/admin/system/update", { method: "POST", body: { confirm: true } }).then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) {
+        btn.disabled = false;
+        updSay("更新失败：" + (j.error || ("HTTP " + r.status)) + (j.hint ? "　→ " + j.hint : ""), "bad");
+        return;
+      }
+      updSay(j.message || "已提交更新", "ok");
+      waitBackup("更新");
+    }).catch(function () { updSay("更新请求已发出、连接随即中断（这是重启的正常表现）—— 等待恢复", "warn"); waitBackup("更新"); });
+  };
+  if ($("updRestart")) $("updRestart").onclick = function () {
+    if (!window.confirm("将重启账号服务。\n\n影响：约 2–4 秒不可用（正在处理的请求会失败）。\n\n继续？")) return;
+    var btn = $("updRestart"); btn.disabled = true; updSay("重启中…");
+    api("/admin/system/restart", { method: "POST", body: { confirm: true } }).then(function (r) {
+      if (!r.ok || !(r.j && r.j.ok)) { btn.disabled = false; updSay("重启失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
+      waitBackup("重启");
+    }).catch(function () { updSay("重启请求已发出、连接随即中断（正常）—— 等待恢复", "warn"); waitBackup("重启"); });
   };
   if ($("updCopy")) $("updCopy").onclick = function () {
     var cmd = "git clone " + CLOUD_DEPLOY_REPO + ".git && cd codex-cloud-assistant && sudo bash deploy/install.sh";
