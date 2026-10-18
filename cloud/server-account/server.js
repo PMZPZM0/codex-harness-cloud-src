@@ -2372,46 +2372,65 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody();
       if (!body || body.confirm !== true) return send(400, { ok: false, error: "需要确认（confirm: true）" });
       const repoRoot = path.resolve(__dirname, "..");
-      if (!fs.existsSync(path.join(repoRoot, ".git"))) {
-        /* ⛔ 非 git 部署（例如 server.js 摊平在目录里、web 在另一个目录）：
-           面板**不**自动覆盖生产文件 —— 一次下载失败就会让服务挂掉，这个权力不该给浏览器。
-           改为给一条**可直接执行**的自助更新命令（脚本 = 下载→备份→覆盖→重启，
-           且"下载不全则整体中止"，不会出现覆盖一半）。 */
-        const scriptPath = [path.join(__dirname, "selfupdate.sh"), path.join(repoRoot, "selfupdate.sh")]
-          .find((p) => { try { return fs.existsSync(p); } catch { return false; } }) || "";
+      /* ⛔⛔ 三条更新路径（用户令：「我这个是跑在服务器上部署的啊，为什么不行，那我的不行，人家的也都不行」
+         —— 自部署服务一键更新是**标准能力**，安全性靠工程手段保证，不靠拒绝）：
+           ① git 部署 ⇒ `git pull --ff-only`（失败 reset 回滚）
+           ② 非 git 但有 selfupdate.sh ⇒ 跑脚本（下载→备份→覆盖→语法闸；**下载不全则整体中止**）
+           ③ 两者都没有 ⇒ 告诉管理员怎么装脚本
+         ⛔ 非 git 路径必须 `--no-restart`：脚本里的 systemctl restart 会把**正在跑脚本的我们**杀掉，
+            响应就发不出去 ⇒ 重启统一由本进程 exit 交给 systemd。 */
+      const scriptPath = [path.join(__dirname, "selfupdate.sh"), path.join(repoRoot, "selfupdate.sh")]
+        .find((p) => { try { return fs.existsSync(p); } catch { return false; } }) || "";
+      const isGit = fs.existsSync(path.join(repoRoot, ".git"));
+      if (!isGit && !scriptPath) {
         return send(400, {
           ok: false,
-          error: "当前安装不是 git 部署（目录里没有 .git），无法一键更新。",
-          hint: scriptPath
-            ? `在服务器上执行这一条即可（下载 → 备份 → 覆盖 → 重启；下载不全则整体中止，不会覆盖一半）：\n    sudo bash ${scriptPath}`
-            : "运行仓库里的 cloud/scripts/selfupdate.sh（或手动覆盖 server-account 与 web 后点「重启服务」）。",
-          scriptPath,
+          error: "既不是 git 部署，也没有自助更新脚本（selfupdate.sh），无法一键更新。",
+          hint: "把仓库里的 cloud/scripts/selfupdate.sh 放到 server.js 同目录（chmod +x），再点一次；或按 README 用分发包装。",
         });
       }
       const { execFile } = require("node:child_process");
-      const run = (args) => new Promise((resolve) => {
-        execFile("git", args, { cwd: repoRoot, timeout: 60000 }, (err, stdout, stderr) => {
+      const execIn = (cmd, args, cwd) => new Promise((resolve) => {
+        execFile(cmd, args, { cwd, timeout: 180000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
           resolve({ ok: !err, out: String(stdout || "").trim(), err: String(stderr || (err && err.message) || "").trim() });
         });
       });
-      const before = await run(["rev-parse", "--short", "HEAD"]);
-      const pull = await run(["pull", "--ff-only"]);
-      if (!pull.ok) {
-        /* 兜底：ff-only 失败一般不会改工作区，但仍回到 pull 前的 commit，避免留下脏树 */
-        await run(["reset", "--hard", "ORIG_HEAD"]);
-        console.log(`[ops] ${me.username} 更新失败：${pull.err.slice(0, 200)}`);
-        return send(500, { ok: false, error: "更新失败：" + (pull.err || "未知错误"), detail: pull.out });
+      let detail = "";
+      let changed = true;
+      if (isGit) {
+        const git = (args) => execIn("git", args, repoRoot);
+        const before = await git(["rev-parse", "--short", "HEAD"]);
+        const pull = await git(["pull", "--ff-only"]);
+        if (!pull.ok) {
+          await git(["reset", "--hard", "ORIG_HEAD"]);
+          console.log(`[ops] ${me.username} git 更新失败：${pull.err.slice(0, 200)}`);
+          return send(500, { ok: false, error: "更新失败（已回滚到原 commit）：" + (pull.err || "未知错误"), detail: pull.out });
+        }
+        const after = await git(["rev-parse", "--short", "HEAD"]);
+        changed = before.out !== after.out;
+        detail = `${before.out} → ${after.out}\n${pull.out}`;
+      } else {
+        const r = await execIn("bash", [scriptPath, "--no-restart"], repoRoot);
+        if (!r.ok) {
+          console.log(`[ops] ${me.username} 脚本更新失败：${r.err.slice(0, 200)}`);
+          return send(500, {
+            ok: false,
+            error: "更新失败（脚本已中止，本机文件未被部分覆盖，服务未重启）",
+            detail: (r.out + "\n" + r.err).slice(0, 2000),
+          });
+        }
+        detail = r.out;
       }
-      const after = await run(["rev-parse", "--short", "HEAD"]);
-      const changed = before.out !== after.out;
-      console.log(`[ops] ${me.username} 更新${changed ? `成功 ${before.out}→${after.out}` : "检查完成（无变化）"}`);
+      console.log(`[ops] ${me.username} 更新完成（${isGit ? "git" : "脚本"}），正在重启`);
       send(200, {
         ok: true, restarting: true, changed,
-        from: before.out, to: after.out,
-        output: pull.out.slice(0, 1200),
-        message: changed ? `已更新 ${before.out} → ${after.out}，正在重启` : "代码已是最新（无变化），正在重启",
+        mode: isGit ? "git" : "script",
+        output: detail.slice(0, 2000),
+        message: isGit
+          ? (changed ? "已更新代码，正在重启（约 3–5 秒恢复）" : "代码已是最新，正在重启")
+          : "文件已更新（旧版备份为 *.bak-*），正在重启（约 3–5 秒恢复）",
       });
-      setTimeout(() => process.exit(0), 400);
+      setTimeout(() => process.exit(0), 600);
       return;
     }
     /* ── 邀请码：用户侧校验 + 管理端生成/监控（10-16）────────────────────────── */

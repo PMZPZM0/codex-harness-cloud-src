@@ -23,7 +23,13 @@ SERVER_JS="${SERVER_JS:-/home/ubuntu/chc-account/server.js}"
 WEB_DIR="${WEB_DIR:-/var/www/codex-harness-cloud}"
 SVC="${SVC:-chc-account}"
 DRY_RUN=""
-[ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+NO_RESTART=""
+for a in "$@"; do
+  case "$a" in
+    --dry-run) DRY_RUN=1 ;;
+    --no-restart) NO_RESTART=1 ;;   # 由调用方（服务端）自己 exit 交给 systemd 拉起
+  esac
+done
 
 say() { printf '\033[36m[update]\033[0m %s\n' "$*"; }
 die() { printf '\033[31m[update] %s\033[0m\n' "$*" >&2; exit 1; }
@@ -95,13 +101,17 @@ else
   say "   ⚠ 没有 node，跳过语法检查"
 fi
 
-say "④ 重启服务（$SVC）"
-if systemctl list-unit-files 2>/dev/null | grep -q "^${SVC}.service"; then
-  systemctl restart "$SVC"
-  sleep 2
-  systemctl is-active --quiet "$SVC" && say "   ✓ 已重启并运行中" || say "   ⚠ 未起来：journalctl -u $SVC -n 50 --no-pager"
+if [ -n "$NO_RESTART" ]; then
+  say "④ 跳过重启（--no-restart：由调用方自己重启）"
 else
-  say "   ⚠ 没找到 $SVC.service —— 请手动重启你的服务"
+  say "④ 重启服务（$SVC）"
+  if systemctl list-unit-files 2>/dev/null | grep -q "^${SVC}.service"; then
+    systemctl restart "$SVC"
+    sleep 2
+    systemctl is-active --quiet "$SVC" && say "   ✓ 已重启并运行中" || say "   ⚠ 未起来：journalctl -u $SVC -n 50 --no-pager"
+  else
+    say "   ⚠ 没找到 $SVC.service —— 请手动重启你的服务"
+  fi
 fi
 
 say "完成。回滚方法：把 *.bak-${STAMP} 覆盖回去再重启"
