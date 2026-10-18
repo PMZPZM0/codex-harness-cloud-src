@@ -1,5 +1,5 @@
 {
-  "version": "1.1.8",
+  "version": "1.1.9",
   "releasedAt": "2026-10-18",
   "repo": "PMZPZM0/codex-harness-cloud-src",
   "notes": "发版清单：改这里就够，脚本与服务端都读它（不再硬编码文件列表）。",
@@ -22,15 +22,15 @@
       "src": "cloud/web/account.html",
       "kind": "web",
       "as": "account.html",
-      "sha256": "58af2bb83cff31f17ecac6fdcfb1a7df29c7d865351222e03fbfe23f75a0bb1d",
-      "bytes": 194802
+      "sha256": "750912caa9d2a39b6a94551c45eb235b76ac72eb52c929cfd915e6ba55a2cb81",
+      "bytes": 195097
     },
     {
       "src": "cloud/web/index.html",
       "kind": "web",
       "as": "index.html",
-      "sha256": "9e69308cd0a7958158648d6a0ed479d86b268b0c4f2944e067c7ffd9dce9c0c3",
-      "bytes": 50627
+      "sha256": "2d8cab9fdc98574050b89ead8812bfcdbf6ff0cae05942f15d6fb35e493aeb7e",
+      "bytes": 50922
     },
     {
       "src": "cloud/web/app.js",
@@ -50,15 +50,36 @@
       "src": "cloud/web/admin.html",
       "kind": "web",
       "as": "admin.html",
-      "sha256": "e38082ace1cb04933be2f30b0974e4ffca07fafa3930aae1af4fa2282bed1523",
-      "bytes": 27628
+      "sha256": "8a488ee20b6261972364139726ae58dbbaccfbd4bcba3fb059714ca25d517066",
+      "bytes": 27923
     },
     {
       "src": "cloud/web/fnos-guide.html",
       "kind": "web",
       "as": "fnos-guide.html",
-      "sha256": "3a9e42e2a4b3e2e2064bdf0fb87054da4f96f14c2ce884bbf272e7ac8c6ad766",
-      "bytes": 16520
+      "sha256": "06da0d09a4d628c40d6b306796e93499ad645e391374c7ee24d2e02df3f1ed7b",
+      "bytes": 16815
+    },
+    {
+      "src": "cloud/web/favicon-32.png",
+      "kind": "web",
+      "as": "favicon-32.png",
+      "sha256": "39ef214d1e6f9c106bdd23c4c452e4335b7d6199bbf6df0dffa2b35896325140",
+      "bytes": 3442
+    },
+    {
+      "src": "cloud/web/favicon-64.png",
+      "kind": "web",
+      "as": "favicon-64.png",
+      "sha256": "188c656b68990b7d2158261e8943d61e9de9309d2600b5e97b0d0ce38a9ca75a",
+      "bytes": 9397
+    },
+    {
+      "src": "cloud/web/favicon-256.png",
+      "kind": "web",
+      "as": "favicon-256.png",
+      "sha256": "d3c9c906f115adfa5eb5134852e6b867c8891adf361ae08d6ba3277e073cece4",
+      "bytes": 72646
     }
   ]
 }
