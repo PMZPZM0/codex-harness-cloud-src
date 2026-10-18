@@ -448,7 +448,11 @@
     <!-- 知识库 / 记忆空间的上游（10-18 用户令「预留可配置的接口，以便自行配置飞牛OS」）——
          ⛔ 留空 = 回退服务端环境变量；保存后**热生效**。对接步骤见 docs/FNOS-INTEGRATION.md。 -->
     <div class="card" id="svcCard">
-      <h2>知识库 · 记忆空间 <span class="pill ok">热生效</span></h2>
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">知识库 · 记忆空间 <span class="pill ok">热生效</span>
+        <!-- 10-18 用户令「你这个云端配置没有教程啊」⇒ 右上角给明确入口，教程页可整段交给另一个 AI -->
+        <a class="btn sm" id="svcGuide" href="fnos-guide.html" target="_blank" rel="noopener"
+           style="margin-left:auto;text-decoration:none;display:inline-flex;align-items:center;gap:5px">配置教程 · 飞牛OS</a>
+      </h2>
       <p class="hint" id="svcInfo">读取中…</p>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-bottom:12px">
         <div>
@@ -1752,7 +1756,15 @@
         tdId.appendChild(Object.assign(document.createElement("code"), { textContent: m.id, style: "font-size:12px;color:var(--muted)" }));
         tr.appendChild(tdId);
         var tdCur = document.createElement("td");
-        if (m.creditsLocked) {
+        if (m.creditsMissing && !m.creditsLocked) {
+          /* ⛔ 从 OpenAI 兼容目录拉来的模型**上游没给倍率** ⇒ 现在是免费。
+             必须明说「未设倍率」，⛔ 不能显示成「免费 / 跟随上游」——那会让人以为它本来就免。 */
+          tdCur.appendChild(Object.assign(document.createElement("span"), { textContent: "未设倍率", style: "color:var(--warn);font-weight:600" }));
+          tdCur.appendChild(Object.assign(document.createElement("span"), {
+            textContent: "当前免费", className: "pill", title: "该模型的目录来自 OpenAI 兼容 /v1/models，上游没有倍率字段 —— 请在这一行填一个倍率，否则调用不扣分",
+            style: "margin-left:6px;font-size:11px;background:var(--warn-soft);color:var(--warn)",
+          }));
+        } else if (m.creditsLocked) {
           tdCur.appendChild(Object.assign(document.createElement("span"), { textContent: m.credits || "免费" }));
           tdCur.appendChild(Object.assign(document.createElement("span"), { textContent: "已钉", className: "pill ok", style: "margin-left:6px;font-size:11px" }));
         } else {

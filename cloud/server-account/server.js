@@ -1205,23 +1205,51 @@ const server = http.createServer(async (req, res) => {
       /* ⛔ 用 currentCatalogBase()（管理员可配），**不是** WBM_BASE 常量 ——
          否则"改了上游地址、点同步却还是拉旧地址"（配了没用，10-18 实测就是这个坑）。 */
       const catalogBase = currentCatalogBase();
-      if (!catalogBase || !WBM_TOKEN) return { ok: false, error: "wbm-not-configured" };
+      if (!catalogBase) return { ok: false, error: "wbm-not-configured" };
       try {
-        const r = await fetch(`${catalogBase}/api/model-catalog?realm=cn`, { headers: { Authorization: `Bearer ${WBM_TOKEN}` } });
-        if (!r.ok) return { ok: false, error: `wbm-http-${r.status}` };
-        const data = await r.json();
-        const list = (data.models || []).map((m) => ({
-          id: String(m.id || "").trim(),
-          name: String(m.name || m.id || "").trim(),
-          description: String(m.description || "").slice(0, 200),
-          credits: String(m.credits || "").trim(),
-          tags: Array.isArray(m.tags) ? m.tags.slice(0, 6).map(String) : [],
-          series: String(m.series || ""),
-          contextLength: Number(m.context_length || 0) || null,
-          maxOutputTokens: Number(m.max_output_tokens || 0) || null,
-          supportsImages: Boolean(m.supports_images),
-          supportsReasoning: Boolean(m.supports_reasoning),
-        })).filter((m) => m.id && !EXCLUDED_CATALOG_IDS.has(m.id));
+        /* ⛔ 10-18：目录来源**不止 WBM**。用户实测：上游是 OpenAI 兼容网关 ——
+           `/api/model-catalog` 返 **401**、而 `/v1/models` 有 50 个模型 ⇒ 必须能回落。
+           ⛔ 两源统一映射成同一份 list；OpenAI 源**没有倍率** ⇒ 打 `creditsMissing` 标记，
+              由面板提示「未设倍率（当前免费）」。⛔ 绝不猜一个默认倍率 —— 猜错就是多扣钱。 */
+        const authKey = WBM_TOKEN || currentGatewayKey();
+        let data = null;
+        let source = "wbm";
+        const wbmRes = await fetch(`${catalogBase}/api/model-catalog?realm=cn`, { headers: authKey ? { Authorization: `Bearer ${authKey}` } : {} });
+        if (wbmRes.ok) {
+          data = await wbmRes.json();
+        } else {
+          const oaRes = await fetch(`${catalogBase}/v1/models`, { headers: authKey ? { Authorization: `Bearer ${authKey}` } : {} });
+          if (!oaRes.ok) return { ok: false, error: `catalog-http-${wbmRes.status}/${oaRes.status}` };
+          data = await oaRes.json();
+          source = "openai";
+        }
+        const rows = source === "openai" ? (data.data || data.models || []) : (data.models || []);
+        const list = rows.map((m) => {
+          /* OpenAI 形状只有 id / object / created / owned_by：其余字段留空并标「缺倍率」 */
+          if (source === "openai") {
+            const oaId = String(m.id || "").trim();
+            return {
+              id: oaId, name: oaId,
+              description: "OpenAI 兼容目录（上游未提供倍率与规格）",
+              credits: "", tags: [], series: "",
+              contextLength: null, maxOutputTokens: null,
+              supportsImages: false, supportsReasoning: false,
+              creditsMissing: true,
+            };
+          }
+          return {
+            id: String(m.id || "").trim(),
+            name: String(m.name || m.id || "").trim(),
+            description: String(m.description || "").slice(0, 200),
+            credits: String(m.credits || "").trim(),
+            tags: Array.isArray(m.tags) ? m.tags.slice(0, 6).map(String) : [],
+            series: String(m.series || ""),
+            contextLength: Number(m.context_length || 0) || null,
+            maxOutputTokens: Number(m.max_output_tokens || 0) || null,
+            supportsImages: Boolean(m.supports_images),
+            supportsReasoning: Boolean(m.supports_reasoning),
+          };
+        }).filter((m) => m.id && !EXCLUDED_CATALOG_IDS.has(m.id));
         /* ⛔ 21:4x 用户令「把 auto 模型去了，那个不好判断用了哪个模型」：
            `auto` 由上游自动挑模型 ⇒ 记账时无法判断实际用了哪个 ⇒ 从目录里剔除
            （排除表见 EXCLUDED_CATALOG_IDS，方便以后再加）。
@@ -1257,8 +1285,10 @@ const server = http.createServer(async (req, res) => {
         const ids = new Set(list.map((m) => m.id));
         db.modelCatalog = {
           syncedAt: Date.now(),
-          realm: String(data.realm || "cn"),
-          source: String(data.source_label || data.source || "wbm"),
+          realm: source === "openai" ? "openai" : String(data.realm || "cn"),
+          /* ⛔ 记下目录来源：面板据此提示「上游没给倍率，需手动填」（openai 源一定缺倍率） */
+          source: source === "openai" ? "openai-compat" : String(data.source_label || data.source || "wbm"),
+          catalogSource: source,
           list,
           ...(prevAvail ? { available: prevAvail.filter((x) => ids.has(x)) } : {}),
         };
