@@ -1433,6 +1433,14 @@ const server = http.createServer(async (req, res) => {
       if (me) return { username: me.username, machineId: "", device: null };
       return null;
     }
+    /* ── 会话同步总闸（10-18 用户令「加一个管理员可以开关功能，关闭后用户就不能同步会话」）──
+       ⛔ 语义：`db.features.sessionSync === false` 才算关闭 —— **默认开**，不改变既有行为。
+       ⛔ 关闭后 `/sync/*` 五个接口一律 403，并回明确的 `session-sync-disabled`（客户端据此显示"已关闭"，
+          而不是当成网络故障去重试）。
+       ⛔ 只拦"同步"，**不拦登录/积分/模型**：关了同步用户照样能用模型。 */
+    if (p.startsWith("/sync/") && db.features && db.features.sessionSync === false) {
+      return send(403, { ok: false, error: "session-sync-disabled", message: "管理员已关闭云端会话同步" });
+    }
     if (p === "/sync/usage" && req.method === "GET") {
       const who = syncAuth();
       if (!who) return send(401, { ok: false, error: "unauthorized" });
@@ -2426,6 +2434,23 @@ const server = http.createServer(async (req, res) => {
           ? `连通：${best.name}${best.count != null ? `，${best.count} 条` : ""}（${best.ms}ms）`
           : "不可达：看下面每一行的原因",
       });
+    }
+    /* ── 功能开关（10-18）：管理员决定用户能不能同步会话 ─────────────────────
+       ⛔ POST 只接受**白名单字段**（`sessionSync`），不做通用设置写入 ——
+          否则这个接口迟早被人拿来塞任意键，变成一个"能改任意配置"的后门。 */
+    if (p === "/admin/features" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      return send(200, { ok: true, features: { sessionSync: !(db.features && db.features.sessionSync === false) } });
+    }
+    if (p === "/admin/features" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      if (typeof body.sessionSync !== "boolean") return send(400, { ok: false, error: "sessionSync 必须是 true 或 false" });
+      if (typeof db.features !== "object" || !db.features) db.features = {};
+      db.features.sessionSync = body.sessionSync;
+      persist();
+      console.log(`[features] ${me.username} 会话同步 → ${body.sessionSync ? "开启" : "关闭"}`);
+      return send(200, { ok: true, sessionSync: body.sessionSync });
     }
     /* ── 运维：更新 / 重启（10-18 用户令「加上更新，重启功能」）────────────────
        ⛔⛔ 高危接口（能改代码、能杀进程），三条硬约束：
