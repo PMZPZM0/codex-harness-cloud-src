@@ -50,6 +50,12 @@
   /* 表头里的「?」：鼠标悬停显示口径说明（时段/语义），⛔ 不写死文案，title 由 JS 按当前配置填。 */
   .qm { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 4px; border-radius: 50%; border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; cursor: help; vertical-align: 1px; }
   .qm:hover { border-color: var(--brand); color: var(--brand-ink); }
+  /* 闲时选项行（10-18 用户令：不单独一张卡片，精简进「模型管理」标题行）——
+     ⛔ 只做排版，不写死色值（全部走主题变量，亮/暗自动跟随）。 */
+  .op-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 400; color: var(--muted); }
+  .op-inline .op-label { display: inline-flex; align-items: center; font-weight: 600; color: var(--text); }
+  .op-inline .op-toggle { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .op-inline .op-summary { font-size: 12px; }
   .hint { color: var(--faint); font-size: 12.5px; }
 
   .kv { display: grid; grid-template-columns: 92px 1fr; gap: 9px 16px; font-size: 13.5px; }
@@ -536,6 +542,16 @@
 
     <div class="card" id="amCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">模型管理 <span class="pill ok">管理员</span>
+        <!-- 闲时（10-18 用户令：「不用单独一张卡片，精简成选项放到模型管理卡片里面」）——
+             默认只占标题行这一小段（开关 + 时段摘要 + 设置），点「设置」才展开编辑区。 -->
+        <span class="op-inline">
+          <span class="op-label">闲时时段<span class="qm" id="qmOffPeak" title="时段加载中…">?</span></span>
+          <label class="op-toggle" title="总闸：只影响「没单独设闲时倍率」的模型 —— 单独设过的一律按自己的值">
+            <input type="checkbox" id="opEnabled"> 启用
+          </label>
+          <span class="op-summary" id="opSummary">—</span>
+          <button class="btn sm" id="opEdit">设置</button>
+        </span>
         <button class="btn sm" id="amSync" style="margin-left:auto">重新同步目录</button>
       </h2>
       <p class="hint">
@@ -544,6 +560,26 @@
         · 你改过的模型会标「<b>已钉</b>」——<b>同步目录不会再覆盖你的值</b>；点「恢复上游」回到上游倍率。<br>
         · 没改过的模型显示上游倍率，上游调价时<b>自动跟随</b>。
       </p>
+      <!-- 闲时时段编辑区：默认折叠（标题行「设置」展开）。⛔ 只定义时间，倍率在下面表格里按模型填。 -->
+      <div id="opEditor" style="display:none">
+        <p class="hint" style="margin:0 0 8px">
+          这里只定义<b>哪些时间算闲时</b>；闲时按多少倍率计费，在下面表格的「闲时改为」列逐个模型填。
+          ⛔ <b>闲时倍率是直接倍率、不是折扣</b>：高峰 0.11、闲时填 0.05 ⇒ 闲时按 <b>0.05</b> 扣（不是 0.11×0.05）。
+          下面的「默认倍率」只是兜底（留空 = 该时段不优惠）；单独设过的模型不受「启用」开关影响。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>名称</th><th>起始（点）</th><th>结束（点）</th><th>默认倍率（可留空）</th><th></th></tr></thead>
+            <tbody id="opRows"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+          <button class="btn sm" id="opAdd">添加时段</button>
+          <button class="btn sm" id="opSave">保存</button>
+          <span class="hint" id="opNow"></span>
+        </div>
+        <p class="status" id="opStatus"></p>
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>模型</th><th>ID</th><th>高峰倍率<span class="qm" id="qmPeak" title="时段加载中…">?</span></th><th>改为</th><th>闲时倍率<span class="qm" id="qmOff" title="时段加载中…">?</span></th><th>闲时改为</th></tr></thead>
@@ -564,35 +600,8 @@
       <div id="amUserModels" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px 14px"></div>
     </div>
 
-    <div class="card" id="opCard">
-      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">闲时时段 <span class="pill ok">管理员</span>
-        <label style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12.5px;font-weight:400;cursor:pointer" title="总闸：只影响「没单独设闲时倍率」的模型 —— 单独设过的模型一律按自己的值，不受它影响">
-          <input type="checkbox" id="opEnabled"> 启用
-        </label>
-      </h2>
-      <p class="hint">
-        <b>这里只定义「哪些时间算闲时」</b>。闲时按多少倍率计费，去<b>上面模型表的「闲时改为」列</b>逐个模型填。
-        ⛔⛔ 闲时倍率是<b>直接倍率、不是折扣</b>：高峰 0.11、闲时填 0.05 ⇒ 闲时直接按 <b>0.05</b> 扣
-        （<b>不是</b> 0.11×0.05 = 0.0055）。<br>
-        <b>下面的「默认倍率」是可选的兜底</b>：某时段留空 ⇒ 该时段里没单独设的模型沿用<b>自己的高峰倍率</b>（该时段不优惠）；
-        填了 ⇒ 这些模型在该时段按这个默认值。<b>单独设过的模型一律按自己的值，不受上面「启用」开关影响</b>
-        （配了就该生效，否则就是"配了没用"）。<br>
-        时段按<b>服务器时间</b>判断；<b>起点含、终点不含</b>（如 0–8 = 00:00 到 07:59）；
-        起点大于终点表示<b>跨零点</b>（如 22 → 6）。命中多段时取<b>排在上面的那段</b>。
-      </p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>名称</th><th>起始（点）</th><th>结束（点）</th><th>默认倍率（可留空）</th><th></th></tr></thead>
-          <tbody id="opRows"></tbody>
-        </table>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
-        <button class="btn sm" id="opAdd">添加时段</button>
-        <button class="btn sm" id="opSave">保存</button>
-        <span class="hint" id="opNow"></span>
-      </div>
-      <p class="status" id="opStatus"></p>
-    </div>
+    <!-- 10-18：原「闲时时段」独立卡片已并入上方「模型管理」标题行的 .op-inline（用户令「不单独一张卡片」）。
+         ⛔ 别再把它拆回来 —— 那会让 #opAdd/#opSave/#opRows 出现重复 id。 -->
   </div>
 </main>
 </div>
@@ -1772,6 +1781,15 @@
     var txt = wins.length
       ? wins.map(function (w) { return (w.label || "时段") + " " + w.start + "–" + w.end + " 点"; }).join("、")
       : "（尚未设置任何闲时时段）";
+    /* 标题行那一小段的摘要（用户令：精简成选项、不占一张卡）——空配置时说"未设置"，不装作有 */
+    var sum = $("opSummary");
+    if (sum) sum.textContent = wins.length ? txt : "未设置";
+    var head = $("qmOffPeak");
+    if (head) head.title = "闲时时段：" + txt
+      + "\n（按服务器时间；起点含、终点不含；跨零点用 start>end 表示）\n"
+      + "这里只定义「哪些时间算闲时」—— 倍率在表格的「闲时改为」列按模型填。\n"
+      + "「启用」只影响没单独设的模型；单独设过的模型一律按自己的值。\n"
+      + "⛔ 闲时倍率是直接倍率、不是折扣：高峰 0.11、闲时填 0.05 ⇒ 闲时按 0.05 扣。";
     var off = $("qmOff");
     if (off) off.title = "闲时时段：" + txt
       + "（按服务器时间；起点含、终点不含；跨零点用 start>end 表示）\n"
@@ -1806,6 +1824,13 @@
       opSay("");
     }).catch(function () { opSay("闲时倍率读取失败：网络错误", "bad"); });
   }
+  /* 「设置」展开/收起时段编辑区（默认折叠 —— 用户令：精简成选项，不占版面） */
+  if ($("opEdit")) $("opEdit").onclick = function () {
+    var box = $("opEditor"); if (!box) return;
+    var willOpen = box.style.display === "none";
+    box.style.display = willOpen ? "" : "none";
+    this.textContent = willOpen ? "收起" : "设置";
+  };
   if ($("opAdd")) $("opAdd").onclick = function () { opAddRow({ label: "", start: 0, end: 0, rate: null }); opSay("已加一行，填好时段后点「保存」（默认倍率可留空）"); };
   if ($("opEnabled")) $("opEnabled").onchange = function () { opSay($("opEnabled").checked ? "开关已打开，点「保存」后生效" : "开关已关闭，点「保存」后生效"); };
   if ($("opSave")) $("opSave").onclick = function () {
