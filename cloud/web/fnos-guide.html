@@ -87,7 +87,29 @@
     <code>401 invalid or expired token</code>（那不是 key 错，是<b>头的类型错了</b>）。
   </div>
 
-  <h2>2. 部署前提（任意 Linux / NAS 通用）</h2>
+  <h2>2. 两条路径，任选其一</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:0 0 8px;">
+  <div style="padding:14px 16px;border-radius:12px;border:1px solid var(--line,#2a2a3d);background:rgba(255,255,255,.03);">
+    <b style="display:block;margin-bottom:6px;">路径 A · 飞牛 OS（NAS）</b>
+    <span style="font-size:12.5px;line-height:1.75;color:var(--muted,#9a99b4);">
+      有图形界面，走<b>应用中心</b>一键装；没有就走容器管理页粘贴镜像。
+      适合家里有 NAS、想长期挂着跑的用户。
+    </span>
+  </div>
+  <div style="padding:14px 16px;border-radius:12px;border:1px solid var(--line,#2a2a3d);background:rgba(255,255,255,.03);">
+    <b style="display:block;margin-bottom:6px;">路径 B · 服务器直接部署</b>
+    <span style="font-size:12.5px;line-height:1.75;color:var(--muted,#9a99b4);">
+      一台 Linux 服务器（VPS / 云主机 / 公司内网机）用 <b>Docker</b> 起两个容器即可。
+      适合有公网、要多人共用的场景。
+    </span>
+  </div>
+</div>
+<p style="font-size:12.5px;color:var(--muted,#9a99b4);margin:0 0 22px;">
+  两条路径装出来的东西完全一样 —— 后面第 3、4 章「拿 API Key」「在面板填地址」对两者通用。
+</p>
+
+<h2>2A. 路径 A：飞牛 OS 上的前提</h2>
+
   <ul>
     <li>飞牛OS 能开容器（Docker / Compose）或装套件；两个服务各占一个<b>固定端口</b>。</li>
     <li>给 NAS 一个<b>固定的局域网 IP</b>（下文用 <code>192.168.1.10</code> 举例）。</li>
@@ -98,7 +120,44 @@
         或把账号服务也放到内网。</li>
   </ul>
 
-  <h2>3. 装知识库（WeKnora）</h2>
+  <h2>2B. 路径 B：服务器直接部署（Docker）</h2>
+<p>判据只有一条：<b>这台服务器能被本服务访问到</b>（同机、同内网、或有公网地址都行）。下面是通用骨架，
+⛔ 镜像名与端口以 WeKnora / MemHub 官方文档为准，这里不写死：</p>
+<pre style="background:#0d0d15;border:1px solid var(--line,#2a2a3d);border-radius:10px;padding:14px 16px;
+  overflow-x:auto;font-size:12.5px;line-height:1.8;"><code># 1) 装 Docker（Debian/Ubuntu）
+curl -fsSL https://get.docker.com | sh
+
+# 2) 建一个专用目录，放两个服务的 compose
+mkdir -p /opt/cloud-upstream && cd /opt/cloud-upstream
+
+# 3) docker-compose.yml（⛔ 镜像名/端口按官方文档替换）
+cat &gt; docker-compose.yml &lt;&lt;'YAML'
+services:
+  weknora:                      # 知识库
+    image: &lt;weknora 官方镜像&gt;
+    ports: ["8080:8080"]
+    volumes: ["./weknora:/data"]
+    restart: unless-stopped
+  memhub:                       # 记忆空间
+    image: &lt;memhub 官方镜像&gt;
+    ports: ["8090:8090"]
+    volumes: ["./memhub:/data"]
+    restart: unless-stopped
+YAML
+
+# 4) 起服务
+docker compose up -d
+
+# 5) 确认活着
+curl -sS http://127.0.0.1:8080/health   # 知识库
+curl -sS http://127.0.0.1:8090/health   # 记忆</code></pre>
+<p style="font-size:12.5px;color:var(--muted,#9a99b4);">
+  <b>两个服务可以装在不同机器</b>（比如知识库在 A、记忆在 B），面板里分别填对应地址即可 —— 它们之间没有依赖。<br />
+  如果服务器有防火墙/安全组，记得<b>只放行内网或本服务所在机器</b>，不要对公网裸奔（这两个服务靠 API Key 鉴权，
+  但暴露在公网等于多一层风险）。
+</p>
+
+<h2>3. 装知识库（WeKnora）</h2>
 
   <h3>3.1 先看应用中心 / 镜像市场有没有（飞牛、群晖、威联通都有）</h3>
   <p>如果有现成的「知识库 / WeKnora / RAG」类应用：直接装，记下<b>访问地址与端口</b>，跳到 3.3。</p>
