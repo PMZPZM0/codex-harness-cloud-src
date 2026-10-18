@@ -1099,6 +1099,25 @@ const server = http.createServer(async (req, res) => {
         ② 国内浏览器直连 github.com / api.github.com 经常超时。
      ⇒ 由**服务端**依次试「直连 + 国内镜像」的 **raw 文件**：raw 不计 API 配额，
         镜像只做透传。⛔ 只读一个 VERSION 文本，不拉代码、不执行任何东西。 */
+  /* ── 应用更新并重启（10-18 用户令「加自动更新重启，方便用户那边自动更新」）──
+     ⛔ 不自己 spawn 新进程（会出现两个实例抢 data.json）：调 selfupdate.sh 覆盖文件后
+       `process.exit(0)`，由 systemd 的 `Restart=always` 拉起。这是唯一安全的自我更新方式。
+     ⛔ 先回响应再退出，否则客户端只看到"连接被重置"。⛔ 仅 admin。 */
+  if (p === "/api/updates/apply" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const script = [path.join(__dirname, "selfupdate.sh"), path.join(__dirname, "..", "selfupdate.sh")].find((f) => { try { return fs.existsSync(f); } catch { return false; } });
+    if (!script) return send(400, { ok: false, error: "找不到 selfupdate.sh —— 这个部署方式不支持应用内更新" });
+    const { execFile } = require("node:child_process");
+    execFile("bash", [script, "--no-restart"], { cwd: path.dirname(script), timeout: 240000, maxBuffer: 4194304 }, (err, stdout) => {
+      const log = String(stdout || "").split("\n").filter((l) => /采用最高|VERSION →|✓|✗|error/i.test(l)).slice(-12).join("\n");
+      if (err) return send(500, { ok: false, error: String(err.message || err).slice(0, 300), log });
+      send(200, { ok: true, log, restarting: true });
+      console.log(`[update] ${me.username} 触发应用更新，即将退出交给 systemd`);
+      setTimeout(() => process.exit(0), 800);
+    });
+    return;
+  }
+
   if (p === "/api/updates" && req.method === "GET") {
     const rawUrl = UPDATE_REPO_URL.replace("https://github.com/", "https://raw.githubusercontent.com/") + "/main/" + UPDATE_VERSION_PATH;
     const probeOne = async (m) => {
@@ -2564,7 +2583,15 @@ const server = http.createServer(async (req, res) => {
           否则这个接口迟早被人拿来塞任意键，变成一个"能改任意配置"的后门。 */
     if (p === "/admin/features" && req.method === "GET") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
-      return send(200, { ok: true, features: { sessionSync: !(db.features && db.features.sessionSync === false) } });
+      return send(200, {
+        ok: true,
+        features: {
+          sessionSync: !(db.features && db.features.sessionSync === false),
+          /* ⛔ 10-18 用户令「加自动更新重启」：默认**关** —— 自动重启会中断正在使用的人。 */
+          autoUpdate: Boolean(db.features && db.features.autoUpdate === true),
+          version: APP_VERSION,
+        },
+      });
     }
     if (p === "/admin/features" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
@@ -2572,6 +2599,7 @@ const server = http.createServer(async (req, res) => {
       if (typeof body.sessionSync !== "boolean") return send(400, { ok: false, error: "sessionSync 必须是 true 或 false" });
       if (typeof db.features !== "object" || !db.features) db.features = {};
       db.features.sessionSync = body.sessionSync;
+      if (typeof body.autoUpdate === "boolean") db.features.autoUpdate = body.autoUpdate;
       persist();
       console.log(`[features] ${me.username} 会话同步 → ${body.sessionSync ? "开启" : "关闭"}`);
       return send(200, { ok: true, sessionSync: body.sessionSync });
@@ -2987,6 +3015,25 @@ console.log(
     "｜网关密钥：" + (WBM_GATEWAY_KEY ? "已配置" : "未配置")
 );
 server.listen(PORT, "127.0.0.1", () => console.log(`[accounts] 账号服务就绪 127.0.0.1:${PORT}（users=${db.users.length}, file=${DATA_FILE}）`));
+
+/* ── 自动更新（10-18）：每 6 小时检查，仅当 db.features.autoUpdate === true 时应用 ──
+   ⛔ 默认关；开启后有新版才覆盖并重启（systemd Restart=always 拉起）。
+   ⛔ 检查失败静默；只有真的升级了（日志出现 VERSION →）才重启。 */
+setInterval(() => {
+  try {
+    if (!(db.features && db.features.autoUpdate === true)) return;
+    const script = [path.join(__dirname, "selfupdate.sh"), path.join(__dirname, "..", "selfupdate.sh")].find((f) => { try { return fs.existsSync(f); } catch { return false; } });
+    if (!script) return;
+    const { execFile } = require("node:child_process");
+    execFile("bash", [script, "--no-restart"], { cwd: path.dirname(script), timeout: 240000, maxBuffer: 4194304 }, (err, stdout) => {
+      if (err) { console.error("[auto-update] 失败：", String(err.message).slice(0, 200)); return; }
+      if (/VERSION →/.test(String(stdout || ""))) {
+        console.log("[auto-update] 已更新，2s 后重启");
+        setTimeout(() => process.exit(0), 2000);
+      }
+    });
+  } catch (e) { /* 静默 */ }
+}, 6 * 60 * 60 * 1000);
 
 /* ── 一次性补齐（10-16）：老的权益记录没有"容量"字段 ⇒ 按当前默认补上 ──────────────
    背景：容量是后加的（知识库/记忆各 1 GB、互相独立），早先激活的账号 quotaMb 是 0，
