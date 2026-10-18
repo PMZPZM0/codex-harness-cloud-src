@@ -543,7 +543,7 @@
       </p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>模型</th><th>ID</th><th>当前倍率</th><th>改为</th></tr></thead>
+          <thead><tr><th>模型</th><th>ID</th><th>当前倍率</th><th>改为</th><th>闲时倍率</th><th>闲时改为</th></tr></thead>
           <tbody id="amRows"></tbody>
         </table>
       </div>
@@ -562,15 +562,18 @@
     </div>
 
     <div class="card" id="opCard">
-      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">闲时倍率 <span class="pill ok">管理员</span>
-        <label style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12.5px;font-weight:400;cursor:pointer">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">闲时时段 · 默认系数 <span class="pill ok">管理员</span>
+        <label style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12.5px;font-weight:400;cursor:pointer" title="只对**没单独配**闲时系数的模型生效；已单独配的模型不受这个开关影响">
           <input type="checkbox" id="opEnabled"> 启用
         </label>
       </h2>
       <p class="hint">
-        <b>闲时倍率 = 折扣系数，乘在模型倍率之上</b>：某时段实际倍率 = <b>模型倍率 × 闲时系数</b>。
+        <b>闲时系数 = 折扣系数，乘在模型倍率之上</b>：某时段实际倍率 = <b>模型倍率 × 闲时系数</b>。
         例：某模型 ×0.79，夜间系数 0.5 ⇒ 该时段实际按 ×0.395 扣分。
         ⛔ 它不改模型倍率本身（模型倍率仍是上面那张表里的唯一真相源）。<br>
+        <b>这里是「默认系数」</b>：某个模型想用自己的折扣 ⇒ 到<b>上面模型表的「闲时改为」列单独填</b>。
+        单独配过的模型<b>一律按自己的系数算，不受下面这个「启用」开关影响</b>（配了就该生效，
+        否则就是"配了没用"）；没单独配的模型才按这里的默认系数，且要总闸勾上。<br>
         时段按<b>服务器时间</b>判断；<b>起点含、终点不含</b>（如 0–8 = 00:00 到 07:59）；
         起点大于终点表示<b>跨零点</b>（如 22 → 6）。命中多段时取<b>排在上面的那段</b>。
       </p>
@@ -1565,12 +1568,25 @@
         inp.type = "text"; inp.placeholder = "如 0.29，空=免费";
         inp.value = m.credits ? String(m.credits).replace(/^x/i, "") : "";
         inp.style.cssText = "width:110px;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px";
+        /* 闲时系数（**每模型**，10-18 用户令「每个模型单独的配置」）——
+           ⛔ 与倍率共用右边那个「保存」按钮：一行一个动作。分两个按钮必然出现
+              「只存了倍率、闲时没存」的错觉（两个请求还可能一成一败）。
+           ⛔ 空串必须**显式提交**：服务端把空串当"清除=跟随全局"，不传则是"这次不改"——
+              两者语义不同，漏传会让旧值永远清不掉。 */
+        var opInp = document.createElement("input");
+        opInp.type = "text"; opInp.placeholder = "如 0.5，空=跟随全局";
+        opInp.value = (m.offPeakRate === undefined || m.offPeakRate === null) ? "" : String(m.offPeakRate);
+        opInp.style.cssText = inp.style.cssText;
         var go = document.createElement("button"); go.className = "btn sm"; go.textContent = "保存";
         go.onclick = function () {
           go.disabled = true;
-          api("/admin/models/credits", { method: "POST", body: { id: m.id, credits: inp.value.trim() } }).then(function (x) {
+          api("/admin/models/credits", { method: "POST", body: { id: m.id, credits: inp.value.trim(), offPeakRate: opInp.value.trim() } }).then(function (x) {
             go.disabled = false;
-            if (x.ok && x.j && x.j.ok) { amSay((m.name || m.id) + " 的倍率已设为 " + (x.j.credits || "免费") + "（已钉，同步不会覆盖）", "ok"); loadAdminModels(); }
+            if (x.ok && x.j && x.j.ok) {
+              var opTxt = (x.j.offPeakRate === null || x.j.offPeakRate === undefined) ? "跟随全局" : "×" + x.j.offPeakRate;
+              amSay((m.name || m.id) + " 的倍率已设为 " + (x.j.credits || "免费") + "、闲时系数 " + opTxt + "（已钉，同步不会覆盖）", "ok");
+              loadAdminModels();
+            }
             else amSay("保存失败：" + ((x.j && x.j.error) || x.status), "bad");
           }).catch(function () { go.disabled = false; amSay("网络错误", "bad"); });
         };
@@ -1589,6 +1605,19 @@
           wrap.appendChild(rs);
         }
         tdSet.appendChild(wrap); tr.appendChild(tdSet);
+        /* 「闲时倍率」：当前生效值 —— 单独配过就显示 ×N 并标「单独」，否则「跟随全局」 */
+        var tdOpCur = document.createElement("td");
+        if (m.offPeakRate === undefined || m.offPeakRate === null) {
+          tdOpCur.appendChild(Object.assign(document.createElement("span"), { textContent: "跟随全局", style: "color:var(--muted)" }));
+        } else {
+          tdOpCur.appendChild(Object.assign(document.createElement("span"), { textContent: "×" + m.offPeakRate }));
+          tdOpCur.appendChild(Object.assign(document.createElement("span"), { textContent: "单独", className: "pill ok", style: "margin-left:6px;font-size:11px" }));
+        }
+        tr.appendChild(tdOpCur);
+        /* 「闲时改为」的输入框挂在这格，但保存按钮在左两格 —— 提交时一起读（见上面的 go.onclick） */
+        var tdOpSet = document.createElement("td");
+        tdOpSet.appendChild(opInp);
+        tr.appendChild(tdOpSet);
         box.appendChild(tr);
       });
       /* 用户下拉 */
