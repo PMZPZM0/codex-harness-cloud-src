@@ -988,9 +988,14 @@ const server = http.createServer(async (req, res) => {
 
     /* ── 闲时倍率：命中哪个时段 / 当前系数 ──────────────────────────────────────
        ⛔ 返回窗口对象（管理界面要显示"当前生效的是哪一段"），计费只用系数。 */
-    function offPeakWindow(atMs = Date.now()) {
+    function offPeakWindow(atMs = Date.now(), opts) {
       const cfg = db.offPeak;
-      if (!cfg || cfg.enabled !== true) return null;
+      if (!cfg) return null;
+      /* ⛔ 10-18 加 `ignoreEnabled`：计费要判"现在命中哪个时段"，**不能**被总闸挡住 ——
+         总闸（enabled）现在只管"**没单独配**的模型要不要用全局默认系数"；
+         模型自己配了系数的，一律按它算（用户令「每个模型单独的配置」）。
+         否则会出现"给某模型配了折扣却静默不生效"——正是要修的那种坑。 */
+      if (cfg.enabled !== true && !(opts && opts.ignoreEnabled === true)) return null;
       const windows = Array.isArray(cfg.windows) ? cfg.windows : [];
       const d = new Date(atMs);
       const hour = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
@@ -1010,6 +1015,17 @@ const server = http.createServer(async (req, res) => {
     function offPeakFactor(atMs = Date.now()) {
       const w = offPeakWindow(atMs);
       return w ? w.rate : 1;
+    }
+    /* 每模型单独配的闲时系数（10-18 用户令「每个模型单独的配置」）。
+       返回 null = **没单独配**（跟随全局默认系数）；返回数字 = 该模型自己的折扣系数。
+       ⛔ 语义与全局系数完全一致：乘在模型倍率之上，0 = 该时段免费，1 = 不打折。
+       ⛔ 空串 / 缺字段 / 非法值一律当"没配"——不要把脏数据当成 0（那会让模型白送）。 */
+    function modelOffPeakRate(m) {
+      if (!m) return null;
+      const raw = m.offPeakRate;
+      if (raw === undefined || raw === null || String(raw).trim() === "") return null;
+      const n = Number(String(raw).trim().replace(/^x/i, ""));
+      return Number.isFinite(n) && n >= 0 ? n : null;
     }
     /* 归一化管理员提交的时段表（信任边界校验；非法条目丢弃，不抛） */
     function normalizeOffPeakWindows(input) {
@@ -1080,6 +1096,11 @@ const server = http.createServer(async (req, res) => {
           if (prev && prev.creditsLocked === true) {
             m.credits = String(prev.credits === undefined || prev.credits === null ? "" : prev.credits);
             m.creditsLocked = true;
+          }
+          /* ⛔ 闲时系数是**本服务自己的配置**（上游目录里没有这个概念）⇒ 必须按 id 带过来。
+             否则每 30 分钟一次目录同步就把它静默冲掉 —— 与倍率"回滚"完全同一个坑，已踩过一次。 */
+          if (prev && prev.offPeakRate !== undefined && prev.offPeakRate !== null && String(prev.offPeakRate) !== "") {
+            m.offPeakRate = prev.offPeakRate;
           }
         }
         const lockedIds = list.filter((m) => m.creditsLocked === true).map((m) => m.id);
@@ -1415,8 +1436,14 @@ const server = http.createServer(async (req, res) => {
             const pTok = /"prompt_tokens"\s*:\s*(\d+)/.exec(text);
             const cTok = /"completion_tokens"\s*:\s*(\d+)/.exec(text);
             const totalTokens = (pTok ? Number(pTok[1]) : 0) + (cTok ? Number(cTok[1]) : 0);
-            const peak = offPeakWindow();
-            const factor = peak ? peak.rate : 1;
+            /* 闲时（10-18 改为**每模型单独配置**，用户令「每个模型单独的配置」）。
+               优先级：① 该模型自己配了 offPeakRate ⇒ 一律按它（**不看总闸** —— 配了就该生效）；
+                       ② 没配 ⇒ 总闸 enabled 开着才用全局默认系数，否则不打折。
+               ⛔ 时段命中判定用 ignoreEnabled，避免"总闸关着 ⇒ 连每模型配置都探不到"。 */
+            const hit = offPeakWindow(Date.now(), { ignoreEnabled: true });
+            const own = modelOffPeakRate(item);
+            const factor = hit ? (own !== null ? own : (db.offPeak.enabled === true ? hit.rate : 1)) : 1;
+            const peak = factor !== 1 ? hit : null;
             if (totalTokens > 0 && Number.isFinite(rate) && rate > 0) {
               const computed = Math.round((totalTokens / 1000) * rate * factor * 100) / 100;
               const offNote = peak
@@ -1508,12 +1535,30 @@ const server = http.createServer(async (req, res) => {
         if (!Number.isFinite(n) || n < 0) return send(400, { ok: false, error: "倍率必须是数字（如 0.29）或留空表示免费" });
         credits = "x" + String(n);
       }
+      /* 闲时系数（**每模型**，10-18 用户令「每个模型单独的配置」）—— 可选字段：
+         · undefined = 这次不动它（只改倍率的旧前端照样能用）；
+         · 空串 / null = 清除（该模型跟随全局默认系数）；
+         · 数字 = 该模型自己的闲时折扣系数（乘在模型倍率之上，1 = 不打折，0 = 该时段免费）。
+         ⛔ 必须先校验再落字段：中途 return 400 不能留下「倍率已改、系数没改」的半截状态。 */
+      let opRate;
+      if (body && body.offPeakRate !== undefined) {
+        const rawOp = body.offPeakRate === null ? "" : String(body.offPeakRate).trim();
+        if (rawOp === "") {
+          opRate = null;
+        } else {
+          const n = Number(rawOp.replace(/^x/i, ""));
+          if (!Number.isFinite(n) || n < 0) return send(400, { ok: false, error: "闲时系数必须是数字（如 0.5）或留空表示跟随全局" });
+          opRate = n;
+        }
+      }
       item.credits = credits;
       /* ⛔ 打了 "钉" 标记 ⇒ 之后每次目录同步都保留这个值（否则会被上游值静默冲掉） */
       item.creditsLocked = true;
+      if (opRate === null) delete item.offPeakRate;
+      else if (opRate !== undefined) item.offPeakRate = opRate;
       persist();
-      console.log(`[admin] ${me.username} 将模型 ${id} 的倍率设为 ${credits || "免费"}（已钉住，同步不覆盖）`);
-      return send(200, { ok: true, id, credits, locked: true });
+      console.log(`[admin] ${me.username} 将模型 ${id} 的倍率设为 ${credits || "免费"}${opRate === null ? "、闲时系数=跟随全局" : opRate !== undefined ? `、闲时系数=${opRate}` : ""}（已钉住，同步不覆盖）`);
+      return send(200, { ok: true, id, credits, locked: true, offPeakRate: item.offPeakRate === undefined ? null : item.offPeakRate });
     }
     /* ── 10-18 闲时（限时）倍率：管理员可改 ──────────────────────────────
        语义：**折扣系数，乘在模型倍率之上**。读取用于界面回显 + 显示当前命中窗口。 */
