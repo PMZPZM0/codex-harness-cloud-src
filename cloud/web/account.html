@@ -413,6 +413,21 @@
   </section>
 
 <div class="tab" data-tab="admin" id="adminTab" hidden>
+    <!-- 部署与更新（10-18 用户令「云端管理加一个更新功能 / 应用支持定制 / 把这个仓的跳转加上」）
+         ⛔ 这里只做「看版本 + 查最新版 + 复制部署命令」；真正升级要在服务器上执行（面板不能替你重启进程）。 -->
+    <div class="card" id="updCard">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">部署与更新
+        <a class="btn sm" id="updRepo" href="https://github.com/PMZPZM0/codex-cloud-assistant" target="_blank" rel="noopener"
+           style="margin-left:auto;text-decoration:none;display:inline-flex;align-items:center">获取可部署版本</a>
+      </h2>
+      <p class="hint" id="updInfo">读取版本中…</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn sm" id="updCheck">检查更新</button>
+        <button class="btn sm" id="updCopy">复制部署命令</button>
+        <span class="hint" id="updStatus"></span>
+      </div>
+      <div id="updResult" style="display:none;margin-top:10px"></div>
+    </div>
     <div class="card">
       <h2>上游 API <span class="pill ok">热生效</span></h2>
       <p class="hint" id="auInfo">读取中…</p>
@@ -1409,6 +1424,57 @@
   /* ── 用户管理（管理员，就地视图；10-15 从 admin.html 迁入并修正端点） ── */
   function auSay(text, cls) { var st = $("auStatus"); st.textContent = text; st.className = "status" + (cls ? " " + cls : ""); }
   function auGb(n) { return (n / 1073741824).toFixed(1); }
+  /* ── 部署与更新（10-18）：当前版本 + 查最新 tag + 复制部署命令 ──
+     ⛔ 只读：面板不会替你 git pull / 重启服务（那需要 shell 权限，也不该由浏览器触发）。 */
+  var CLOUD_DEPLOY_REPO = "https://github.com/PMZPZM0/codex-cloud-assistant";
+  function updSay(text, cls) { var el = $("updStatus"); if (!el) return; el.textContent = text || ""; el.className = "hint" + (cls ? " " + cls : ""); }
+  function loadVersion() {
+    if (!$("updInfo")) return;
+    api("/api/version").then(function (r) {
+      var j = (r.j || {});
+      if (!r.ok || !j.ok) { $("updInfo").textContent = "版本读取失败（HTTP " + r.status + "）"; return; }
+      if (j.deployRepo) CLOUD_DEPLOY_REPO = j.deployRepo;
+      if ($("updRepo")) $("updRepo").href = CLOUD_DEPLOY_REPO;
+      window.__CCA_VER = j.version || "dev";
+      $("updInfo").textContent = "当前版本 " + window.__CCA_VER
+        + (window.__CCA_VER === "dev" ? "（开发版：本机直接跑源码，不是从发布包安装）" : "")
+        + " · Node " + (j.node || "—")
+        + " · 已运行 " + Math.round((j.uptimeSec || 0) / 60) + " 分钟"
+        + " · 可部署版 " + CLOUD_DEPLOY_REPO.replace("https://github.com/", "");
+    }).catch(function () { $("updInfo").textContent = "版本读取失败：网络错误"; });
+  }
+  if ($("updCheck")) $("updCheck").onclick = function () {
+    var btn = $("updCheck"); btn.disabled = true; updSay("查询 GitHub…");
+    $("updResult").style.display = "none";
+    fetch(CLOUD_DEPLOY_REPO.replace("github.com", "api.github.com/repos") + "/tags", { headers: { Accept: "application/vnd.github+json" } })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (list) {
+        btn.disabled = false;
+        var latest = (list && list[0] && list[0].name) || "";
+        if (!latest) { updSay("仓库里还没有 tag", "bad"); return; }
+        var cur = window.__CCA_VER || "dev";
+        var upToDate = cur === latest;
+        var box = $("updResult"); box.style.display = "";
+        box.innerHTML = '<div style="padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field)">'
+          + '<div style="font-weight:600;color:' + (upToDate ? "var(--ok)" : "var(--warn)") + '">'
+          + (upToDate ? "已是最新（" + esc(latest) + "）" : "有新版本 " + esc(latest) + "（当前 " + esc(cur) + "）") + "</div>"
+          + '<div class="hint" style="margin-top:6px">升级在服务器上执行（面板不会替你重启服务）：</div>'
+          + '<pre style="margin:6px 0 0;background:#22221f;color:#f2f2ee;border-radius:8px;padding:10px 12px;overflow-x:auto;font-size:12px">'
+          + "cd /opt/codex-cloud-admin &amp;&amp; sudo git pull &amp;&amp; sudo systemctl restart codex-cloud-admin</pre></div>";
+        updSay(upToDate ? "已是最新" : "可升级到 " + latest, upToDate ? "ok" : "warn");
+      })
+      .catch(function (e) {
+        btn.disabled = false;
+        updSay("查询失败：" + (e && e.message ? e.message : "网络错误") + "（国内网络常被拦，改用命令行 git fetch --tags）", "bad");
+      });
+  };
+  if ($("updCopy")) $("updCopy").onclick = function () {
+    var cmd = "git clone " + CLOUD_DEPLOY_REPO + ".git && cd codex-cloud-assistant && sudo bash deploy/install.sh";
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).then(function () { updSay("部署命令已复制到剪贴板", "ok"); })
+        .catch(function () { updSay("复制失败，请手动复制：" + cmd, "bad"); });
+    } else { updSay("请手动复制：" + cmd, "bad"); }
+  };
   function loadUpstreamCfg() {
     api("/admin/upstream").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { $("adminTab").hidden = true; return; }
@@ -1436,7 +1502,7 @@
     });
   }
   function loadAdminPanel() {
-    loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites();
+    loadVersion(); loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites();
     api("/admin/users").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { auSay("用户列表读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
       renderAdmin(r.j.users || []);
