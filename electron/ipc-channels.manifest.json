@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 498,
+  "count": 499,
   "channels": [
     {
       "name": "request",
@@ -4311,6 +4311,16 @@
       "invokeArgs": "text",
       "cast": null,
       "note": "思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度；置信 <0.45 弃权返回 null，调用方回落手选档）"
+    },
+    {
+      "name": "layaJudge",
+      "channel": "laya:judge",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { preset?: \"knowledge_gate\" | \"duplicate\" | \"custom\"; state: string; reference?: string; instructions?: string; criteria?: Record<string, string>; minConfidence?: number; timeoutMs?: number }",
+      "returns": "Promise<{ ok: boolean; output?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具 laya_judge 的执行端：只有装了 Laya 才注册进模型工具面；短文本多选一判断（知识价值 / 重复 / 自定义 2~6 项），低置信弃权、不自动安装（10-18）"
     },
     {
       "name": "listOfficialMarketPlugins",
