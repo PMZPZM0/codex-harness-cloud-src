@@ -793,11 +793,58 @@ function syncUsageBytes(username) {
   for (const row of Object.values(index)) total += Number(row && row.sizeBytes || 0);
   return total;
 }
+/** 登录即登记本机（10-18 用户令：「现在直接云账户登录本机，云管理那边是没有新增设备的」）。
+ *  ⛔ 与**配对设备**的区别：
+ *     · 配对设备 = 有 device token，可独立鉴权（`syncAuth` 第 ① 分支）；
+ *     · 登录设备 = 只记录"这台机器登过"，鉴权仍走账号会话（第 ② 分支）。
+ *     两者用 `via` 字段区分（`pair` / `login`），UI 打不同标记。
+ *  ⛔ 同一台机器恒一条（按 machineId 去重）；若该机器已有配对记录则只 touch，不重复建行。
+ *  ⛔ 仍受 DEVICE_LIMIT 限制 —— 超限就不记，并如实返回原因。 */
+function registerLoginDevice(username, machineId, name) {
+  const mid = String(machineId || "").trim().slice(0, 64);
+  if (!mid) return { ok: false, reason: "no-machine-id" };
+  /* 同机已有配对记录 ⇒ 只更新 lastSeen（不建第二行） */
+  const paired = Object.entries(db.devices).find(([, d]) => d.username === username && d.machineId === mid);
+  if (paired) {
+    paired[1].lastSeen = Date.now();
+    if (name) paired[1].name = String(name).trim().slice(0, 32);
+    return { ok: true, linked: true };
+  }
+  const key = "login:" + crypto.createHash("sha256").update(mid).digest("hex").slice(0, 24);
+  const prev = db.devices[key];
+  if (prev) {
+    if (prev.username !== username) return { ok: false, reason: "machine-bound-to-other-account" };
+    prev.lastSeen = Date.now();
+    if (name) prev.name = String(name).trim().slice(0, 32);
+    return { ok: true, updated: true };
+  }
+  const count = Object.values(db.devices).filter((d) => d.username === username).length;
+  if (count >= DEVICE_LIMIT) return { ok: false, reason: "device-limit", limit: DEVICE_LIMIT };
+  db.devices[key] = {
+    username,
+    name: String(name || "").trim().slice(0, 32) || "登录设备",
+    code: "",
+    machineId: mid,
+    tokenHash: "",
+    via: "login",
+    claimedAt: Date.now(),
+    lastSeen: Date.now(),
+  };
+  return { ok: true, created: true };
+}
 function listDevices(username) {
   const out = [];
   for (const [hash, device] of Object.entries(db.devices)) {
     if (device.username !== username) continue;
-    out.push({ id: deviceIdOf(hash), name: device.name, claimedAt: device.claimedAt, lastSeen: device.lastSeen || 0 });
+    out.push({
+      id: deviceIdOf(hash),
+      name: device.name,
+      claimedAt: device.claimedAt,
+      lastSeen: device.lastSeen || 0,
+      /* ⛔ 10-18：`via` 让前端区分「配对」与「仅登录」；machineId 只给前 8 位用于辨认，不当凭据 */
+      via: device.via || "pair",
+      machineId: device.machineId ? device.machineId.slice(0, 8) : "",
+    });
   }
   return out.sort((a, b) => b.claimedAt - a.claimedAt);
 }
@@ -1172,7 +1219,17 @@ const server = http.createServer(async (req, res) => {
         return send(401, { ok: false, error: "用户名或密码不对" });
       }
       user.failCount = 0; user.lastLogin = Date.now(); persist();
-      return send(200, { ok: true, token: issueSession(username), account: publicView(user), server: { baseUrl: publicBaseOf(req) } });
+      /* 10-18 设备管理：登录即登记本机（否则云端「已配对设备」永远是 0）。
+         ⛔ 登记失败不阻断登录 —— 设备上限/缺 machineId 都不该让人登不进来。 */
+      const reg = (() => { try { return registerLoginDevice(username, body.machineId, body.machineName); } catch { return { ok: false, reason: "exception" }; } })();
+      if (reg.ok) persist();
+      return send(200, {
+        ok: true,
+        token: issueSession(username),
+        account: publicView(user),
+        server: { baseUrl: publicBaseOf(req) },
+        device: { registered: Boolean(reg.ok), created: Boolean(reg.created), reason: reg.ok ? "" : reg.reason },
+      });
     }
 
     /* 以下都要会话 */
