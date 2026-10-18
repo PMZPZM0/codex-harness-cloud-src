@@ -55,13 +55,19 @@ function readSecret(name, envName) {
    · ⛔ WeKnora 的 MCP 令牌**只在创建/轮换时明文返回一次** ⇒ 本服务必须留存才能重发，
      落在 data.json（0600，与 proxyTokens 同级）；轮换走 WeKnora 侧的 rotate-token。
    · 幂等：同一账号重复领取只补缺，不重复建库/建端点。 */
-const WEKNORA_BASE = String(process.env.WEKNORA_BASE || "https://kb.ppz123.asia").replace(/\/+$/, "");
-const WEKNORA_ADMIN_KEY = readSecret("weknora-admin-key", "WEKNORA_ADMIN_KEY");
-const WEKNORA_LLM_MODEL_ID = String(process.env.WEKNORA_LLM_MODEL_ID || "").trim();
-const WEKNORA_EMBED_MODEL_ID = String(process.env.WEKNORA_EMBED_MODEL_ID || "").trim();
+/* ⛔ 10-18：这些从 `const` 改为 `let` —— 允许管理员在面板里配（覆盖环境变量，**热生效**）。
+   覆盖来源 = `db.services.{kb,memory}`，由 `applyServiceOverrides()` 在 db 加载后与每次保存后套用。
+   ⛔ 留空的字段一律**回落环境变量/凭据**（不是清空）—— 否则改一个字段会把其它配置抹掉。 */
+let WEKNORA_BASE = String(process.env.WEKNORA_BASE || "https://kb.ppz123.asia").replace(/\/+$/, "");
+const WEKNORA_ENV_BASE = WEKNORA_BASE;                     // 环境变量原值（回退与"是否被覆盖"判定用）
+let WEKNORA_ADMIN_KEY = readSecret("weknora-admin-key", "WEKNORA_ADMIN_KEY");
+const WEKNORA_ENV_ADMIN_KEY = WEKNORA_ADMIN_KEY;
+let WEKNORA_LLM_MODEL_ID = String(process.env.WEKNORA_LLM_MODEL_ID || "").trim();
+let WEKNORA_EMBED_MODEL_ID = String(process.env.WEKNORA_EMBED_MODEL_ID || "").trim();
 /* 视觉模型（VLM）：图片上传/理解必需。⛔ 没配它的时候**必须**拦掉图片上传并说人话，
    否则上游只会回一句 "上传图片文件需要设置VLM模型"（10-16 用户实测踩到）。 */
-const WEKNORA_VLM_MODEL_ID = String(process.env.WEKNORA_VLM_MODEL_ID || "").trim();
+let WEKNORA_VLM_MODEL_ID = String(process.env.WEKNORA_VLM_MODEL_ID || "").trim();
+const WEKNORA_ENV_MODEL_IDS = { llm: WEKNORA_LLM_MODEL_ID, embed: WEKNORA_EMBED_MODEL_ID, vlm: WEKNORA_VLM_MODEL_ID };
 
 /** 知识库的模型配置体（首次建库与后续补挂视觉模型共用一份，避免两处漂移）。 */
 function kbModelConfigBody() {
@@ -77,10 +83,14 @@ function kbModelConfigBody() {
   if (WEKNORA_VLM_MODEL_ID) body.vlm_config = { enabled: true, model_id: WEKNORA_VLM_MODEL_ID };
   return body;
 }
-const MEMHUB_BASE = String(process.env.MEMHUB_BASE || "https://mem.ppz123.asia").replace(/\/+$/, "");
-const MEMHUB_ADMIN_KEY = readSecret("memhub-admin-key", "MEMHUB_ADMIN_KEY");
-const MEMHUB_INSTANCE = String(process.env.MEMHUB_INSTANCE || "default").trim();
-const MEMHUB_PROXY_BASE = String(process.env.MEMHUB_PROXY_BASE || "https://memapi.ppz123.asia").replace(/\/+$/, "");
+let MEMHUB_BASE = String(process.env.MEMHUB_BASE || "https://mem.ppz123.asia").replace(/\/+$/, "");
+const MEMHUB_ENV_BASE = MEMHUB_BASE;
+let MEMHUB_ADMIN_KEY = readSecret("memhub-admin-key", "MEMHUB_ADMIN_KEY");
+const MEMHUB_ENV_ADMIN_KEY = MEMHUB_ADMIN_KEY;
+let MEMHUB_INSTANCE = String(process.env.MEMHUB_INSTANCE || "default").trim();
+let MEMHUB_PROXY_BASE = String(process.env.MEMHUB_PROXY_BASE || "https://memapi.ppz123.asia").replace(/\/+$/, "");
+const MEMHUB_ENV_PROXY_BASE = MEMHUB_PROXY_BASE;
+const MEMHUB_ENV_INSTANCE = MEMHUB_INSTANCE;
 
 function integrationSecretsOk() {
   return { knowledge: Boolean(WEKNORA_ADMIN_KEY), memory: Boolean(MEMHUB_ADMIN_KEY) };
@@ -308,6 +318,86 @@ function currentGatewayKey() {
   const o = readUpstreamOverride();
   return (o && o.gatewayKey ? String(o.gatewayKey) : WBM_GATEWAY_KEY);
 }
+/** 目录同步用的地址（10-18）：`db.upstream.catalogBase` 优先（可选，留空 ⇒ 用上游地址），
+    再回落上游地址，最后回落环境变量。
+    ⛔ 为什么单独一个字段：上游「网关」（调用）与「管理器」（拉目录）不一定是同一个服务 ——
+       他人部署时两者常在不同域名/端口，只给一个地址就会出现「能调用但拉不到目录」。 */
+function currentCatalogBase() {
+  const o = readUpstreamOverride();
+  const own = o && o.catalogBase ? String(o.catalogBase).trim().replace(/\/+$/, "") : "";
+  return own || currentUpstreamBase();
+}
+/** 地址归一化（10-18 用户令「协议适配性尽可能强，以兼容更多协议类型」）：
+    · 接受 `https://` / `http://` / **裸主机**（`api.example.com` ⇒ 自动补 https）
+    · 允许内网与回环地址（部署在自己机器/内网时是常态）、自定义端口、任意路径前缀
+    · 统一去尾部斜杠，丢弃 query/hash（拼探测路径时它们只会添乱）
+    ⛔ 只接受 http(s)：上游是 HTTP API，ws/ftp/file 等一律拒绝并说明原因。
+    ⛔ http 只打 `insecure` 标记**不拒绝** —— 内网自建场景下它往往是唯一能用的。 */
+function normalizeUpstreamBase(input) {
+  let raw = String(input == null ? "" : input).trim();
+  if (!raw) return { ok: false, error: "地址不能为空" };
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw)) raw = "https://" + raw;
+  let u;
+  try { u = new URL(raw); } catch { return { ok: false, error: "地址格式不合法（示例：https://api.example.com、http://192.168.1.10:8080、api.example.com/wbm）" }; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return { ok: false, error: `不支持 ${u.protocol} 协议：上游必须是 http 或 https` };
+  }
+  if (!u.hostname) return { ok: false, error: "缺少主机名" };
+  return { ok: true, base: (u.origin + u.pathname).replace(/\/+$/, ""), insecure: u.protocol === "http:" };
+}
+/** 把 fetch 的异常翻译成人话（面板直接显示，管理员不必去翻服务器日志） */
+function classifyFetchError(error) {
+  const msg = String((error && (error.name + ": " + error.message)) || error || "");
+  if (/TimeoutError|AbortError|timed? ?out/i.test(msg)) return "超时（8 秒内无响应：地址/端口不对，或被防火墙拦了）";
+  if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(msg)) return "DNS 解析失败（域名拼错，或这台服务器没有可用 DNS）";
+  if (/CERT|SSL|TLS|self.signed|unable to verify/i.test(msg)) return "TLS/证书错误（自签证书不被信任：改用 http 或换正式证书）";
+  if (/ECONNREFUSED/i.test(msg)) return "连接被拒绝（端口没开 / 服务没启动）";
+  if (/ECONNRESET/i.test(msg)) return "连接被重置（中间设备拦截，或该端口不是 HTTP 服务）";
+  if (/EHOSTUNREACH|ENETUNREACH/i.test(msg)) return "网络不可达（IP 不在同一网段，或路由没通）";
+  return msg || "未知错误";
+}
+/** HTTP 状态码 → 人话 */
+function explainProbeStatus(status) {
+  if (status === 401 || status === 403) return `鉴权失败（HTTP ${status}）：密钥不对或没带`;
+  if (status === 404) return "端点不存在（HTTP 404）：该地址上没有这个接口，检查是否少了路径前缀";
+  if (status === 405) return "方法不允许（HTTP 405）：路由在，只是不接受 GET";
+  if (status === 429) return "被限流（HTTP 429）：稍后重试";
+  if (status >= 500) return `上游内部错误（HTTP ${status}）`;
+  if (status >= 400) return `请求被拒（HTTP ${status}）`;
+  return `HTTP ${status}`;
+}
+/** 探测单个端点（**只发 GET**）：返回 { ok, status, ms, count, hint }。
+ *  ⛔ 上游测试与知识库/记忆测试**共用这一份** —— 两处各写一份必然漂移。
+ *  `authHeader`：`"x-api-key"`（WeKnora 租户 API Key）或 `"bearer"`（网关密钥）。 */
+async function probeGet(base, probe, key, authHeader) {
+  const t0 = Date.now();
+  const headers = key
+    ? (authHeader === "x-api-key" ? { "X-API-Key": key } : { Authorization: `Bearer ${key}` })
+    : {};
+  try {
+    const r = await fetch(base + probe.path, { headers, signal: AbortSignal.timeout(8000) });
+    const text = await r.text().catch(() => "");
+    let count = null;
+    try {
+      const j = JSON.parse(text);
+      if (Array.isArray(j && j.data)) count = j.data.length;         // OpenAI 形状
+      else if (Array.isArray(j && j.list)) count = j.list.length;     // WBM 形状
+      else if (Array.isArray(j && j.models)) count = j.models.length;
+      else if (Array.isArray(j && j.items)) count = j.items.length;
+    } catch { /* 非 JSON 不致命：能连通但格式不认 */ }
+    return {
+      name: probe.name, path: probe.path, ok: r.ok, status: r.status,
+      ms: Date.now() - t0, count,
+      hint: r.ok ? (count == null && probe.wantList ? "能连通，但没解析出列表（端点存在、格式不同）" : "") : explainProbeStatus(r.status),
+    };
+  } catch (error) {
+    return { name: probe.name, path: probe.path, ok: false, status: 0, ms: Date.now() - t0, count: null, hint: classifyFetchError(error) };
+  }
+}
+/** 一组探测里挑"最好的那个"：有模型数的优先，其次能连通的 */
+function bestProbe(results) {
+  return results.find((x) => x.ok && x.count != null) || results.find((x) => x.ok) || null;
+}
 /** 客户端要用的"供应商地址"= 本服务同源代理路径（⛔ 不下发上游真实地址）。 */
 const BUILTIN_PROXY_PATH = "/cloud-api/proxy/v1";
 /** 模型目录缓存时长（WBM 自己也有 5 分钟缓存；这里更宽，避免频繁拉） */
@@ -324,6 +414,37 @@ const SESSION_TTL_MS = 7 * 24 * 3600_000;
 /* ── 存储（原子写 + 600 权限）────────────────────────────────────────────── */
 let db = { users: [], sessions: {} };
 try { db = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch { /* 首次运行 */ }
+
+/* ── 知识库 / 记忆空间的上游配置（10-18 用户令「预留可配置的接口，以便我自行配置飞牛OS」）──
+   db.services = {
+     kb:     { base, key, llmModelId, embedModelId, vlmModelId },
+     memory: { base, proxyBase, key, instance },
+   }
+   ⛔ 每个字段**留空即回退环境变量/凭据** —— 不要"保存时把没填的字段写成空串"，
+      否则改一个字段会把其它配置一起抹掉。
+   ⛔ 密钥落在 data.json（0600）—— 与 db.upstream.gatewayKey 同级。比凭据文件弱一点，
+      但这是让"面板可配"成立的前提（凭据文件只能由运维登服务器写）。
+   ⛔ 改完**热生效**（下一次知识库/记忆调用就走新地址），不需要重启服务。 */
+if (typeof db.services !== "object" || !db.services) db.services = {};
+if (typeof db.services.kb !== "object" || !db.services.kb) db.services.kb = {};
+if (typeof db.services.memory !== "object" || !db.services.memory) db.services.memory = {};
+
+/** 把 db.services 覆盖到运行时变量上（启动一次 + 每次保存后一次）。 */
+function applyServiceOverrides() {
+  const kb = (db.services && db.services.kb) || {};
+  const mem = (db.services && db.services.memory) || {};
+  const trim = (v) => String(v == null ? "" : v).trim();
+  WEKNORA_BASE = trim(kb.base).replace(/\/+$/, "") || WEKNORA_ENV_BASE;
+  WEKNORA_ADMIN_KEY = trim(kb.key) || WEKNORA_ENV_ADMIN_KEY;
+  WEKNORA_LLM_MODEL_ID = trim(kb.llmModelId) || WEKNORA_ENV_MODEL_IDS.llm;
+  WEKNORA_EMBED_MODEL_ID = trim(kb.embedModelId) || WEKNORA_ENV_MODEL_IDS.embed;
+  WEKNORA_VLM_MODEL_ID = trim(kb.vlmModelId) || WEKNORA_ENV_MODEL_IDS.vlm;
+  MEMHUB_BASE = trim(mem.base).replace(/\/+$/, "") || MEMHUB_ENV_BASE;
+  MEMHUB_PROXY_BASE = trim(mem.proxyBase).replace(/\/+$/, "") || MEMHUB_ENV_PROXY_BASE;
+  MEMHUB_ADMIN_KEY = trim(mem.key) || MEMHUB_ENV_ADMIN_KEY;
+  MEMHUB_INSTANCE = trim(mem.instance) || MEMHUB_ENV_INSTANCE;
+}
+applyServiceOverrides();
 if (!Array.isArray(db.users)) db.users = [];
 if (typeof db.sessions !== "object" || !db.sessions) db.sessions = {};
 if (!db.registerIps || typeof db.registerIps !== "object") db.registerIps = {};
@@ -1081,9 +1202,12 @@ const server = http.createServer(async (req, res) => {
     async function pullModelCatalog(force = false) {
       const fresh = Date.now() - Number(db.modelCatalog.syncedAt || 0) < MODEL_SYNC_TTL_MS;
       if (!force && fresh && Array.isArray(db.modelCatalog.list) && db.modelCatalog.list.length) return { ok: true, cached: true };
-      if (!WBM_BASE || !WBM_TOKEN) return { ok: false, error: "wbm-not-configured" };
+      /* ⛔ 用 currentCatalogBase()（管理员可配），**不是** WBM_BASE 常量 ——
+         否则"改了上游地址、点同步却还是拉旧地址"（配了没用，10-18 实测就是这个坑）。 */
+      const catalogBase = currentCatalogBase();
+      if (!catalogBase || !WBM_TOKEN) return { ok: false, error: "wbm-not-configured" };
       try {
-        const r = await fetch(`${WBM_BASE}/api/model-catalog?realm=cn`, { headers: { Authorization: `Bearer ${WBM_TOKEN}` } });
+        const r = await fetch(`${catalogBase}/api/model-catalog?realm=cn`, { headers: { Authorization: `Bearer ${WBM_TOKEN}` } });
         if (!r.ok) return { ok: false, error: `wbm-http-${r.status}` };
         const data = await r.json();
         const list = (data.models || []).map((m) => ({
@@ -1937,19 +2061,181 @@ const server = http.createServer(async (req, res) => {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const o = readUpstreamOverride();
       const key = currentGatewayKey();
-      return send(200, { ok: true, base: currentUpstreamBase(), gatewayKey: key ? key.slice(0, 6) + "***" + key.slice(-4) : "", hasKey: Boolean(key), source: o ? "admin" : "env" });
+      const base = currentUpstreamBase();
+      return send(200, {
+        ok: true,
+        base,
+        /* 目录同步地址（可空 = 与上游同址）；同时回显"实际生效的"那个，便于排查 */
+        catalogBase: (o && o.catalogBase) || "",
+        effectiveCatalogBase: currentCatalogBase(),
+        /* 环境变量里的值也回显：管理员能一眼看出"现在到底在用哪个" */
+        envBase: WBM_BASE || "",
+        insecure: /^http:\/\//i.test(base),
+        gatewayKey: key ? key.slice(0, 6) + "***" + key.slice(-4) : "",
+        hasKey: Boolean(key),
+        source: o ? "admin" : "env",
+      });
     }
     if (p === "/admin/upstream" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const body = await readBody();
-      const base = String(body && body.base || "").trim().replace(/\/+$/, "");
-      if (!/^https:\/\//.test(base)) return send(400, { ok: false, error: "上游地址必须是 https:// 开头的完整 URL" });
+      /* 10-18：协议适配放宽（http / 裸主机 / 内网 / 端口 / 路径前缀都由 normalizeUpstreamBase 处理） */
+      const norm = normalizeUpstreamBase(body && body.base);
+      if (!norm.ok) return send(400, { ok: false, error: norm.error });
+      /* 目录同步地址（可选）：留空 ⇒ 与上游同址；填了就必须也能归一化 */
+      let catalogBase = "";
+      if (body && body.catalogBase !== undefined && String(body.catalogBase).trim() !== "") {
+        const cnorm = normalizeUpstreamBase(body.catalogBase);
+        if (!cnorm.ok) return send(400, { ok: false, error: "目录同步地址：" + cnorm.error });
+        catalogBase = cnorm.base;
+      }
       const providedKey = String(body && body.gatewayKey || "").trim();
       const prev = db.upstream || {};
-      db.upstream = { base, gatewayKey: providedKey || prev.gatewayKey || "" };
+      db.upstream = { base: norm.base, catalogBase, gatewayKey: providedKey || prev.gatewayKey || "" };
       persist();
-      console.log(`[upstream] ${me.username} 更新上游 API 地址 → ${base}${providedKey ? "（含新网关密钥）" : "（沿用原网关密钥）"}`);
-      return send(200, { ok: true, base, hasKey: Boolean(db.upstream.gatewayKey) });
+      console.log(`[upstream] ${me.username} 更新上游 API 地址 → ${norm.base}${catalogBase ? `（目录同步 → ${catalogBase}）` : ""}${providedKey ? "（含新网关密钥）" : "（沿用原网关密钥）"}${norm.insecure ? " ⚠️ http 明文" : ""}`);
+      return send(200, {
+        ok: true, base: norm.base, catalogBase,
+        hasKey: Boolean(db.upstream.gatewayKey),
+        insecure: norm.insecure,
+        warning: norm.insecure ? "http 明文传输：仅建议内网使用" : "",
+      });
+    }
+    /* 连通性测试（10-18 用户令「为上游 API 地址增加连通性测试功能」）。
+       ⛔ 只发 GET、绝不发写请求；⛔ 回执不含密钥（只回 hasKey）；
+       ⛔ 允许测"还没保存的地址"（body.base 优先）—— 先验再存，避免存了才发现不通。 */
+    if (p === "/admin/upstream/test" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const norm = normalizeUpstreamBase(body && body.base ? body.base : currentUpstreamBase());
+      if (!norm.ok) return send(400, { ok: false, error: norm.error });
+      const key = String(body && body.gatewayKey || "").trim() || currentGatewayKey();
+      const started = Date.now();
+      /* 依次探测：WBM 专有目录端点 → OpenAI 兼容 /v1/models。
+         命中哪个就说明这个地址属于哪一类 —— 管理员据此决定"要不要单独填目录同步地址"。 */
+      const probes = [
+        { name: "模型目录（WBM）", path: "/api/model-catalog?realm=cn", wantList: true },
+        { name: "OpenAI 兼容 /v1/models", path: "/v1/models", wantList: true },
+      ];
+      const results = [];
+      for (const probe of probes) results.push(await probeGet(norm.base, probe, key, "bearer"));
+      const best = bestProbe(results);
+      console.log(`[upstream] ${me.username} 连通性测试 ${norm.base} → ${best ? "连通" : "不可达"}（${results.map((x) => `${x.status || "ERR"}@${x.ms}ms`).join(" / ")}）`);
+      return send(200, {
+        ok: Boolean(best),
+        base: norm.base,
+        insecure: norm.insecure,
+        warning: norm.insecure ? "http 明文传输：仅建议内网使用" : "",
+        hasKey: Boolean(key),
+        elapsedMs: Date.now() - started,
+        probes: results,
+        message: best
+          ? `连通：${best.name}${best.count != null ? `，${best.count} 个模型` : ""}（${best.ms}ms）`
+          : "不可达：两个端点都没成功 —— 看下面每一行的原因",
+      });
+    }
+    /* ── 知识库 / 记忆空间上游（10-18 用户令「为知识库和记忆空间预留可配置的接口」）────
+       GET  回显：面板值 + **当前生效值** + 环境变量原值（管理员一眼看出"到底在用哪个"）
+       POST 保存：字段留空 = **回退环境变量**（⛔ 不是清空）；保存后 applyServiceOverrides **热生效**
+       POST .../test：只发 GET 的连通性探测（⛔ 绝不发写请求；⛔ 回执不含密钥）
+       ⛔ 地址走 normalizeUpstreamBase（http / 裸主机 / 内网 / 端口 / 路径前缀都接受）。 */
+    if (p === "/admin/services" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const kb = db.services.kb || {};
+      const mem = db.services.memory || {};
+      const mask = (v) => (v ? String(v).slice(0, 6) + "***" + String(v).slice(-4) : "");
+      return send(200, {
+        ok: true,
+        kb: {
+          base: kb.base || "", key: mask(kb.key), hasKey: Boolean(kb.key),
+          llmModelId: kb.llmModelId || "", embedModelId: kb.embedModelId || "", vlmModelId: kb.vlmModelId || "",
+          effectiveBase: WEKNORA_BASE, effectiveHasKey: Boolean(WEKNORA_ADMIN_KEY),
+          envBase: WEKNORA_ENV_BASE, envHasKey: Boolean(WEKNORA_ENV_ADMIN_KEY),
+        },
+        memory: {
+          base: mem.base || "", proxyBase: mem.proxyBase || "", key: mask(mem.key), hasKey: Boolean(mem.key),
+          instance: mem.instance || "",
+          effectiveBase: MEMHUB_BASE, effectiveProxyBase: MEMHUB_PROXY_BASE, effectiveHasKey: Boolean(MEMHUB_ADMIN_KEY),
+          envBase: MEMHUB_ENV_BASE, envProxyBase: MEMHUB_ENV_PROXY_BASE, envHasKey: Boolean(MEMHUB_ENV_ADMIN_KEY),
+        },
+        secrets: integrationSecretsOk(),
+      });
+    }
+    if (p === "/admin/services" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const kbIn = (body && body.kb) || {};
+      const memIn = (body && body.memory) || {};
+      const normOne = (raw, label) => {
+        const s = String(raw == null ? "" : raw).trim();
+        if (!s) return { ok: true, value: "" };                    // 留空 ⇒ 回退环境变量
+        const n = normalizeUpstreamBase(s);
+        return n.ok ? { ok: true, value: n.base } : { ok: false, error: label + "：" + n.error };
+      };
+      const kbBase = normOne(kbIn.base, "知识库地址");
+      if (!kbBase.ok) return send(400, { ok: false, error: kbBase.error });
+      const memBase = normOne(memIn.base, "记忆地址");
+      if (!memBase.ok) return send(400, { ok: false, error: memBase.error });
+      const memProxy = normOne(memIn.proxyBase, "记忆代理地址");
+      if (!memProxy.ok) return send(400, { ok: false, error: memProxy.error });
+      const keep = (v) => String(v == null ? "" : v).trim();
+      db.services.kb = {
+        base: kbBase.value,
+        key: keep(kbIn.key),
+        llmModelId: keep(kbIn.llmModelId),
+        embedModelId: keep(kbIn.embedModelId),
+        vlmModelId: keep(kbIn.vlmModelId),
+      };
+      db.services.memory = {
+        base: memBase.value,
+        proxyBase: memProxy.value,
+        key: keep(memIn.key),
+        instance: keep(memIn.instance),
+      };
+      persist();
+      applyServiceOverrides();                                     // ⛔ 热生效（免重启）
+      console.log(`[services] ${me.username} 更新：知识库 → ${WEKNORA_BASE}（key ${WEKNORA_ADMIN_KEY ? "已配" : "未配"}）· 记忆 → ${MEMHUB_BASE}（代理 ${MEMHUB_PROXY_BASE}，key ${MEMHUB_ADMIN_KEY ? "已配" : "未配"}）`);
+      return send(200, {
+        ok: true,
+        kb: { effectiveBase: WEKNORA_BASE, effectiveHasKey: Boolean(WEKNORA_ADMIN_KEY) },
+        memory: { effectiveBase: MEMHUB_BASE, effectiveProxyBase: MEMHUB_PROXY_BASE, effectiveHasKey: Boolean(MEMHUB_ADMIN_KEY) },
+      });
+    }
+    if (p === "/admin/services/test" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const which = String((body && body.which) || "kb").trim() === "memory" ? "memory" : "kb";
+      const isKb = which === "kb";
+      const norm = normalizeUpstreamBase((body && body.base) || (isKb ? WEKNORA_BASE : MEMHUB_BASE));
+      if (!norm.ok) return send(400, { ok: false, error: norm.error });
+      const key = String(body && body.key || "").trim() || (isKb ? WEKNORA_ADMIN_KEY : MEMHUB_ADMIN_KEY);
+      const started = Date.now();
+      /* ⛔ 只用**读端点**探测：
+         · WeKnora：`GET /api/v1/knowledge-bases`（X-API-Key）—— 200 且能数出条数最理想
+         · MemHub：它没有公开的健康端点，用 `GET /api/v1/meta/user/create`（预期 405/404 ——
+           收到任何 <500 的响应就说明服务与路由都在），再兜底 `GET /` */
+      const probes = isKb
+        ? [{ name: "知识库列表", path: "/api/v1/knowledge-bases?page_size=1", wantList: true }]
+        : [
+          { name: "记忆服务（建用户端点，GET 预期 405）", path: "/api/v1/meta/user/create", wantList: false },
+          { name: "记忆服务根路径", path: "/", wantList: false },
+        ];
+      const results = [];
+      for (const probe of probes) results.push(await probeGet(norm.base, probe, key, isKb ? "x-api-key" : "bearer"));
+      const best = bestProbe(results);
+      console.log(`[services] ${me.username} 测试 ${which} ${norm.base} → ${best ? "连通" : "不可达"}（${results.map((x) => `${x.status || "ERR"}@${x.ms}ms`).join(" / ")}）`);
+      return send(200, {
+        ok: Boolean(best),
+        which, base: norm.base,
+        insecure: norm.insecure,
+        warning: norm.insecure ? "http 明文传输：仅建议内网使用" : "",
+        hasKey: Boolean(key),
+        elapsedMs: Date.now() - started,
+        probes: results,
+        message: best
+          ? `连通：${best.name}${best.count != null ? `，${best.count} 条` : ""}（${best.ms}ms）`
+          : "不可达：看下面每一行的原因",
+      });
     }
     /* ── 邀请码：用户侧校验 + 管理端生成/监控（10-16）────────────────────────── */
     if (p === "/invite/check" && req.method === "GET") {
