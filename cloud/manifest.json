@@ -64,22 +64,22 @@
       "src": "cloud/web/favicon-32.png",
       "kind": "web",
       "as": "favicon-32.png",
-      "sha256": "39ef214d1e6f9c106bdd23c4c452e4335b7d6199bbf6df0dffa2b35896325140",
-      "bytes": 3442
+      "sha256": "1ccc41f8c4e1321a18ce3f081268edde1c25c24c0178792c54ae2081d081c94d",
+      "bytes": 1937
     },
     {
       "src": "cloud/web/favicon-64.png",
       "kind": "web",
       "as": "favicon-64.png",
-      "sha256": "188c656b68990b7d2158261e8943d61e9de9309d2600b5e97b0d0ce38a9ca75a",
-      "bytes": 9397
+      "sha256": "faf5575d81208c5d557dd543c3b1a7739be31121eb662145512022ea04caa99b",
+      "bytes": 5280
     },
     {
       "src": "cloud/web/favicon-256.png",
       "kind": "web",
       "as": "favicon-256.png",
-      "sha256": "d3c9c906f115adfa5eb5134852e6b867c8891adf361ae08d6ba3277e073cece4",
-      "bytes": 72646
+      "sha256": "3b7023e4858a6dd9ba8559b901f83f546f6316140af62ced20ed67dc7440ab7f",
+      "bytes": 40684
     }
   ]
 }
