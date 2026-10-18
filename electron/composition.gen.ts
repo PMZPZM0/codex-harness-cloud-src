@@ -86,6 +86,7 @@ import { dialogFeature as feat_dialog } from "./features/dialog-ipc";
 import { appFeature as feat_app } from "./features/app-diagnostics";
 import { backupFeature as feat_backup } from "./features/change-backup-ipc";
 import { relayFeature as feat_relay } from "./features/relay-ipc";
+import { htmlPreviewFeature as feat_html_preview } from "./features/html-preview-ipc";
 import { layaFeature as feat_laya } from "./features/laya-service";
 import { videoFeature as feat_video } from "./features/video-gen";
 import { pollFeature as feat_poll } from "./features/poll-ipc";
@@ -192,6 +193,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "app", plugin: feat_app as Plugin<unknown>, config: null },
   { id: "backup", plugin: feat_backup as Plugin<unknown>, config: null },
   { id: "relay", plugin: feat_relay as Plugin<unknown>, config: null },
+  { id: "html-preview", plugin: feat_html_preview as Plugin<unknown>, config: null },
   { id: "laya", plugin: feat_laya as Plugin<unknown>, config: null },
   { id: "video", plugin: feat_video as Plugin<unknown>, config: null },
   { id: "poll", plugin: feat_poll as Plugin<unknown>, config: null },
