@@ -537,7 +537,9 @@
       </h2>
       <p class="hint">
         <b>倍率</b> = 调用该模型时按倍率扣积分（如 0.29 表示 1 积分额度按 0.29 计），<b>留空 = 免费</b>。
-        修改<b>即时生效</b>（下一条调用即按新倍率）。目录同步后新增的模型会出现在这里。
+        修改<b>即时生效</b>（下一条调用即按新倍率）。目录同步后新增的模型会出现在这里。<br>
+        · 你改过的模型会标「<b>已钉</b>」——<b>同步目录不会再覆盖你的值</b>；点「恢复上游」回到上游倍率。<br>
+        · 没改过的模型显示上游倍率，上游调价时<b>自动跟随</b>。
       </p>
       <div class="table-wrap">
         <table>
@@ -557,6 +559,33 @@
       </div>
       <div id="amToast" style="display:none;margin:0 0 10px;padding:8px 12px;border-radius:8px;font-size:12.5px;border:1px solid var(--line);background:var(--ok-soft,#e8f5ec);color:var(--ok,#1a7f37)"></div>
       <div id="amUserModels" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px 14px"></div>
+    </div>
+
+    <div class="card" id="opCard">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">闲时倍率 <span class="pill ok">管理员</span>
+        <label style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12.5px;font-weight:400;cursor:pointer">
+          <input type="checkbox" id="opEnabled"> 启用
+        </label>
+      </h2>
+      <p class="hint">
+        <b>闲时倍率 = 折扣系数，乘在模型倍率之上</b>：某时段实际倍率 = <b>模型倍率 × 闲时系数</b>。
+        例：某模型 ×0.79，夜间系数 0.5 ⇒ 该时段实际按 ×0.395 扣分。
+        ⛔ 它不改模型倍率本身（模型倍率仍是上面那张表里的唯一真相源）。<br>
+        时段按<b>服务器时间</b>判断；<b>起点含、终点不含</b>（如 0–8 = 00:00 到 07:59）；
+        起点大于终点表示<b>跨零点</b>（如 22 → 6）。命中多段时取<b>排在上面的那段</b>。
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>名称</th><th>起始（点）</th><th>结束（点）</th><th>折扣系数</th><th></th></tr></thead>
+          <tbody id="opRows"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+        <button class="btn sm" id="opAdd">添加时段</button>
+        <button class="btn sm" id="opSave">保存</button>
+        <span class="hint" id="opNow"></span>
+      </div>
+      <p class="status" id="opStatus"></p>
     </div>
   </div>
 </main>
@@ -1318,7 +1347,7 @@
     });
   }
   function loadAdminPanel() {
-    loadUpstreamCfg(); loadDiskInfo(); loadAdminPoints(""); loadAdminModels(); loadInvites();
+    loadUpstreamCfg(); loadDiskInfo(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites();
     api("/admin/users").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { auSay("用户列表读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
       renderAdmin(r.j.users || []);
@@ -1521,7 +1550,15 @@
         var tdId = document.createElement("td");
         tdId.appendChild(Object.assign(document.createElement("code"), { textContent: m.id, style: "font-size:12px;color:var(--muted)" }));
         tr.appendChild(tdId);
-        tr.appendChild(Object.assign(document.createElement("td"), { textContent: m.credits ? m.credits : "免费" }));
+        var tdCur = document.createElement("td");
+        if (m.creditsLocked) {
+          tdCur.appendChild(Object.assign(document.createElement("span"), { textContent: m.credits || "免费" }));
+          tdCur.appendChild(Object.assign(document.createElement("span"), { textContent: "已钉", className: "pill ok", style: "margin-left:6px;font-size:11px" }));
+        } else {
+          tdCur.appendChild(Object.assign(document.createElement("span"), { textContent: m.credits ? m.credits : "免费" }));
+          tdCur.appendChild(Object.assign(document.createElement("span"), { textContent: "跟随上游", style: "margin-left:6px;font-size:11px;color:var(--muted)" }));
+        }
+        tr.appendChild(tdCur);
         var tdSet = document.createElement("td");
         var wrap = document.createElement("div"); wrap.style.cssText = "display:flex;gap:6px;align-items:center";
         var inp = document.createElement("input");
@@ -1533,11 +1570,25 @@
           go.disabled = true;
           api("/admin/models/credits", { method: "POST", body: { id: m.id, credits: inp.value.trim() } }).then(function (x) {
             go.disabled = false;
-            if (x.ok && x.j && x.j.ok) { amSay((m.name || m.id) + " 的倍率已设为 " + (x.j.credits || "免费"), "ok"); loadAdminModels(); }
+            if (x.ok && x.j && x.j.ok) { amSay((m.name || m.id) + " 的倍率已设为 " + (x.j.credits || "免费") + "（已钉，同步不会覆盖）", "ok"); loadAdminModels(); }
             else amSay("保存失败：" + ((x.j && x.j.error) || x.status), "bad");
           }).catch(function () { go.disabled = false; amSay("网络错误", "bad"); });
         };
-        wrap.appendChild(inp); wrap.appendChild(go); tdSet.appendChild(wrap); tr.appendChild(tdSet);
+        wrap.appendChild(inp); wrap.appendChild(go);
+        if (m.creditsLocked) {
+          var rs = document.createElement("button"); rs.className = "btn sm"; rs.textContent = "恢复上游";
+          rs.title = "清除自定义值，改回上游目录里的倍率";
+          rs.onclick = function () {
+            rs.disabled = true;
+            api("/admin/models/credits", { method: "POST", body: { id: m.id, reset: true } }).then(function (x) {
+              rs.disabled = false;
+              if (x.ok && x.j && x.j.ok) { amSay((m.name || m.id) + " 已恢复为上游倍率 " + (x.j.credits || "免费"), "ok"); loadAdminModels(); }
+              else amSay("恢复失败：" + ((x.j && x.j.error) || x.status), "bad");
+            }).catch(function () { rs.disabled = false; amSay("网络错误", "bad"); });
+          };
+          wrap.appendChild(rs);
+        }
+        tdSet.appendChild(wrap); tr.appendChild(tdSet);
         box.appendChild(tr);
       });
       /* 用户下拉 */
@@ -1632,6 +1683,81 @@
       if (x.ok && x.j && x.j.ok) { amSay("已开放 " + ids.length + " 个模型（用户端刷新后可见，可自行勾选）", "ok"); amToast("✓ 已保存：用户端刷新后能看到这 " + ids.length + " 个模型（勾选由用户自己决定）"); loadAdminModels(); }
       else amSay("保存失败：" + ((x.j && x.j.error) || x.status), "bad");
     }).catch(function () { $("amSaveUser").disabled = false; amSay("网络错误", "bad"); });
+  };
+
+  /* ── 闲时倍率（管理员：折扣系数 × 模型倍率）──────────────────────────
+     ⛔ 前端只做"收集/回显"；时段合法性由服务端再校验一遍（信任边界）。 */
+  var opData = null;
+  function opSay(text, cls) { var st = $("opStatus"); if (!st) return; st.textContent = text; st.className = "status" + (cls ? " " + cls : ""); }
+  function opInput(value, type, width, ph) {
+    var inp = document.createElement("input");
+    inp.type = type; inp.value = String(value === undefined || value === null ? "" : value);
+    if (ph) inp.placeholder = ph;
+    if (type === "number") inp.step = "any";
+    inp.style.cssText = "width:" + width + "px;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px";
+    return inp;
+  }
+  function opAddRow(w) {
+    w = w || {};
+    var box = $("opRows"); if (!box) return;
+    var tr = document.createElement("tr");
+    if (w.id) tr.setAttribute("data-id", String(w.id));
+    var tdLabel = document.createElement("td"); tdLabel.appendChild(opInput(w.label || "", "text", 110, "如 夜间")); tr.appendChild(tdLabel);
+    var tdS = document.createElement("td"); tdS.appendChild(opInput(w.start === undefined ? 0 : w.start, "number", 80, "0")); tr.appendChild(tdS);
+    var tdE = document.createElement("td"); tdE.appendChild(opInput(w.end === undefined ? 0 : w.end, "number", 80, "8")); tr.appendChild(tdE);
+    var tdR = document.createElement("td"); tdR.appendChild(opInput(w.rate === undefined ? 0.5 : w.rate, "number", 90, "0.5")); tr.appendChild(tdR);
+    var tdX = document.createElement("td");
+    var del = document.createElement("button"); del.className = "btn sm"; del.textContent = "删除";
+    del.onclick = function () { box.removeChild(tr); opSay("已删除一行，点「保存」后生效"); };
+    tdX.appendChild(del); tr.appendChild(tdX);
+    box.appendChild(tr);
+  }
+  function opReadRows() {
+    var out = [];
+    Array.prototype.forEach.call(document.querySelectorAll("#opRows tr"), function (tr) {
+      var i = tr.querySelectorAll("input");
+      if (i.length < 4) return;
+      out.push({
+        id: tr.getAttribute("data-id") || "",
+        label: i[0].value.trim(), start: Number(i[1].value), end: Number(i[2].value), rate: Number(i[3].value),
+      });
+    });
+    return out;
+  }
+  function opShowNow(d) {
+    var el = $("opNow"); if (!el) return;
+    d = d || opData || {};
+    var hour = d.serverHour === undefined ? new Date().getHours() : d.serverHour;
+    var a = d.active;
+    var status = d.enabled === true
+      ? (a ? "命中「" + (a.label || "时段") + "」×" + a.rate : "未命中任何时段，按原倍率")
+      : "未启用（当前不折扣）";
+    el.textContent = "服务器现在 " + hour + " 点 · " + status;
+  }
+  function loadOffPeak() {
+    api("/admin/offpeak").then(function (r) {
+      if (!r.ok || !r.j || !r.j.ok) { opSay("闲时倍率读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
+      opData = r.j;
+      $("opEnabled").checked = r.j.enabled === true;
+      var box = $("opRows"); box.innerHTML = "";
+      (r.j.windows || []).forEach(opAddRow);
+      opShowNow(r.j);
+      opSay("");
+    }).catch(function () { opSay("闲时倍率读取失败：网络错误", "bad"); });
+  }
+  if ($("opAdd")) $("opAdd").onclick = function () { opAddRow({ label: "", start: 0, end: 0, rate: 0.5 }); opSay("已加一行，填好后点「保存」"); };
+  if ($("opEnabled")) $("opEnabled").onchange = function () { opSay($("opEnabled").checked ? "开关已打开，点「保存」后生效" : "开关已关闭，点「保存」后生效"); };
+  if ($("opSave")) $("opSave").onclick = function () {
+    var rows = opReadRows();
+    if ($("opEnabled").checked && !rows.length) { opSay("启用了但没有任何时段 —— 请先添加时段，或取消勾选「启用」", "bad"); return; }
+    var btn = $("opSave"); btn.disabled = true; opSay("保存中…");
+    api("/admin/offpeak", { method: "POST", body: { enabled: $("opEnabled").checked, windows: rows } }).then(function (x) {
+      btn.disabled = false;
+      if (x.ok && x.j && x.j.ok) {
+        opData = x.j; opShowNow(x.j);
+        opSay("已保存：" + (x.j.enabled ? "启用" : "停用") + "，共 " + (x.j.windows || []).length + " 个时段（下一条调用即按新规则）", "ok");
+      } else opSay("保存失败：" + ((x.j && x.j.error) || x.status), "bad");
+    }).catch(function () { btn.disabled = false; opSay("保存失败：网络错误", "bad"); });
   };
 
   /* ── 积分管理（发放 / 扣减）── */

@@ -167,3 +167,76 @@ CREATE TABLE points_sync_state (
 3. ⛔ **凭据不进任何同步范围**（与既有的"凭据永不出本机"同一条）：`wbt_` 只存在服务端环境变量。
 4. ⛔ **账本不可变**：只能追加流水，不能改历史；余额是派生量并随时可校验。
 5. ⛔ **配额三者独立**：设备（≤3 台）· 存储（≤1GB）· 积分；任一超限都**明确拒绝并说明是哪一个**。
+
+---
+
+## 5. 实际落地的计费口径（2026-10-18 追记）
+
+> 上面 §1–§4 是 10-14 的**设计稿**；实现最终没走 SQLite（`chc-account` 一直是 `data.json`），
+> 也没走"与 WBM 对账"。下面是**代码里真实在跑**的口径 —— 查计费问题时以本节为准。
+
+### 5.1 两条独立链路（⛔ 别混）
+
+| 链路 | 算什么 | 谁在算 | 落在哪 |
+|---|---|---|---|
+| **WBM `request_logs.credit`** | 上游返回的**真实** `usage.credit`；缺真值时用 `_estimate_credit()` 兜底（`credit_source` 标 `upstream` / `estimated`） | `/home/ubuntu/deploy/server/routers/gateway.py` | WBM 的 SQLite（`request_logs` / `usage_daily` / `usage_hourly`） |
+| **云助手积分** | `积分 = (prompt_tokens + completion_tokens) / 1000 × 模型倍率`，**保留 2 位小数** | `cloud/server-account/server.js` 代理响应采集处 | `data.json` 的 `points.<user>.txns` |
+
+⛔⛔ **云助手**的积分**不取上游 `usage.credit`**（2026-10-14 21:5x 用户定案）—— 因为上游对收费模型也常返 0。
+倍率唯一真相源 = `data.json` 的 `modelCatalog.list[].credits`（管理界面可改）。
+
+### 5.2 「管理员改倍率会不会生效」—— 两个坑（10-18 已修）
+
+| 现象 | 根因 | 修法 |
+|---|---|---|
+| 改了**当时**生效，过一会儿又变回上游值 | `pullModelCatalog()` 把 `modelCatalog.list` **整个换成上游新数组** ⇒ 管理员改的 `credits` 只在 `MODEL_SYNC_TTL_MS`（30 分钟）内有效；点一次「重新同步目录」**立刻**失效 | 同步改按 id 做**倍率保全**：每个模型记 `upstreamCredits` 快照；`creditsLocked === true` 的沿用上一份 `credits`，没锁的继续跟随上游 ⇒ 语义 = **改过=钉住，没改=跟随上游**。`POST /admin/models/credits` 的 `reset:true` = 恢复上游（用快照，不联网） |
+| 倍率明明配了，某些调用却按**免费**记 | 计费用 `m.id === wantedModel` **严格相等**查目录；客户端带 `cn:` / `global:` 前缀或大小写不同 ⇒ 查不到 ⇒ `rate = 0` ⇒ 白送 | 查表前先归一化（去 `cn:`/`global:` 前缀 + 转小写），**精确优先 → 再最长子串**（最长优先是为了 `glm-5.3-flashx` 不被 `glm-5.3-flash` 抢走） |
+
+⛔ 同类"长名 = 短名 + 后缀"的坑在 WBM 侧也有一份：`gateway.py` 的 `_model_price_per_m()`
+原本把**子串价格**排在**精确倍率**之前 ⇒ `glm-5.3-flashx` 拿到 `glm-5.3-flash` 的 13.38
+（应为 `500 × 0.14 = 70`）。已修为：**两层精确（价格→倍率）跑完，才进两层子串**。
+
+### 5.3 闲时（限时）倍率（10-18 新增，管理员可改）
+
+```js
+db.offPeak = {
+  enabled: false,                                  // ⛔ 默认关，不动既有计费
+  windows: [
+    { id: "night",   label: "夜间", start: 0,  end: 8,  rate: 0.5 },
+    { id: "offpeak", label: "闲时", start: 18, end: 24, rate: 0.5 },
+  ],
+}
+```
+
+- **语义**：**折扣系数，乘在模型倍率之上** ⇒ `实际倍率 = 模型倍率 × 闲时系数`。
+  ⛔ 它**不改**模型倍率本身（那一份仍是 `credits` 唯一真相源）。
+  例：`glm-5.3` ×0.79 在夜间系数 0.5 下 ⇒ 实际 ×0.395。
+- **时段判定**：服务端**本地时间**（CST）；**起点含、终点不含**（`0–8` = 00:00–07:59）；
+  `start > end` = **跨零点**（如 `22 → 6`）；命中多段取**数组序在前**的那段。
+- **接口**：`GET /admin/offpeak`（回显 + `active` + `serverHour`）、`POST /admin/offpeak {enabled, windows}`
+  （仅管理员；`normalizeOffPeakWindows()` 做服务端二次校验：0–24、起止不等、系数 0–100，
+  非法条目**丢弃**，全非法才 400）。`GET /models` 一并下发 `offPeak` 快照供客户端展示。
+- **面板**：`cloud/web/account.html` 的「闲时倍率」卡（`#opCard`）——启用开关 + 时段表 + 当前命中状态；
+  模型管理卡的倍率表加「已钉 / 跟随上游 / 恢复上游」。
+
+### 5.4 计费顺序（改动计费时的检查清单）
+
+```
+鉴权（proxy token，含环内旧令牌）
+  → 余额预检（≤0 直接 402，不让上游白跑）
+  → 勾选校验（未勾选 403 model-not-enabled）
+  → 转发上游 + 原样透传
+  → 采集响应（最多 256KB）→ 抓 prompt_tokens / completion_tokens
+  → 查目录倍率（归一化 → 精确 → 最长子串）
+  → 积分 = tokens/1000 × 倍率 × 闲时系数，round 2
+  → credit > 0 ? addPoints : addUsageOnly（免费模型只留痕不扣分）
+  → persist()   ← ⛔ 10-18 补：这两个函数**只改内存不落盘**，不 persist 则本次消耗
+                  要等下一次请求在鉴权处顺带写盘；期间重启/崩溃 ⇒ 该次消耗永久丢失
+```
+
+### 5.5 已知长尾（未修，已知即可）
+
+1. 用量是从响应流**前 256KB** 里正则抓的 ⇒ 超大流式响应可能丢掉 `usage` 块 ⇒ 该次记 0（宁可少记不瞎记）。
+2. 目录里查不到倍率的模型 ⇒ `rate = 0` ⇒ 按免费记（不猜、不按默认倍率兜底）。
+3. `EXCLUDED_CATALOG_IDS` 目前只排除 `auto`（上游自动挑模型 ⇒ 记账无法判断实际用了哪个）。
+
