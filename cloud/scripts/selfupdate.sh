@@ -37,9 +37,28 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 say "① 用 git 取最新代码（${REPO}@${BRANCH}）"
-git clone --quiet --depth=1 --branch "$BRANCH" --filter=blob:none --sparse "https://github.com/${REPO}.git" "$STAGE/repo" \
-  || die "git clone 失败 —— 检查这台机器能否访问 github.com（git 协议 443）"
-git -C "$STAGE/repo" sparse-checkout set cloud >/dev/null 2>&1 || die "sparse-checkout 失败"
+# ⛔ 国内访问 github.com 会被 reset（实测：同一分钟前一次成功、后一次 Connection reset）
+#    ⇒ 三个源 + 每个重试 2 次。⛔ 不用 --filter=blob:none（部分镜像不支持）。
+CLONE_URLS=(
+  "https://github.com/${REPO}.git"
+  "https://gitclone.com/github.com/${REPO}.git"
+  "https://ghproxy.com/https://github.com/${REPO}.git"
+)
+cloned=0
+for url in "${CLONE_URLS[@]}"; do
+  for attempt in 1 2; do
+    rm -rf "$STAGE/repo"
+    if timeout 35 git clone --quiet --depth=1 --branch "$BRANCH" "$url" "$STAGE/repo" 2>/dev/null; then
+      say "   ✓ ${url}（第 ${attempt} 次）"
+      cloned=1
+      break
+    fi
+    say "   ⚠ ${url} 第 ${attempt} 次失败，重试…"
+    sleep 2
+  done
+  [ "$cloned" = "1" ] && break
+done
+[ "$cloned" = "1" ] || die "三个源都 clone 失败 —— 这台机器访问 github 不稳定，稍后重试，或在能联网的机器上手动覆盖"
 HEAD_SHA="$(git -C "$STAGE/repo" rev-parse --short HEAD)"
 say "   HEAD = ${HEAD_SHA}"
 
