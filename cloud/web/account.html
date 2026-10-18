@@ -586,6 +586,21 @@
         <div id="auDiskBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--ok),var(--warn) 75%,var(--bad));transition:width .4s"></div>
       </div>
     </div>
+      <!-- 10-18 用户令：应用连接地址 + 复制（部署完自动生成，不硬编码）
+           ⛔ 放在「上游 API」卡下面 —— 那个位置是管理员最常看的配置区，藏在用户管理里没人看见。 -->
+      <div class="card" style="margin-top:14px">
+        <h2>应用连接地址</h2>
+        <p class="hint" style="margin:0 0 10px">
+          把下面这个地址填到桌面端「设置 → 云账号 → 服务地址」，用户就能连上这台服务器。
+          <b>它由当前访问域名自动推导</b> —— 换域名或上 HTTPS 后会自动跟着变，不需要改配置。
+        </p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <code id="appEndpoint" style="padding:9px 12px;border-radius:9px;background:var(--field);border:1px solid var(--line);font-size:13px;word-break:break-all;">读取中…</code>
+          <button class="btn sm" id="appEndpointCopy">复制</button>
+          <span class="hint" id="appEndpointMsg"></span>
+        </div>
+      </div>
+
     <!-- 知识库 / 记忆空间的上游（10-18 用户令「预留可配置的接口，以便自行配置飞牛OS」）——
          ⛔ 留空 = 回退服务端环境变量；保存后**热生效**。对接步骤见 docs/FNOS-INTEGRATION.md。 -->
     <div class="card" id="svcCard">
@@ -680,19 +695,6 @@
       </div>
       <p class="status" id="admStatus"></p>
 
-      <!-- 10-18 用户令：应用连接地址 + 复制（部署完自动生成，不硬编码） -->
-      <div class="card" style="margin-top:14px">
-        <h2>应用连接地址</h2>
-        <p class="hint" style="margin:0 0 10px">
-          把下面这个地址填到桌面端「设置 → 云账号 → 服务地址」，用户就能连上这台服务器。
-          <b>它由当前访问域名自动推导</b> —— 换域名或上 HTTPS 后会自动跟着变，不需要改配置。
-        </p>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <code id="appEndpoint" style="padding:9px 12px;border-radius:9px;background:var(--field);border:1px solid var(--line);font-size:13px;word-break:break-all;">读取中…</code>
-          <button class="btn sm" id="appEndpointCopy">复制</button>
-          <span class="hint" id="appEndpointMsg"></span>
-        </div>
-      </div>
 
       <!-- ⛔ 旧的三分区（① 用户 / ② 权益 / ③ 积分）：数据仍由原渲染器维护，但界面已由上面这张
            「账号一览」合并表接管 ⇒ 这里整体隐藏，仅保留 id 以免旧渲染器取空报错。下一轮可整体删除。 -->
