@@ -427,6 +427,22 @@ if (typeof db.devices !== "object" || !db.devices) db.devices = {};   // codeHas
 if (typeof db.modelCatalog !== "object" || !db.modelCatalog) db.modelCatalog = { syncedAt: 0, realm: "cn", source: "", list: [] };
 /* 每用户生效模型：username → [modelId]（空/缺省 = 全不启用，由用户勾选决定） */
 if (typeof db.userModels !== "object" || !db.userModels) db.userModels = {};
+/* ── 闲时（限时）倍率（10-18 用户令「加一个限时倍率，管理员可以修改倍率」）────────
+   db.offPeak = { enabled, windows: [ { id, label, start, end, rate } ] }
+   ⛔ 语义：**折扣系数，乘在模型倍率之上** ⇒ 实际倍率 = 模型倍率 × 闲时系数。
+      例：glm-5.3 ×0.79 在夜间系数 0.5 下 ⇒ 实际 ×0.395。
+      ⛔ 不改模型倍率本身（那只存一份真相源：目录里的 credits）。
+   ⛔ 时段判定用**服务端本地时间**（CST）；`start > end` 视为跨零点（如 22→6）。
+   ⛔ 默认 enabled=false ⇒ 不改动任何既有计费行为，等管理员显式开启。 */
+if (typeof db.offPeak !== "object" || !db.offPeak) {
+  db.offPeak = {
+    enabled: false,
+    windows: [
+      { id: "night", label: "夜间", start: 0, end: 8, rate: 0.5 },
+      { id: "offpeak", label: "闲时", start: 18, end: 24, rate: 0.5 },
+    ],
+  };
+}
 /* ── 积分账本（10-14）──────────────────────────────────────────────────────
    db.points = { "<username>": { balance, txns: [ {id, at, delta, kind, ref, note, after} ] } }
    ⛔ 流水是唯一真相源，balance 是它的累加；ref 唯一 ⇒ 同一件事只入账一次（幂等）。
@@ -970,6 +986,54 @@ const server = http.createServer(async (req, res) => {
       return null;
     }
 
+    /* ── 闲时倍率：命中哪个时段 / 当前系数 ──────────────────────────────────────
+       ⛔ 返回窗口对象（管理界面要显示"当前生效的是哪一段"），计费只用系数。 */
+    function offPeakWindow(atMs = Date.now()) {
+      const cfg = db.offPeak;
+      if (!cfg || cfg.enabled !== true) return null;
+      const windows = Array.isArray(cfg.windows) ? cfg.windows : [];
+      const d = new Date(atMs);
+      const hour = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+      for (const w of windows) {
+        const s = Number(w && w.start);
+        const e = Number(w && w.end);
+        const r = Number(w && w.rate);
+        if (!Number.isFinite(s) || !Number.isFinite(e) || !Number.isFinite(r)) continue;
+        if (!(r >= 0)) continue;                 // 负系数无意义 ⇒ 当它不存在
+        if (s === e) continue;                   // 零长度窗口不生效
+        const hit = s < e ? (hour >= s && hour < e) : (hour >= s || hour < e);  // start>end = 跨零点
+        if (hit) return { label: String(w.label || ""), start: s, end: e, rate: r };
+      }
+      return null;
+    }
+    /* 计费用：没命中就返回 1（= 不折扣） */
+    function offPeakFactor(atMs = Date.now()) {
+      const w = offPeakWindow(atMs);
+      return w ? w.rate : 1;
+    }
+    /* 归一化管理员提交的时段表（信任边界校验；非法条目丢弃，不抛） */
+    function normalizeOffPeakWindows(input) {
+      const arr = Array.isArray(input) ? input : [];
+      const out = [];
+      arr.forEach((w, i) => {
+        if (!w) return;
+        const s = Math.trunc(Number(w.start));
+        const e = Math.trunc(Number(w.end));
+        const r = Number(w.rate);
+        if (!Number.isFinite(s) || !Number.isFinite(e)) return;
+        if (s < 0 || s > 24 || e < 0 || e > 24) return;
+        if (s === e) return;
+        if (!Number.isFinite(r) || r < 0 || r > 100) return;
+        out.push({
+          id: String(w.id || `w${i + 1}`).slice(0, 24),
+          label: String(w.label || "").slice(0, 24),
+          start: s, end: e,
+          rate: Math.round(r * 1000) / 1000,
+        });
+      });
+      return out;
+    }
+
     /* ── 模型目录同步（WBM → 本服务）────────────────────────────────────────────
        拉 WBM /api/model-catalog，归一化成客户端要的字段；credits（积分倍率）原样保留 ——
        ⛔ 倍率是"消耗速度随模型而定"的**唯一真相源**，本服务只转发不重写。 */
@@ -998,8 +1062,28 @@ const server = http.createServer(async (req, res) => {
            （排除表见 EXCLUDED_CATALOG_IDS，方便以后再加）。
            ⛔ 同时修一个既有 bug：这里整体覆盖 modelCatalog ⇒ **available（开放目录）会被冲掉**，
               导致每次同步后"对用户开放的范围"失效。现在同步时保留 available，
-              并把它与最新目录求交集（已下架的自动剔除）。 */
+              并把它与最新目录求交集（已下架的自动剔除）。
+           ⛔⛔ 10-18 再修一个同类 bug（用户问「管理员改的模型倍率会不会生效」时查出）：
+              原来的写法把 list 整个换成上游的新数组 ⇒ **管理员手改的 credits 被静默冲掉**，
+              只有 ≤30 分钟的 TTL 窗口里有效，点一次「重新同步目录」立刻失效。
+              现在按 id 做**倍率保全**：
+                · 每个模型都记 `upstreamCredits`（上游原值快照，用于"恢复上游倍率"，不需联网）；
+                · `creditsLocked === true` 的模型沿用上一份 `credits`（= 管理员改过的值）；
+                · 没锁的模型继续跟上游走（上游调价自动生效）。
+              ⇒ 语义：**管理员显式改过 = 钉住；没改过 = 跟随上游**。 */
         const prevAvail = Array.isArray(db.modelCatalog.available) ? db.modelCatalog.available : null;
+        const prevList = Array.isArray(db.modelCatalog.list) ? db.modelCatalog.list : [];
+        const prevById = new Map(prevList.filter((m) => m && m.id).map((m) => [m.id, m]));
+        for (const m of list) {
+          m.upstreamCredits = String(m.credits || "");
+          const prev = prevById.get(m.id);
+          if (prev && prev.creditsLocked === true) {
+            m.credits = String(prev.credits === undefined || prev.credits === null ? "" : prev.credits);
+            m.creditsLocked = true;
+          }
+        }
+        const lockedIds = list.filter((m) => m.creditsLocked === true).map((m) => m.id);
+        if (lockedIds.length) console.log(`[catalog] 保全管理员自定义倍率 ${lockedIds.length} 个：${lockedIds.slice(0, 8).join(", ")}${lockedIds.length > 8 ? "…" : ""}`);
         const ids = new Set(list.map((m) => m.id));
         db.modelCatalog = {
           syncedAt: Date.now(),
@@ -1153,6 +1237,12 @@ const server = http.createServer(async (req, res) => {
         realm: db.modelCatalog.realm,
         source: db.modelCatalog.source,
         sync: pulled.ok ? "ok" : pulled.error,
+        /* 闲时倍率快照（客户端据此显示「当前闲时 ×0.5」并预热预期消耗） */
+        offPeak: {
+          enabled: db.offPeak.enabled === true,
+          windows: Array.isArray(db.offPeak.windows) ? db.offPeak.windows : [],
+          active: offPeakWindow(),
+        },
       });
     }
     /* 勾选生效模型：整集覆盖（前端去抖后提交全量），只接受目录里存在的 id */
@@ -1305,15 +1395,31 @@ const server = http.createServer(async (req, res) => {
                 （10-14 用户令「免费的模型，只要调用了，就要有记录」）。
              ⛔ "拿不到 token 数"时才回落到上游 credit，再拿不到就不记（宁可少记不瞎记）。 */
           try {
-            const item = (db.modelCatalog.list || []).find((m) => m.id === wantedModel);
+            /* ⛔ 模型名归一化后再查目录：客户端可能带 `cn:` / `global:` 前缀或大小写差异，
+               原先 `m.id === wantedModel` 的**严格相等**会把这类请求判成"目录里没有" ⇒ rate=0
+               ⇒ 整个调用按免费记账（倍率改了也白改）。现在：去前缀+转小写 → 先精确、后最长子串。 */
+            const wantedNorm = String(wantedModel || "").trim().toLowerCase().replace(/^(cn|global)\s*:\s*/, "");
+            const catList = db.modelCatalog.list || [];
+            let item = catList.find((m) => String(m.id || "").trim().toLowerCase() === wantedNorm);
+            if (!item && wantedNorm) {
+              const keys = catList
+                .filter((m) => m && m.id)
+                .sort((a, b) => String(b.id).length - String(a.id).length);   // 最长优先（flashx 别被 flash 抢走）
+              item = keys.find((m) => wantedNorm.includes(String(m.id).trim().toLowerCase()));
+            }
             const rawCredits = item && item.credits ? String(item.credits).replace(/^x/i, "") : "";
             const rate = rawCredits === "" ? 0 : Number(rawCredits);
             const pTok = /"prompt_tokens"\s*:\s*(\d+)/.exec(text);
             const cTok = /"completion_tokens"\s*:\s*(\d+)/.exec(text);
             const totalTokens = (pTok ? Number(pTok[1]) : 0) + (cTok ? Number(cTok[1]) : 0);
+            const peak = offPeakWindow();
+            const factor = peak ? peak.rate : 1;
             if (totalTokens > 0 && Number.isFinite(rate) && rate > 0) {
-              const computed = Math.round((totalTokens / 1000) * rate * 100) / 100;
-              console.log(`[points] 计价：${wantedModel} ${totalTokens} tokens × ${rate} = ${computed}（口径=服务端倍率）`);
+              const computed = Math.round((totalTokens / 1000) * rate * factor * 100) / 100;
+              const offNote = peak
+                ? ` × 闲时${peak.label ? `「${peak.label}」` : ""}${peak.start}–${peak.end}点系数 ${factor}`
+                : "";
+              console.log(`[points] 计价：${wantedModel} ${totalTokens} tokens × ${rate}${offNote} = ${computed}（口径=服务端倍率）`);
               credit = computed;   // ⛔ 一律以本服务端的倍率为准（忽略上游 credit）
             } else if (!(credit > 0)) {
               credit = 0;
@@ -1325,7 +1431,11 @@ const server = http.createServer(async (req, res) => {
             const r = credit > 0
               ? addPoints(hit.username, -credit, "consume", ref, `限时福利 · ${label} 消耗 ${credit}`)
               : addUsageOnly(hit.username, "consume", ref, `限时福利 · ${label}（免费模型，未扣积分）`);
-            if (r.changed) console.log(`[points] ${hit.username} ${credit > 0 ? `消耗 ${credit}` : "免费调用"}（余额 ${r.balance}）`);
+            /* ⛔ 10-18 修：`addPoints` / `addUsageOnly` **只改内存不落盘**（它们的实现里没有 persist），
+               原来这里也没有 ⇒ 这条消耗流水要等**下一次**请求在鉴权处顺带 persist 才写进 data.json；
+               若期间服务重启/崩溃，这次消耗就**永久丢失**（用户只调一次就重启 ⇒ 白送）。
+               消耗是账本，必须当场落盘。 */
+            if (r.changed) { persist(); console.log(`[points] ${hit.username} ${credit > 0 ? `消耗 ${credit}` : "免费调用"}（余额 ${r.balance}）`); }
           }
         } catch { /* 记分失败不影响调用本身 */ }
       } catch (error) {
@@ -1377,6 +1487,16 @@ const server = http.createServer(async (req, res) => {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const body = await readBody();
       const id = String(body && body.id || "").trim();
+      const item = (db.modelCatalog.list || []).find((m) => m.id === id);
+      if (!item) return send(404, { ok: false, error: "模型不存在（先同步目录）" });
+      /* 恢复上游倍率：不需要联网，用同步时留的 upstreamCredits 快照，并解锁 */
+      if (body && body.reset === true) {
+        item.credits = String(item.upstreamCredits || "");
+        delete item.creditsLocked;
+        persist();
+        console.log(`[admin] ${me.username} 将模型 ${id} 恢复为上游倍率 ${item.credits || "（空=免费）"}`);
+        return send(200, { ok: true, id, credits: item.credits, locked: false, reset: true });
+      }
       const raw = String(body && body.credits === undefined ? "" : body.credits).trim();
       /* 归一化：允许 "0.29" / "x0.29" / 数字 / 空串；空串=免费 */
       let credits = "";
@@ -1385,12 +1505,39 @@ const server = http.createServer(async (req, res) => {
         if (!Number.isFinite(n) || n < 0) return send(400, { ok: false, error: "倍率必须是数字（如 0.29）或留空表示免费" });
         credits = "x" + String(n);
       }
-      const item = (db.modelCatalog.list || []).find((m) => m.id === id);
-      if (!item) return send(404, { ok: false, error: "模型不存在（先同步目录）" });
       item.credits = credits;
+      /* ⛔ 打了 "钉" 标记 ⇒ 之后每次目录同步都保留这个值（否则会被上游值静默冲掉） */
+      item.creditsLocked = true;
       persist();
-      console.log(`[admin] ${me.username} 将模型 ${id} 的倍率设为 ${credits || "免费"}`);
-      return send(200, { ok: true, id, credits });
+      console.log(`[admin] ${me.username} 将模型 ${id} 的倍率设为 ${credits || "免费"}（已钉住，同步不覆盖）`);
+      return send(200, { ok: true, id, credits, locked: true });
+    }
+    /* ── 10-18 闲时（限时）倍率：管理员可改 ──────────────────────────────
+       语义：**折扣系数，乘在模型倍率之上**。读取用于界面回显 + 显示当前命中窗口。 */
+    if (p === "/admin/offpeak" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      return send(200, {
+        ok: true,
+        enabled: db.offPeak.enabled === true,
+        windows: Array.isArray(db.offPeak.windows) ? db.offPeak.windows : [],
+        active: offPeakWindow(),
+        serverHour: new Date().getHours(),
+        serverTime: new Date().toISOString(),
+      });
+    }
+    if (p === "/admin/offpeak" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      if (body && Array.isArray(body.windows)) {
+        const windows = normalizeOffPeakWindows(body.windows);
+        if (body.windows.length && !windows.length) return send(400, { ok: false, error: "时段不合法：起止需为 0–24 且不相等，系数 0–100" });
+        db.offPeak.windows = windows;
+      }
+      if (body && body.enabled !== undefined) db.offPeak.enabled = body.enabled === true || body.enabled === "true" || body.enabled === 1;
+      persist();
+      const active = offPeakWindow();
+      console.log(`[admin] ${me.username} 闲时倍率 ${db.offPeak.enabled ? "开启" : "关闭"}，时段 ${db.offPeak.windows.map((w) => `${w.label || "时段"}${w.start}-${w.end}点×${w.rate}`).join("、") || "（空）"}，当前${active ? `命中「${active.label}」×${active.rate}` : "未命中"}`);
+      return send(200, { ok: true, enabled: db.offPeak.enabled === true, windows: db.offPeak.windows, active, serverHour: new Date().getHours() });
     }
     /* 设置某个用户可用的模型（整集覆盖，与用户端"勾选即生效"同一份数据） */
     if (p === "/admin/users/models" && req.method === "POST") {
