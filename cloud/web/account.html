@@ -315,8 +315,10 @@
           <div class="stat"><div class="n" id="stLastSync">—</div><div class="l">最近同步</div></div>
         </div>
         <div class="todo" style="margin-top:12px">
-          <b>会话同步已开启</b>（P0）：本机按行增量上传，两台机器各自追加不冲突。
-          项目 / 记忆 / 技能 / 设置同步与「冲突解决 UI」按 <b>CLOUD-SYNC-DESIGN.md</b> 的 P1–P4 推进。
+          <!-- ⛔ 10-18：这行原来是**硬编码「会话同步已开启」**，管理员关掉总闸后仍这么写 = 误导用户。
+               改为按服务端真实状态渲染（读 /sync/usage：403 + session-sync-disabled ⇒ 已关闭）。 -->
+          <b id="syncStateText">会话同步状态读取中…</b>
+          <span id="syncStateDetail">（本机按行增量上传，两台机器各自追加不冲突）</span>
         </div>
       </div>
 
@@ -1550,6 +1552,32 @@
     } else { updSay("请手动复制：" + cmd, "bad"); }
   };
   /* ── 功能开关（10-18）：会话同步总闸 ── */
+  /* ── 会话同步状态（10-18）：总闸关掉时**必须明说**，不能让用户以为是自己网络坏了 ── */
+  function loadSyncState() {
+    var t = $("syncStateText"), d = $("syncStateDetail");
+    if (!t || !d) return;
+    api("/sync/usage").then(function (r) {
+      var j = (r && r.j) || {};
+      if (r.ok && j.ok) {
+        t.textContent = "会话同步已开启";
+        t.style.color = "var(--ok)";
+        d.textContent = "（本机按行增量上传，两台机器各自追加不冲突）";
+      } else if (j.error === "session-sync-disabled") {
+        t.textContent = "管理员已关闭云端会话同步";
+        t.style.color = "var(--warn)";
+        d.textContent = "（登录与模型调用都不受影响；如需开启请联系管理员）";
+      } else if (r.status === 401) {
+        t.textContent = "未登录";
+        t.style.color = "";
+        d.textContent = "（登录后显示同步状态）";
+      } else {
+        t.textContent = "同步状态读取失败";
+        t.style.color = "var(--bad)";
+        d.textContent = "（HTTP " + r.status + "）";
+      }
+    }).catch(function () { t.textContent = "同步状态读取失败"; d.textContent = "（网络错误）"; });
+  }
+  if ($("syncStateText")) setTimeout(loadSyncState, 0);
   function featSay(t, c) { var el = $("featStatus"); if (!el) return; el.textContent = t || ""; el.className = "status" + (c ? " " + c : ""); }
   function loadFeatures() {
     if (!$("featSync")) return;
