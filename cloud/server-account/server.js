@@ -906,6 +906,26 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://127.0.0.1");
   const p = url.pathname.replace(/\/+$/, "") || "/";
   const send = (status, body) => { res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", ...cors }); res.end(JSON.stringify(body)); };
+  /* ── 版本与更新（10-18 用户令「云端管理加一个更新功能」）────────────────
+     ⛔⛔ 必须放在 `send` 定义**之后** —— 放前面会踩 `const` 暂时性死区（TDZ），
+        handler 抛 ReferenceError、连接直接断，`curl` 只看到空响应（实测踩过）。
+     ⛔ **公开**端点（无需鉴权）：面板、运维脚本、监控都要能读到当前版本。
+     ⛔ 只回版本与仓地址，**不回**任何配置/密钥/路径。
+     · 本站（作者自用）读不到 VERSION ⇒ 显示 dev；分发包（codex-cloud-assistant）读得到。
+     · `deployRepo` 恒定指向**可自部署**的那个仓 —— 面板据此给"部署到我自己的服务器"入口。 */
+  if (p === "/api/version" && req.method === "GET") {
+    let ver = "dev";
+    try { ver = String(fs.readFileSync(path.join(__dirname, "..", "VERSION"), "utf8")).trim() || "dev"; } catch { /* 自用站点没有 VERSION */ }
+    return send(200, {
+      ok: true,
+      name: "codex-cloud-assistant",
+      version: ver,
+      repo: "https://github.com/PMZPZM0/codex-cloud-assistant",
+      deployRepo: "https://github.com/PMZPZM0/codex-cloud-assistant",
+      uptimeSec: Math.round(process.uptime()),
+      node: process.version,
+    });
+  }
   const readBody = () => new Promise((resolve, reject) => {
     let raw = ""; req.on("data", (c) => { raw += c; if (raw.length > 64 * 1024) { reject(new Error("too-large")); req.destroy(); } });
     req.on("end", () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch (e) { reject(new Error("bad-json")); } });
