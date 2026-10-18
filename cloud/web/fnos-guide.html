@@ -8,7 +8,7 @@
             这样前端不需要 onerror 兜底，也不会在换图标后还命中旧静态文件的强缓存。 -->
     <link rel="icon" href="/cloud-api/api/favicon" />
     <link rel="apple-touch-icon" href="favicon-256.png" />
-<title>飞牛OS 对接指南 · 知识库与记忆空间</title>
+<title>知识库与记忆空间 对接指南 · 任意 Linux / NAS 均可</title>
 <style>
   :root {
     --bg:#f6f6f4; --card:#fff; --field:#fafaf8; --line:#e6e6e1; --line-soft:#efefeb;
@@ -49,7 +49,7 @@
 </head>
 <body>
 <main>
-  <h1>飞牛OS 对接指南：知识库与记忆空间</h1>
+  <h1>知识库与记忆空间 对接指南</h1>
   <p class="lead">
     对应面板：<code>account.html#/admin</code> → 「知识库 · 记忆空间」卡。
     本文可**直接整段交给另一个 AI**（第 8 节是作业单），也可由人照着做。
@@ -61,7 +61,19 @@
     装完把它们的地址填进面板。
   </div>
 
-  <h2>1. 需要安装什么（一句话版）</h2>
+  <div style="margin:0 0 20px;padding:16px 18px;border-radius:12px;line-height:1.85;
+  background:rgba(109,94,252,.09);border:1px solid rgba(109,94,252,.3);">
+  <b style="font-size:14px;">结论先说：不依赖任何特定系统。</b><br />
+  知识库（WeKnora）与记忆（MemHub）都是<b>独立的上游服务</b>，本服务只通过 <b>HTTP + API Key</b> 对接它们
+  —— 所以它们可以装在 <b>任意 Linux 服务器 / 飞牛 OS / 群晖 / 威联通 / 一台只跑 Docker 的机器</b> 上，
+  甚至两个服务分装在两台机器。本服务的记忆空间与知识库功能<b>完全不关心它们跑在哪</b>。<br />
+  下文以飞牛 OS 举例（它自带应用中心与容器管理，最省事）；<b>换到别的系统时，把「应用中心」换成
+  <code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;">docker run</code> /
+  <code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;">docker compose</code> 即可</b>，
+  后面的「拿 API Key」「在面板填地址」这些步骤完全一致。
+</div>
+
+<h2>1. 需要安装什么（一句话版）</h2>
   <table>
     <thead><tr><th>要装的东西</th><th>作用</th><th>端口示例</th><th>鉴权头</th></tr></thead>
     <tbody>
@@ -75,7 +87,7 @@
     <code>401 invalid or expired token</code>（那不是 key 错，是<b>头的类型错了</b>）。
   </div>
 
-  <h2>2. 飞牛OS 上的前提</h2>
+  <h2>2. 部署前提（任意 Linux / NAS 通用）</h2>
   <ul>
     <li>飞牛OS 能开容器（Docker / Compose）或装套件；两个服务各占一个<b>固定端口</b>。</li>
     <li>给 NAS 一个<b>固定的局域网 IP</b>（下文用 <code>192.168.1.10</code> 举例）。</li>
@@ -88,7 +100,7 @@
 
   <h2>3. 装知识库（WeKnora）</h2>
 
-  <h3>3.1 先看飞牛OS 应用中心有没有</h3>
+  <h3>3.1 先看应用中心 / 镜像市场有没有（飞牛、群晖、威联通都有）</h3>
   <p>如果有现成的「知识库 / WeKnora / RAG」类应用：直接装，记下<b>访问地址与端口</b>，跳到 3.3。</p>
 
   <h3>3.2 没有就自己跑容器</h3>
@@ -143,7 +155,7 @@ docker compose logs -f --tail=50      # 看到 "listening"/"started" 之类即�
 
   <h2>4. 装记忆（MemHub）</h2>
 
-  <h3>4.1 同 3.1 / 3.2</h3>
+  <h3>4.1 同上：应用中心优先，没有就起容器</h3>
   <p>应用中心有就装；没有就用容器跑，端口示例 <code>8090</code>。</p>
 
   <h3>4.2 判据</h3>
