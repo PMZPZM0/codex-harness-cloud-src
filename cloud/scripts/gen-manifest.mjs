@@ -49,10 +49,13 @@ for (const f of m.files) {
   /* ⛔⛔ Windows 工作区是 **CRLF**，而 GitHub 的 blob 与 raw 下载内容都是 **LF**。
      不归一就永远 hash 不匹配（下载端会判定"缓存旧版"并拒绝所有源）。 */
   const raw = readFileSync(abs);
-  const buf = Buffer.from(raw.toString("utf8").replace(/\r\n/g, "\n"), "utf8");
+  /* ⛔⛔ 二进制绝不能做 LF 归一：toString("utf8") 会把非法字节替换成 U+FFFD，
+     再 Buffer.from 就得到另一个文件（实测 PNG 5280B → 9397B，hash 全错）。 */
+  const isBin = /\.(png|jpe?g|gif|ico|webp|woff2?|ttf|otf|mp3|mp4)$/i.test(f.src);
+  const buf = isBin ? raw : Buffer.from(raw.toString("utf8").replace(/\r\n/g, "\n"), "utf8");
   f.sha256 = createHash("sha256").update(buf).digest("hex");
   f.bytes = buf.length;
-  const crlf = raw.includes("\r\n") ? "（已按 LF 归一）" : "";
+  const crlf = isBin ? "（二进制，按原始字节）" : (raw.includes("\r\n") ? "（已按 LF 归一）" : "");
   console.log(`  ✓ ${f.src.padEnd(44)} ${f.sha256.slice(0, 12)}… ${buf.length} B${crlf}`);
 }
 if (bad) {
