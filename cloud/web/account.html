@@ -613,6 +613,7 @@
           <span class="op-summary" id="opSummary">—</span>
           <button class="btn sm" id="opEdit">设置</button>
         </span>
+        <button class="btn sm" id="amExport">导出模型池</button>
         <button class="btn sm" id="amSync">重新同步目录</button>
       </h2>
       <p class="hint">
@@ -1854,6 +1855,40 @@
     return Array.prototype.slice.call(document.querySelectorAll("#amUserModels input[type=checkbox]"))
       .filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
   }
+  /* 导出模型池（10-18 用户令「模型池需支持同步导出」）：把 id / 名称 / 高峰倍率 / **上游原值** /
+     是否已钉 / 闲时倍率 / 是否对用户开放 导成 JSON —— 备份、或迁移到别人的部署都用它。
+     ⛔ 导出前**重新拉一次**目录：用页面里的旧快照会导出一份已经过期的倍率。 */
+  if ($("amExport")) $("amExport").onclick = function () {
+    var btn = $("amExport"); btn.disabled = true; amSay("正在导出…");
+    api("/admin/models").then(function (r) {
+      btn.disabled = false;
+      if (!r.ok || !r.j || !r.j.ok) { amSay("导出失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
+      var open = new Set(Array.isArray(r.j.available) ? r.j.available : []);
+      var payload = {
+        exportedAt: new Date().toISOString(),
+        syncedAt: r.j.syncedAt || 0,
+        source: r.j.source || "",
+        models: (r.j.list || []).map(function (m) {
+          return {
+            id: m.id,
+            name: m.name || "",
+            rate: m.credits || "",                  // 高峰倍率（当前生效值）
+            upstreamRate: m.upstreamCredits || "",  // 上游原值（"恢复上游"用的快照）
+            locked: m.creditsLocked === true,
+            offPeakRate: (m.offPeakRate === undefined || m.offPeakRate === null) ? null : m.offPeakRate,
+            openToUsers: open.has(m.id),
+          };
+        }),
+      };
+      var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "model-pool-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+      amSay("已导出 " + payload.models.length + " 个模型（含上游倍率与闲时倍率）", "ok");
+    }).catch(function () { btn.disabled = false; amSay("导出失败：网络错误", "bad"); });
+  };
   if ($("amSync")) $("amSync").onclick = function () {
     $("amSync").disabled = true; amSay("正在同步目录…");
     api("/admin/models/sync", { method: "POST" }).then(function (x) {
