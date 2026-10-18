@@ -20,6 +20,17 @@
     --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.04);
     --r: 12px; --dur: .18s;
   }
+  /* ⛔ 10-18 用户令：加白天/黑色主题切换。原文件只有 data-theme="light" 且无切换逻辑，
+     暗色值缺失 ⇒ 这里补齐一套，色板与下载页一致（同一产品的两个站点不能两套观感）。 */
+  [data-theme="dark"] {
+    --bg: #0b0b12; --card: #171725; --field: #1d1d2e; --line: #2a2a3d; --line-soft: #232333;
+    --text: #edecf5; --muted: #9a99b4; --faint: #6f6e88;
+    --brand: #8b5cf6; --brand2: #a78bfa; --brand-soft: rgba(139,92,246,.16); --brand-ink: #d6d2ff;
+    --ok: #35d07f; --ok-soft: rgba(53,208,127,.14);
+    --warn: #f5a623; --warn-soft: rgba(245,166,35,.13);
+    --bad: #ff6b6b; --bad-soft: rgba(255,107,107,.13);
+    --shadow: 0 1px 2px rgba(0,0,0,.32), 0 8px 24px rgba(0,0,0,.28);
+  }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.65 Inter, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -2926,5 +2937,37 @@
 
   function refreshPairing() { probeAgent(); loadDevices(); }
 })();</script>
+<!-- 10-18 主题切换（固定右下角：不依赖侧栏/导航结构，两个站点用同一套） -->
+<button id="themeToggle" type="button" aria-label="切换白天/夜间主题" title="切换主题"
+  style="position:fixed;right:18px;bottom:18px;z-index:80;width:40px;height:40px;border-radius:50%;
+  border:1px solid var(--line);background:var(--card);color:var(--text);font-size:17px;
+  box-shadow:var(--shadow);cursor:pointer;display:grid;place-items:center;">🌙</button>
+<script>
+(function () {
+  /* ⛔ 三件事缺一不可：① 存 localStorage ② 首帧就应用（避免闪白）③ 跟随系统偏好做默认值 */
+  var KEY = "ch-theme";
+  var root = document.documentElement;
+  function apply(t) { root.setAttribute("data-theme", t); }
+  function current() { return root.getAttribute("data-theme") === "dark" ? "dark" : "light"; }
+  function paint() {
+    var b = document.getElementById("themeToggle");
+    if (b) b.textContent = current() === "dark" ? "☀️" : "🌙";
+  }
+  try {
+    var saved = localStorage.getItem(KEY);
+    if (saved === "dark" || saved === "light") apply(saved);
+    else if (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) apply("dark");
+  } catch (e) { /* 忽略 */ }
+  paint();
+  var btn = document.getElementById("themeToggle");
+  if (btn) btn.addEventListener("click", function () {
+    var next = current() === "dark" ? "light" : "dark";
+    apply(next);
+    try { localStorage.setItem(KEY, next); } catch (e) { /* 忽略 */ }
+    paint();
+  });
+})();
+</script>
+
 </body>
 </html>
