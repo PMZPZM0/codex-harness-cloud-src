@@ -1237,11 +1237,14 @@ const server = http.createServer(async (req, res) => {
         realm: db.modelCatalog.realm,
         source: db.modelCatalog.source,
         sync: pulled.ok ? "ok" : pulled.error,
-        /* 闲时倍率快照（客户端据此显示「当前闲时 ×0.5」并预热预期消耗） */
+        /* 闲时倍率快照（客户端据此显示「当前闲时 ×0.5」并预热预期消耗）。
+           ⛔ 带 `tzOffsetMinutes`：时段判定用的是**服务器本地时间**，客户端要靠这个偏移
+              把自己那边的 "现在" 换算成服务器的小时数，否则跨时区/边界处会算错一格。 */
         offPeak: {
           enabled: db.offPeak.enabled === true,
           windows: Array.isArray(db.offPeak.windows) ? db.offPeak.windows : [],
           active: offPeakWindow(),
+          tzOffsetMinutes: new Date().getTimezoneOffset(),
         },
       });
     }
@@ -1523,6 +1526,7 @@ const server = http.createServer(async (req, res) => {
         active: offPeakWindow(),
         serverHour: new Date().getHours(),
         serverTime: new Date().toISOString(),
+        tzOffsetMinutes: new Date().getTimezoneOffset(),
       });
     }
     if (p === "/admin/offpeak" && req.method === "POST") {
@@ -1537,7 +1541,7 @@ const server = http.createServer(async (req, res) => {
       persist();
       const active = offPeakWindow();
       console.log(`[admin] ${me.username} 闲时倍率 ${db.offPeak.enabled ? "开启" : "关闭"}，时段 ${db.offPeak.windows.map((w) => `${w.label || "时段"}${w.start}-${w.end}点×${w.rate}`).join("、") || "（空）"}，当前${active ? `命中「${active.label}」×${active.rate}` : "未命中"}`);
-      return send(200, { ok: true, enabled: db.offPeak.enabled === true, windows: db.offPeak.windows, active, serverHour: new Date().getHours() });
+      return send(200, { ok: true, enabled: db.offPeak.enabled === true, windows: db.offPeak.windows, active, serverHour: new Date().getHours(), tzOffsetMinutes: new Date().getTimezoneOffset() });
     }
     /* 设置某个用户可用的模型（整集覆盖，与用户端"勾选即生效"同一份数据） */
     if (p === "/admin/users/models" && req.method === "POST") {

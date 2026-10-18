@@ -354,3 +354,8 @@
    用户明确「不要有这种系统弹窗」且「不要做内嵌的」⇒ 复用全局确认框
    `.close-confirm-*`（见 38-close-confirm.css，portal 到 body、z-index 950），
    与「关闭窗口」那张确认卡同一套观感。本文件不再自带确认框样式。 */
+
+/* 闲时（限时）倍率**命中**时那一行（10-18，用户令「管理员可以修改倍率 + 夜间/闲时倍率」）：
+   与上面的 .cloud-mode-state 同一取舍 —— 用 --green 而不是 --ok（后者亮色浅底上对比度不足）。
+   不命中/未启用保持 .cloud-manage-muted 的 --muted，不抢注意力。 */
+.cloud-manage-offpeak-on { color: var(--green); }

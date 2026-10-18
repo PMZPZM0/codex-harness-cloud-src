@@ -28,6 +28,12 @@ import {syncLimitedBenefitQuiet, syncLimitedBenefit } from "../features/limited-
 import { ToggleSwitch } from "./SettingsWidgets";
 /* ⛔ 令牌数格式化复用 model-specs 的单一真相源（1_050_000 → "1.05M"），不在此处抄第二份。 */
 import { formatTokenCount } from "../lib/model-specs";
+/* 闲时（限时）倍率状态（10-18）：用户令「管理员可以修改倍率」+「夜间/闲时倍率」。
+   ⛔ 用 currentOffPeakWindow **现算**，不读 /models 回执里的 `offPeak.active`
+   —— 后者是拉目录那一刻的快照，管理员刚改完时段就会显示错（可差好几分钟）。
+   判定语义（服务端本地时间 / 左闭右开 / 跨零点）与积分扣减同一份实现，见 credit-estimate.mjs。 */
+import { currentOffPeakWindow } from "../lib/cloud-credit-store";
+import type { OffPeakConfig } from "../lib/credit-estimate.mjs";
 
 type CloudState = {
   gated: boolean;
@@ -82,6 +88,10 @@ type ModelsInfo = {
   models?: ModelRow[];
   enabledCount?: number;
   total?: number;
+  /* 闲时（限时）倍率快照（服务端 /models 带，10-18 新增 tzOffsetMinutes）。
+     ⛔ 只用它判断"启没启用、有哪些时段"；"现在命中哪个"一律**现算**
+     （回执里的 active 是拉取那一刻的旧值，管理员刚改完时段就会显示错）。 */
+  offPeak?: OffPeakConfig;
   error?: string;
 };
 const KIND_LABEL: Record<string, string> = {
@@ -470,6 +480,23 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
                   ? `已开通 · 共 ${models.total ?? models.models?.length ?? 0} 个模型，已勾选 ${picked.size} 个（勾选后才可调用，按倍率扣积分）`
                   : "供应商尚未就绪，请稍后再试"}
               </div>
+              {/* 闲时（限时）倍率状态（10-18）：管理员改了时段/系数后，用户得能看见"现在算不算闲时"。
+                  ⛔ 目录里没有 offPeak（旧服务端 / 尚未部署那半边）⇒ 整行**不出现** ——
+                     不猜"未启用"（那是在说谎），也不写死"不在时段"。 */}
+              {(() => {
+                const op = models.offPeak;
+                if (!op) return null;
+                const win = currentOffPeakWindow(op);
+                return (
+                  <div className={"cloud-manage-muted" + (win ? " cloud-manage-offpeak-on" : "")} style={{ marginBottom: 8 }}>
+                    {op.enabled !== true
+                      ? "闲时倍率：未启用（不折扣）"
+                      : win
+                        ? `当前闲时「${win.label || "时段"}」${win.start}–${win.end} 点 ×${win.rate}（按服务器时间）`
+                        : "当前不在闲时时段（不折扣）"}
+                  </div>
+                );
+              })()}
               {/* 云端模型模式：开启 ⇒ 本地供应商全部停用、模型配置里的供应商开关被锁定。
                   ⛔ 色值与尺寸全部下沉到 39-cloud-manage.css（.cloud-mode-*）：
                      此前写成内联 style 且引用了 --brand / --ok-soft / --field 三个**不存在**的变量，
