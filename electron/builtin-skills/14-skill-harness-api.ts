@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（96 个能力域 / 490 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（95 个能力域 / 499 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -62,9 +62,9 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 AI 短剧无限画布：把工作流拆成卡片摆在无限画布上（生图/短剧/白模/3D 建模/电商出图各类模板），连线表示「这份输入喂给下一步」。**画布可被模型读写**：board-sync 由画布自动镜像快照，模型用真工具 workflow_read 读内容、workflow_writeback 把产物写回节点（卡片实时显示）——「按画布搭的流程跑」是可行请求
 通道：drama-canvas:asset-write, drama-canvas:storyboard-file-remove, drama-canvas:polish-prompt, drama-canvas:describe-image, drama-canvas:output-dir, drama-canvas:output-dir-set, drama-canvas:board-sync
 
-### laya（4 通道）
+### laya（5 通道）
 Laya 智能判断（GitHub NandhaKishorM/laya，Apache-2.0，非自回归决策引擎 33ms）：status 安装与服务状态 / install 安装更新（pip 清华镜像 + 权重走 hf-mirror）/ decide-effort 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度，<0.45 弃权）——渲染层思考档「自动」开关的数据端；失败一律降级手选档，不是硬依赖
-通道：laya:status, laya:install, laya:uninstall, laya:decide-effort
+通道：laya:status, laya:install, laya:uninstall, laya:decide-effort, laya:judge
 
 ### phone（7 通道）
 手机控制（phone-harness）：查状态 / 安装 / 卸载 / 体检 / 权限引导；Android 走 adb（全平台），iPhone 走 Mac 的 iPhone 镜像（仅 macOS）
@@ -198,9 +198,9 @@ OpenAI 账号鉴权（登录/凭据/额度）
 内置终端（创建/输入/缩放/重启）
 通道：terminal:input, terminal:list, terminal:ready, terminal:resize, terminal:restart
 
-### updates（6 通道）
+### updates（9 通道）
 应用自更新（检查/下载/安装，GitHub Release 单源）
-通道：updates:check, updates:download, updates:reveal, updates:install, updates:download-silent, updates:restart-install
+通道：updates:check, updates:check-silent, updates:state-read, updates:download, updates:cancel-download, updates:defer-install, updates:skip-version, updates:reveal, updates:install
 
 ### backup（9 通道）
 改动备份的**查询与恢复**（设置 → 数据管理 → 改动备份：开关、备份目录、产物概览、清空）。备份本身由宿主在**每个回合结束时自动完成**（落 changes-index/<会话id>.json + changes-detail/<会话id>/cd_*.json，结构与 WorkBuddy 同构，**容量上限 3G，超了把最旧的移进系统回收站**，不是硬删）。
@@ -263,6 +263,10 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 ### free-gateway（7 通道）
 **免费模型网关**（10-12，第三方开源项目 dsh-our-free-model 的本地侧车，MIT）：把它的独立网关（127.0.0.1:18900，OpenAI 兼容）作为可选下载服务接入。⛔ 这些通道是**宿主生命周期管理**（下载/启停/健康/取 Key/管理台/拉模型清单），不是模型工具 —— 模型侧永远不调它们；要用免费模型：模型设置页点推荐卡 → 下载并启动 → 在上游管理台登录渠道账号 → 一键注册为供应商，然后正常选模型。⛔ 免责：上游与本项目开发者无关，渠道合规性与可用性由使用者自担
 通道：free-gateway:download, free-gateway:models, free-gateway:open-admin, free-gateway:start, free-gateway:status, free-gateway:stop, free-gateway:uninstall
+
+### limited-benefit（4 通道）
+**限时福利**（10-14）：云端账号服务内置的模型供应商（模型目录由 WorkBuddy Manager 同步，逐模型带积分倍率）。这些通道是**宿主管理面**（拉目录 / 取代理令牌 / 同步成本机供应商行），不是模型工具 —— 模型侧永远不调它们；要用它：云端管理面板勾选模型（勾选 = 本机模型下拉框可见）→ 在下拉框里选中的即生效，按倍率扣积分。⛔ 上游真实地址与网关密钥只在服务端，客户端只拿到同源代理路径；代理令牌（wap_ 前缀）明文仅在签发那一次出现。
+通道：limited-benefit:catalog, limited-benefit:token, limited-benefit:status, limited-benefit:apply
 
 ### dialog（6 通道）
 文件/目录选择对话框（含跨窗口）
@@ -348,6 +352,10 @@ SkillHub **专家市场包**（skillhub.cn/skillspackage，55 包）：list 浏�
 「更新到新版本后首次启动」的**新功能介绍弹窗**（10-06）：state 取该版本的要点与「该不该弹」（判定含：这个版本有没有要点、用户看过没有、是升级还是全新安装——全新安装不弹，避免新用户看到莫名其妙的「更新内容」）；ack 记下当前版本已看过 ⇒ 同版本不再弹。要点数据在主进程 electron/whats-new-notes.ts，每次发版要加一条（守卫【11r】钉）。⛔ 模型侧用不到它
 通道：whatsnew:ack, whatsnew:history, whatsnew:state
 
+### cloud（14 通道）
+**云版预留接口层**（10-11，14 条，命名 cloud:<组>/<动作>）：云版产品线的占位通道，渲染层/远端按稳定通道名先行开发，后端逐步把桩换真。五组：cloud:sync/*（云端存储数据同步，预留桩）、cloud:device/*（本机配对设备管理，真实现）、cloud:notify/*（站长公告，本地缓存真实现）、cloud:update/*（助手自更新，check 真实现）、cloud:tools/*（工具链按需下载，status/progress 真实现）。⛔ 预留桩统一返回 {ok:false, reserved:true, code, error}，调用方以 reserved!==true 判能力；通道名发布即冻结只增不改
+通道：cloud:sync/conflict/resolve, cloud:sync/pull, cloud:sync/push, cloud:sync/status, cloud:device/list, cloud:device/unbind, cloud:notify/list, cloud:notify/mark-read, cloud:update/apply, cloud:update/check, cloud:update/download, cloud:tools/download, cloud:tools/progress, cloud:tools/status
+
 ### soul-market（4 通道）
 SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏览 / get 看人设全文 / current 当前生效 / apply 应用人格（写 personalization.persona + 同步 AGENTS.md，**下一个新会话生效**，slug=null 还原默认）。用户想「换个性格/语气」时用它
 通道：soul-market:apply, soul-market:current, soul-market:get, soul-market:list
@@ -371,6 +379,10 @@ SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏�
 ### custom-model（12 通道）
 自定义模型供应商（接入任意 OpenAI 兼容端点：CRUD/探测/测活）
 通道：custom-model:apply, custom-model:list, custom-model:probe, custom-model:read, custom-model:remove, custom-model:remove-model, custom-model:save, custom-model:select, custom-model:set-effort, custom-model:set-enabled, custom-model:set-model, custom-model:upsert-model
+
+### model-source（2 通道）
+**云端模型模式开关**（10-15）：两个通道 —— get 读 / set 写，落盘 userData/model-source.json。开启 ⇒ 模型列表只走云端开放目录里勾选的那些（服务端按 /admin/models/available 下发），本地供应商自动停用，且「模型配置」里的供应商开关被锁定打不开；关闭 ⇒ 恢复本地供应商手动开关。⛔ 只停用**除限时福利之外**的本地供应商 —— 限时福利那一行的可用性由云端勾选决定，不占「当前生效供应商」位。开关本体在「云端管理」面板；模型侧用不到（宿主管理面）。
+通道：model-source:get, model-source:set
 
 ### bridge（1 通道）
 引擎桥连接状态
@@ -423,20 +435,4 @@ RPA 配方（录制好的桌面自动化流程）
 ### autoUpdate（5 通道）
 自动化能力与引擎的**后台自动更新**：四类（桌面自动化 nuphus / 浏览器自动化 playwright-cli / Mac 电脑操作 open-computer-use / Codex 引擎）各一个独立开关（缺省即开，存 app-settings.json），开启后主进程定时静默拉取国内镜像最新版并更新，成功发系统通知。⛔ 手动更新与后台更新走**同一批函数**，不存在两套判据
 通道：autoUpdate:status, autoUpdate:set, autoUpdate:scan, autoUpdate:run, autoUpdate:run-all
-
-### cloud-auth（5 通道）
-**云账号**的登录 / 登出 / 切换（10-16）：用账号密码换云端会话令牌（⛔ 不是配对流程）；令牌在 safeStorage 里，⛔ 渲染层与模型侧都拿不到明文。用户说「登录云端 / 退出云账号 / 换个云账号」时用它。⛔ 与本机「中转站账号」是两条独立的登录线，别混
-通道：cloud-auth:login, cloud-auth:logout, cloud-auth:switch, cloud-auth:status, cloud-auth:points
-
-### cloud-models（6 通道）
-**云端模型目录同步**（10-16）：登录后自动把云端「已勾选」的模型写成本机供应商 \`cloud\`（勾选 = 下拉框可见），并默认每 10 分钟自动保持更新。用户说「云端模型没同步 / 拉一下云端模型 / 勾了模型选不到」时用它（sync 是唯一同步入口，force=true 会重签代理令牌）
-通道：cloud-models:catalog, cloud-models:sync, cloud-models:token, cloud-models:set-enabled, cloud-models:status, cloud-models:activate
-
-### cloud-kb（2 通道）
-**云端知识库**（跨设备共享的那一份）→ 本机 MCP 连接器 \`cloud-kb\`（10-16）。⛔ 与「本地项目级知识库」（kb 域，随项目走）**不是一回事**：这份存在服务端，换台机器登录也在。未开通权益时服务端不建库不发钥匙，本域只会如实报 not-activated
-通道：cloud-kb:sync, cloud-kb:status
-
-### cloud-memory（2 通道）
-**云端记忆**的凭据与上游切换（10-16，10-17 修正）。⛔ 记忆中枢**没有记忆读写接口**（所有路径都是同一个 OpenAI 兼容转发口），**也没有 MCP 端点** ⇒ 记忆不是靠工具调用的，而是在**对话请求层**由服务端自动注入/写入。所以本域做的是：拿到该账号的 userKey 后把**对话上游切到记忆端点**（记忆即全域生效，且天然按账号隔离）。未开通/被停用时自动切回。用户说「云端记忆没生效 / 打开云端记忆」时用它。
-通道：cloud-memory:sync, cloud-memory:status
 `;
