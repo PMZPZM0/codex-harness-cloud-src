@@ -1104,6 +1104,16 @@ const server = http.createServer(async (req, res) => {
        `process.exit(0)`，由 systemd 的 `Restart=always` 拉起。这是唯一安全的自我更新方式。
      ⛔ 先回响应再退出，否则客户端只看到"连接被重置"。⛔ 仅 admin。 */
   /* 更新进度（前端轮询）：只回最近一次 apply 的状态，⛔ 不暴露脚本全文 */
+  /* ── 应用连接地址（10-18 用户令「用户管理里加应用连接的 api 地址 + 复制，部署完自动生成」）──
+     ⛔ **不硬编码域名**：从当前请求的 host / x-forwarded-proto 推出来 —— 换域名、上 HTTPS、
+       反代前缀改了，这里都自动跟着变，不需要改代码重新部署。 */
+  if (p === "/api/app-endpoint" && req.method === "GET") {
+    /* ⛔ 这一段在 `const me = sessionUser(req)` **之前**（公开路由区）——
+       此处引用 me 会 ReferenceError 并把进程打挂（实测：每次请求 502 一次）。
+       地址本身不是秘密（登录页域名就能看出来），不做 admin 校验。 */
+    return send(200, { ok: true, apiBase: publicBaseOf(req), host: String(req.headers["x-forwarded-host"] || req.headers.host || "") });
+  }
+
   if (p === "/api/updates/progress" && req.method === "GET") {
     const g = db.updateProgress || null;
     return send(200, { ok: true, progress: g ? { pct: g.pct || 0, label: g.label || "", done: Boolean(g.done), at: g.at || 0, error: g.error || "" } : null, version: APP_VERSION });
