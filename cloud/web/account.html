@@ -2939,9 +2939,9 @@
 })();</script>
 <!-- 10-18 主题切换（固定右下角：不依赖侧栏/导航结构，两个站点用同一套） -->
 <button id="themeToggle" type="button" aria-label="切换白天/夜间主题" title="切换主题"
-  style="position:fixed;right:18px;top:16px;z-index:80;width:40px;height:40px;border-radius:50%;
+  style="position:fixed;left:16px;bottom:10px;z-index:80;width:30px;height:30px;border-radius:50%;font-size:13px;opacity:.75;
   border:1px solid var(--line);background:var(--card);color:var(--text);font-size:17px;
-  box-shadow:var(--shadow);cursor:pointer;display:grid;place-items:center;">🌙</button>
+  box-shadow:var(--shadow);cursor:pointer;display:grid;place-items:center;transition:opacity .15s;">🌙</button>
 <script>
 (function () {
   /* ⛔ 三件事缺一不可：① 存 localStorage ② 首帧就应用（避免闪白）③ 跟随系统偏好做默认值 */
