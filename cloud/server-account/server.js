@@ -428,20 +428,34 @@ if (typeof db.modelCatalog !== "object" || !db.modelCatalog) db.modelCatalog = {
 /* 每用户生效模型：username → [modelId]（空/缺省 = 全不启用，由用户勾选决定） */
 if (typeof db.userModels !== "object" || !db.userModels) db.userModels = {};
 /* ── 闲时（限时）倍率（10-18 用户令「加一个限时倍率，管理员可以修改倍率」）────────
-   db.offPeak = { enabled, windows: [ { id, label, start, end, rate } ] }
-   ⛔ 语义：**折扣系数，乘在模型倍率之上** ⇒ 实际倍率 = 模型倍率 × 闲时系数。
-      例：glm-5.3 ×0.79 在夜间系数 0.5 下 ⇒ 实际 ×0.395。
-      ⛔ 不改模型倍率本身（那只存一份真相源：目录里的 credits）。
+   db.offPeak = { enabled, rateSemantics, windows: [ { id, label, start, end, rate } ] }
+   ⛔⛔ 语义（10-18 二次修正，用户原话「不是我填 0.5 就打 5 折，前面 0.11 后面闲时我可以填 0.05」）：
+      `rate` 是**该时段的默认倍率**，命中时段直接**替换**模型倍率 —— 高峰 ×0.11、闲时填 0.05
+      ⇒ 闲时按 ×0.05 计费（**不是** 0.11×0.05）。
+      `rate: null`（留空）= 该时段不设默认倍率 ⇒ 落各模型自己的 `offPeakRate`；都没设 ⇒ 沿用高峰倍率。
+   ⛔ 不改模型倍率本身（那只存一份真相源：目录里的 credits）。
    ⛔ 时段判定用**服务端本地时间**（CST）；`start > end` 视为跨零点（如 22→6）。
    ⛔ 默认 enabled=false ⇒ 不改动任何既有计费行为，等管理员显式开启。 */
 if (typeof db.offPeak !== "object" || !db.offPeak) {
   db.offPeak = {
     enabled: false,
+    rateSemantics: "replace-v1",
     windows: [
-      { id: "night", label: "夜间", start: 0, end: 8, rate: 0.5 },
-      { id: "offpeak", label: "闲时", start: 18, end: 24, rate: 0.5 },
+      { id: "night", label: "夜间", start: 0, end: 8, rate: null },
+      { id: "offpeak", label: "闲时", start: 18, end: 24, rate: null },
     ],
   };
+}
+/* ⛔⛔ 一次性语义迁移（10-18）：旧版的 `windows[].rate` 是**折扣系数**（0.5 = 5 折），
+   新版是**直接倍率** —— 原样沿用会把正常 ×0.11 的模型按 ×0.5 计费（涨 4.5 倍，用户会炸）。
+   所以这里无条件清空旧值，由管理员在面板上按新语义重填。⛔ 只跑一次（靠 rateSemantics 标记），
+   否则管理员填的新倍率会在每次重启时被清掉。 */
+if (db.offPeak.rateSemantics !== "replace-v1") {
+  const old = Array.isArray(db.offPeak.windows) ? db.offPeak.windows : [];
+  for (const w of old) { if (w) delete w.rate; }
+  db.offPeak.rateSemantics = "replace-v1";
+  persist();
+  console.log(`[accounts] 闲时倍率语义迁移：已清空 ${old.length} 个时段上的旧「折扣系数」值（系数≠倍率，请在面板按新语义重填）`);
 }
 /* ── 积分账本（10-14）──────────────────────────────────────────────────────
    db.points = { "<username>": { balance, txns: [ {id, at, delta, kind, ref, note, after} ] } }
@@ -1002,30 +1016,37 @@ const server = http.createServer(async (req, res) => {
       for (const w of windows) {
         const s = Number(w && w.start);
         const e = Number(w && w.end);
-        const r = Number(w && w.rate);
-        if (!Number.isFinite(s) || !Number.isFinite(e) || !Number.isFinite(r)) continue;
-        if (!(r >= 0)) continue;                 // 负系数无意义 ⇒ 当它不存在
-        if (s === e) continue;                   // 零长度窗口不生效
+        /* ⛔⛔ `Number(null) === 0`（这个坑今天第三次）：直接把 w.rate 当数字，会把
+           「该窗口没设默认倍率」变成 **0** ⇒ 该时段所有没单独设的模型全部免费白送。
+           必须用 parseRate 解析 —— 空/缺/非法 ⇒ null（该窗口不设默认倍率）。 */
+        const r = parseRate(w && w.rate);
+        if (!Number.isFinite(s) || !Number.isFinite(e)) continue;
+        if (r !== null && !(r >= 0)) continue;
+        if (s === e) continue;
         const hit = s < e ? (hour >= s && hour < e) : (hour >= s || hour < e);  // start>end = 跨零点
         if (hit) return { label: String(w.label || ""), start: s, end: e, rate: r };
       }
       return null;
     }
-    /* 计费用：没命中就返回 1（= 不折扣） */
-    function offPeakFactor(atMs = Date.now()) {
-      const w = offPeakWindow(atMs);
-      return w ? w.rate : 1;
-    }
-    /* 每模型单独配的闲时系数（10-18 用户令「每个模型单独的配置」）。
-       返回 null = **没单独配**（跟随全局默认系数）；返回数字 = 该模型自己的折扣系数。
-       ⛔ 语义与全局系数完全一致：乘在模型倍率之上，0 = 该时段免费，1 = 不打折。
-       ⛔ 空串 / 缺字段 / 非法值一律当"没配"——不要把脏数据当成 0（那会让模型白送）。 */
-    function modelOffPeakRate(m) {
-      if (!m) return null;
-      const raw = m.offPeakRate;
-      if (raw === undefined || raw === null || String(raw).trim() === "") return null;
-      const n = Number(String(raw).trim().replace(/^x/i, ""));
+    /* ⛔ 原 `offPeakFactor()`（返回"折扣系数"）已删除：10-18 改为**替换语义**（闲时倍率直接定价），
+       计费处不再乘任何系数 ⇒ 保留它只会让人以为还有"打折"这回事。 */
+    /* 把"填进去的倍率"解析成数字。返回 null = **没配置**（沿用别的值），数字 = 就用它。
+       ⛔ 与 `creditRate` 的区别：这里 null 表示"没配"，而 **0 是合法值**（该时段免费）——
+         两者绝不能混（把"没配"当 0 就是白送，把 0 当"没配"就是用户配了免费却不生效）。
+       复用点：每模型闲时倍率、窗口的默认闲时倍率。 */
+    function parseRate(v) {
+      if (v === undefined || v === null) return null;
+      const raw = String(v).trim().replace(/^x/i, "");
+      if (!raw) return null;
+      const n = Number(raw);
       return Number.isFinite(n) && n >= 0 ? n : null;
+    }
+    /* 每模型单独配的**闲时倍率**（10-18 用户令「每个模型单独的配置」）。
+       返回 null = 没单独配；数字 = 该模型在闲时时段直接按这个倍率计费。
+       ⛔⛔ 语义是**替换**，不是折扣系数：正常 ×0.11、闲时填 0.05 ⇒ 闲时实际就是 0.05
+          （不是 0.11 × 0.05 = 0.0055）。用户原话：「不是我填 0.5 就打 5 折」。 */
+    function modelOffPeakRate(m) {
+      return m ? parseRate(m.offPeakRate) : null;
     }
     /* 归一化管理员提交的时段表（信任边界校验；非法条目丢弃，不抛） */
     function normalizeOffPeakWindows(input) {
@@ -1035,16 +1056,20 @@ const server = http.createServer(async (req, res) => {
         if (!w) return;
         const s = Math.trunc(Number(w.start));
         const e = Math.trunc(Number(w.end));
-        const r = Number(w.rate);
         if (!Number.isFinite(s) || !Number.isFinite(e)) return;
         if (s < 0 || s > 24 || e < 0 || e > 24) return;
         if (s === e) return;
-        if (!Number.isFinite(r) || r < 0 || r > 100) return;
+        /* ⛔ 10-18：窗口的 `rate` 改为**可选**（该时段的默认闲时**倍率**）。留空 = 该时段不设默认，
+           落到各模型自己的闲时倍率；模型也没配 ⇒ 沿用正常倍率（该时段不优惠）。
+           ⛔⛔ 语义已从「折扣系数」改为「直接倍率」——存量 0.5 这类值必须清掉，
+              否则会把正常 ×0.11 的模型按 ×0.5 计费（涨 4.5 倍）。 */
+        const r = parseRate(w.rate);
+        if (r !== null && r > 100) return;
         out.push({
           id: String(w.id || `w${i + 1}`).slice(0, 24),
           label: String(w.label || "").slice(0, 24),
           start: s, end: e,
-          rate: Math.round(r * 1000) / 1000,
+          rate: r === null ? null : Math.round(r * 1000) / 1000,
         });
       });
       return out;
@@ -1432,24 +1457,34 @@ const server = http.createServer(async (req, res) => {
               item = keys.find((m) => wantedNorm.includes(String(m.id).trim().toLowerCase()));
             }
             const rawCredits = item && item.credits ? String(item.credits).replace(/^x/i, "") : "";
-            const rate = rawCredits === "" ? 0 : Number(rawCredits);
+            const normalRate = rawCredits === "" ? 0 : Number(rawCredits);
             const pTok = /"prompt_tokens"\s*:\s*(\d+)/.exec(text);
             const cTok = /"completion_tokens"\s*:\s*(\d+)/.exec(text);
             const totalTokens = (pTok ? Number(pTok[1]) : 0) + (cTok ? Number(cTok[1]) : 0);
-            /* 闲时（10-18 改为**每模型单独配置**，用户令「每个模型单独的配置」）。
-               优先级：① 该模型自己配了 offPeakRate ⇒ 一律按它（**不看总闸** —— 配了就该生效）；
-                       ② 没配 ⇒ 总闸 enabled 开着才用全局默认系数，否则不打折。
-               ⛔ 时段命中判定用 ignoreEnabled，避免"总闸关着 ⇒ 连每模型配置都探不到"。 */
+            /* 闲时（10-18：**每模型单独配置 + 替换语义**）。
+               ⛔⛔ 闲时倍率是**直接定价**，不是折扣系数 —— 命中时段就用它**替换**正常倍率，
+                  绝不乘上去：用户原话「不是我填 0.5 就打 5 折，前面 0.11 后面闲时我可以填 0.05」。
+                  （按相乘算 0.11 × 0.05 = 0.0055，会直接把该模型打成近免费。）
+               优先级：① 模型自己配了 ⇒ 一律按它（**不看总闸** —— 配了就该生效）；
+                       ② 没配 ⇒ 总闸开着且该窗口配了默认闲时倍率 ⇒ 用它；
+                       ③ 都没有 ⇒ 沿用正常倍率（= 该时段不优惠，不是"打 1 折"）。
+               ⛔ 时段命中判定用 ignoreEnabled，否则总闸关着时连每模型配置都探不到。 */
             const hit = offPeakWindow(Date.now(), { ignoreEnabled: true });
-            const own = modelOffPeakRate(item);
-            const factor = hit ? (own !== null ? own : (db.offPeak.enabled === true ? hit.rate : 1)) : 1;
-            const peak = factor !== 1 ? hit : null;
+            const ownRate = modelOffPeakRate(item);
+            const winRate = hit ? parseRate(hit.rate) : null;
+            let offRate = null;
+            if (hit) {
+              if (ownRate !== null) offRate = ownRate;
+              else if (db.offPeak.enabled === true && winRate !== null) offRate = winRate;
+            }
+            const rate = offRate !== null ? offRate : normalRate;
+            const peak = offRate !== null ? hit : null;
             if (totalTokens > 0 && Number.isFinite(rate) && rate > 0) {
-              const computed = Math.round((totalTokens / 1000) * rate * factor * 100) / 100;
+              const computed = Math.round((totalTokens / 1000) * rate * 100) / 100;
               const offNote = peak
-                ? ` × 闲时${peak.label ? `「${peak.label}」` : ""}${peak.start}–${peak.end}点系数 ${factor}`
+                ? `（闲时${peak.label ? `「${peak.label}」` : ""}${peak.start}–${peak.end}点，按闲时倍率 ${rate}${ownRate !== null ? "，该模型单独配置" : ""}）`
                 : "";
-              console.log(`[points] 计价：${wantedModel} ${totalTokens} tokens × ${rate}${offNote} = ${computed}（口径=服务端倍率）`);
+              console.log(`[points] 计价：${wantedModel} ${totalTokens} tokens × ${rate} = ${computed}${offNote}（口径=服务端倍率）`);
               credit = computed;   // ⛔ 一律以本服务端的倍率为准（忽略上游 credit）
             } else if (!(credit > 0)) {
               credit = 0;
@@ -1585,7 +1620,7 @@ const server = http.createServer(async (req, res) => {
       if (body && body.enabled !== undefined) db.offPeak.enabled = body.enabled === true || body.enabled === "true" || body.enabled === 1;
       persist();
       const active = offPeakWindow();
-      console.log(`[admin] ${me.username} 闲时倍率 ${db.offPeak.enabled ? "开启" : "关闭"}，时段 ${db.offPeak.windows.map((w) => `${w.label || "时段"}${w.start}-${w.end}点×${w.rate}`).join("、") || "（空）"}，当前${active ? `命中「${active.label}」×${active.rate}` : "未命中"}`);
+      console.log(`[admin] ${me.username} 闲时 ${db.offPeak.enabled ? "开启" : "关闭"}，时段 ${db.offPeak.windows.map((w) => `${w.label || "时段"}${w.start}-${w.end}点${w.rate === null || w.rate === undefined ? "（未设默认倍率）" : `默认×${w.rate}`}`).join("、") || "（空）"}，当前${active ? `命中「${active.label}」` : "未命中"}`);
       return send(200, { ok: true, enabled: db.offPeak.enabled === true, windows: db.offPeak.windows, active, serverHour: new Date().getHours(), tzOffsetMinutes: new Date().getTimezoneOffset() });
     }
     /* 设置某个用户可用的模型（整集覆盖，与用户端"勾选即生效"同一份数据） */
