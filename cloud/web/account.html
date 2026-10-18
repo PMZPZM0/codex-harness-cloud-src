@@ -417,6 +417,9 @@
          ⛔ 这里只做「看版本 + 查最新版 + 复制部署命令」；真正升级要在服务器上执行（面板不能替你重启进程）。 -->
     <div class="card" id="updCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">部署与更新
+        <!-- 版本徽标（10-18 用户令「加一个版本号」）：一眼看到当前跑的到底是哪个版本 -->
+        <span class="pill" id="updBadge" title="当前运行版本（读自部署目录的 VERSION）"
+              style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">v—</span>
         <a class="btn sm" id="updRepo" href="https://github.com/PMZPZM0/codex-cloud-assistant" target="_blank" rel="noopener"
            style="margin-left:auto;text-decoration:none;display:inline-flex;align-items:center">获取可部署版本</a>
       </h2>
@@ -1438,6 +1441,10 @@
       if (j.deployRepo) CLOUD_DEPLOY_REPO = j.deployRepo;
       if ($("updRepo")) $("updRepo").href = CLOUD_DEPLOY_REPO;
       window.__CCA_VER = j.version || "dev";
+      if ($("updBadge")) $("updBadge").textContent = "v" + window.__CCA_VER;
+      /* ⛔ 版本比对的目标仓由服务端决定（主站比云助手仓、分发包比自己的仓）——
+         拿分发仓的版本号去比主站，必然"永远有新版本"（用户实测踩过）。 */
+      if (j.updateRepoUrl) CLOUD_DEPLOY_REPO = j.deployRepo || CLOUD_DEPLOY_REPO;
       $("updInfo").textContent = "当前版本 " + window.__CCA_VER
         + (window.__CCA_VER === "dev" ? "（开发版：本机直接跑源码，不是从发布包安装）" : "")
         + " · Node " + (j.node || "—")
