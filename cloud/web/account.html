@@ -97,7 +97,7 @@
   .stat .l { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 8px 16px; white-space: nowrap;
-    border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--text); font-size: 13.5px; font-weight: 550;
+    border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 13.5px; font-weight: 550;
     transition: filter var(--dur) ease, transform var(--dur) ease, background var(--dur) ease; }
   .btn:hover:not(:disabled) { background: var(--field); }
   .btn:active:not(:disabled) { transform: translateY(1px); }
@@ -223,7 +223,7 @@
   .ent-cell .ops { display: flex; gap: 8px; flex-wrap: wrap; }
   .ent-cell .ops .btn { min-height: 32px; min-width: 64px; }
   /* 示例数据横幅（记忆页预览用；接入真实数据后应移除） */
-  .demo-banner { background: #fff7e6; border: 1px solid #ffe0a3; color: #8a5a00; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
+  .demo-banner { background: var(--warn-soft); border: 1px solid var(--warn); color: var(--warn); padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -890,7 +890,7 @@
     var wrap = document.createElement("div");
     wrap.id = "mbModal";
     wrap.setAttribute("style", "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px");
-    wrap.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:820px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">' +
+    wrap.innerHTML = '<div style="background:var(--card);border-radius:14px;max-width:820px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)">' +
       '<b style="font-size:15px">' + title + '</b><button class="btn sm" id="mbClose">关闭</button></div>' +
       '<div style="padding:16px 18px;overflow:auto;line-height:1.75;font-size:13.5px">' + bodyHtml + '</div></div>';
@@ -2939,7 +2939,7 @@
 })();</script>
 <!-- 10-18 主题切换（固定右下角：不依赖侧栏/导航结构，两个站点用同一套） -->
 <button id="themeToggle" type="button" aria-label="切换白天/夜间主题" title="切换主题"
-  style="position:fixed;right:18px;bottom:18px;z-index:80;width:40px;height:40px;border-radius:50%;
+  style="position:fixed;left:18px;bottom:18px;z-index:80;width:40px;height:40px;border-radius:50%;
   border:1px solid var(--line);background:var(--card);color:var(--text);font-size:17px;
   box-shadow:var(--shadow);cursor:pointer;display:grid;place-items:center;">🌙</button>
 <script>
