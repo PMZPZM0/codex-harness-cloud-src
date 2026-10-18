@@ -1713,14 +1713,16 @@ const server = http.createServer(async (req, res) => {
               } catch { /* 忽略非 JSON 行 */ }
             }
           }
-          /* ⛔⛔ 21:5x 用户定案：「以后就按用户管理里面的倍率扣积分，**不用管上游了**」。
-             ⇒ 计价口径**唯一**取自服务端目录（管理界面可改的 `credits` 倍率），
-                上游返回的 `usage.credit` **不再参与**（实测它对收费模型也常返 0）。
-             公式：**积分 = (prompt_tokens + completion_tokens) / 1000 × 倍率**，保留 2 位小数。
-             例：deepseek-v4.1-flash（×0.11）跑 1000 tokens ⇒ 0.11 分；95 tokens ⇒ 0.01 分。
-             ⛔ 真·免费模型（倍率 ×0.00 或目录未配倍率）⇒ 结果为 0 ⇒ 只留痕不扣分
-                （10-14 用户令「免费的模型，只要调用了，就要有记录」）。
-             ⛔ "拿不到 token 数"时才回落到上游 credit，再拿不到就不记（宁可少记不瞎记）。 */
+          /* ⛔⛔ 口径变更史（**看这段再动手**）：
+             · 10-17 21:5x 用户定案「就按用户管理里的倍率扣，不用管上游」⇒ 用 tokens/1000×倍率。
+             · **10-18 17:1x 用户推翻**：「上游消耗才一点，我们消耗 20 多积分，差得太大了」
+               ⇒ 改回**以上游 `credit` 为基准**（用户在选择里明确选「以上游 credit 为准（对得上账）」）。
+               实测差距：hy4-preview 73,655 tokens ⇒ 上游 1.37 / 旧算法 21.36（差 15 倍）；
+               根因是上游按**缓存命中**折价（截图显示缓存 92%），而我们的回执里**没有 cached_tokens**
+               ⇒ 我们连"扣缓存"都做不到，只能直接采信上游的 credit。
+             · 闲时倍率仍生效：按**比值**折算 `credit × (闲时倍率 / 高峰倍率)`，
+               这样"闲时调低多少"照样管用，但基数不偏离上游。
+             ⛔ 拿不到上游 credit（null/0）才回落到 `tokens/1000 × 倍率`，并在日志里写清用的是哪条路径。 */
           try {
             /* ⛔ 模型名归一化后再查目录：客户端可能带 `cn:` / `global:` 前缀或大小写差异，
                原先 `m.id === wantedModel` 的**严格相等**会把这类请求判成"目录里没有" ⇒ rate=0
@@ -1757,13 +1759,24 @@ const server = http.createServer(async (req, res) => {
             }
             const rate = offRate !== null ? offRate : normalRate;
             const peak = offRate !== null ? hit : null;
-            if (totalTokens > 0 && Number.isFinite(rate) && rate > 0) {
-              const computed = Math.round((totalTokens / 1000) * rate * 100) / 100;
+            /* ⛔⛔ 10-18 修计价基准（用户实测差距 15 倍）：
+               上游 hy4-preview 73,655 tokens **实付 1.37**，而我们 tokens/1000×0.29 = **21.36**。
+               原因：上游 `credit` 是它服务端自己算的 —— 单价因模型而异、还含它自己的折扣/缓存口径，
+               我们**复现不了**（同 token 不同请求上游能给 0.55 ~ 9.33）。
+               ⇒ **基准 = 上游 credit（>0 时）**，拿不到才回落到 `tokens/1000 × 倍率`。
+               ⇒ 闲时倍率按**比值**折算：`credit × (闲时倍率 / 高峰倍率)` ——
+                  这样"闲时倍率调低多少"仍然生效，但基数不会偏离上游。 */
+            const upCredit = (credit !== null && Number.isFinite(credit) && credit > 0) ? credit : null;
+            const ratio = normalRate > 0 ? rate / normalRate : 1;
+            if (upCredit !== null) {
+              credit = Math.round(upCredit * ratio * 100) / 100;
               const offNote = peak
-                ? `（闲时${peak.label ? `「${peak.label}」` : ""}${peak.start}–${peak.end}点，按闲时倍率 ${rate}${ownRate !== null ? "，该模型单独配置" : ""}）`
+                ? `（闲时${peak.label ? `「${peak.label}」` : ""}，按倍率比 ${ratio.toFixed(3)} 折算）`
                 : "";
-              console.log(`[points] 计价：${wantedModel} ${totalTokens} tokens × ${rate} = ${computed}${offNote}（口径=服务端倍率）`);
-              credit = computed;   // ⛔ 一律以本服务端的倍率为准（忽略上游 credit）
+              console.log(`[points] 计价：${wantedModel} 上游 credit ${upCredit}${offNote} → 扣 ${credit}（基准=上游）`);
+            } else if (totalTokens > 0 && Number.isFinite(rate) && rate > 0) {
+              credit = Math.round((totalTokens / 1000) * rate * 100) / 100;
+              console.log(`[points] 计价：${wantedModel} ${totalTokens} tokens × ${rate} = ${credit}（上游没给 credit，回落到本地倍率）`);
             } else if (!(credit > 0)) {
               credit = 0;
             }
