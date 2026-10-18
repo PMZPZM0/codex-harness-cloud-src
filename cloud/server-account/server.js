@@ -1700,6 +1700,17 @@ const server = http.createServer(async (req, res) => {
            取不到就如实不记（宁可少记也不瞎记），由对账环节兜底。 */
         try {
           const text = Buffer.concat(seen).toString("utf8");
+          /* ── 逆向调试开关（默认关）──────────────────────────────────────────
+             ⛔ 目的：确认上游回执里**到底有没有"缓存 token"字段**。
+               没有它，上游的精确计费公式**不可逆** —— 因为同一个 token 数它能扣 0.55 也能扣 9.33，
+               差值只能来自"缓存命中比例"，而这个比例我们拿不到。
+             ⛔ 只打 `usage` 对象（token 数/credit），**不打对话内容、不打提示词**。
+             开启方式：`HARNESS_CAPTURE_USAGE=1` 写进 systemd Environment 或 config.env 后重启。 */
+          if (String(process.env.HARNESS_CAPTURE_USAGE || "") === "1") {
+            const um = /"usage"\s*:\s*(\{[\s\S]{0,2000}?\})\s*[,}]/.exec(text);
+            if (um) console.log(`[usage-raw] ${wantedModel} ${um[1].replace(/\s+/g, " ").slice(0, 1200)}`);
+            else console.log(`[usage-raw] ${wantedModel} 回执里没有 usage 对象（非 JSON 流？）`);
+          }
           let credit = null;
           const m1 = /"credit"\s*:\s*(-?[0-9.]+)/.exec(text);
           if (m1) credit = Number(m1[1]);
