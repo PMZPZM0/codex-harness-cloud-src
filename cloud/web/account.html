@@ -83,6 +83,28 @@
      会盖掉 UA 对 [hidden] 的 display:none ⇒ 非管理员照样看到「用户管理」（用户实测）。 */
   .nav-item[hidden] { display: none !important; }
   .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .45; flex: none; }
+  /* 侧栏品牌行里的主题开关（⛔ 不用 position:fixed —— 悬浮曾跑到窗口外/压内容，用户实测两次） */
+  .brand-theme { margin-left: auto; display: inline-flex; align-items: center; cursor: pointer; }
+  #themeSwitch {
+    appearance: none; -webkit-appearance: none;
+    width: 36px; height: 20px; border-radius: 999px;
+    background: var(--line-soft); border: 1px solid var(--line);
+    position: relative; cursor: pointer; flex: none; margin: 0;
+    transition: background .24s cubic-bezier(.4,0,.2,1), border-color .24s, box-shadow .24s;
+  }
+  #themeSwitch::after {
+    content: "🌙"; position: absolute; top: 1px; left: 1px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #fff; display: grid; place-items: center;
+    font-size: 9px; line-height: 1;
+    box-shadow: 0 1px 2px rgba(0,0,0,.3);
+    transition: transform .26s cubic-bezier(.34,1.56,.64,1), width .16s ease;
+  }
+  #themeSwitch:checked { background: var(--brand); border-color: var(--brand); box-shadow: 0 0 0 2px rgba(139,92,246,.22); }
+  #themeSwitch:checked::after { content: "☀️"; transform: translateX(16px); }
+  #themeSwitch:active::after { width: 20px; }
+  #themeSwitch:checked:active::after { transform: translateX(12px); }
+  #themeSwitch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
   .side-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
   .side-foot b { color: var(--text); font-weight: 600; }
 
@@ -260,7 +282,13 @@
 <body>
 <div class="shell">
   <aside class="side">
-    <div class="brand"><span class="mark">CA</span><span>Codex Assistant</span></div>
+    <!-- 10-18 主题开关：嵌在侧栏品牌行内（用户令：不要悬浮，放进侧边栏） -->
+    <div class="brand">
+      <span class="mark">CA</span><span>Codex Assistant</span>
+      <label for="themeSwitch" title="切换白天 / 夜间主题" class="brand-theme">
+        <input type="checkbox" id="themeSwitch" aria-label="切换白天/夜间主题" />
+      </label>
+    </div>
     <button class="nav-item" data-tab="user"><span class="dot"></span>用户中心</button>
     <button class="nav-item" data-tab="pair"><span class="dot"></span>配对中心</button>
     <button class="nav-item" data-tab="cloud"><span class="dot"></span>云端管理</button>
@@ -2968,37 +2996,25 @@
 
   function refreshPairing() { probeAgent(); loadDevices(); }
 })();</script>
-<!-- 10-18 主题切换（固定右下角：不依赖侧栏/导航结构，两个站点用同一套） -->
-<button id="themeToggle" type="button" aria-label="切换白天/夜间主题" title="切换主题"
-  style="position:fixed;left:16px;bottom:10px;z-index:80;width:30px;height:30px;border-radius:50%;font-size:13px;opacity:.75;
-  border:1px solid var(--line);background:var(--card);color:var(--text);font-size:17px;
-  box-shadow:var(--shadow);cursor:pointer;display:grid;place-items:center;transition:opacity .15s;">🌙</button>
 <script>
+/* 10-18 主题开关（侧栏内，非悬浮）。checked = 亮色；apply() 反向同步 box.checked，
+   否则从 localStorage 恢复时开关位置会与实际主题相反。 */
 (function () {
-  /* ⛔ 三件事缺一不可：① 存 localStorage ② 首帧就应用（避免闪白）③ 跟随系统偏好做默认值 */
   var KEY = "ch-theme";
   var root = document.documentElement;
-  function apply(t) { root.setAttribute("data-theme", t); }
-  function current() { return root.getAttribute("data-theme") === "dark" ? "dark" : "light"; }
-  function paint() {
-    var b = document.getElementById("themeToggle");
-    if (b) b.textContent = current() === "dark" ? "☀️" : "🌙";
-  }
+  var box = document.getElementById("themeSwitch");
+  function apply(t) { root.setAttribute("data-theme", t); if (box) box.checked = (t === "light"); }
   try {
     var saved = localStorage.getItem(KEY);
-    if (saved === "dark" || saved === "light") apply(saved);
+    if (saved === "light" || saved === "dark") apply(saved);
     else if (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) apply("dark");
   } catch (e) { /* 忽略 */ }
-  paint();
-  var btn = document.getElementById("themeToggle");
-  if (btn) btn.addEventListener("click", function () {
-    var next = current() === "dark" ? "light" : "dark";
+  if (box) box.addEventListener("change", function () {
+    var next = box.checked ? "light" : "dark";
     apply(next);
     try { localStorage.setItem(KEY, next); } catch (e) { /* 忽略 */ }
-    paint();
   });
 })();
 </script>
-
 </body>
 </html>
