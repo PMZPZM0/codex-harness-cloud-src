@@ -4,6 +4,7 @@
  */
 import { Fragment, useState } from "react";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
+import { FileTrustDialog } from "../../../components/FileTrustDialog";
 import { CloudManageDialog } from "../../../components/CloudManageDialog";
 import { hk } from "../../../lib/hk";
 import {
@@ -670,6 +671,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 close-confirm:ask / 自己回包），主进程关窗守卫 preventDefault 后推事件到这里。
                 它 portal 到 body ⇒ 放在 aside 里的位置不影响定位。 */}
             <CloseConfirmDialog />
+            {/* 工作区外文件预览的授权确认（10-18，应用内模态） */}
+            <FileTrustDialog />
             {/* ⛔ 10-13 云端管理面板：portal 到 body，放 aside 里不影响定位 */}
             {cloudManageOpen ? <CloudManageDialog onClose={() => setCloudManageOpen(false)} /> : null}
           </aside>
