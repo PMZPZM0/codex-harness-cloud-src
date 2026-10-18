@@ -3112,6 +3112,18 @@
     setTimeout(poll, 400);
   });
 
+  /* ⛔ 用户 23:20 反馈「没有更新进度条」——他点的是「检查更新」，那个动作**不产生服务端进度**
+     （只是查一次远端版本号），所以进度条一直不出现。这里给它一个短暂的过程反馈：
+     先显示「正在检查…」，3.5 秒后自动收起（检查很快，不需要真实进度）。 */
+  var checkBtn = document.getElementById("updCheck");
+  if (checkBtn) checkBtn.addEventListener("click", function () {
+    paint({ pct: 22, label: "正在检查最新版本…" });
+    setTimeout(function () {
+      /* 只有当没有真正的更新在跑时才收起，避免盖掉 apply 的进度 */
+      if (!timer) bar.style.display = "none";
+    }, 3500);
+  });
+
   poll();
 })();
 </script>
