@@ -2794,6 +2794,22 @@ const server = http.createServer(async (req, res) => {
       console.log(`[invite] ${me.username} 调整邀请码 ${row.code}（停用=${row.disabled}，上限=${row.maxUses}）`);
       return send(200, { ok: true, invite: inviteView(row) });
     }
+    if (p === "/admin/invites/delete" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const row = inviteRow(body && body.code);
+      if (!row) return send(404, { ok: false, error: "邀请码不存在" });
+      /* ⛔ 只允许删「从未用过」的码：usedCount>0 的码上记着账，且已注册账号的 inviteCode 指向它，
+         删了会让来源悬空、历史统计失真 ⇒ 这类码只能停用。 */
+      if (Number(row.usedCount || 0) > 0) {
+        return send(409, { ok: false, error: "这个码已经用过 " + row.usedCount + " 次，只能停用不能删除" });
+      }
+      const code = row.code;
+      delete db.invites[code];
+      persist();
+      console.log("[invite] " + me.username + " 删除邀请码 " + code + "（未使用）");
+      return send(200, { ok: true });
+    }
     if (p === "/admin/invites/accounts" && req.method === "GET") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const row = inviteRow(url.searchParams.get("code"));
