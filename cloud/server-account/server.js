@@ -1239,6 +1239,12 @@ const server = http.createServer(async (req, res) => {
       if (!usernameOk(username)) return send(400, { ok: false, error: "用户名需 3~24 位字母/数字/下划线/连字符" });
       if (!passwordOk(body.password)) return send(400, { ok: false, error: "密码至少 8 位" });
       if (db.users.some((u) => u.username === username)) return send(409, { ok: false, error: "用户名已被占用" });
+      /* ⛔⛔ 10-19（清单 3）：用户名**大小写不敏感**去重 —— 服务端的查找是 `===`，
+         放行 `PPZ11` 会产生与 `pzm11` 并列的第二个账号 ⇒「订阅在 A、应用登 B」的错位
+         （实测：同一个人被分成两个账号，重签落在另一个账号上、本机 key 永不更新）。 */
+      if (db.users.some((u) => String(u.username).toLowerCase() === username.toLowerCase())) {
+        return send(409, { ok: false, error: "用户名已被占用（不区分大小写，请直接用原账号登录）" });
+      }
       const user = makeUser(username, body.password, "user");
       /* 来源指针（"" = 主码或无邀请；历史账号也是 ""）。⛔ 只存码，不存整个码对象。 */
       user.inviteCode = invite ? invite.code : "";
@@ -1265,7 +1271,14 @@ const server = http.createServer(async (req, res) => {
       if (!rateLimit(`login-ip:${ip}`, 10, 5 * 60_000)) return send(429, { ok: false, error: "尝试过多，请几分钟后再来" });
       const body = await readBody();
       const username = String(body.username || "").trim();
-      const user = db.users.find((u) => u.username === username);
+      /* ⛔ 10-19（清单 3）：精确匹配优先；没有则**唯一**的大小写不敏感匹配
+         （老数据里可能已有 `pzm11` / `PPZ11` 两个变体 —— 有歧义时不做猜测，仍按"用户名或密码不对"拒绝）。 */
+      const user = db.users.find((u) => u.username === username)
+        || (() => {
+          const lower = username.toLowerCase();
+          const hits = db.users.filter((u) => String(u.username).toLowerCase() === lower);
+          return hits.length === 1 ? hits[0] : null;
+        })();
       if (!user) return send(401, { ok: false, error: "用户名或密码不对" });
       if (user.disabled) return send(403, { ok: false, error: "该账号已被停用，联系管理员" });
       if (Date.now() < user.lockUntil) return send(429, { ok: false, error: "该账号已被临时锁定，稍后再试" });
@@ -1273,6 +1286,7 @@ const server = http.createServer(async (req, res) => {
         user.lockUntil = Date.now() + 15 * 60_000; persist();
         return send(429, { ok: false, error: "失败次数过多，账号锁定 15 分钟" });
       }
+      const accountName = user.username;   // ⛔ 大小写回退命中时以存储名为准（session/设备/积分都按它查）
       if (!verifyPassword(user, body.password)) {
         user.failCount = (user.failCount || 0) + 1; persist();
         return send(401, { ok: false, error: "用户名或密码不对" });
@@ -1280,7 +1294,7 @@ const server = http.createServer(async (req, res) => {
       user.failCount = 0; user.lastLogin = Date.now(); persist();
       /* 10-18 设备管理：登录即登记本机（否则云端「已配对设备」永远是 0）。
          ⛔ 登记失败不阻断登录 —— 设备上限/缺 machineId 都不该让人登不进来。 */
-      const reg = (() => { try { return registerLoginDevice(username, body.machineId, body.machineName); } catch { return { ok: false, reason: "exception" }; } })();
+      const reg = (() => { try { return registerLoginDevice(accountName, body.machineId, body.machineName); } catch { return { ok: false, reason: "exception" }; } })();
       if (reg.ok) persist();
       return send(200, {
         ok: true,
@@ -1744,6 +1758,10 @@ const server = http.createServer(async (req, res) => {
           ready: Boolean(currentUpstreamBase() && currentGatewayKey()),
           /* 客户端据此决定是否要调 /proxy/token 签发（明文只在那一次响应里） */
           hasProxyToken: Boolean(db.proxyTokens[who.username]),
+          /* ⛔ 10-19（清单 4）：只给**前缀**（不含密钥值）⇒ 客户端能发现「本机缓存已被轮换」，
+             不必等一次 401 才知道。`proxyTokenAt` 用于界面显示签发时间。 */
+          proxyTokenPrefix: String(db.proxyTokens[who.username]?.prefix || ""),
+          proxyTokenAt: Number(db.proxyTokens[who.username]?.createdAt || 0),
         },
         models,
         enabledCount: enabled.size,
