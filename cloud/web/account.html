@@ -2044,6 +2044,18 @@
           else ivSay("操作失败：" + ((r.j && r.j.error) || r.status), "bad");
         }).catch(function () { ivSay("网络错误", "bad"); });
       }));
+      /* 删除：只对「从未用过」的码开放（用过的码只能停用，见后端 409） */
+      if (Number(i.usedCount || 0) === 0) {
+        var delBtn = mk("删除", function () {
+          if (!confirm("删除邀请码「" + i.code + "」？\n\n这个码从未被使用，删除后不可恢复。")) return;
+          api("/admin/invites/delete", { method: "POST", body: { code: i.code } }).then(function (r) {
+            if (r.ok && r.j && r.j.ok) { ivSay("已删除 " + i.code, "ok"); loadInvites(); }
+            else ivSay("删除失败：" + ((r.j && r.j.error) || r.status), "bad");
+          }).catch(function () { ivSay("网络错误", "bad"); });
+        });
+        delBtn.className = "btn sm danger";
+        ops.appendChild(delBtn);
+      }
       var tdOps = document.createElement("td"); tdOps.appendChild(ops); tr.appendChild(tdOps);
       box.appendChild(tr);
       var detail = document.createElement("tr"); detail.id = "ivDetail-" + i.code; detail.hidden = true;
