@@ -1263,7 +1263,13 @@ const server = http.createServer(async (req, res) => {
       }
       persist();
       console.log(`[points] 新用户 ${username} 注册，赠送 ${SIGNUP_GRANT} 积分（本 IP 累计 ${db.registerIps[ip]}/${REGISTER_MAX_PER_IP}）`);
-      return send(200, { ok: true, token: issueSession(username), account: publicView(user), points: { balance: pointsOf(username).balance, granted: SIGNUP_GRANT } });
+
+      /* 10-19 用户要求：注册后**自动**建好该账号的独立知识库与记忆空间。
+         ⛔ 用 provisionFor（fire-and-forget + 幂等 + 失败只记日志），绝不 await ——
+            远端建库 1~3 秒，等它就是让「注册」按钮转圈。
+         ⛔ 所有消费入口（/integrations、/kb/*）仍会再调 ensure*，这里只是提前预热。 */
+      provisionFor(username, "knowledge");
+      provisionFor(username, "memory");      return send(200, { ok: true, token: issueSession(username), account: publicView(user), points: { balance: pointsOf(username).balance, granted: SIGNUP_GRANT } });
     }
 
     /* 登录 */
@@ -2811,6 +2817,56 @@ const server = http.createServer(async (req, res) => {
       persist();
       console.log(`[invite] ${me.username} 调整邀请码 ${row.code}（停用=${row.disabled}，上限=${row.maxUses}）`);
       return send(200, { ok: true, invite: inviteView(row) });
+    }
+    /* 10-19：给**已有账号**批量补建知识库/记忆空间（注册自动建的改动只对新用户生效）。
+       ⛔ 串行 + 间隔 600ms：weknora 建库 1~3s，并发会把它的 postgres 打满（实测过的教训）。
+       ⛔ 幂等：已存在的 kbId 会走 ensure* 的"存活检查"，不会重复建。 */
+    /* 10-19：**仅本机**触发批量补建（管理员没登录态时用）。
+       ⛔ 只接受 127.0.0.1 / ::1 —— 外部访问一律 403，等同不暴露。 */
+    if (p === "/internal/provision-all" && req.method === "POST") {
+      const localOnly = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+      if (!localOnly) return send(403, { ok: false, error: "仅限本机" });
+      const targets = db.users.filter((u) => u && u.username);
+      const out = { total: targets.length, knowledge: { ok: 0, fail: 0 }, memory: { ok: 0, fail: 0 } };
+      (async () => {
+        for (const u of targets) {
+          for (const feature of ["knowledge", "memory"]) {
+            try {
+              const r = feature === "knowledge" ? await ensureKnowledgeFor(u.username) : await ensureMemoryFor(u.username);
+              if (r && r.ok === false) { out[feature].fail += 1; console.warn(`[provision-all] ${u.username}/${feature} 未就绪：${sanitize(String(r.error || ""))}`); }
+              else out[feature].ok += 1;
+            } catch (e) {
+              out[feature].fail += 1;
+              console.warn(`[provision-all] ${u.username}/${feature} 失败：${sanitize(String((e && e.message) || e))}`);
+            }
+            await new Promise((r) => setTimeout(r, 600));
+          }
+        }
+        console.log(`[provision-all] 完成：知识库 ${out.knowledge.ok}/${out.knowledge.fail}，记忆 ${out.memory.ok}/${out.memory.fail}`);
+      })();
+      return send(200, { ok: true, queued: targets.length });
+    }
+    if (p === "/admin/provision-all" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const targets = db.users.filter((u) => u && u.username && String(u.username) !== me.username);
+      const out = { total: targets.length, knowledge: { ok: 0, fail: 0 }, memory: { ok: 0, fail: 0 } };
+      (async () => {
+        for (const u of targets) {
+          for (const feature of ["knowledge", "memory"]) {
+            try {
+              const r = feature === "knowledge" ? await ensureKnowledgeFor(u.username) : await ensureMemoryFor(u.username);
+              if (r && r.ok === false) { out[feature].fail += 1; console.warn(`[provision-all] ${u.username}/${feature} 未就绪：${sanitize(String(r.error || ""))}`); }
+              else out[feature].ok += 1;
+            } catch (e) {
+              out[feature].fail += 1;
+              console.warn(`[provision-all] ${u.username}/${feature} 失败：${sanitize(String((e && e.message) || e))}`);
+            }
+            await new Promise((r) => setTimeout(r, 600));
+          }
+        }
+        console.log(`[provision-all] 完成：知识库 ${out.knowledge.ok}/${out.knowledge.fail}，记忆 ${out.memory.ok}/${out.memory.fail}`);
+      })();
+      return send(200, { ok: true, queued: targets.length, note: "后台串行补建中，看 journalctl -u chc-account 的 [provision-all] 日志" });
     }
     if (p === "/admin/invites/delete" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
