@@ -1,6 +1,6 @@
 {
   "name": "codex-assistant",
-  "version": "0.0.39",
+  "version": "0.0.40",
   "private": true,
   "description": "Codex Assistant — cloud-connected local assistant (independent product; NOT Codex Harness Desktop)",
   "main": "dist-electron/main.js",
