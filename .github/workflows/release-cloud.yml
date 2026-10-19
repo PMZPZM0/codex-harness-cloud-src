@@ -32,7 +32,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ASSISTANT_VERSION: "0.0.8"
+  # ⛔ 版本号**从 tag 取**（cloud-v0.0.41 → 0.0.41）。原来这里硬编码 0.0.8，
+  #    导致 0.0.9~0.0.40 的所有包都被 --clobber 覆盖到 cloud-v0.0.8 那一个 Release 里。
   # ⛔ 本仓自己（10-12）。发本仓不需要 PAT：默认 GITHUB_TOKEN + contents:write 即可。
   PUBLIC_REPO: PMZPZM0/codex-harness-cloud-src
 
@@ -68,7 +69,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          VERSION="${ASSISTANT_VERSION}"
+          VERSION="${GITHUB_REF_NAME#cloud-v}"
           TAG="cloud-v${VERSION}"
           NOTES="docs/releases/${TAG}.md"
           if [ ! -f "${NOTES}" ]; then echo "::error::缺少更新说明 ${NOTES}"; exit 1; fi
@@ -119,7 +120,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          VERSION="${ASSISTANT_VERSION}"
+          VERSION="${GITHUB_REF_NAME#cloud-v}"
           TAG="cloud-v${VERSION}"
           NOTES="docs/releases/${TAG}.md"
           ASSET=$(find release-cloud -maxdepth 1 -type f -name "*.zip" | head -1)
