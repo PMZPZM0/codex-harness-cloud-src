@@ -28,7 +28,7 @@ permissions:
 
 # 上传串行化：三个任务同时往同一个 Release 塞资产会撞车
 concurrency:
-  group: release-cloud-upload
+  group: release-cloud-${{ github.ref_name }}   # ⛔ 不按 tag 隔离的话，一次卡死的 run 会永久堵住后续发版
   cancel-in-progress: false
 
 env:
@@ -90,7 +90,7 @@ jobs:
         include:
           - runner: macos-latest
             arch: arm64
-          - runner: macos-13
+          - runner: macos-15-intel   # ⛔ macos-13 已退役，长期分配不到 runner（实测 queued 11 小时）
             arch: x64
     runs-on: ${{ matrix.runner }}
     steps:
