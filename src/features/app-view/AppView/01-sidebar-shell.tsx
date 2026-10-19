@@ -561,7 +561,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     {window.__CHC_ACCOUNT_GATE__ === true ? (
                       <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setCloudManageOpen(true); setMobileNav(false); }}><Cloud size={15} className="ic-cyan" /><span>云端管理</span></button>
                     ) : null}
-                    <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); void window.codex.openExternal("https://www.jvszzp.ltd/feedback.html"); }}><MessageSquarePlus size={15} className="ic-amber" /><span>问题反馈</span><ExternalLink size={12} className="account-menu-arrow" /></button>
+                    <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); void window.codex.openExternal("https://dl.ppz123.asia/feedback.html"); }}><MessageSquarePlus size={15} className="ic-amber" /><span>问题反馈</span><ExternalLink size={12} className="account-menu-arrow" /></button>
                     <div className="account-menu-sep" />
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); handleLogout(); }}><LogOut size={15} /><span>退出登录</span></button>
                   </>}
