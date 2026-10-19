@@ -1,6 +1,6 @@
 {
   "name": "codex-assistant",
-  "version": "0.0.41",
+  "version": "0.0.42",
   "private": true,
   "description": "Codex Assistant — cloud-connected local assistant (independent product; NOT Codex Harness Desktop)",
   "main": "dist-electron/main.js",
@@ -87,8 +87,8 @@
     "wait-on": "^9.0.3"
   },
   "build": {
-    "appId": "com.codexharness.desktop",
-    "productName": "Codex Harness Desktop",
+    "appId": "com.codexharness.assistant",
+    "productName": "Codex Assistant",
     "npmRebuild": false,
     "beforePack": "scripts/before-pack.cjs",
     "directories": {

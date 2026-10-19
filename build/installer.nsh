@@ -5,7 +5,7 @@
 ;   → 右键「以管理员身份运行」安装器。
 !macro preInit
   DetailPrint "正在关闭已运行的 Codex Harness Assistant…"
-  nsExec::ExecToStack 'taskkill /F /T /IM "Codex Harness Assistant.exe"'
+  nsExec::ExecToStack 'taskkill /F /T /IM "Codex Assistant.exe"'
   Pop $0
   Pop $1
   Sleep 800
