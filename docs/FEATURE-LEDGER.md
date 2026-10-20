@@ -1,40 +1,6 @@
-# 功能更新清单（FEATURE LEDGER）
+| 2026-10-20 | 对话媒体播放（视频 / 音乐 / 3D） | 新增 | `electron/features/boot.ts`、`electron/main.ts`、`index.html`、`src/lib/media-kind.*`、`src/features/media/`、`src/features/shared/InlineCards.tsx`、`UserMessageView.tsx`、`src/features/session-queue/ItemView.tsx`、`src/styles/39-media-preview.css`、`package.json`（hls.js） | 对话里的本地/远程视频、音频、3D 不再只有文件卡：视频原生 controls + 远程 m3u8 走 hls.js；音频自绘播放条（播放/暂停/进度/音量）；3D 复用既有 ModelViewerModal。入口覆盖用户附件、助手文件卡、工具产物三处；本地媒体走 `harness-media` 协议（Range/206 + 可信根 + MIME 白名单），CSP `media-src` 放行；新增 `media_preview` 网关能力。实测：HLS `readyState=4`、本地 MP4 播放、WAV 播完 `ended`、glTF `loaded+visible`。 | f580d60 |
+| 2026-10-20 | 影视源搜索与内播（`media_source_*`） | 新增 | `electron/media-sources.ts`、`electron/media-sources-core.ts`、`electron/features/dispatch-core.ts`、`dispatch-rpc.ts`、`electron/developer-instructions.ts`、`tests/media-sources.test.mjs` | 内置用户提供的 5 个苹果CMS源（首次运行写 `<userData>/media-sources.json`，可直接增删换源），三件套：`media_source_search` 并发搜索并逐源标注失败 / `media_source_detail` 取线路与剧集 / `media_source_open` 选集打开 —— 直链 m3u8/mp4 推应用内播放器，网页播放页交系统浏览器。⛔ 不下载/不缓存/不代理第三方流。实测：4/5 源可用、搜索→详情→HLS 内播整链通过。 | f580d60 |
 
-> **定位**：功能新增/改动的**权威台账**。发布时写更新日志、GitHub Release Notes、
-> `whats-new-notes.ts` 要点，一律以本文件为数据源——不重新翻 commit、不靠记忆。
->
-> 与另外两份文档的分工（⛔ 不做第二份真相源）：
-> - `docs/FEATURE-INVENTORY.md` = 静态基线（功能**现在在哪**，供搬迁/检索坐标）
-> - `docs/CHANGELOG-ROUNDS.md` = 轮次叙事（一次改动的**完整过程**，细节长文）
-> - **本文件 = 条目式流水**（一次一行，发布时直接搬）
->
-> **维护规则**（写进 `AGENTS.md`，对所有 Agent 生效）：
-> 1. **同轮记录**：每次新增功能 / 功能改动，同一个提交轮次内必须在本文末尾追加条目，
->    与代码改动同 commit（或在收尾提交中一并落盘）。漏记 = 工作未完成。
-> 2. **列必须齐**：日期、功能名称、类型、影响范围、简要描述，缺一不可。
-> 3. **类型只用这六个**：`新增` / `改动` / `修复` / `移除` / `流程`（工作方式/规则） / `基建`（仓库/CI/发布链）。
-> 4. **影响范围写具体落点**（模块/板块/IPC 域），不写"全局"糊弄；跨端写明「三仓」「桌面版」等。
-> 5. **只追加不改写**：写错了用新行勘误（标注"勘误"），不删旧行——台账要能追溯。
-> 6. 新条目加在最上面（最新在前）。
-
-## 条目格式
-
-```
-| 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
-```
-
-- **日期**：`YYYY-MM-DD`
-- **类型**：新增 / 改动 / 修复 / 移除 / 流程 / 基建
-- **影响范围**：模块路径或板块名，多个用顿号；跨端注明哪个仓
-- **简要描述**：一两句话说清「做了什么、用户能感知什么」；含关键取舍时附一句
-- **提交**：短 hash；尚未提交写 `-`
-
----
-
-## 台账
-
-| 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
-|---|---|---|---|---|---|
 | 2026-10-20 | 同步原版：历史回合真实高度 + 提前预取（无缝上滚） | 修复 | `src/styles/02-sidebar-threads.css`、`src/features/app-state/parts/part07/03-seg.tsx`、`scripts/guards/03-runtime-boot.mjs`、`scripts/guards/04-misc-and-tools.mjs`、`scripts/accept.mjs` | 同步主仓 83cd957 / 331b653：时间线历史回合用真实高度（消除 343px 高度塌陷）、预取阈值 `max(1200, 1.5 屏)`、加载后自动补缓冲；真滚轮验收 5/5，锚点仅随滚轮移动 **10px** | ccb235b |
 | 2026-10-20 | 同步原版：上滚续载改内容坐标补偿（滚轮路径） | 修复 | `src/features/app-state/parts/part07/03-seg.tsx`、`scripts/guards/03-runtime-boot.mjs`、`scripts/accept.mjs` | 同步主仓 3cde24a：按锚点内容 offset 增量补偿，用户滚轮不再撤销插入补偿；accept 增加滚轮惯性事件，连续两页位移均 **0px** | 62fd708 |
 | 2026-10-20 | 同步原版：上滚续载按 turn id 重钉 + 连续翻页互斥 | 修复 | `src/features/app-state/parts/part07/03-seg.tsx`、`scripts/guards/03-runtime-boot.mjs`、`scripts/accept.mjs` | 同步主仓 dd93820：续载后按 `turn-<id>` 重新解析锚点（React 替换节点不丢）、1.5s 逐帧钉住、新续载先取消上一轮补偿；accept `scroll-anchor` 扩到两页，实测两页位移均 **0px**，guard 03 同步扩断言 | c26df16 |
