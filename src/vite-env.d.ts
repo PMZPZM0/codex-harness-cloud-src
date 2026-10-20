@@ -602,10 +602,10 @@ interface Window {
     setMemoryScale(scale: number): Promise<{ scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number } }>;
     readMemoryMode(): Promise<"local" | "cloud">;
     setMemoryMode(mode: "local" | "cloud"): Promise<"local" | "cloud">;
-    /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令 */
-    readMemoryBackend(): Promise<{ backend: "builtin" | "mcp" | "cloud"; effective: "builtin" | "mcp" | "cloud"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>;
-    /* 切换记忆后端并回传新状态 */
-    setMemoryBackend(backend: "builtin" | "mcp" | "cloud"): Promise<{ backend: "builtin" | "mcp"; effective: "builtin" | "mcp"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>;
+    /* 记忆后端二选一：用户选的值 + 实际生效值（MCP 装了才让位；本仓云端未实现恒回退内置，cloudSupported=false ⇒ 界面置灰）+ 安装命令 */
+    readMemoryBackend(): Promise<{ backend: "builtin" | "mcp" | "cloud"; effective: "builtin" | "mcp" | "cloud"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudSupported: boolean }>;
+    /* 切换记忆后端并回传新状态；本仓未内置云记忆 ⇒ 云端请求不落盘，回执 refused=cloud-not-implemented */
+    setMemoryBackend(backend: "builtin" | "mcp" | "cloud"): Promise<{ backend: "builtin" | "mcp" | "cloud"; effective: "builtin" | "mcp" | "cloud"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudSupported: boolean; refused?: string }>;
     /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
     installMemoryMcp(): Promise<{ code: number | null; result: any; log: string; status: any }>;
     /* 卸载 MCP 记忆服务（删 <userData>/memory-mcp） */

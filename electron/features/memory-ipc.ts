@@ -26,7 +26,7 @@ import { spawn } from "node:child_process";
 import { app } from "electron";
 import { saveAppSettings } from "../app-settings";
 import { ensureBuiltinSkills } from "../builtin-skills";
-import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
+import { bundledNodePath, CLOUD_MEMORY_IMPLEMENTED, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
 import { lookupRoleSession, listRoleSessions } from "../role-memory";
 import { agentOfRoleRef, handleFabricWrite } from "../memory-fabric-tool";
 import { buildContext, getMemoryHandles, listNamespaces, readNamespace } from "../memory-fabric";
@@ -260,6 +260,12 @@ export const memoryFeature = defineFeature<null>({
     ipcHost.handle("memory:backend:read", () => memoryBackendStatus());
     ipcHost.handle("memory:backend:set", async (_event, backend: unknown) => {
       const next: MemoryBackend = backend === "cloud" ? "cloud" : backend === "mcp" ? "mcp" : "builtin";
+      /* ⛔⛔ 第二道闸（10-20）：本仓未内置云端记忆实现（CLOUD_MEMORY_IMPLEMENTED=false）⇒ 云端
+         请求**不落盘**（落了盘内置金字塔就永久让位 = 记忆一处都不写），回执 refused 让界面给出
+         原因。界面层已置灰（cloudSupported=false），这里兜住旧构建 / 直调 IPC 的路径。 */
+      if (next === "cloud" && !CLOUD_MEMORY_IMPLEMENTED) {
+        return { ...memoryBackendStatus(), refused: "cloud-not-implemented" };
+      }
       await saveAppSettings(app.getPath("userData"), { memoryBackend: next });
       /* ⛔ 时序防御：userSkillsDir 由启动链注入，理论上窗口创建早于它的赋值不可能，但这里显式判一下
          —— 传 undefined 进去只会在深处抛 TypeError，被下面的 catch 吞成一条 warn，表现是

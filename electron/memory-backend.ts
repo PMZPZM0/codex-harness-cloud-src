@@ -52,9 +52,22 @@ export function localMemoryMcpInstalled(): boolean {
  *  依赖原生模块 better-sqlite3 的包在禁 npm scripts / 无构建工具链 / 网络受限的环境里装不上），
  *  若此时内置也让位 ⇒ **记忆一处都不写 = 彻底丢记忆**，这比"重复"严重得多。
  *  ⇒ 选了 MCP 但不可用时**回退内置**：宁可回到金字塔，也不能丢。 */
+/** ⛔⛔ 云端记忆在本仓是否真的有实现（10-20）：本仓**未移植** cloud-provider（没有 memapi 上游切换、
+ *  没有开通确认入口）⇒ 若放行选云端：内置金字塔让位（memory-layers）、提示层却说「记忆由上游自动收」
+ *  —— 而上游根本没切 ⇒ **记忆一处都不写 = 彻底丢记忆**。所以在实现落地前 cloud 必须视为不可用：
+ *  界面置灰（status.cloudSupported=false）+ 切换第二道闸拒绝落盘 + effective 恒回退内置。
+ *  将来移植 cloud-provider 后改这里并接开通判定。⛔ 不用 require 探测：require("字面量") 不做模块解析。 */
+export const CLOUD_MEMORY_IMPLEMENTED = false;
+
 export function effectiveMemoryBackend(): MemoryBackend {
   const configured = memoryBackend();
-  if (configured === "cloud") return "cloud";
+  if (configured === "cloud") {
+    if (!CLOUD_MEMORY_IMPLEMENTED) {
+      console.warn("[memory] 本版本未内置云端记忆实现（无 memapi 上游切换）⇒ 回退内置记忆金字塔，避免记忆丢失");
+      return "builtin";
+    }
+    return "cloud";
+  }
   if (configured !== "mcp") return "builtin";
   if (!localMemoryMcpInstalled()) {
     console.warn("[memory] 记忆后端选了 MCP，但服务未安装（入口缺失）⇒ 本轮回退内置记忆金字塔，避免记忆丢失");
@@ -105,24 +118,30 @@ export type MemoryBackendStatus = {
   installCommand: string;
   /** 选了 MCP 却回退时的原因；没回退则为 null */
   fallbackReason: string | null;
+  /** ⛔ 本仓云端记忆是否真的可用（10-20）：false ⇒ 界面必须把云端卡置灰（原生 disabled + 说明），切换层也会拒绝 */
+  cloudSupported: boolean;
 };
 
 export function memoryBackendStatus(): MemoryBackendStatus {
   const backend = memoryBackend();
   const installed = localMemoryMcpInstalled();
   const installRoot = localMemoryMcpInstallRoot();
-  // ⛔ 与 effectiveMemoryBackend() 同口径（后端可用才认 MCP），但**不重复打 warn** —— 设置页会反复刷新。
-  const effective: MemoryBackend = backend === "cloud" ? "cloud" : backend === "mcp" && installed ? "mcp" : "builtin";
+  // ⛔ 与 effectiveMemoryBackend() 同口径（后端可用才认 MCP / 云端），但**不重复打 warn** —— 设置页会反复刷新。
+  const cloudUsable = backend === "cloud" && CLOUD_MEMORY_IMPLEMENTED;
+  const effective: MemoryBackend = cloudUsable ? "cloud" : backend === "mcp" && installed ? "mcp" : "builtin";
   return {
     backend,
     effective,
+    cloudSupported: CLOUD_MEMORY_IMPLEMENTED,
     installed,
     serverPath: localMemoryMcpServerPath(),
     installRoot,
     installCommand: `"${bundledNodePath()}" "${memoryInstallerPath()}" --force`,
     fallbackReason:
-      backend === "mcp" && !installed
-        ? "已选 MCP，但服务未安装：当前仍走内置金字塔（宁可回退，也不让记忆一处都不写）。装好服务后重启应用即可生效。"
-        : null,
+      backend === "cloud" && !CLOUD_MEMORY_IMPLEMENTED
+        ? "本版本未内置云端记忆服务：云端记忆不可用，记忆仍走内置金字塔（记忆不会丢）。"
+        : backend === "mcp" && !installed
+          ? "已选 MCP，但服务未安装：当前仍走内置金字塔（宁可回退，也不让记忆一处都不写）。装好服务后重启应用即可生效。"
+          : null,
   };
 }

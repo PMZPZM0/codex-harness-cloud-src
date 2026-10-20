@@ -33,6 +33,8 @@ type BackendStatus = {
   installCommand?: string;
   fallbackReason?: string;
   version?: string;
+  /* ⛔ 本仓云端记忆是否真的可用（10-20）：false ⇒ 云端卡原生 disabled + 置灰 + 说明（第二道闸也会拒） */
+  cloudSupported?: boolean;
 };
 
 /** 控制台上的三类动作 + 后端切换（同一个 busy 位 ⇒ 一次只允许一个动作）。 */
@@ -104,7 +106,13 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
     return { tone: ok ? "ok" : "bad", title, detail };
   };
   const switchJudge = (backend: "builtin" | "mcp" | "cloud") => (value: any): Verdict => {
-    if (backend === "cloud") return { tone: "ok", title: "已切到云端记忆：对话记忆由 memapi 自动注入与回写，本地金字塔停止写入" };
+    if (backend === "cloud") {
+      /* ⛔ 本仓未内置云记忆实现 ⇒ 主进程第二道闸会拒（refused）。置灰是常态，能到这里说明是旧构建/直调。 */
+      if (value?.refused === "cloud-not-implemented" || value?.cloudSupported === false) {
+        return { tone: "warn", title: "云端记忆不可用：本版本未内置云记忆服务", detail: "记忆仍走内置金字塔（不会丢）。" };
+      }
+      return { tone: "ok", title: "已切到云端记忆：对话记忆由 memapi 自动注入与回写，本地金字塔停止写入" };
+    }
     if (backend === "mcp" && String(value?.effective ?? "") !== "mcp") {
       return { tone: "warn", title: "已记下选择，但 MCP 服务尚未就绪 —— 当前仍走内置金字塔（记忆不会丢）", detail: String(value?.fallbackReason ?? "").slice(0, 300) || undefined };
     }
@@ -134,12 +142,17 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
 
   const current = status?.effective ?? status?.backend ?? "builtin";
   const ready = status?.installed === true;
-  /** 灯色：内置恒绿；MCP 看是否就绪（未装 = 琥珀，装了 = 绿） */
-  const lampOf = (id: "builtin" | "mcp" | "cloud") => (id === "builtin" ? "ok" : id === "cloud" ? "ok" : ready ? "ok" : "warn");
+  /** 灯色：内置恒绿；云端看本仓是否实现（未实现 = 灰灯）；MCP 看是否就绪（未装 = 琥珀，装了 = 绿） */
+  const lampOf = (id: "builtin" | "mcp" | "cloud") => (id === "builtin" ? "ok" : id === "cloud" ? (status?.cloudSupported === false ? "off" : "ok") : ready ? "ok" : "warn");
+
+  /* ⛔ 云端锁卡（10-20）：本仓未内置云记忆实现（cloudSupported=false）⇒ 原生 disabled（点了不会
+     触发任何请求/落盘）+ data-locked 视觉置灰 + title 说明。三件缺一不可：只置灰没说明 = 用户不知道
+     为什么不能点；只说明不置灰 = 「可点击却无法使用」。 */
+  const cloudLocked = status?.cloudSupported === false;
 
   const DEVICES = [
     { id: "builtin" as const, name: "内置记忆金字塔", icon: <Database size={16} />, desc: "随包内置、离线可用；L0–L7 分层注入", tag: "默认" },
-    { id: "cloud" as const, name: "云端记忆", icon: <Cloud size={16} />, desc: "memapi · 跨设备 · 对话自动注入与回写（需账号已开通记忆）", tag: "需登录" },
+    { id: "cloud" as const, name: "云端记忆", icon: <Cloud size={16} />, desc: cloudLocked ? "本版本未内置云记忆服务：记忆仍走内置金字塔" : "memapi · 跨设备 · 对话自动注入与回写（需账号已开通记忆）", tag: cloudLocked ? "本版本不支持" : "需登录" },
     { id: "mcp" as const, name: "MCP 记忆服务", icon: <Server size={16} />, desc: "@vheins/local-memory-mcp · 装到应用数据目录的独立目录", tag: ready ? "已就绪" : "未安装" },
   ];
 
@@ -165,6 +178,8 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
               ? "写入走云端 memapi：对话自动注入与回写，跨设备共享；本地金字塔已停止写入"
               : current === "mcp"
               ? (ready ? "服务已就绪，写入走 MCP" : `未就绪${status?.fallbackReason ? `：${status.fallbackReason}` : ""} —— 会自动回退到内置金字塔，记忆不会丢`)
+              : status?.backend === "cloud" && status?.fallbackReason
+              ? `云端记忆不可用${status.fallbackReason}`
               : "写入落在本机分层文件里，无需额外依赖"}
           </small>
         </span>
@@ -177,7 +192,10 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
       <div className="bc-devices" role="radiogroup" aria-label="记忆后端">
         {DEVICES.map((d) => (
           <button type="button" role="radio" aria-checked={current === d.id} key={d.id} data-bc-device={d.id}
-            className={`bc-device ${current === d.id ? "is-on" : ""}`} disabled={Boolean(busy)}
+            data-locked={d.id === "cloud" && cloudLocked ? "true" : undefined}
+            aria-disabled={d.id === "cloud" && cloudLocked || undefined}
+            title={d.id === "cloud" && cloudLocked ? "云端记忆不可用：本版本未内置云记忆服务，记忆仍走内置金字塔（不会丢）" : undefined}
+            className={`bc-device ${current === d.id ? "is-on" : ""}`} disabled={Boolean(busy) || (d.id === "cloud" && cloudLocked)}
             onClick={() => void pick(d.id)}>
             <span className="bc-device-top">
               <span className="bc-device-icon">{d.icon}</span>
