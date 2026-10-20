@@ -244,7 +244,7 @@ async function ensureMemoryFor(username) {
     cur.memUserId = String((json.data && json.data.user_id) || "");
     persist();
   }
-  return { ok: true, baseUrl: `${MEMHUB_PROXY_BASE}/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key" };
+  return { ok: true, baseUrl: `${MEMHUB_PROXY_BASE}/claude-code/default/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key" };
 }
 
 /* ── 10-16 权益：知识库 / 记忆「按时长 + 额度」激活（用户定案）──────────────────────
@@ -718,6 +718,15 @@ const PROXY_IP_LIMIT = 1;
    表现是记忆恒 401 invalid-proxy-token）。有环之后旧副本在若干轮内仍可用 ⇒ 能自愈。
    ⛔ 环只影响"还能不能用"，**不影响来源绑定**（ips 仍属同一条记录、同一套规则）。 */
 const PROXY_TOKEN_RING = Math.max(1, Math.min(10, Number(process.env.HARNESS_PROXY_TOKEN_RING || 3) || 3));
+/* 10-20 用户令「自动同步到应用上，别老让我改」：给代理通道一把**永不轮换**的内部钥匙。
+   ⛔ 为什么需要：用户令牌（wap_…）明文只在签发时返回一次、库里只存 sha256，
+     而网关配置（proxy-config.yaml 的 upstream.apiKey）是快照 ⇒ 用户每重签一次就可能失配，
+     表现为 401 invalid-proxy-token。令牌环只能缓解，不能根治。
+   ⛔ 这把钥匙固定写在网关配置里，不参与用户令牌轮换 ⇒ 一次配置永久有效。
+   ⛔ 不设默认值：未配置时本分支完全不生效（退回原来的纯用户令牌校验）。
+   ⛔ 归属账号由 HARNESS_INTERNAL_PROXY_OWNER 指定（默认 admin），决定计费/配额记在谁名下。 */
+const INTERNAL_PROXY_KEY = String(process.env.HARNESS_INTERNAL_PROXY_KEY || "").trim();
+const INTERNAL_PROXY_OWNER = String(process.env.HARNESS_INTERNAL_PROXY_OWNER || "admin").trim();
 function pushRing(row, ring) {
   if (!row) return [];
   const list = Array.isArray(row.prevHashes) ? row.prevHashes.slice() : [];
@@ -737,6 +746,20 @@ function proxyUserByToken(t) {
     if (Array.isArray(row.prevHashes) && row.prevHashes.some((p) => p && p.hash === h)) return { username, row, viaRing: true };
   }
   return null;
+}
+/** 内部网关请求的真实用户还原（10-20）：
+ *  MEMHUB 会透传客户端带来的 `X-Tdai-User-Key`（每个账号一支记忆 key），
+ *  用它把「内部服务账号」的模型请求归到真正发起对话的用户，再按该用户的
+ *  `userModels` 鉴权、按该用户扣积分。⛔ 只对内部钥匙生效：普通用户令牌
+ *  即使带同名头也一律忽略，避免拿别人的记忆 key 越权。找不到映射则保持
+ *  内部钥匙的归属账号（旧行为）。 */
+function usernameByMemoryKey(key) {
+  const k = String(key || "").trim();
+  if (!k) return "";
+  for (const [username, slot] of Object.entries(db.integrations || {})) {
+    if (slot && String(slot.memKey || "").trim() === k) return username;
+  }
+  return "";
 }
 const DEVICE_CODE_RE = /^[0-9a-f]{8}$/;
 /** 服务端密钥（HMAC 派生设备 token 用）：首次运行自动生成并落盘（0600）。
@@ -1837,9 +1860,21 @@ const server = http.createServer(async (req, res) => {
       if (!presented || !presented.startsWith(PROXY_TOKEN_PREFIX)) {
         return send(401, { ok: false, error: "proxy-token-required" });
       }
-      const hit = proxyUserByToken(presented);
+      /* 10-20：内部网关钥匙放行（不参与用户令牌轮换，见常量处说明）。 */
+      const internal = Boolean(INTERNAL_PROXY_KEY && presented === INTERNAL_PROXY_KEY);
+      const hit = internal
+        ? { username: INTERNAL_PROXY_OWNER, row: { username: INTERNAL_PROXY_OWNER, ips: [] } }
+        : proxyUserByToken(presented);
       if (!hit) return send(401, { ok: false, error: "invalid-proxy-token" });
-      const owner = db.users.find((u) => u.username === hit.username);
+      /* 10-20 根治「勾了 4 个只有 1 个能用」：内部网关的真实调用人不是 PPZ11。
+         MEMHUB 透传 X-Tdai-User-Key ⇒ 按记忆 key 找回真实用户；鉴权、余额、扣费
+         全部用 effectiveUsername。取不到映射才回退内部账号（兼容非用户流量）。 */
+      const mappedUser = internal ? usernameByMemoryKey(req.headers["x-tdai-user-key"]) : "";
+      const effectiveUsername = mappedUser && db.users.some((u) => u.username === mappedUser) ? mappedUser : hit.username;
+      if (internal && effectiveUsername !== hit.username) {
+        console.log(`[proxy] 内部网关请求归属 ${hit.username} → ${effectiveUsername}（X-Tdai-User-Key）`);
+      }
+      const owner = db.users.find((u) => u.username === effectiveUsername);
       if (!owner || owner.disabled) return send(403, { ok: false, error: "account-disabled" });
       /* 来源绑定：首次见到就记住，最多 PROXY_IP_LIMIT 个；超出直接拒（防令牌被转发给别人用） */
       const ip = ipOf(req);
@@ -1861,7 +1896,7 @@ const server = http.createServer(async (req, res) => {
       const bodyBuf = Buffer.concat(chunks);
       /* ⛔ 勾选即生效：只放行用户勾选的模型（未勾选 ⇒ 403，附明确文案）。
          这是"勾选管理哪些模型生效"的执行点 —— 界面只是表达，这里是强制。 */
-      const allowed = new Set(Array.isArray(db.userModels[hit.username]) ? db.userModels[hit.username] : []);
+      const allowed = new Set(Array.isArray(db.userModels[effectiveUsername]) ? db.userModels[effectiveUsername] : []);
       if (p.endsWith("models")) {
         // 模型清单也按勾选过滤（客户端因此只看得到自己启用的）
         const upstreamList = await (async () => {
@@ -1883,7 +1918,7 @@ const server = http.createServer(async (req, res) => {
         return send(200, { ...upstreamList, data });
       }
       /* 余额预检：≤0 直接拒（不让上游白跑；管理员发放后即可继续） */
-      const myBalance = pointsOf(hit.username).balance;
+      const myBalance = pointsOf(effectiveUsername).balance;
       if (myBalance <= 0) {
         return send(402, { ok: false, error: "insufficient-points", balance: myBalance, message: "积分为 0，已暂停调用 —— 请联系管理员加分或改用其它供应商" });
       }
@@ -2023,13 +2058,13 @@ const server = http.createServer(async (req, res) => {
             const ref = `call:${crypto.randomBytes(8).toString("hex")}`;
             const label = wantedModel || "模型调用";
             const r = credit > 0
-              ? addPoints(hit.username, -credit, "consume", ref, `限时福利 · ${label} 消耗 ${credit}`)
-              : addUsageOnly(hit.username, "consume", ref, `限时福利 · ${label}（免费模型，未扣积分）`);
+              ? addPoints(effectiveUsername, -credit, "consume", ref, `限时福利 · ${label} 消耗 ${credit}`)
+              : addUsageOnly(effectiveUsername, "consume", ref, `限时福利 · ${label}（免费模型，未扣积分）`);
             /* ⛔ 10-18 修：`addPoints` / `addUsageOnly` **只改内存不落盘**（它们的实现里没有 persist），
                原来这里也没有 ⇒ 这条消耗流水要等**下一次**请求在鉴权处顺带 persist 才写进 data.json；
                若期间服务重启/崩溃，这次消耗就**永久丢失**（用户只调一次就重启 ⇒ 白送）。
                消耗是账本，必须当场落盘。 */
-            if (r.changed) { persist(); console.log(`[points] ${hit.username} ${credit > 0 ? `消耗 ${credit}` : "免费调用"}（余额 ${r.balance}）`); }
+            if (r.changed) { persist(); console.log(`[points] ${effectiveUsername} ${credit > 0 ? `消耗 ${credit}` : "免费调用"}（余额 ${r.balance}）`); }
           }
         } catch { /* 记分失败不影响调用本身 */ }
       } catch (error) {
