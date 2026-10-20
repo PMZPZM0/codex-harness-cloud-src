@@ -30,6 +30,7 @@ import { normalizeAutoCompactRatio, readAppSettings, readAppSettingsSync } from 
 import { backupTurnIfEnabled as backupTurnIfEnabledImpl, normalizeBackupDir } from "./change-backup";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { handleRoleMemoryToolCall } from "../role-memory-tool";
+import { handleMcpToolCall } from "../mcp-bridge";
 import { handleDelegateHarnessToolCall } from "../delegate-harness-tool";
 import { settleBackgroundRunsOnTurnEnd } from "../delegation/delegate-settle";
 import { isTurnEndMethod } from "../turn-end";
@@ -511,6 +512,7 @@ export async function bootApp() {
        ⛔ 必须排在 filterForRenderer **之前**（事件一旦被裁掉就再也拿不到了）。
        ⛔ 只处理 role_memory_save 这一个工具；返回 false = 不是它，照原流程往下走。 */
     void handleRoleMemoryToolCall({ userDataDir: app.getPath("userData"), event, respond: (id, result) => server.respond(id as any, result) })
+    void handleMcpToolCall({ event, respond: (id, result) => server.respond(id as any, result) })
       .catch(() => false);
     /* 10-10 被委派会话的**能力网关**（用户令「全开 harness_tools」）：同上，被委派会话的事件会被
        filterForRenderer 裁掉 ⇒ 必须在主进程应答。
