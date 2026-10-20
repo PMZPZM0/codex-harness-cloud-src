@@ -259,9 +259,9 @@ contextBridge.exposeInMainWorld("codex", {
   setMemoryScale: (scale: number) => __ipc("memory:scale:set", 1, [scale]),
   readMemoryMode: () => __ipc("memory:mode-read", 0, []),
   setMemoryMode: (mode: "local" | "cloud") => __ipc("memory:mode-set", 1, [mode]),
-  /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令 */
+  /* 记忆后端二选一：用户选的值 + 实际生效值（MCP 装了才让位；本仓云端未实现恒回退内置，cloudSupported=false ⇒ 界面置灰）+ 安装命令 */
   readMemoryBackend: () => __ipc("memory:backend:read", 0, []),
-  /* 切换记忆后端并回传新状态 */
+  /* 切换记忆后端并回传新状态；本仓未内置云记忆 ⇒ 云端请求不落盘，回执 refused=cloud-not-implemented */
   setMemoryBackend: (backend: "builtin" | "mcp" | "cloud") => __ipc("memory:backend:set", 1, [backend]),
   /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
   installMemoryMcp: () => __ipc("memory:mcp:install", 0, []),

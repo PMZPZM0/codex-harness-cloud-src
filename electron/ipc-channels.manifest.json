@@ -1518,20 +1518,20 @@
       "channel": "memory:backend:read",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ backend: \"builtin\" | \"mcp\" | \"cloud\"; effective: \"builtin\" | \"mcp\" | \"cloud\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>",
+      "returns": "Promise<{ backend: \"builtin\" | \"mcp\" | \"cloud\"; effective: \"builtin\" | \"mcp\" | \"cloud\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudSupported: boolean }>",
       "invokeArgs": "",
       "cast": null,
-      "note": "记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令"
+      "note": "记忆后端二选一：用户选的值 + 实际生效值（MCP 装了才让位；本仓云端未实现恒回退内置，cloudSupported=false ⇒ 界面置灰）+ 安装命令"
     },
     {
       "name": "setMemoryBackend",
       "channel": "memory:backend:set",
       "paramsImpl": "backend: \"builtin\" | \"mcp\" | \"cloud\"",
       "paramsDecl": "backend: \"builtin\" | \"mcp\" | \"cloud\"",
-      "returns": "Promise<{ backend: \"builtin\" | \"mcp\"; effective: \"builtin\" | \"mcp\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>",
+      "returns": "Promise<{ backend: \"builtin\" | \"mcp\" | \"cloud\"; effective: \"builtin\" | \"mcp\" | \"cloud\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudSupported: boolean; refused?: string }>",
       "invokeArgs": "backend",
       "cast": null,
-      "note": "切换记忆后端并回传新状态"
+      "note": "切换记忆后端并回传新状态；本仓未内置云记忆 ⇒ 云端请求不落盘，回执 refused=cloud-not-implemented"
     },
     {
       "name": "installMemoryMcp",
