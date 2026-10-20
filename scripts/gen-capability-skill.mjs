@@ -46,7 +46,7 @@ const DOMAIN_DESCRIPTIONS = {
   "limited-benefit": "**限时福利**（10-14）：云端账号服务内置的模型供应商（模型目录由 WorkBuddy Manager 同步，逐模型带积分倍率）。这些通道是**宿主管理面**（拉目录 / 取代理令牌 / 同步成本机供应商行），不是模型工具 —— 模型侧永远不调它们；要用它：云端管理面板勾选模型（勾选 = 本机模型下拉框可见）→ 在下拉框里选中的即生效，按倍率扣积分。⛔ 上游真实地址与网关密钥只在服务端，客户端只拿到同源代理路径；代理令牌（wap_ 前缀）明文仅在签发那一次出现。",
   "model-source": "**云端模型模式开关**（10-15）：两个通道 —— get 读 / set 写，落盘 userData/model-source.json。开启 ⇒ 模型列表只走云端开放目录里勾选的那些（服务端按 /admin/models/available 下发），本地供应商自动停用，且「模型配置」里的供应商开关被锁定打不开；关闭 ⇒ 恢复本地供应商手动开关。⛔ 只停用**除限时福利之外**的本地供应商 —— 限时福利那一行的可用性由云端勾选决定，不占「当前生效供应商」位。开关本体在「云端管理」面板；模型侧用不到（宿主管理面）。",
   "whatsnew": "「更新到新版本后首次启动」的**新功能介绍弹窗**（10-06）：state 取该版本的要点与「该不该弹」（判定含：这个版本有没有要点、用户看过没有、是升级还是全新安装——全新安装不弹，避免新用户看到莫名其妙的「更新内容」）；ack 记下当前版本已看过 ⇒ 同版本不再弹。要点数据在主进程 electron/whats-new-notes.ts，每次发版要加一条（守卫【11r】钉）。⛔ 模型侧用不到它",
-  "kb": "**项目级本地知识库**（<项目>/.codex-harness/knowledge/）：list 列文档 / add-text·add-files 导入 md·txt·代码文档（自动分块）/ search 分块全文检索（带高亮片段）/ read 读全文 / remove 删除。用户要「把资料存进知识库 / 查项目资料」时用它；语义向量后端为按需下载项。⛔⚠️ 上面是 **IPC 桥（给设置页 UI 用），不是模型工具** —— 模型侧只有两个：`knowledge_search(query, limit?)` 检索（workspace 缺省 = 调用者 cwd；装了 Laya 时最相关的一条会被置顶标注）与 `knowledge_add(title, text, source?)` 写入（10-04 补，此前模型只能读不能写；⚠️ 同名不覆盖会堆重复条目、⚠️ 写入不做语义向量化、⚠️ 专家/被调度会话不许写、⚠️ 装了 Laya 时低价值内容会被拒写并说明原因——充实内容后重试即可）",
+  "kb": "**项目级本地知识库**（<项目>/.codex-harness/knowledge/）：list 列文档 / add-text·add-files 导入 md·txt·代码文档（自动分块）/ search 分块全文检索（带高亮片段）/ read 读全文 / remove 删除。用户要「把资料存进知识库 / 查项目资料」时用它；语义向量后端为按需下载项。⛔⚠️ 上面是 **IPC 桥（给设置页 UI 用），不是模型工具** —— 模型侧只有两个：`knowledge_search(query, limit?)` 检索（workspace 缺省 = 调用者 cwd；装了 Laya 时最相关的一条会被置顶标注）与 `knowledge_add(title, text, source?)` 写入（10-04 补，此前模型只能读不能写；⚠️ 同名不覆盖会堆重复条目、⚠️ 写入不做语义向量化、⚠️ 专家/被调度会话不许写、⚠️ 装了 Laya 时低价值内容会被拒写并说明原因——充实内容后重试即可）。⛔⛔ **但只有「知识库后端 = 本地」时才是这两个**：后端切到**云端 weknora** 后，检索与写入一律走 MCP 连接器 `cloud-kb` 的工具（`cloud_kb__ask` / `cloud_kb__search_knowledge` / `cloud_kb__grep_chunks` / `cloud_kb__list_documents` / `cloud_kb__read_document` / `cloud_kb__list_knowledge_bases`），本地那两个此时**不在工具列表里**。判定方法：工具列表里有 `cloud_kb__` 前缀 ⇒ 云端；否则本地。切换**不迁移数据**（本地库与云端库是两份），详见内置技能 `knowledge-backend`",
   "pet": "桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置",
   "laya": "Laya 智能判断（GitHub NandhaKishorM/laya，Apache-2.0，非自回归决策引擎 33ms）：status 安装与服务状态 / install 安装更新（pip 清华镜像 + 权重走 hf-mirror）/ decide-effort 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度，<0.45 弃权）/ judge = 模型工具 laya_judge 的执行端（短文本多选一判断：知识价值 / 重复 / 自定义 2~6 项；装了 Laya 才在工具面出现，低置信弃权、绝不自动安装）——渲染层思考档「自动」开关的数据端；失败一律降级手选档，不是硬依赖",
   "html-preview": "HTML 实时预览（独立板块）：watch 开始盯一个 HTML 文件（可信目录 + .html/.htm/.xhtml 白名单 + 120ms 防抖）/ unwatch 停止；文件变更推 harness 事件 html-preview:changed。渲染层据此自动打开右栏浏览器、按比例加宽，并让 webview 无缓存重载 —— 模型写 HTML 时用户能实时看到页面",
@@ -72,7 +72,7 @@ const DOMAIN_DESCRIPTIONS = {
   "qq": "QQ 通道",
   "wecom-webhook": "企业微信 webhook 通道",
   "channels": "IM 通道总开关与状态",
-  "memory": "记忆金字塔全链路（L0~L7 分层读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端二选一）",
+  "memory": "记忆金字塔全链路（L0~L7 分层读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端**三选一**：内置金字塔 / 本地 MCP 记忆服务 / 云端 memapi）",
   "skills": "技能经验包（导入/启停/市场安装/本地列表）",
   "autoUpdate": "自动化能力与引擎的**后台自动更新**：四类（桌面自动化 nuphus / 浏览器自动化 playwright-cli / Mac 电脑操作 open-computer-use / Codex 引擎）各一个独立开关（缺省即开，存 app-settings.json），开启后主进程定时静默拉取国内镜像最新版并更新，成功发系统通知。⛔ 手动更新与后台更新走**同一批函数**，不存在两套判据",
   "commands": "斜杠命令（自定义 / 命令的定义与管理）",
@@ -199,7 +199,8 @@ lines.push("| 定时 / 周期任务 | **调度器**（`scheduler:*`） | 任务�
 lines.push("| 把会话接到 IM | **渠道 Bot**（`channel-bot:*` / `weixin:*` / `telegram:*`） | — |");
 lines.push("| 记录好的桌面流程 | **RPA 配方**（`rpa:*`） | 键鼠级回放，适合无 API 的老软件 |");
 lines.push("| 浏览器 / 桌面自动化 | 专技能 `desktop-automation`（nuphus MCP）、`browser-skill`（playwright-cli） | 应用里关掉能力总闸后这些工具**不存在**，别当成坏了 |");
-lines.push("| 换记忆后端 | 设置 → 记忆 → 记忆后端（内置金字塔 ⇄ MCP 记忆服务） | 二者**互斥**，且装好才允许切 |");
+lines.push("| 换记忆后端 | 设置 → 记忆 → 记忆后端（内置金字塔 / 本地 MCP 记忆服务 / 云端 memapi，**三选一**） | ⛔ 三者互斥：**落点与工具名随后端变**，别混用（内置=写 `lessons/`；MCP=`local_memory__memory_write`；云端=**无工具**、上游自动收记忆） |");
+lines.push("| 换知识库后端 | 设置 → 知识库 → 后端（本地项目库 / 云端 weknora） | 本地 = `knowledge_search` / `knowledge_add`；云端 = `cloud_kb__ask` 等 6 个 MCP 工具。判定看工具列表里有没有 `cloud_kb__` 前缀 |");
 lines.push("| 主题 / 外观 | `src/lib/themes.ts`（多主题扩展点） | — |");
 lines.push("");
 lines.push("⛔ **打包版没有宿主源码**：用户机器上只有一个安装包 ⇒ 那时真正的答案只有**接入类**（技能 / MCP 连接器 / 专家 · 专家团 / 定时任务 / RPA / IM 渠道 / 记忆后端）。要改宿主代码必须在**源码工程**里做；先确认源码在不在手边，再决定说哪种方案。");
