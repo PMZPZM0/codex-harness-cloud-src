@@ -756,10 +756,14 @@ function proxyUserByToken(t) {
 function usernameByMemoryKey(key) {
   const k = String(key || "").trim();
   if (!k) return "";
+  let found = "";
   for (const [username, slot] of Object.entries(db.integrations || {})) {
-    if (slot && String(slot.memKey || "").trim() === k) return username;
+    if (!slot || String(slot.memKey || "").trim() !== k) continue;
+    /* ⛔ 同一把 memKey 命中多个账号 = 数据异常：宁可判无效，也不能随机挑一个归属。 */
+    if (found) return "";
+    found = username;
   }
-  return "";
+  return found;
 }
 const DEVICE_CODE_RE = /^[0-9a-f]{8}$/;
 /** 服务端密钥（HMAC 派生设备 token 用）：首次运行自动生成并落盘（0600）。
@@ -1867,12 +1871,37 @@ const server = http.createServer(async (req, res) => {
         : proxyUserByToken(presented);
       if (!hit) return send(401, { ok: false, error: "invalid-proxy-token" });
       /* 10-20 根治「勾了 4 个只有 1 个能用」：内部网关的真实调用人不是 PPZ11。
-         MEMHUB 透传 X-Tdai-User-Key ⇒ 按记忆 key 找回真实用户；鉴权、余额、扣费
-         全部用 effectiveUsername。取不到映射才回退内部账号（兼容非用户流量）。 */
-      const mappedUser = internal ? usernameByMemoryKey(req.headers["x-tdai-user-key"]) : "";
-      const effectiveUsername = mappedUser && db.users.some((u) => u.username === mappedUser) ? mappedUser : hit.username;
+         ⛔⛔ 身份必须**两证一致**：MEMHUB 会把客户端自带的 X-Tdai-User-Key 原样透传，
+            单靠这个头 = 客户端自报身份（实测：拿 A 的钥匙、塞 B 的 memKey，服务端按 B 处理）。
+            现在要求同时带本机账号的代理令牌（X-Harness-Proxy-Token），两者映射到同一用户才放行；
+            缺令牌时**不采信 memKey**（回退内部账号），避免伪造头越权/串号。 */
+      const claimedMemKey = internal ? String(req.headers["x-tdai-user-key"] || "").trim() : "";
+      const claimedToken = internal ? String(req.headers["x-harness-proxy-token"] || "").trim() : "";
+      const hasIdentity = Boolean(claimedToken || claimedMemKey);
+      const memUser = internal ? usernameByMemoryKey(claimedMemKey) : "";
+      const tokenHit = claimedToken ? proxyUserByToken(claimedToken) : null;
+      if (internal && hasIdentity) {
+        /* ⛔ 双证必须**同时存在且指向同一用户**：只有其中一枚 ⇒ 不完整，直接拒。
+           这是防「偷到代理令牌/记忆 key 任意一枚就能冒用」的第二道锁。 */
+        if (!claimedToken || !claimedMemKey) {
+          return send(403, { ok: false, error: "identity-incomplete", message: "云端身份不完整（缺少令牌或记忆 key），请重新登录并同步模型" });
+        }
+        if (!tokenHit) {
+          return send(401, { ok: false, error: "invalid-identity-token", message: "云端身份令牌无效，请重新同步模型后再试" });
+        }
+        if (!memUser) {
+          return send(403, { ok: false, error: "identity-unknown-memkey", message: "云端记忆身份无法识别，请重新登录并同步模型" });
+        }
+        if (tokenHit.username !== memUser) {
+          console.log(`[proxy] ⛔ 身份不一致：proxyToken=${tokenHit.username} memKey=${memUser}`);
+          return send(403, { ok: false, error: "identity-mismatch", message: "云端身份校验不一致，已拒绝（请重新登录并同步模型）" });
+        }
+      }
+      const effectiveUsername = internal && hasIdentity ? tokenHit.username : hit.username;
       if (internal && effectiveUsername !== hit.username) {
-        console.log(`[proxy] 内部网关请求归属 ${hit.username} → ${effectiveUsername}（X-Tdai-User-Key）`);
+        console.log(`[proxy] 内部网关请求归属 ${hit.username} → ${effectiveUsername}（token+memKey 已校验）`);
+      } else if (internal && !hasIdentity) {
+        console.log(`[proxy] ⚠ 内部网关未带用户身份 ⇒ 回退 ${hit.username}（老客户端兼容；不涉及任何真实用户）`);
       }
       const owner = db.users.find((u) => u.username === effectiveUsername);
       if (!owner || owner.disabled) return send(403, { ok: false, error: "account-disabled" });
