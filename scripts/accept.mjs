@@ -601,8 +601,8 @@ const CHECKS = [
         }))).catch((e)=>({ error: String(e && e.message || e) }))`);
         const builtins = Array.isArray(allPets) ? allPets.filter((p) => p.builtin) : [];
         const petBad = builtins.filter((p) => p.states !== 9 || p.problem);
-        h.check("①d 四只内置宠物全部升级为动画包（其他三只不再只有图集）",
-          builtins.length === 4 && petBad.length === 0 && builtins.some((p) => p.id === "harness-fox" && p.looks === 16),
+        h.check("①d 六只内置宠物全部是九态 + 16 看帧动画包（旧三只已替换）",
+          builtins.length === 6 && petBad.length === 0 && builtins.every((p) => p.looks === 16),
           JSON.stringify({ count: builtins.length, bad: petBad, all: builtins }).slice(0, 300));
 
         /* ①c 宠物窗真渲染动画 <img>（不是图集背景），且悬停切 16 向看帧后能回到动画。
