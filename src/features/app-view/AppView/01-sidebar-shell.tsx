@@ -155,6 +155,8 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { Slot } from "../../../runtime/registry";
 import { NewbieGuide } from "../../newbie-guide";
 import { SidebarGuideModal, type SidebarGuideKey, type SidebarGuideTarget } from "./SidebarGuideModal";
+import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal";
+import { UpdateReadyToast } from "./UpdateReadyToast";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   const {
@@ -252,6 +254,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const [guideKey, setGuideKey] = useState<SidebarGuideKey | null>(null);
   // ⛔ 10-13 云端管理（云助手形态专属）：同款纯局部 UI 状态（不进 bag）。
   const [cloudManageOpen, setCloudManageOpen] = useState(false);
+  /* 登录管理（10-21 用户要求）：三处账户一处直达，纯局部弹窗状态。 */
+  const [loginMgrOpen, setLoginMgrOpen] = useState(false);
 
   /** 能力卡片本身就是跳转入口：侧栏统一把 target 翻译成设置页 / 画布。 */
   const navigateGuideTarget = (target: SidebarGuideTarget) => {
@@ -386,21 +390,43 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 <button className="sidebar-tab sidebar-cap-row ic-amber" title="按时间自动运行任务" aria-haspopup="dialog" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}>
                   <Clock3 size={15} /><span>定时任务</span><ChevronRight size={13} className="sidebar-cap-chevron" />
                 </button>
-                <button className="sidebar-tab sidebar-cap-row" title="前端 UI / 组件库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "frontend"} onClick={() => setGuideKey("frontend")}>
-                  <LayoutGrid size={15} className="ic-blue" /><span>前端 UI · 组件库</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+                {/* 10-21 用户要求：侧栏名一律 4 字（原名太长）——全称留在 title 与弹窗标题里，信息不丢。 */}
+                <button className="sidebar-tab sidebar-cap-row" title="前端 UI · 组件库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "frontend"} onClick={() => setGuideKey("frontend")}>
+                  <LayoutGrid size={15} className="ic-blue" /><span>前端组件</span><ChevronRight size={13} className="sidebar-cap-chevron" />
                 </button>
-                <button className="sidebar-tab sidebar-cap-row" title="技能 / 插件 / MCP：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "extensions"} onClick={() => setGuideKey("extensions")}>
-                  <Zap size={15} className="ic-pink" /><span>技能 · 插件 · MCP</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+                <button className="sidebar-tab sidebar-cap-row" title="技能 · 插件 · MCP：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "extensions"} onClick={() => setGuideKey("extensions")}>
+                  <Zap size={15} className="ic-pink" /><span>技能插件</span><ChevronRight size={13} className="sidebar-cap-chevron" />
                 </button>
-                <button className="sidebar-tab sidebar-cap-row" title="子智能体 / 专家 / 专家团：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "agents"} onClick={() => setGuideKey("agents")}>
-                  <Users size={15} className="ic-violet" /><span>子智能体 · 专家 · 专家团</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+                <button className="sidebar-tab sidebar-cap-row" title="子智能体 · 专家 · 专家团：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "agents"} onClick={() => setGuideKey("agents")}>
+                  <Users size={15} className="ic-violet" /><span>专家团队</span><ChevronRight size={13} className="sidebar-cap-chevron" />
                 </button>
-                <button className="sidebar-tab sidebar-cap-row" title="人格市场 / 记忆中心 / 知识库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "identity"} onClick={() => setGuideKey("identity")}>
-                  <Heart size={15} className="ic-amber" /><span>人格市场 · 记忆中心 · 知识库</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+                <button className="sidebar-tab sidebar-cap-row" title="人格市场 · 记忆中心 · 知识库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "identity"} onClick={() => setGuideKey("identity")}>
+                  <Heart size={15} className="ic-amber" /><span>人格记忆</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+                </button>
+                {/* 登录管理（10-21 用户要求）：三处账户一处直达（GPT 订阅 / 中转站 / 云账号）。
+                    ⛔ 只做入口聚合 + 直达，登录表单仍在各自设置页（复制一份必漂移）。 */}
+                <button className="sidebar-tab sidebar-cap-row" title="登录管理：GPT 订阅 · 中转站账户 · 云账号" aria-haspopup="dialog" aria-expanded={loginMgrOpen} onClick={() => setLoginMgrOpen(true)}>
+                  <KeyRound size={15} className="ic-green" /><span>登录管理</span><ChevronRight size={13} className="sidebar-cap-chevron" />
                 </button>
               </div>
             </div>
             {guideKey && <SidebarGuideModal guideKey={guideKey} onNavigate={navigateGuideTarget} onClose={() => setGuideKey(null)} />}
+            {/* 直达：关弹窗 + 直接开对应设置页（⛔ 不再经「设置 → 账户与模型」多一层） */}
+            {loginMgrOpen && (
+              <LoginManagerModal
+                /* ⛔ 本仓（云助手）没有「云账号」设置页 —— 整站就是云端客户端，登录在启动门里。
+                   所以只列两处，而不是给一个跳过去是空页的假入口。 */
+                targets={["openai", "relay"]}
+                onNavigate={(page: LoginManagerTarget) => {
+                  if (page === "cloud") return;   // 收窄类型：本仓能跳的只有这两页
+                  setSettingsPage(page);
+                  setSettingsOpen(true);
+                  setMobileNav(false);
+                  setLoginMgrOpen(false);
+                }}
+                onClose={() => setLoginMgrOpen(false)}
+              />
+            )}
             {/* ⛔ 只给前缀文件夹染色：这个 chip 里还有个"关闭 ×"，它是**动作**不是分类。 */}
             {projectFilter && <button className="filter-chip" title="清除项目筛选" onClick={() => setProjectFilter(null)}><FolderOpen size={12} className="ic-amber" />{basename(projectFilter)}<X size={12} /></button>}
             <div className="view-tabs" role="tablist" aria-label="视图">
