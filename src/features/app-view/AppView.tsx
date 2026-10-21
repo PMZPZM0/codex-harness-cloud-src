@@ -176,6 +176,7 @@ import { WallpaperLayer } from "../wallpaper";
 /* HTML 实时预览（10-18 独立板块）：写 .html ⇒ 自动开右栏浏览器 + 加宽 + 文件变更实时重载。
    ⛔ 只在主窗口挂（独立弹窗没有右栏）；它返回 null，不产生 DOM。 */
 import { HtmlPreviewBridge } from "../html-preview";
+import { RightFileBridge } from "./AppView/RightFileBridge";
 /* 汇总卡 → 右栏「审阅」（10-18 用户对照 Qoder）：点文件行打开右栏审阅页。
    与 HTML 预览桥同款：只在主窗口挂，返回 null。 */
 import { TurnReviewBridge } from "../status";
@@ -432,6 +433,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
       {!popoutThreadId && <HtmlPreviewBridge app={app} />}
+      {!popoutThreadId && <RightFileBridge app={app} />}
       {!popoutThreadId && <TurnReviewBridge onOpen={() => {
         app.setRightOpen(true);
         app.setRightTab("turn-review");
