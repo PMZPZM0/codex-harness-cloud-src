@@ -33,6 +33,18 @@ export function createWindow() {
     void showAssistantWindow();
     return;
   }
+  /* ⛔⛔ 防重入（10-22 用户实测「应用还能重复打开」= 两个一模一样的主窗口）：
+     `second-instance` 可能在 boot 的 `createWindow()` **之前**到达（连点两次图标 / 启动过程中再点一次），
+     那条链路是 `second-instance → showMainWindow → createWindow`，于是先建一个窗口；
+     boot 随后照建不误 —— 同一进程两个主窗口。
+     ⇒ 已经有**未销毁**的主窗口就直接复用它（还原 / 显示 / 聚焦），绝不再 `new BrowserWindow`。 */
+  const aliveWindow = mutableState.mainWindow;
+  if (aliveWindow && !aliveWindow.isDestroyed()) {
+    if (aliveWindow.isMinimized()) aliveWindow.restore();
+    if (!aliveWindow.isVisible()) aliveWindow.show();
+    aliveWindow.focus();
+    return;
+  }
   // Windows 任务栏图标必须用 .ico 才可靠（PNG 会被 electron.exe 默认图标顶掉）；
   // ⛔ 资源定位锚在 app.getAppPath()（dev = 仓库根 / 打包 = app.asar 根），**不要用 __dirname**：
   //    features/ 下的 __dirname 是 dist-electron/features，`..` 会落到 dist-electron 里
