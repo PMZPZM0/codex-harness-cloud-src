@@ -691,6 +691,7 @@ interface Window {
     openExternal(url: string): Promise<void>;
     browserPopout(url: string): Promise<{ ok: boolean }>;
     shellReveal(target: string): Promise<void>;
+    shellOpen(target: string): Promise<void>;
     writeClipboardImage(filePath: string): Promise<boolean>;
     readClipboardFiles(): Promise<string[]>;
     doctor(cwd?: string): Promise<{ checks: { label: string; ok: boolean; detail: string }[]; at: number }>;
