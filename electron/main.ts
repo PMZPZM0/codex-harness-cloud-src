@@ -804,6 +804,13 @@ if (!gotSingleLock) {
   app.quit();
 }
 
+/* ⛔⛔ 10-22 用户实测「应用还能重复打开」（两个一模一样的窗口）：
+   ① 第二实例这条：原来只 `app.quit()`，而退出是**异步**的 —— 下面的 `app.whenReady().then(...)`
+      仍然注册着，一旦 ready 抢在退出完成之前到，第二实例照样建窗口、起引擎
+      （两个窗口 + 两份引擎争同一份 codex-home）⇒ 用这个常量把 ready 后的编排全挡掉；
+   ② ready 之前的 `second-instance` 早到那条：见 features/window-factory.ts 的 `createWindow` 防重入。 */
+const singleInstanceBlocked = !gotSingleLock;
+
 app.on("second-instance", () => {
   // 「显示主窗口」的唯一实现（不存在则建、最小化则还原、隐藏则显示再聚焦）——
   // ⛔ 托盘开启「关闭窗口时最小化到托盘」后窗口是 hidden 而非 destroyed，只管 focus() 会把用户晾在那儿。
@@ -813,12 +820,17 @@ app.on("second-instance", () => {
 // ── 启动编排（app.whenReady 里那一大段）已按域拆到 features/boot.ts；仍在此处注册以保持时机不变 ──
 /* ⛔ 顺序有意义：先注册「顶层 5 通道」（headless 的 ipcMain patch 需要抓到它们，
    见 registerShellTopLevelHandlers 的注释），再走正常启动编排。 */
-app.whenReady().then(() => { registerShellTopLevelHandlers(); bootApp(); });
+app.whenReady().then(() => {
+  if (singleInstanceBlocked) return;   // 第二实例：压根不进启动编排
+  registerShellTopLevelHandlers();
+  bootApp();
+});
 
 // ── 系统托盘（09-23 用户：「要在系统托盘里面常驻，系统托盘右键功能菜单齐全一下」）──
 // 与 bootApp 分开注册：托盘是**可选**副作用，起不来（缺图标 / 平台限制）只打日志，不拖垮启动链。
 // ⛔ 机内 no-op 兜底：`activeTurnCount` 用 engineActiveTurnIds 实时取，菜单每次弹出重建（见 electron/tray.ts）。
 app.whenReady().then(() => {
+  if (singleInstanceBlocked) return;   // 第二实例：不建托盘，静静退出
   try {
     createAppTray({
       getMainWindow: () => mainWindow,
