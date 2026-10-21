@@ -395,7 +395,7 @@ const CHECKS = [
       const opened = await h.eval(`(function(){
         const tabs=[...document.querySelectorAll('.sidebar-nav .sidebar-tab')];
         const names=tabs.map((t)=>(t.textContent||'').trim());
-        const front=tabs.find((t)=>(t.textContent||'').includes('前端组件'));
+        const front=tabs.find((t)=>(t.textContent||'').includes('前端开发'));
         if(!front) return { found:false, tabs:names };
         front.click(); return { found:true, tabs:names }; })()`);
       h.check("① 侧栏有「前端 UI · 组件库」能力入口，且「更多」已删除（前置条件：找不到就整项作废）",
