@@ -840,6 +840,10 @@ interface Window {
     engineRestartLog(): Promise<{ t: number; reason: string; busy: boolean; activeTurns: number; action: "now" | "defer" | "flush" | "force" }[]>;
     engineActiveTurns(): Promise<{ count: number; threadIds: string[] }>;
     voiceStatus(): Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>;
+    /* 我是播报窗口吗 + 当前全局静音态（多窗口唯一播报：焦点 → 最后活跃 → 主窗口；取不到时 owner=true 保底，⛔ 不许因算不出来就静音；⛔ muted 必须一起回，否则新开窗口会无视已生效的全局静音） */
+    announceOwner(): Promise<{ owner: boolean; ownerWebContentsId: number | null; reason: string; muted: boolean }>;
+    /* 全局静音闩锁（任一窗口按「停止播报」⇒ 全窗口静默；一个扬声器一个用户，⛔ 不许只在本地闩） */
+    announceSetMuted(input?: { muted?: boolean }): Promise<{ muted: boolean }>;
     voiceStart(threadId: string, options?: { mode?: "conversation" | "dictation" }): Promise<{ ok: boolean; error?: string; status: unknown }>;
     voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
     voiceEndpointNow(): Promise<{ ok: boolean; text?: string }>;
@@ -1209,6 +1213,12 @@ interface Window {
 
 
     onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; speed?: string; done?: boolean; failed?: boolean; auto?: boolean; /** 已取消（10-07）：主进程杀完子进程清完临时文件后推来的收尾事件，≠ failed */ cancelled?: boolean }) => void): () => void;
+    /** 播报归属推送（voice 域，10-21）：多窗口时逐窗口定制发送 —— `owner` 已是「本窗口是不是播报窗口」。 */
+    onAnnounceOwnerChanged(listener: (state: { owner: boolean; reason: string }) => void): () => void;
+    /** 全局静音闩锁推送（10-21）：任一窗口按停 ⇒ 全窗口静默（一个扬声器一个用户）。 */
+    onAnnounceMuted(listener: (state: { muted: boolean }) => void): () => void;
+    /** 通话状态推送（10-21，所有窗口）：弹窗据此避让主窗口的通话 TTS（`voice:event` 只发主窗口）。 */
+    onVoiceCallState(listener: (state: { state: string; active: boolean }) => void): () => void;
 
     /** 3D 预览弹窗打开推送（model-viewer 域，10-05）：手写桥（非 gen 段），引擎 preview_3d 触发 */
     onModelViewerOpen(listener: (event: { path: string; title: string }) => void): () => void;
