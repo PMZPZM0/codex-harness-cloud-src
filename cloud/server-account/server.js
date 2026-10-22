@@ -3080,39 +3080,49 @@ const server = http.createServer(async (req, res) => {
     if (p === "/admin/services" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const body = await readBody();
-      const kbIn = (body && body.kb) || {};
-      const memIn = (body && body.memory) || {};
+      /* ⛔ 10-23 拆成两个中心后，前端每次只提交自己那半边 —— 这里必须「传了才改」，
+         否则保存知识库会把记忆的 base/key 一起写成空串（配置静默丢失）。 */
+      const kbIn = body && body.kb ? body.kb : null;
+      const memIn = body && body.memory ? body.memory : null;
+      if (!kbIn && !memIn) return send(400, { ok: false, error: "没有要保存的内容（kb / memory 至少给一个）" });
       const normOne = (raw, label) => {
         const s = String(raw == null ? "" : raw).trim();
         if (!s) return { ok: true, value: "" };                    // 留空 ⇒ 回退环境变量
         const n = normalizeUpstreamBase(s);
         return n.ok ? { ok: true, value: n.base } : { ok: false, error: label + "：" + n.error };
       };
-      const kbBase = normOne(kbIn.base, "知识库地址");
-      if (!kbBase.ok) return send(400, { ok: false, error: kbBase.error });
-      const memBase = normOne(memIn.base, "记忆地址");
-      if (!memBase.ok) return send(400, { ok: false, error: memBase.error });
-      const memProxy = normOne(memIn.proxyBase, "记忆代理地址");
-      if (!memProxy.ok) return send(400, { ok: false, error: memProxy.error });
       const keep = (v) => String(v == null ? "" : v).trim();
       /* ⛔ 密钥字段：传空或传回掩码（含 ***）一律保留原值 —— 否则面板点一次「保存」就把真 key 写坏 */
       const keepKey = (v, prev) => { const t = keep(v); if (!t || t.indexOf("***") >= 0) return String(prev || ""); return t; };
-      db.services.kb = {
-        base: kbBase.value,
-        publicBase: kbBase.value ? normOne(kbIn.publicBase, "知识库对外地址").value || "" : "",
-        key: keepKey(kbIn.key, (db.services.kb || {}).key),
-        llmModelId: keep(kbIn.llmModelId),
-        embedModelId: keep(kbIn.embedModelId),
-        vlmModelId: keep(kbIn.vlmModelId),
-      };
-      db.services.memory = {
-        base: memBase.value,
-        proxyBase: memProxy.value,
-        publicBase: memBase.value ? normOne(memIn.publicBase, "记忆空间对外地址").value || "" : "",
-        proxyPublicBase: memProxy.value ? normOne(memIn.proxyPublicBase, "记忆代理对外地址").value || "" : "",
-        key: keepKey(memIn.key, (db.services.memory || {}).key),
-        instance: keep(memIn.instance),
-      };
+
+      if (kbIn) {
+        const kbBase = normOne(kbIn.base, "知识库地址");
+        if (!kbBase.ok) return send(400, { ok: false, error: kbBase.error });
+        const cur = db.services.kb || {};
+        db.services.kb = {
+          base: kbBase.value,
+          publicBase: kbBase.value ? normOne(kbIn.publicBase, "知识库对外地址").value || "" : "",
+          key: keepKey(kbIn.key, cur.key),
+          llmModelId: keep(kbIn.llmModelId),
+          embedModelId: keep(kbIn.embedModelId),
+          vlmModelId: keep(kbIn.vlmModelId),
+        };
+      }
+      if (memIn) {
+        const memBase = normOne(memIn.base, "记忆地址");
+        if (!memBase.ok) return send(400, { ok: false, error: memBase.error });
+        const memProxy = normOne(memIn.proxyBase, "记忆代理地址");
+        if (!memProxy.ok) return send(400, { ok: false, error: memProxy.error });
+        const cur = db.services.memory || {};
+        db.services.memory = {
+          base: memBase.value,
+          proxyBase: memProxy.value,
+          publicBase: memBase.value ? normOne(memIn.publicBase, "记忆空间对外地址").value || "" : "",
+          proxyPublicBase: memProxy.value ? normOne(memIn.proxyPublicBase, "记忆代理对外地址").value || "" : "",
+          key: keepKey(memIn.key, cur.key),
+          instance: keep(memIn.instance),
+        };
+      }
       persist();
       applyServiceOverrides();                                     // ⛔ 热生效（免重启）
       console.log(`[services] ${me.username} 更新：知识库 → ${WEKNORA_BASE}（key ${WEKNORA_ADMIN_KEY ? "已配" : "未配"}）· 记忆 → ${MEMHUB_BASE}（代理 ${MEMHUB_PROXY_BASE}，key ${MEMHUB_ADMIN_KEY ? "已配" : "未配"}）`);
