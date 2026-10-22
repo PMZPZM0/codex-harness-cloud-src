@@ -532,7 +532,13 @@ async function probeGet(base, probe, key, authHeader) {
        现在两种形态都认：有 `url` 用 url，否则 `base + path`。 */
     const target = String(probe.url || "").trim()
       || (String(base || "").replace(/\/+$/, "") + String(probe.path || ""));
-    const r = await fetch(target, { headers, signal: AbortSignal.timeout(8000) });
+    const init = { headers, signal: AbortSignal.timeout(8000) };
+    if (probe.method && String(probe.method).toUpperCase() !== "GET") {
+      init.method = String(probe.method).toUpperCase();
+      init.headers = Object.assign({}, headers, { "content-type": "application/json" });
+      init.body = JSON.stringify(probe.body || {});
+    }
+    const r = await fetch(target, init);
     const text = await r.text().catch(() => "");
     let count = null;
     try {
@@ -3155,7 +3161,8 @@ const server = http.createServer(async (req, res) => {
         ? [{ name: "知识库列表", path: "/api/v1/knowledge-bases?page_size=1", wantList: true }]
         : [
           { name: "记忆面板首页", path: "/", wantList: false },
-          { name: "记忆服务（用户列表，需 X-Tdai-User-Key）", path: "/api/v1/meta/user/list", wantList: false, serviceId: MEMHUB_INSTANCE },
+          /* ⛔ GET 这个端点返回 404：MemHub 的用户列表只接受 POST 且要 X-Tdai 头（10-23 实测） */
+          { name: "记忆服务（用户列表，需 X-Tdai-User-Key）", path: "/api/v1/meta/user/list", method: "POST", body: {}, wantList: false, serviceId: MEMHUB_INSTANCE },
         ];
       const results = [];
       for (const probe of probes) results.push(await probeGet(norm.base, probe, key, isKb ? "x-api-key" : "tdai"));
