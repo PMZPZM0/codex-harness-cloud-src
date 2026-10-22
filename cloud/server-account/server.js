@@ -428,6 +428,122 @@ function explainProbeStatus(status) {
 /** 探测单个端点（**只发 GET**）：返回 { ok, status, ms, count, hint }。
  *  ⛔ 上游测试与知识库/记忆测试**共用这一份** —— 两处各写一份必然漂移。
  *  `authHeader`：`"x-api-key"`（WeKnora 租户 API Key）或 `"bearer"`（网关密钥）。 */
+/* ═══ 10-22 移植自 codex-cloud-assistant 1.0.18：模型目录的候选端点 / 多形状解析 / 上游倍率 / 映射 ═══ */
+
+/* 最近一次目录同步失败原因（面板「模型管理」直接显示，不必先点一次同步才知道为什么空）。 */
+
+let lastCatalogError = null;
+
+function modelMapTable() {
+  const m = db && db.upstream && db.upstream.modelMap;
+  return m && typeof m === "object" && !Array.isArray(m) ? m : {};
+}
+
+function mappedFromRow(row) {
+  const r = row || {};
+  const v = r.mapped_model ?? r.mappedModel ?? r.target_model ?? r.targetModel
+    ?? r.upstream_model ?? r.upstreamModel ?? r.mapping_target ?? "";
+  return String(v || "").trim();
+}
+
+function modelLabelFor(id, upstreamName, row) {
+  const key = String(id || "").trim();
+  const auto = mappedFromRow(row);
+  if (auto && auto !== key) return auto;
+  const mapped = modelMapTable()[key];
+  return String(mapped || "").trim() || String(upstreamName || key).trim();
+}
+
+function applyModelMap() {
+  let changed = 0;
+  for (const item of (db.modelCatalog.list || [])) {
+    if (!item || !item.id) continue;
+    if (!item.upstreamName) item.upstreamName = String(item.name || item.id);
+    const next = modelLabelFor(item.id, item.upstreamName);
+    if (item.name !== next) { item.name = next; changed += 1; }
+  }
+  if (changed) persist();
+  return changed;
+}
+
+function splitUpstreamBase(base) {
+  const b = String(base || "").trim().replace(/\/+$/, "");
+  return { root: b.replace(/\/v1$/i, ""), openai: /\/v1$/i.test(b) ? b : `${b}/v1` };
+}
+
+function catalogCandidates(base) {
+  const { root, openai } = splitUpstreamBase(base);
+  const list = [
+    { name: "管理目录 /api/model-catalog", url: `${root}/api/model-catalog?realm=cn` },
+    { name: "OpenAI 兼容 /v1/models", url: `${openai}/models` },
+    { name: "通用 /models", url: `${root}/models` },
+  ];
+  /* 10-22 部署实测：按本仓文档装出来的记忆网关，API 根是
+     `https://<域名>/claude-code/<实例>`（默认实例 default），而管理员很容易把**控制台地址**
+     （`https://<域名>`，会 302 到 /login）填进来。这里补一条本产品自带形态的候选：
+     地址没带 /claude-code/ 前缀时，顺手试一下默认实例的模型列表。 */
+  if (!/\/claude-code\//i.test(root)) {
+    list.push({ name: "记忆网关 /claude-code/default/v1/models", url: `${root}/claude-code/default/v1/models` });
+  }
+  return list;
+}
+
+function modelsFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return null;
+  const arr = (v) => (Array.isArray(v) ? v : null);
+  return arr(payload.data) || arr(payload.models) || arr(payload.list) || arr(payload.items)
+    || arr(payload.result) || arr(payload.result && payload.result.data) || arr(payload.result && payload.result.models)
+    || arr(payload.data && payload.data.models) || arr(payload.data && payload.data.list) || null;
+}
+
+async function fetchModelsByProtocol(url, key, mode) {
+  const headers = !key
+    ? {}
+    : mode === "anthropic"
+      ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
+      : { Authorization: `Bearer ${key}` };
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+  if (!res.ok) return null;
+  const payload = await res.json().catch(() => null);
+  return modelsFromPayload(payload);
+}
+
+async function readUpstreamRates(base, key) {
+  const { root, openai } = splitUpstreamBase(base);
+  const headers = key ? { Authorization: `Bearer ${key}` } : {};
+  const perModel = new Map();
+  let global = null;
+  let source = "";
+  try {
+    const res = await fetch(`${root}/api/pricing`, { headers, signal: AbortSignal.timeout(6000) });
+    if (res.ok) {
+      const j = await res.json().catch(() => null);
+      const rows = Array.isArray(j) ? j : Array.isArray(j && j.data) ? j.data : [];
+      for (const m of rows) {
+        const id = String((m && (m.model_name || m.model || m.id)) || "").trim();
+        const ratio = m && (m.model_ratio ?? m.ratio);
+        const payPerToken = m == null || m.quota_type == null || Number(m.quota_type) === 0;
+        if (id && ratio != null && Number.isFinite(Number(ratio)) && Number(ratio) > 0 && payPerToken) {
+          perModel.set(id, String(ratio));
+        }
+      }
+      if (perModel.size) source = "newapi-pricing";
+    }
+  } catch { /* 没有 /api/pricing 是常态 */ }
+  if (!perModel.size) {
+    try {
+      const res = await fetch(`${openai}/sub2api/billing`, { headers, signal: AbortSignal.timeout(6000) });
+      if (res.ok) {
+        const j = await res.json().catch(() => null);
+        const v = j && (j.effective_rate_multiplier ?? j.resolved_rate_multiplier ?? j.group_rate_multiplier);
+        if (v != null && Number.isFinite(Number(v)) && Number(v) > 0) { global = String(v); source = "sub2api-billing"; }
+      }
+    } catch { /* 非 sub2api 网关 */ }
+  }
+  return { perModel, global, source };
+}
+
 async function probeGet(base, probe, key, authHeader) {
   const t0 = Date.now();
   const headers = key
@@ -1547,49 +1663,107 @@ const server = http.createServer(async (req, res) => {
     /* ── 模型目录同步（WBM → 本服务）────────────────────────────────────────────
        拉 WBM /api/model-catalog，归一化成客户端要的字段；credits（积分倍率）原样保留 ——
        ⛔ 倍率是"消耗速度随模型而定"的**唯一真相源**，本服务只转发不重写。 */
+    async function collectCatalogRows(base, authKey) {
+      const headers = authKey ? { Authorization: `Bearer ${authKey}` } : {};
+      const tried = [];
+      let rows = null;
+      let source = "catalog";
+      let payload = null;
+      for (const candidate of catalogCandidates(base)) {
+        try {
+          const res = await fetch(candidate.url, { headers });
+          if (!res.ok) { tried.push(`${candidate.name} HTTP ${res.status}`); continue; }
+          const body = await res.json().catch(() => null);
+          const got = modelsFromPayload(body);
+          if (got && got.length) { payload = body; rows = got; source = /v1\/models|\/models$/i.test(candidate.url) ? "openai" : "catalog"; break; }
+          tried.push(`${candidate.name} 返回的不是模型列表${got ? "（空列表）" : ""}`);
+        } catch (error) {
+          tried.push(`${candidate.name} ${classifyFetchError(error)}`);
+        }
+      }
+      if (rows && source === "openai") {
+        try {
+          const { openai } = splitUpstreamBase(base);
+          const claudeRows = await fetchModelsByProtocol(`${openai}/models`, authKey, "anthropic");
+          if (claudeRows && claudeRows.length) {
+            const have = new Set(rows.map((m) => String((m && m.id) || "").trim()));
+            for (const m of claudeRows) {
+              const id = String((m && m.id) || "").trim();
+              if (id && !have.has(id)) { rows.push(m); have.add(id); }
+            }
+          }
+        } catch { /* 不支持 Anthropic 头就跳过 */ }
+      }
+      return { rows, source, payload, tried };
+    }
+
     async function pullModelCatalog(force = false) {
-      const fresh = Date.now() - Number(db.modelCatalog.syncedAt || 0) < MODEL_SYNC_TTL_MS;
+      /* ⛔ 10-22 用户：「我都换了，没有自动跟随更新」——缓存只按时间算：换上游地址后 30 分钟内
+         仍命中旧缓存 ⇒ 永远不同步新地址。fresh 必须同时要求「目录来自当前这个上游」。 */
+      const sameBase = (db.modelCatalog.base || "") === currentCatalogBase();
+      const fresh = sameBase && Date.now() - Number(db.modelCatalog.syncedAt || 0) < MODEL_SYNC_TTL_MS;
       if (!force && fresh && Array.isArray(db.modelCatalog.list) && db.modelCatalog.list.length) return { ok: true, cached: true };
       /* ⛔ 用 currentCatalogBase()（管理员可配），**不是** WBM_BASE 常量 ——
          否则"改了上游地址、点同步却还是拉旧地址"（配了没用，10-18 实测就是这个坑）。 */
       const catalogBase = currentCatalogBase();
-      if (!catalogBase) return { ok: false, error: "wbm-not-configured" };
+      if (!catalogBase) return { ok: false, error: "catalog-not-configured", message: "还没配置上游地址（或环境变量里没有）" };
       try {
         /* ⛔ 10-18：目录来源**不止 WBM**。用户实测：上游是 OpenAI 兼容网关 ——
            `/api/model-catalog` 返 **401**、而 `/v1/models` 有 50 个模型 ⇒ 必须能回落。
            ⛔ 两源统一映射成同一份 list；OpenAI 源**没有倍率** ⇒ 打 `creditsMissing` 标记，
               由面板提示「未设倍率（当前免费）」。⛔ 绝不猜一个默认倍率 —— 猜错就是多扣钱。 */
         const authKey = WBM_TOKEN || currentGatewayKey();
-        let data = null;
-        let source = "wbm";
-        const wbmRes = await fetch(`${catalogBase}/api/model-catalog?realm=cn`, { headers: authKey ? { Authorization: `Bearer ${authKey}` } : {} });
-        if (wbmRes.ok) {
-          data = await wbmRes.json();
-        } else {
-          const oaRes = await fetch(`${catalogBase}/v1/models`, { headers: authKey ? { Authorization: `Bearer ${authKey}` } : {} });
-          if (!oaRes.ok) return { ok: false, error: `catalog-http-${wbmRes.status}/${oaRes.status}` };
-          data = await oaRes.json();
-          source = "openai";
+        /* ⛔ 10-22 修三个实测坑（用户贴图：填 `https://cn.pptoken.cc` 明明 /v1/models 有 12 个模型，
+           面板仍报「同步失败：wbm-unreachable」）：
+           ① 地址里带 `/v1` 时，旧代码拼成 `/v1/api/model-catalog`、`/v1/v1/models` ⇒ 打到 catch-all
+              拿回 200 HTML，`.json()` 抛异常；
+           ② 旧代码把「200 但 body 不是 JSON」当成致命错误直接进 catch ⇒ **连 OpenAI 回落的门都没进**；
+           ③ 只认 `data` / `models` 两种形状。
+           现在：先按**根**拉管理目录，失败（含解析失败、抛异常）再按 `/v1` 拉 OpenAI 列表；
+           形状统一交给 modelsFromPayload；两条都拿不到才报错，并把每条的原因带回面板。 */
+        /* ⛔ 10-22 用户：「适配性强，不要写死，只要地址和密钥填了就要识别出来」。
+           候选表与「测试连通性」共用（catalogCandidates），按顺序试、谁先给出列表用谁：
+           地址带不带 /v1 都覆盖；以后加新协议只改那张表，这里不动。 */
+        const { rows, source, payload: data, tried } = await collectCatalogRows(catalogBase, authKey);
+        if (!rows) {
+          /* ★ 10-22 用户：「直接清空，不要留着」——**换了上游地址**且新地址给不出列表时，
+             旧目录已经不代表任何东西（还挂着旧倍率）⇒ 直接清掉，不留在界面上误导。
+             ⛔ 只有「目录来自的地址 ≠ 当前地址」才清；同一地址的偶发失败仍保留（不因一次网络抖动丢数据）。 */
+          const changedBase = Boolean(db.modelCatalog.base) && db.modelCatalog.base !== catalogBase;
+          if (changedBase) {
+            db.modelCatalog = { syncedAt: 0, list: [], available: [], base: "", rateSource: "", catalogSource: "" };
+            persist();
+          }
+          lastCatalogError = { error: "catalog-unreachable", base: catalogBase, message: sanitize(`上游 ${catalogBase} 没给出模型列表：${tried.join(" · ")}`) };
+          return { ok: false, cleared: changedBase, ...lastCatalogError };
         }
-        const rows = source === "openai" ? (data.data || data.models || []) : (data.models || []);
+        /* 上游倍率（逐模型 pricing / 账号级 billing），拿不到就留空。 */
+        const rates = await readUpstreamRates(catalogBase, authKey).catch(() => ({ perModel: new Map(), global: null, source: "" }));
+        const rateFor = (id) => rates.perModel.get(id) || rates.global || "";
         const list = rows.map((m) => {
           /* OpenAI 形状只有 id / object / created / owned_by：其余字段留空并标「缺倍率」 */
           if (source === "openai") {
             const oaId = String(m.id || "").trim();
+            const oaRate = String((m && (m.credits ?? m.credit ?? m.rate ?? m.ratio)) || "").trim() || rateFor(oaId);
             return {
-              id: oaId, name: oaId,
-              description: "OpenAI 兼容目录（上游未提供倍率与规格）",
-              credits: "", tags: [], series: "",
+              /* ⛔ name = **映射后的展示名**，id 仍是上游 id（调用要用它）；upstreamName 留底便于回退。 */
+              id: oaId, name: modelLabelFor(oaId, oaId, m), upstreamName: oaId,
+              description: oaRate ? "OpenAI / Claude 兼容目录（倍率取自上游 pricing / billing）" : "OpenAI 兼容目录（上游未提供倍率与规格）",
+              credits: oaRate, tags: [], series: "",
               contextLength: null, maxOutputTokens: null,
               supportsImages: false, supportsReasoning: false,
-              creditsMissing: true,
+              creditsMissing: !oaRate,
             };
           }
+          const cid = String(m.id || "").trim();
+          const upstreamName = String(m.name || m.id || "").trim();
           return {
-            id: String(m.id || "").trim(),
-            name: String(m.name || m.id || "").trim(),
+            id: cid,
+            name: modelLabelFor(cid, upstreamName, m),
+            upstreamName,
             description: String(m.description || "").slice(0, 200),
-            credits: String(m.credits || "").trim(),
+            /* WBM 目录自带倍率；个别网关叫 credit / rate / ratio，统一兜住，最后再落上游 pricing/billing。 */
+            credits: String(m.credits ?? m.credit ?? m.rate ?? m.ratio ?? "").trim() || rateFor(cid),
             tags: Array.isArray(m.tags) ? m.tags.slice(0, 6).map(String) : [],
             series: String(m.series || ""),
             contextLength: Number(m.context_length || 0) || null,
@@ -1633,18 +1807,24 @@ const server = http.createServer(async (req, res) => {
         const ids = new Set(list.map((m) => m.id));
         db.modelCatalog = {
           syncedAt: Date.now(),
-          realm: source === "openai" ? "openai" : String(data.realm || "cn"),
+          realm: source === "openai" ? "openai" : String((data && data.realm) || "cn"),
           /* ⛔ 记下目录来源：面板据此提示「上游没给倍率，需手动填」（openai 源一定缺倍率） */
-          source: source === "openai" ? "openai-compat" : String(data.source_label || data.source || "wbm"),
+          source: source === "openai" ? "openai-compat" : String((data && (data.source_label || data.source)) || "catalog"),
           catalogSource: source,
+          rateSource: rates.source || "",
+          /* 10-22 用户：「我都换了，没有自动跟随更新」——记下这份目录是**哪个上游**拉的，
+             换地址后同步失败仍会保留旧目录，但面板必须能指出「这是旧上游的」。 */
+          base: catalogBase,
           list,
           ...(prevAvail ? { available: prevAvail.filter((x) => ids.has(x)) } : {}),
         };
         persist();
+        lastCatalogError = null;
         return { ok: true, count: list.length, syncedAt: db.modelCatalog.syncedAt };
       } catch (error) {
         /* ⛔ 出错信息可能含 URL/凭据（fetch 的 TypeError 会把地址带进来）⇒ 必须脱敏 */
-        return { ok: false, error: "wbm-unreachable", message: sanitize(error && error.message) };
+        lastCatalogError = { error: "catalog-unreachable", message: sanitize(error && error.message) };
+        return { ok: false, ...lastCatalogError };
       }
     }
 
@@ -2101,6 +2281,19 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+    if (p === "/admin/models/clear" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      if (!body || body.confirm !== true) return send(400, { ok: false, error: "需要确认（confirm: true）" });
+      const before = Array.isArray(db.modelCatalog.list) ? db.modelCatalog.list.length : 0;
+      /* ⛔ 10-22：清空后必须**暂停自动同步** —— 否则面板一刷新就按当前上游重新拉满，
+         用户看到的就是「点了清空没反应」。只有手动「重新同步目录」/保存上游才解除。 */
+      db.modelCatalog = { syncedAt: 0, list: [], available: [], base: "", rateSource: "", catalogSource: "", autoSyncDisabled: true };
+      persist();
+      console.log(`[catalog] ${me.username} 清空模型目录（原有 ${before} 个，自动同步已暂停）`);
+      return send(200, { ok: true, cleared: before });
+    }
+    /* 管理员：立刻重新拉取模型目录（force 绕过缓存） */
     /* 管理员：立刻重新拉取模型目录（force 绕过缓存） */
     if (p === "/admin/models/sync" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
@@ -2110,6 +2303,14 @@ const server = http.createServer(async (req, res) => {
     /* ── 10-15 管理员模型管理：目录 + 每用户可用模型 + 倍率 ─────────────── */
     if (p === "/admin/models" && req.method === "GET") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      /* 10-22 用户问「模型目录不是自动新增吗」：原来只有客户端 /models 与手动按钮会拉目录，
+         管理员打开本页看到的可能是几小时前的快照 ⇒ 这里按 TTL（默认 30 分钟）自动补一次。 */
+      /* 10-22 用户：「自动刷新缓存」——面板带 ?refresh=1 时强制重拉（绕 30 分钟 TTL），
+         用来「打开页面就刷新 / 每两分钟自动刷一次」；不带参数仍走 TTL，避免客户端请求打爆上游。 */
+      const forceRefresh = /(?:^|&)refresh=1(?:&|$)/.test(String(req.url || "").split("?")[1] || "");
+      /* 用户手动清空过 ⇒ 不自动拉（否则立刻被填回来）；手动刷新/保存上游不受限制。 */
+      const held = Boolean(db.modelCatalog.autoSyncDisabled) && !forceRefresh;
+      const autoPulled = held ? null : await pullModelCatalog(forceRefresh).catch(() => null);
       const users = db.users.map((u) => ({
         username: u.username,
         role: u.role,
@@ -2121,6 +2322,20 @@ const server = http.createServer(async (req, res) => {
         available: Array.isArray(db.modelCatalog.available) ? db.modelCatalog.available : null,
         syncedAt: db.modelCatalog.syncedAt || 0,
         source: db.modelCatalog.source || "",
+        autoSynced: Boolean(autoPulled && autoPulled.ok),
+        syncError: lastCatalogError ? lastCatalogError.error : "",
+        syncMessage: lastCatalogError ? lastCatalogError.message : "",
+        /* ⛔ 必须是 currentCatalogBase()（本作用域没有 catalogBase —— 那是 pullModelCatalog 的局部量）；
+           面板据此显示「到底在从哪个地址拉目录」，不然报错只说「没给出列表」，排查无从下手。 */
+        catalogBase: currentCatalogBase(),
+        rateSource: db.modelCatalog.rateSource || "",
+        /* 模型映射表（上游 id → 展示名）：面板「模型映射」区回显用；list 里的 name 已按它映射过。 */
+        modelMap: modelMapTable(),
+        mappedCount: (db.modelCatalog.list || []).filter((m) => m && m.upstreamName && m.name && m.name !== m.upstreamName).length,
+        catalogFrom: db.modelCatalog.base || "",
+        autoSyncPaused: Boolean(db.modelCatalog.autoSyncDisabled),
+        /* ⛔ 目录来源 ≠ 当前上游 ⇒ 面板显示「已过期」，而不是静默保留旧目录让用户以为没生效。 */
+        stale: Boolean(db.modelCatalog.base && db.modelCatalog.base !== currentCatalogBase()),
         users,
       });
     }
@@ -2188,8 +2403,80 @@ const server = http.createServer(async (req, res) => {
       console.log(`[admin] ${me.username} 将模型 ${id} 的倍率设为 ${credits || "免费"}${opRate === null ? "、闲时系数=跟随全局" : opRate !== undefined ? `、闲时系数=${opRate}` : ""}（已钉住，同步不覆盖）`);
       return send(200, { ok: true, id, credits, locked: true, offPeakRate: item.offPeakRate === undefined ? null : item.offPeakRate });
     }
+    if (p === "/admin/models/batch" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const ids = Array.isArray(body && body.ids) ? body.ids.map((x) => String(x).trim()).filter(Boolean) : [];
+      if (!ids.length) return send(400, { ok: false, error: "没有选择模型" });
+      const wanted = new Set(ids);
+      const targets = (db.modelCatalog.list || []).filter((m) => wanted.has(m.id));
+      if (!targets.length) return send(404, { ok: false, error: "选中的模型不在目录里（先同步目录）" });
+      /* 批量删除（10-22 用户：「还有批量删除功能」）——从目录里移除选中模型；
+         ⛔ 必须显式 confirm；同时把它们从「对用户开放」里剔除，避免留下幽灵 id。 */
+      if (body && body.delete === true) {
+        if (body.confirm !== true) return send(400, { ok: false, error: "删除需要确认（confirm: true）" });
+        const beforeCount = (db.modelCatalog.list || []).length;
+        db.modelCatalog.list = (db.modelCatalog.list || []).filter((m) => !wanted.has(m.id));
+        if (Array.isArray(db.modelCatalog.available)) {
+          db.modelCatalog.available = db.modelCatalog.available.filter((id) => !wanted.has(id));
+        }
+        persist();
+        const removed = beforeCount - db.modelCatalog.list.length;
+        console.log(`[admin] ${me.username} 批量删除 ${removed} 个模型`);
+        return send(200, { ok: true, deleted: removed, remaining: db.modelCatalog.list.length });
+      }
+      if (body && body.reset === true) {
+        for (const item of targets) {
+          item.credits = String(item.upstreamCredits || "");
+          delete item.creditsLocked;
+        }
+        persist();
+        console.log(`[admin] ${me.username} 批量恢复上游倍率 ${targets.length} 个模型`);
+        return send(200, { ok: true, updated: targets.length, reset: true });
+      }
+      /* 10-22 用户「闲时倍率设置不考虑到?」——批量也要能设/清**闲时系数**，语义与单条一致：
+         undefined = 不动；null = 清除（跟随全局）；数字 = 该模型自己的系数。 */
+      const hasCredits = body && body.credits !== undefined;
+      const hasOffPeak = body && body.offPeakRate !== undefined;
+      if (!hasCredits && !hasOffPeak) return send(400, { ok: false, error: "没有要修改的字段" });
+      let credits = "";
+      if (hasCredits) {
+        const rawCredits = String(body.credits === undefined ? "" : body.credits).trim();
+        if (rawCredits && rawCredits !== "0") {
+          const n = Number(rawCredits.replace(/^x/i, ""));
+          if (!Number.isFinite(n) || n < 0) return send(400, { ok: false, error: "倍率必须是数字（如 0.29）或留空表示免费" });
+          credits = "x" + String(n);
+        }
+      }
+      let opRate;
+      if (hasOffPeak) {
+        const rawOp = body.offPeakRate === null ? "" : String(body.offPeakRate).trim();
+        if (rawOp === "") opRate = null;
+        else {
+          const n = Number(rawOp.replace(/^x/i, ""));
+          if (!Number.isFinite(n) || n < 0) return send(400, { ok: false, error: "闲时倍率必须是数字（如 0.05）或留空表示跟随全局" });
+          opRate = n;
+        }
+      }
+      for (const item of targets) {
+        if (hasCredits) {
+          item.credits = credits;
+          item.creditsLocked = true;
+        }
+        if (hasOffPeak) {
+          if (opRate === null) delete item.offPeakRate;
+          else item.offPeakRate = opRate;
+        }
+      }
+      persist();
+      console.log(`[admin] ${me.username} 批量更新 ${targets.length} 个模型：${hasCredits ? `倍率=${credits || "免费"}（已钉住）` : ""}${hasCredits && hasOffPeak ? "、" : ""}${hasOffPeak ? `闲时=${opRate === null ? "跟随全局" : opRate}` : ""}`);
+      return send(200, { ok: true, updated: targets.length, credits: hasCredits ? credits : undefined, offPeakRate: hasOffPeak ? opRate : undefined });
+    }
     /* ── 10-18 闲时（限时）倍率：管理员可改 ──────────────────────────────
        语义：**折扣系数，乘在模型倍率之上**。读取用于界面回显 + 显示当前命中窗口。 */
+    /* 管理员：**批量**改倍率 / 批量恢复上游（10-22 用户：「模型管理加一个批量管理功能」）。
+       ⛔ 与单条 /admin/models/credits 同一套归一化与「钉住」语义，只是作用在多个 id 上；
+       ⛔ 先全量校验再落字段（中途 400 不能留下半截状态）。 */
     if (p === "/admin/offpeak" && req.method === "GET") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       return send(200, {
@@ -2560,14 +2847,25 @@ const server = http.createServer(async (req, res) => {
       }
       const providedKey = String(body && body.gatewayKey || "").trim();
       const prev = db.upstream || {};
-      db.upstream = { base: norm.base, catalogBase, gatewayKey: providedKey || prev.gatewayKey || "" };
+      /* ⛔ 展开 prev：直接重建对象会把 `modelMap`（模型映射表）冲掉 —— 改个地址就丢映射。 */
+      db.upstream = { ...prev, base: norm.base, catalogBase, gatewayKey: providedKey || prev.gatewayKey || "" };
       persist();
       console.log(`[upstream] ${me.username} 更新上游 API 地址 → ${norm.base}${catalogBase ? `（目录同步 → ${catalogBase}）` : ""}${providedKey ? "（含新网关密钥）" : "（沿用原网关密钥）"}${norm.insecure ? " ⚠️ http 明文" : ""}`);
+      /* ★ 10-22 用户：「只要 API 地址和密钥填了，模型目录就要更新并且识别出来」——
+         保存后立刻按候选表拉一次目录（最多等 6 秒，慢上游不拖死保存按钮）；
+         结果随回执返回，面板直接显示「已识别 N 个模型」或具体原因。 */
+      const pulled = await Promise.race([
+        pullModelCatalog(true),
+        new Promise((resolve) => setTimeout(() => resolve(null), 6000)),
+      ]);
       return send(200, {
         ok: true, base: norm.base, catalogBase,
         hasKey: Boolean(db.upstream.gatewayKey),
         insecure: norm.insecure,
         warning: norm.insecure ? "http 明文传输：仅建议内网使用" : "",
+        sync: pulled
+          ? { ok: Boolean(pulled.ok), count: pulled.count || 0, error: pulled.error || "", message: pulled.message || "" }
+          : { ok: false, pending: true, message: "上游响应较慢，目录同步仍在后台进行（打开「模型管理」会自动补一次）" },
       });
     }
     /* 连通性测试（10-18 用户令「为上游 API 地址增加连通性测试功能」）。
@@ -2580,34 +2878,249 @@ const server = http.createServer(async (req, res) => {
       if (!norm.ok) return send(400, { ok: false, error: norm.error });
       const key = String(body && body.gatewayKey || "").trim() || currentGatewayKey();
       const started = Date.now();
-      /* 依次探测：WBM 专有目录端点 → OpenAI 兼容 /v1/models。
-         命中哪个就说明这个地址属于哪一类 —— 管理员据此决定"要不要单独填目录同步地址"。 */
-      const probes = [
-        { name: "模型目录（WBM）", path: "/api/model-catalog?realm=cn", wantList: true },
-        { name: "OpenAI 兼容 /v1/models", path: "/v1/models", wantList: true },
-      ];
+      /* 依次探测**候选表**（catalogCandidates：管理目录 → OpenAI /v1/models → 通用 /models）。
+         ⛔ 全部标 optional：对普通网关来说「没有管理目录」是正常形态 —— 有一行通了就说明
+            这个地址能识别模型，其余未提供的不算错误（旧版把 404 画成红叉，用户以为坏了）。
+         ⛔ 只有**一条都不通**时，才逐条给原因。 */
+      const probes = catalogCandidates(norm.base).map((c) => ({ name: c.name, url: c.url, wantList: true, optional: true }));
+      /* 10-22 用户：「openai 跟 Claude 协议都识别不出来吗」——同一个 /v1/models 换 Anthropic 头
+         （x-api-key + anthropic-version）常能多列出一批 Claude 模型，这里单独作为一条候选。 */
+      if (key) {
+        const { openai } = splitUpstreamBase(norm.base);
+        probes.push({ name: "Claude 协议 /v1/models", url: `${openai}/models`, authMode: "anthropic", wantList: true, optional: true });
+      }
       const results = [];
       for (const probe of probes) results.push(await probeGet(norm.base, probe, key, "bearer"));
-      const best = bestProbe(results);
-      console.log(`[upstream] ${me.username} 连通性测试 ${norm.base} → ${best ? "连通" : "不可达"}（${results.map((x) => `${x.status || "ERR"}@${x.ms}ms`).join(" / ")}）`);
+      /* ⛔ 10-22「上面识别出来了，下面自动更新啊」——用户把绿色 ✓ 当成"识别成功"，
+         但那三行其实是「HTTP 200 + 返回网页」，一个模型都没解析出来。
+         ⇒ 结论必须分三档：① 真拿到列表（recognized）② 能连通但读不到列表 ③ 完全不通。
+         只有第 ① 档才算成功；第 ② 档给⚙️ 可复制的下一步（多半是地址填成了控制台首页）。 */
+      const modelProbe = results.find((x) => x.ok && x.count != null) || null;
+      const reachable = results.find((x) => x.ok) || null;
+      console.log(`[upstream] ${me.username} 连通性测试 ${norm.base} → ${modelProbe ? `识别 ${modelProbe.count} 个模型` : reachable ? "能连通但读不到列表" : "不可达"}（${results.map((x) => `${x.status || "ERR"}@${x.ms}ms`).join(" / ")}）`);
       return send(200, {
-        ok: Boolean(best),
+        ok: Boolean(reachable),
+        recognized: Boolean(modelProbe),
         base: norm.base,
+        /* 10-22 现场：用户在上面「测试连通性」看到 12 个模型，但没点「保存」⇒
+           下面的模型管理还在用旧地址（mg 控制台）拉目录，永远空。
+           这两个字段让面板能直接提示「本次测试的地址还没保存」，并给一键保存。 */
+        savedBase: currentUpstreamBase(),
+        savedCatalogBase: currentCatalogBase(),
+        changed: norm.base !== currentUpstreamBase() || norm.base !== currentCatalogBase(),
         insecure: norm.insecure,
         warning: norm.insecure ? "http 明文传输：仅建议内网使用" : "",
         hasKey: Boolean(key),
         elapsedMs: Date.now() - started,
         probes: results,
-        message: best
-          ? `连通：${best.name}${best.count != null ? `，${best.count} 个模型` : ""}（${best.ms}ms）`
-          : "不可达：两个端点都没成功 —— 看下面每一行的原因",
+        modelCount: modelProbe ? modelProbe.count : null,
+        modelSource: modelProbe ? modelProbe.name : "",
+        message: modelProbe
+          ? `连通：${modelProbe.name}，${modelProbe.count} 个模型（${modelProbe.ms}ms）`
+          : reachable
+            ? (reachable.html
+              ? `这个地址打开的是**控制台网页**（返回 HTML${reachable.redirected ? "，并跳转到登录页" : ""}），不是模型 API。请改填 API 根：https://你的域名/v1 或 https://你的域名/claude-code/default（本产品记忆网关的默认实例）。`
+              : "能连通，但读不到模型列表：返回内容不是模型数组。确认这个地址是不是 API 根（多数网关是 /v1/models）。")
+            
+            : "不可达：候选端点都不通 —— 看下面每一行的原因",
       });
+    }
+    if (p === "/admin/upstream/models" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const base = currentCatalogBase();
+      const catalogIds = (db.modelCatalog.list || []).map((m) => String((m && m.id) || "").trim()).filter(Boolean);
+      if (!base) return send(200, { ok: false, ids: catalogIds, fromCatalog: catalogIds.length, error: "catalog-not-configured", message: "还没配置上游地址" });
+      const authKey = WBM_TOKEN || currentGatewayKey();
+      let fetched = { rows: null, source: "", tried: [] };
+      try {
+        /* ⛔ 面板打开就问上游一次：上游若半死（TCP 连着不回包）会把这个接口挂住 ⇒ 12 秒上限，
+           超时按「没给出列表」处理，面板照常手填，不等它。 */
+        fetched = await Promise.race([
+          collectCatalogRows(base, authKey),
+          new Promise((resolve) => setTimeout(() => resolve({ rows: null, source: "", tried: ["上游 12 秒内没响应（超时）"] }), 12_000)),
+        ]);
+      } catch (error) {
+        fetched = { rows: null, source: "", tried: [classifyFetchError(error)] };
+      }
+      /* 上游 id 优先（保持上游顺序），再补目录里有、上游没回的（例如别名的旧记录）。 */
+      const ids = [];
+      const seen = new Set();
+      for (const row of fetched.rows || []) {
+        const id = String((row && row.id) || "").trim();
+        if (id && !seen.has(id)) { seen.add(id); ids.push(id); }
+      }
+      const upstreamCount = ids.length;
+      for (const id of catalogIds) if (id && !seen.has(id)) { seen.add(id); ids.push(id); }
+      /* 展示名（映射后）：目录里有就用目录的 upstreamName 兜底，再套映射表。
+         ⛔ 下拉显示映射后名字、value 仍是上游 id —— 不然选中就直接拿错 id 去调用了。 */
+      const nameOf = new Map();
+      for (const item of (db.modelCatalog.list || [])) {
+        const id = String((item && item.id) || "").trim();
+        if (id) nameOf.set(id, String(item.upstreamName || item.id || ""));
+      }
+      for (const row of fetched.rows || []) {
+        const id = String((row && row.id) || "").trim();
+        if (id && !nameOf.has(id)) nameOf.set(id, String((row && (row.name || row.id)) || ""));
+      }
+      const items = ids.map((id) => ({ id, name: modelLabelFor(id, nameOf.get(id) || id) }));
+      return send(200, {
+        ok: Boolean(upstreamCount),
+        ids,
+        items,
+        mappedCount: items.filter((it) => it.name && it.name !== it.id).length,
+        upstreamCount,
+        fromCatalog: catalogIds.length,
+        source: fetched.source || "",
+        base,
+        message: upstreamCount
+          ? `上游实时返回 ${upstreamCount} 个模型${ids.length > upstreamCount ? `（并上目录共 ${ids.length} 个）` : ""}`
+          : `上游没给出模型列表：${(fetched.tried || []).join(" · ") || "未知原因"}`,
+      });
+    }
+    /* 管理员：**模型映射表**（读 / 写）。10-22 用户：「我要求同步出来模型映射后的模型，sub2ai 也是一样」。
+       支持两种提交：`{ map: {上游id: 展示名} }` 或 `{ text: "a => b\n..." }`（`=>` `->` `=` 制表符/逗号/竖线都认）。
+       ⛔ 只改展示名（name），不动 id；写完成即就地重算目录，不用重拉上游。 */
+    if (p === "/admin/upstream/model-map" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const map = modelMapTable();
+      return send(200, { ok: true, map, count: Object.keys(map).length });
+    }
+    if (p === "/admin/upstream/probe-map" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const base = currentUpstreamBase();
+      const authKey = WBM_TOKEN || currentGatewayKey();
+      if (!base) return send(400, { ok: false, error: "还没配置上游地址" });
+      const onlyMissing = Boolean(body && body.onlyMissing);
+      const limit = Math.max(1, Math.min(60, Number(body && body.limit) || 20));
+      const existing = modelMapTable();
+      const ids = (db.modelCatalog.list || [])
+        .map((m) => String((m && m.id) || "").trim())
+        .filter((id) => id && !(onlyMissing && existing[id]))
+        .slice(0, limit);
+      if (!ids.length) return send(200, { ok: true, map: existing, probed: 0, found: 0, echoed: 0, failed: 0, message: "目录里没有需要探测的模型" });
+
+      const { root, openai } = splitUpstreamBase(base);
+      const post = async (url, headers, payload) => {
+        const res = await fetch(url, {
+          method: "POST", headers: { "content-type": "application/json", ...headers },
+          body: JSON.stringify(payload), signal: AbortSignal.timeout(10_000),
+        });
+        const text = await res.text().catch(() => "");
+        return { status: res.status, ok: res.ok, text };
+      };
+      const probeOne = async (id) => {
+        const bearer = authKey ? { Authorization: `Bearer ${authKey}` } : {};
+        const anthropic = { ...(authKey ? { "x-api-key": authKey } : {}), "anthropic-version": "2023-06-01" };
+        let lastError = "";
+        for (const step of [
+          { url: `${openai}/chat/completions`, headers: bearer, payload: { model: id, max_tokens: 1, stream: false, messages: [{ role: "user", content: "hi" }] } },
+          { url: `${root}/chat/completions`, headers: bearer, payload: { model: id, max_tokens: 1, stream: false, messages: [{ role: "user", content: "hi" }] } },
+          { url: `${openai}/messages`, headers: anthropic, payload: { model: id, max_tokens: 1, messages: [{ role: "user", content: "hi" }] } },
+        ]) {
+          try {
+            const r = await post(step.url, step.headers, step.payload);
+            if (r.status === 404 || r.status === 405) continue;
+            if (!r.ok) { lastError = `HTTP ${r.status}`; break; }
+            let j = null; try { j = JSON.parse(r.text); } catch { /* 非 JSON 当没探到 */ }
+            const got = String((j && (j.model || (j.message && j.message.model))) || "").trim();
+            return got ? { ok: true, model: got } : { ok: false, message: "响应里没有 model 字段" };
+          } catch (error) {
+            lastError = classifyFetchError(error);
+          }
+        }
+        return { ok: false, message: lastError || "端点都不通" };
+      };
+
+      const map = { ...existing };
+      let found = 0, echoed = 0, failed = 0;
+      const results = [];
+      /* 并发 5：几十个模型也能在一分钟内跑完，又不至于把上游打爆。 */
+      for (let i = 0; i < ids.length; i += 5) {
+        const chunk = ids.slice(i, i + 5);
+        const done = await Promise.all(chunk.map(async (id) => ({ id, r: await probeOne(id) })));
+        for (const { id, r } of done) {
+          if (r.ok && r.model && r.model !== id) { map[id] = r.model; found += 1; results.push({ id, model: r.model, state: "mapped" }); }
+          else if (r.ok && r.model === id) { echoed += 1; results.push({ id, model: r.model, state: "echoed" }); }
+          else { failed += 1; results.push({ id, model: "", state: "failed", message: r.message || "" }); }
+        }
+      }
+      if (found) {
+        db.upstream = { ...(db.upstream || {}), modelMap: map };
+        persist();
+        applyModelMap();
+      }
+      console.log(`[upstream] ${me.username} 自动探测映射：探测 ${ids.length}，发现 ${found}，回显 ${echoed}，失败 ${failed}`);
+      return send(200, {
+        ok: found > 0,
+        map, probed: ids.length, found, echoed, failed, results,
+        message: found
+          ? `探测 ${ids.length} 个：发现 ${found} 个映射${echoed ? `，${echoed} 个上游原样回显（看不出映射）` : ""}${failed ? `，${failed} 个失败` : ""}`
+          : `探测 ${ids.length} 个：没发现映射${echoed ? `（${echoed} 个原样回显请求的 id —— 这个上游的映射不会体现在响应里）` : ""}${failed ? `，${failed} 个失败` : ""}`,
+      });
+    }
+    /* 管理员：**聊天测试**（10-22 用户：「加一个聊天测试功能」）。
+       ⛔ 只发一次非流式请求，用来现场验证「这个模型 id 到底通不通 / 上游到底回什么」；
+       ⛔ 先试 OpenAI 兼容 /chat/completions，404/405 再试 Anthropic /messages（同一把密钥换头）。 */
+    if (p === "/admin/upstream/chat" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const model = String(body && body.model || "").trim();
+      const prompt = String(body && body.prompt || "").trim();
+      if (!model) return send(400, { ok: false, error: "先选一个模型 id" });
+      if (!prompt) return send(400, { ok: false, error: "先写一句测试内容" });
+      const key = currentGatewayKey();
+      const { openai } = splitUpstreamBase(currentCatalogBase());
+      const maxTokens = Math.min(Math.max(Number(body && body.maxTokens) || 256, 16), 1024);
+      const t0 = Date.now();
+      const tried = [];
+      /* ① OpenAI 兼容 */
+      try {
+        const res = await fetch(`${openai}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+          body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], max_tokens: maxTokens, stream: false }),
+          signal: AbortSignal.timeout(45000),
+        });
+        const text = await res.text().catch(() => "");
+        if (res.ok) {
+          let j = null; try { j = JSON.parse(text); } catch { /* 非 JSON 交给下面兜底 */ }
+          const content = j && j.choices && j.choices[0] && (j.choices[0].message && j.choices[0].message.content || j.choices[0].text);
+          if (content != null) {
+            return send(200, { ok: true, protocol: "openai", status: res.status, ms: Date.now() - t0, model: (j && j.model) || model, content: String(content).slice(0, 4000), usage: (j && j.usage) || null });
+          }
+          tried.push(`/chat/completions 200 但没解析出内容：${text.slice(0, 120)}`);
+        } else {
+          tried.push(`/chat/completions HTTP ${res.status}：${text.slice(0, 160)}`);
+        }
+      } catch (error) { tried.push(`/chat/completions ${classifyFetchError(error)}`); }
+      /* ② Anthropic Messages 回落 */
+      try {
+        const res = await fetch(`${openai}/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "anthropic-version": "2023-06-01", ...(key ? { "x-api-key": key } : {}) },
+          body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }),
+          signal: AbortSignal.timeout(45000),
+        });
+        const text = await res.text().catch(() => "");
+        let j = null; try { j = JSON.parse(text); } catch { /* ignore */ }
+        const content = j && Array.isArray(j.content) ? j.content.map((c) => c && c.text).filter(Boolean).join("\n") : "";
+        if (res.ok && content) {
+          return send(200, { ok: true, protocol: "anthropic", status: res.status, ms: Date.now() - t0, model: (j && j.model) || model, content: content.slice(0, 4000), usage: (j && j.usage) || null });
+        }
+        tried.push(res.ok ? "/messages 200 但没解析出内容" : `/messages HTTP ${res.status}：${text.slice(0, 160)}`);
+      } catch (error) { tried.push(`/messages ${classifyFetchError(error)}`); }
+      return send(502, { ok: false, error: "chat-test-failed", message: sanitize(tried.join(" · ")) || "上游没有返回内容" });
     }
     /* ── 知识库 / 记忆空间上游（10-18 用户令「为知识库和记忆空间预留可配置的接口」）────
        GET  回显：面板值 + **当前生效值** + 环境变量原值（管理员一眼看出"到底在用哪个"）
        POST 保存：字段留空 = **回退环境变量**（⛔ 不是清空）；保存后 applyServiceOverrides **热生效**
        POST .../test：只发 GET 的连通性探测（⛔ 绝不发写请求；⛔ 回执不含密钥）
        ⛔ 地址走 normalizeUpstreamBase（http / 裸主机 / 内网 / 端口 / 路径前缀都接受）。 */
+    /* 管理员：**聊天测试的可选模型**（10-22 用户：「这个聊天测试，能选的模型太少了」）。
+       原来下拉只吃 `/admin/models` 的目录（会被排除表/清空/手动删除影响，且目录没同步就没了）
+       ⇒ 这里**直接问上游要全量 id**（不落盘、不过滤、不去重合并目录），再并上目录里的 id。
+       ⛔ 只读：不改目录、不改倍率；拉不到就回 `ids` = 目录那份 + 逐条原因，面板照常手填。 */
     if (p === "/admin/services" && req.method === "GET") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const kb = db.services.kb || {};
