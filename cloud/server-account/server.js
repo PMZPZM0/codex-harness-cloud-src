@@ -434,38 +434,6 @@ function explainProbeStatus(status) {
 
 let lastCatalogError = null;
 
-function modelMapTable() {
-  const m = db && db.upstream && db.upstream.modelMap;
-  return m && typeof m === "object" && !Array.isArray(m) ? m : {};
-}
-
-function mappedFromRow(row) {
-  const r = row || {};
-  const v = r.mapped_model ?? r.mappedModel ?? r.target_model ?? r.targetModel
-    ?? r.upstream_model ?? r.upstreamModel ?? r.mapping_target ?? "";
-  return String(v || "").trim();
-}
-
-function modelLabelFor(id, upstreamName, row) {
-  const key = String(id || "").trim();
-  const auto = mappedFromRow(row);
-  if (auto && auto !== key) return auto;
-  const mapped = modelMapTable()[key];
-  return String(mapped || "").trim() || String(upstreamName || key).trim();
-}
-
-function applyModelMap() {
-  let changed = 0;
-  for (const item of (db.modelCatalog.list || [])) {
-    if (!item || !item.id) continue;
-    if (!item.upstreamName) item.upstreamName = String(item.name || item.id);
-    const next = modelLabelFor(item.id, item.upstreamName);
-    if (item.name !== next) { item.name = next; changed += 1; }
-  }
-  if (changed) persist();
-  return changed;
-}
-
 function splitUpstreamBase(base) {
   const b = String(base || "").trim().replace(/\/+$/, "");
   return { root: b.replace(/\/v1$/i, ""), openai: /\/v1$/i.test(b) ? b : `${b}/v1` };
@@ -1747,7 +1715,7 @@ const server = http.createServer(async (req, res) => {
             const oaRate = String((m && (m.credits ?? m.credit ?? m.rate ?? m.ratio)) || "").trim() || rateFor(oaId);
             return {
               /* ⛔ name = **映射后的展示名**，id 仍是上游 id（调用要用它）；upstreamName 留底便于回退。 */
-              id: oaId, name: modelLabelFor(oaId, oaId, m), upstreamName: oaId,
+              id: oaId, name: oaId, upstreamName: oaId,
               description: oaRate ? "OpenAI / Claude 兼容目录（倍率取自上游 pricing / billing）" : "OpenAI 兼容目录（上游未提供倍率与规格）",
               credits: oaRate, tags: [], series: "",
               contextLength: null, maxOutputTokens: null,
@@ -1759,7 +1727,7 @@ const server = http.createServer(async (req, res) => {
           const upstreamName = String(m.name || m.id || "").trim();
           return {
             id: cid,
-            name: modelLabelFor(cid, upstreamName, m),
+            name: upstreamName,
             upstreamName,
             description: String(m.description || "").slice(0, 200),
             /* WBM 目录自带倍率；个别网关叫 credit / rate / ratio，统一兜住，最后再落上游 pricing/billing。 */
@@ -2329,9 +2297,7 @@ const server = http.createServer(async (req, res) => {
            面板据此显示「到底在从哪个地址拉目录」，不然报错只说「没给出列表」，排查无从下手。 */
         catalogBase: currentCatalogBase(),
         rateSource: db.modelCatalog.rateSource || "",
-        /* 模型映射表（上游 id → 展示名）：面板「模型映射」区回显用；list 里的 name 已按它映射过。 */
-        modelMap: modelMapTable(),
-        mappedCount: (db.modelCatalog.list || []).filter((m) => m && m.upstreamName && m.name && m.name !== m.upstreamName).length,
+
         catalogFrom: db.modelCatalog.base || "",
         autoSyncPaused: Boolean(db.modelCatalog.autoSyncDisabled),
         /* ⛔ 目录来源 ≠ 当前上游 ⇒ 面板显示「已过期」，而不是静默保留旧目录让用户以为没生效。 */
@@ -2962,12 +2928,11 @@ const server = http.createServer(async (req, res) => {
         const id = String((row && row.id) || "").trim();
         if (id && !nameOf.has(id)) nameOf.set(id, String((row && (row.name || row.id)) || ""));
       }
-      const items = ids.map((id) => ({ id, name: modelLabelFor(id, nameOf.get(id) || id) }));
+      const items = ids.map((id) => ({ id, name: nameOf.get(id) || id }));
       return send(200, {
         ok: Boolean(upstreamCount),
         ids,
         items,
-        mappedCount: items.filter((it) => it.name && it.name !== it.id).length,
         upstreamCount,
         fromCatalog: catalogIds.length,
         source: fetched.source || "",
@@ -2975,88 +2940,6 @@ const server = http.createServer(async (req, res) => {
         message: upstreamCount
           ? `上游实时返回 ${upstreamCount} 个模型${ids.length > upstreamCount ? `（并上目录共 ${ids.length} 个）` : ""}`
           : `上游没给出模型列表：${(fetched.tried || []).join(" · ") || "未知原因"}`,
-      });
-    }
-    /* 管理员：**模型映射表**（读 / 写）。10-22 用户：「我要求同步出来模型映射后的模型，sub2ai 也是一样」。
-       支持两种提交：`{ map: {上游id: 展示名} }` 或 `{ text: "a => b\n..." }`（`=>` `->` `=` 制表符/逗号/竖线都认）。
-       ⛔ 只改展示名（name），不动 id；写完成即就地重算目录，不用重拉上游。 */
-    if (p === "/admin/upstream/model-map" && req.method === "GET") {
-      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
-      const map = modelMapTable();
-      return send(200, { ok: true, map, count: Object.keys(map).length });
-    }
-    if (p === "/admin/upstream/probe-map" && req.method === "POST") {
-      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
-      const body = await readBody();
-      const base = currentUpstreamBase();
-      const authKey = WBM_TOKEN || currentGatewayKey();
-      if (!base) return send(400, { ok: false, error: "还没配置上游地址" });
-      const onlyMissing = Boolean(body && body.onlyMissing);
-      const limit = Math.max(1, Math.min(60, Number(body && body.limit) || 20));
-      const existing = modelMapTable();
-      const ids = (db.modelCatalog.list || [])
-        .map((m) => String((m && m.id) || "").trim())
-        .filter((id) => id && !(onlyMissing && existing[id]))
-        .slice(0, limit);
-      if (!ids.length) return send(200, { ok: true, map: existing, probed: 0, found: 0, echoed: 0, failed: 0, message: "目录里没有需要探测的模型" });
-
-      const { root, openai } = splitUpstreamBase(base);
-      const post = async (url, headers, payload) => {
-        const res = await fetch(url, {
-          method: "POST", headers: { "content-type": "application/json", ...headers },
-          body: JSON.stringify(payload), signal: AbortSignal.timeout(10_000),
-        });
-        const text = await res.text().catch(() => "");
-        return { status: res.status, ok: res.ok, text };
-      };
-      const probeOne = async (id) => {
-        const bearer = authKey ? { Authorization: `Bearer ${authKey}` } : {};
-        const anthropic = { ...(authKey ? { "x-api-key": authKey } : {}), "anthropic-version": "2023-06-01" };
-        let lastError = "";
-        for (const step of [
-          { url: `${openai}/chat/completions`, headers: bearer, payload: { model: id, max_tokens: 1, stream: false, messages: [{ role: "user", content: "hi" }] } },
-          { url: `${root}/chat/completions`, headers: bearer, payload: { model: id, max_tokens: 1, stream: false, messages: [{ role: "user", content: "hi" }] } },
-          { url: `${openai}/messages`, headers: anthropic, payload: { model: id, max_tokens: 1, messages: [{ role: "user", content: "hi" }] } },
-        ]) {
-          try {
-            const r = await post(step.url, step.headers, step.payload);
-            if (r.status === 404 || r.status === 405) continue;
-            if (!r.ok) { lastError = `HTTP ${r.status}`; break; }
-            let j = null; try { j = JSON.parse(r.text); } catch { /* 非 JSON 当没探到 */ }
-            const got = String((j && (j.model || (j.message && j.message.model))) || "").trim();
-            return got ? { ok: true, model: got } : { ok: false, message: "响应里没有 model 字段" };
-          } catch (error) {
-            lastError = classifyFetchError(error);
-          }
-        }
-        return { ok: false, message: lastError || "端点都不通" };
-      };
-
-      const map = { ...existing };
-      let found = 0, echoed = 0, failed = 0;
-      const results = [];
-      /* 并发 5：几十个模型也能在一分钟内跑完，又不至于把上游打爆。 */
-      for (let i = 0; i < ids.length; i += 5) {
-        const chunk = ids.slice(i, i + 5);
-        const done = await Promise.all(chunk.map(async (id) => ({ id, r: await probeOne(id) })));
-        for (const { id, r } of done) {
-          if (r.ok && r.model && r.model !== id) { map[id] = r.model; found += 1; results.push({ id, model: r.model, state: "mapped" }); }
-          else if (r.ok && r.model === id) { echoed += 1; results.push({ id, model: r.model, state: "echoed" }); }
-          else { failed += 1; results.push({ id, model: "", state: "failed", message: r.message || "" }); }
-        }
-      }
-      if (found) {
-        db.upstream = { ...(db.upstream || {}), modelMap: map };
-        persist();
-        applyModelMap();
-      }
-      console.log(`[upstream] ${me.username} 自动探测映射：探测 ${ids.length}，发现 ${found}，回显 ${echoed}，失败 ${failed}`);
-      return send(200, {
-        ok: found > 0,
-        map, probed: ids.length, found, echoed, failed, results,
-        message: found
-          ? `探测 ${ids.length} 个：发现 ${found} 个映射${echoed ? `，${echoed} 个上游原样回显（看不出映射）` : ""}${failed ? `，${failed} 个失败` : ""}`
-          : `探测 ${ids.length} 个：没发现映射${echoed ? `（${echoed} 个原样回显请求的 id —— 这个上游的映射不会体现在响应里）` : ""}${failed ? `，${failed} 个失败` : ""}`,
       });
     }
     /* 管理员：**聊天测试**（10-22 用户：「加一个聊天测试功能」）。
