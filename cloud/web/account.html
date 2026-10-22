@@ -607,26 +607,6 @@
         <textarea id="auChatPrompt" rows="2" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--text)">你好，用一句话介绍一下你自己</textarea>
         <pre id="auChatOut" style="display:none;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--field);white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto"></pre>
       </div>
-      <!-- 10-22 用户：「同步出来模型映射后的模型，sub2api 也是一样」——
-           上游开了模型映射时 /v1/models 给的是别名，这里把别名翻成真实模型名。
-           ⛔ 只改**展示名**（name），调用仍用上游 id —— 不影响能不能用，只影响看不看得懂。 -->
-      <div style="margin:12px 0 4px;padding-top:12px;border-top:1px solid var(--line-soft)">
-        <div style="font-weight:600;margin-bottom:4px">模型映射 <span class="hint" style="font-weight:400">（上游 id → 展示名）</span></div>
-        <div class="hint" style="margin-bottom:6px;line-height:1.6">
-          每行一条：<code>上游id =&gt; 映射后名字</code>（<code>=&gt;</code> <code>-&gt;</code> <code>=</code> 逗号/竖线都认）。
-          填完「模型管理」和用户端的模型列表都显示映射后的名字，<b>调用仍用上游 id</b>。
-          上游若在目录里自带映射字段会自动采用；<b>sub2api / 多数中转</b>的映射只在服务端路由、用户 key 读不到，
-          用下面的「自动探测映射」或手填（探测会给每个模型真发一次 1 token 的请求，产生极小消耗）。
-        </div>
-        <textarea id="auMapText" rows="4" spellcheck="false" placeholder="cn:auto => gpt-5.6-sol&#10;cn:hy3 => claude-sonnet-4-5"
-                  style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--text);font-family:ui-monospace,Consolas,monospace;font-size:12.5px"></textarea>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-          <button class="btn sm" id="auMapSave">保存映射</button>
-          <button class="btn sm" id="auMapProbe" title="对目录里的模型各发一次 1 token 的请求，读响应里的 model 判断映射">自动探测映射</button>
-          <button class="btn sm" id="auMapClear">清空映射</button>
-          <span class="hint" id="auMapStatus"></span>
-        </div>
-      </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
         <span class="hint" id="auDiskInfo" style="flex:1">服务器磁盘余量读取中…</span>
         <button class="btn" id="auDiskRefresh" style="font-size:12px">刷新</button>
@@ -1844,7 +1824,7 @@
     });
   }
   function loadAdminPanel() {
-    loadVersion(); loadFeatures(); loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites(); loadChatModels(); loadModelMap();
+    loadVersion(); loadFeatures(); loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites(); loadChatModels();
     api("/admin/users").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { auSay("用户列表读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
       renderAdmin(r.j.users || []);
@@ -1954,7 +1934,6 @@
       if (hint) {
         hint.textContent = (j.ok ? "可选 " + ids.length + " 个模型" + (j.upstreamCount && ids.length > j.upstreamCount ? "（上游 " + j.upstreamCount + " + 目录 " + (ids.length - j.upstreamCount) + "）" : "") + " · " : "")
           + (j.message || "上游没给出列表 —— 可直接手填模型 id");
-        if (j.ok && j.mappedCount) hint.textContent += "，其中 " + j.mappedCount + " 个显示映射后的名字";
         /* 上游只回 1 个（常见于「开了模型映射、只暴露别名」）时说明白，免得以为这是全部模型。 */
         if (j.ok && j.upstreamCount <= 1) hint.textContent += "。上游只列出这些时，其它模型 id 可直接手填测试";
         hint.style.color = j.ok ? "" : "var(--warn)";
@@ -1970,61 +1949,6 @@
     setTimeout(function () { b.disabled = false; b.textContent = "刷新列表"; }, 1200);
   };
   loadChatModels();
-  /* ── 模型映射（10-22 用户：「同步出来模型映射后的模型，sub2api 也是一样」）──
-     ⛔ 只改展示名；调用仍用上游 id。自动探测会**真实发请求**（每个模型约 1 个输出 token），
-        所以只在点按钮时跑，不做轮询。 */
-  function mapToText(map) {
-    return Object.keys(map || {}).map(function (k) { return k + " => " + map[k]; }).join("\n");
-  }
-  function loadModelMap() {
-    if (!$("auMapText")) return;
-    api("/admin/upstream/model-map").then(function (r) {
-      var map = (r.j && r.j.map) || {};
-      $("auMapText").value = mapToText(map);
-      if ($("auMapStatus")) $("auMapStatus").textContent = Object.keys(map).length ? (Object.keys(map).length + " 条映射已生效（只影响显示）") : "还没有映射";
-    }).catch(function () {});
-  }
-  if ($("auMapSave")) $("auMapSave").onclick = function () {
-    var btn = this; btn.disabled = true;
-    api("/admin/upstream/model-map", { method: "POST", body: { text: $("auMapText").value } }).then(function (r) {
-      btn.disabled = false;
-      var j = r.j || {};
-      if (r.ok && j.ok) {
-        $("auMapText").value = mapToText(j.map);
-        $("auMapStatus").textContent = "已保存 " + j.count + " 条，目录里 " + j.renamed + " 个展示名已更新";
-        try { loadAdminModels(); } catch (e) {}
-        try { loadChatModels(true); } catch (e) {}
-      } else {
-        $("auMapStatus").textContent = "保存失败：" + (j.message || j.error || ("HTTP " + r.status));
-      }
-    }).catch(function () { btn.disabled = false; $("auMapStatus").textContent = "网络错误"; });
-  };
-  if ($("auMapClear")) $("auMapClear").onclick = function () {
-    if (!confirm("清空全部模型映射？（只影响展示名，不改上游、不影响调用）")) return;
-    $("auMapText").value = "";
-    api("/admin/upstream/model-map", { method: "POST", body: { map: {} } }).then(function (r) {
-      var j = r.j || {};
-      $("auMapStatus").textContent = (r.ok && j.ok) ? "已清空（目录展示名已还原成上游名字）" : ("清空失败：" + (j.message || j.error || ("HTTP " + r.status)));
-      try { loadAdminModels(); } catch (e) {}
-      try { loadChatModels(true); } catch (e) {}
-    }).catch(function () { $("auMapStatus").textContent = "网络错误"; });
-  };
-  if ($("auMapProbe")) $("auMapProbe").onclick = function () {
-    var btn = this; btn.disabled = true; btn.textContent = "探测中…";
-    $("auMapStatus").textContent = "逐个发 1 token 请求（最多 20 个，约半分钟）…";
-    api("/admin/upstream/probe-map", { method: "POST", body: { limit: 20, onlyMissing: true } }).then(function (r) {
-      btn.disabled = false; btn.textContent = "自动探测映射";
-      var j = r.j || {};
-      $("auMapStatus").textContent = j.message || (r.ok ? "探测完成" : ("探测失败：" + (j.error || ("HTTP " + r.status))));
-      if (j.map) $("auMapText").value = mapToText(j.map);
-      try { loadAdminModels(); } catch (e) {}
-      try { loadChatModels(true); } catch (e) {}
-    }).catch(function () { btn.disabled = false; btn.textContent = "自动探测映射"; $("auMapStatus").textContent = "网络错误"; });
-  };
-  loadModelMap();
-  /* 10-22 补回：聊天测试的**发送绑定**在上一轮移植时漏搬（只搬了候选加载，按钮点了没反应）。
-     ⛔ 同时把「上限」传给服务端，并把 finish_reason=length 明确标成「被截断」——
-        用户看到的「我是腾讯开发的混…」就是默认 256 token 被推理吃光的结果。 */
   if ($("auChatSend")) $("auChatSend").onclick = function () {
     var model = ($("auChatModel").value || "").trim();
     var prompt = ($("auChatPrompt").value || "").trim();
@@ -2347,7 +2271,6 @@
       if ($("amSource")) {
         $("amSource").textContent = "目录来源：" + (r.j.source || "未同步")
           + (r.j.rateSource ? " · 倍率来源：" + r.j.rateSource : "")
-          + (r.j.mappedCount ? " · 已映射 " + r.j.mappedCount + " 个（显示的是映射后名字）" : "")
           + " · 上游：" + (r.j.catalogBase || "未配置")
           + (r.j.syncedAt ? " · 上次同步 " + new Date(r.j.syncedAt).toLocaleString() : "");
       }
