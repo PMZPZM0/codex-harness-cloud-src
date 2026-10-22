@@ -2042,7 +2042,32 @@
           } else { auSay("保存失败：" + ((rr.j && rr.j.error) || rr.status), "bad"); }
         }).catch(function () { $("auAdopt").disabled = false; auSay("网络错误", "bad"); });
       };
-      if (j.recognized && !needSave) { try { loadAdminModels(); } catch (e) {} try { loadChatModels(true); } catch (e) {} }
+      /* 10-22 用户：「连通测试成功是不是要弹窗提醒确定模型同步啊，然后刷新缓存」——
+         已保存 + 识别出模型：弹一次确认 → **强制**同步目录（绕 30 分钟 TTL）→ 刷新表格与聊天测试候选。
+         取消也没关系：结果区留一个「同步到模型目录」按钮，随时能点。 */
+      if (j.recognized && !needSave) {
+        var doSyncNow = function () {
+          auSay("正在同步模型目录…");
+          api("/admin/models/sync", { method: "POST" }).then(function (x) {
+            var jj = (x && x.j) || {};
+            if (x.ok && jj.ok) {
+              auSay("已同步 " + (jj.count || jj.total || 0) + " 个模型，缓存已刷新", "ok");
+              try { loadAdminModels(); } catch (e) {}
+              try { loadChatModels(true); } catch (e) {}
+            } else {
+              auSay("同步失败：" + (jj.message || jj.error || ("HTTP " + x.status)), "bad");
+            }
+          }).catch(function () { auSay("同步失败（网络错误）", "bad"); });
+        };
+        var holder = document.createElement("div");
+        holder.style.cssText = "margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft)";
+        holder.innerHTML = '<button class="btn sm" id="auSyncNow">同步到模型目录（' + (j.modelCount || 0) + ' 个）</button>'
+          + '<span class="hint" style="margin-left:8px">强制重拉，绕过缓存</span>';
+        if (box.firstElementChild) box.firstElementChild.appendChild(holder);
+        var syncNow = box.querySelector("#auSyncNow");
+        if (syncNow) syncNow.onclick = doSyncNow;
+        if (window.confirm("连通正常：识别到 " + (j.modelCount || 0) + " 个模型。\n要现在同步到模型目录并刷新缓存吗？")) doSyncNow();
+      }
       auSay(needSave ? ("已识别 " + j.modelCount + " 个模型 —— 点「保存并同步」后模型管理才会更新") : (j.recognized ? "已识别 " + j.modelCount + " 个模型（模型管理已同步）" : (j.ok ? "能连通，但这个地址读不到模型列表" : "不可达（看上方逐行原因）")), needSave ? "warn" : (j.recognized ? "ok" : (j.ok ? "warn" : "bad")));
     }).catch(function () {
       btn.disabled = false; btn.textContent = "测试连通性"; auSay("网络错误", "bad");
