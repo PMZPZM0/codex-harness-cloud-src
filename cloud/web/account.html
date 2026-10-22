@@ -378,26 +378,39 @@
     #umCard .bulk-grp-end { margin-left: 0; }
   }
 
-  /* ── 管理员服务卡（10-23）：两栏并排，窄屏堆叠；地址用等宽字体，密钥只显示「已配置」 ── */
-  #adSvcCard .ad-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--line-soft); }
-  #adSvcCard .ad-head-main { flex: 1 1 320px; min-width: 0; }
-  #adSvcCard .ad-head h2 { margin: 0 0 6px; }
-  #adSvcCard .ad-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
-  #adSvcCard .ad-svc { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
-  #adSvcCard .ad-svc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  #adSvcCard .ad-svc-top b { font-size: 13.5px; font-weight: 600; }
-  #adSvcCard .ad-kv { display: grid; gap: 6px; margin: 0; font-size: 12.5px; }
-  #adSvcCard .ad-kv > div { display: grid; grid-template-columns: 78px 1fr; gap: 8px; align-items: baseline; min-width: 0; }
-  #adSvcCard .ad-kv dt { color: var(--muted); }
-  #adSvcCard .ad-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  #adSvcCard .ad-kv code { font-family: var(--mono, ui-monospace, Consolas, monospace); font-size: 12px; color: var(--text); }
-  #adSvcCard .ad-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
-  #adSvcCard .ad-actions .btn { min-height: 32px; }
-  #adSvcCard .ad-addr { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line-soft); font-size: 12.5px; }
-  #adSvcCard .ad-addr summary { cursor: pointer; color: var(--muted); }
-  #adSvcCard .ad-addr-grid { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-top: 12px; }
-  #adSvcCard .ad-field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 240px; min-width: 0; }
-  #adSvcCard .ad-field .field { min-height: 34px; padding: 6px 10px; border-radius: 8px; font-size: 12.5px; }
+  /* ── 管理区四个中心（10-23）：页头 + 服务卡（记忆空间 / 知识库各一张）──
+     ⛔ 全部走主题变量，亮/暗自动跟随；间距 8/12/16 的倍数。 */
+  /* 侧栏大分类（10-23）：组标题小字弱化，组间一条分隔线；⛔ 不用色块，避免和选中项的粉色底打架 */
+  .side .nav-group { display: flex; flex-direction: column; gap: 2px; }
+  .side .nav-group + .nav-group { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+  .side .nav-group-title {
+    margin: 0 0 6px; padding: 0 10px; font-size: 11px; font-weight: 600;
+    letter-spacing: .06em; color: var(--faint); text-transform: none;
+  }
+  .side .nav-group-admin .nav-group-title { color: var(--brand-ink); opacity: .75; }
+
+  .admin-head { margin: 0 0 18px; }
+  .admin-head h1 { margin: 0 0 4px; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+  .admin-head p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; max-width: 78ch; }
+
+  #svcMemCard .svc-top, #svcKbCard .svc-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  #svcMemCard .svc-top h2, #svcKbCard .svc-top h2 { margin: 0; }
+  #svcMemCard .svc-grid, #svcKbCard .svc-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 14px; margin: 14px 0 12px;
+  }
+  #svcMemCard .svc-field, #svcKbCard .svc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  #svcMemCard .svc-field .field, #svcKbCard .svc-field .field {
+    min-height: 34px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px;
+  }
+  #svcMemCard .svc-actions, #svcKbCard .svc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  #svcMemCard .svc-actions .btn, #svcKbCard .svc-actions .btn { min-height: 34px; }
+  #svcMemCard .svc-actions .status, #svcKbCard .svc-actions .status { margin-left: 4px; }
+  #svcMemCard .svc-addr, #svcKbCard .svc-addr {
+    margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 12.5px;
+  }
+  #svcMemCard .svc-addr summary, #svcKbCard .svc-addr summary { cursor: pointer; color: var(--muted); }
+  #svcMemCard .svc-addr-row, #svcKbCard .svc-addr-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  #svcMemCard .svc-addr-row .field, #svcKbCard .svc-addr-row .field { flex: 1 1 260px; min-height: 34px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; }
 
   /* 示例数据横幅（记忆页预览用；接入真实数据后应移除） */
   .demo-banner { background: var(--warn-soft); border: 1px solid var(--warn); color: var(--warn); padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
@@ -413,12 +426,24 @@
         <input type="checkbox" id="themeSwitch" aria-label="切换白天/夜间主题" />
       </label>
     </div>
-    <button class="nav-item" data-tab="user"><span class="dot"></span>用户中心</button>
-    <button class="nav-item" data-tab="pair"><span class="dot"></span>配对中心</button>
-    <button class="nav-item" data-tab="cloud"><span class="dot"></span>云端管理</button>
-    <button class="nav-item" data-tab="memory"><span class="dot"></span>记忆空间</button>
-    <button class="nav-item" data-tab="kb"><span class="dot"></span>知识库</button>
-    <button class="nav-item" data-tab="admin" id="navAdmin" hidden><span class="dot"></span>用户管理</button>
+    <!-- 10-23 用户令：「左边菜单栏做一下大分类，用户和管理员菜单分类」⇒ 两组分开：
+         用户组（所有人可见）/ 管理员组（整组 hidden，isAdmin 时去掉）。
+         ⛔ 管理组里按钮**不要**各自加 hidden —— 由组容器统一控制，否则 JS 要逐个管、容易漏。 -->
+    <nav class="nav-group" aria-label="用户功能">
+      <h3 class="nav-group-title">用户</h3>
+      <button class="nav-item" data-tab="user"><span class="dot"></span>用户中心</button>
+      <button class="nav-item" data-tab="pair"><span class="dot"></span>配对中心</button>
+      <button class="nav-item" data-tab="cloud"><span class="dot"></span>云端管理</button>
+      <button class="nav-item" data-tab="memory"><span class="dot"></span>记忆空间</button>
+      <button class="nav-item" data-tab="kb"><span class="dot"></span>知识库</button>
+    </nav>
+    <nav class="nav-group nav-group-admin" id="navGroupAdmin" aria-label="管理员功能" hidden>
+      <h3 class="nav-group-title">管理员</h3>
+      <button class="nav-item" data-tab="adminUser" id="navAdminUser"><span class="dot"></span>用户管理中心</button>
+      <button class="nav-item" data-tab="adminModel" id="navAdminModel"><span class="dot"></span>模型管理中心</button>
+      <button class="nav-item" data-tab="adminMem" id="navAdminMem"><span class="dot"></span>记忆空间管理中心</button>
+      <button class="nav-item" data-tab="adminKb" id="navAdminKb"><span class="dot"></span>知识库管理中心</button>
+    </nav>
     <div class="side-foot">
       <span id="whoami">读取中…</span>
       <span id="sidePoints" class="hint">积分 —</span>
@@ -613,10 +638,14 @@
     <div id="kbTab"><div class="empty">读取中…</div></div>
   </section>
 
-<div class="tab" data-tab="admin" id="adminTab" hidden>
-    <!-- 部署与更新（10-18 用户令「云端管理加一个更新功能 / 应用支持定制 / 把这个仓的跳转加上」）
-         ⛔ 这里只做「看版本 + 查最新版 + 复制部署命令」；真正升级要在服务器上执行（面板不能替你重启进程）。 -->
-    <div class="card" id="updCard">
+<!-- 10-23 用户令：「用户管理分类一下，拆出模型管理中心，改名用户管理中心（含服务器基础设置）」⇒
+       原一长条 admin tab 拆成 4 个中心，导航项全部只对管理员显示（isAdmin 时才去掉 hidden）。 -->
+<div class="tab" data-tab="adminUser" id="adminUserTab" hidden>
+  <div class="admin-head">
+    <h1>用户管理中心</h1>
+    <p>服务器基础设置、站点外观、用户与权益、邀请码 —— 这里的改动会影响所有用户。</p>
+  </div>
+<div class="card" id="updCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">部署与更新
         <!-- 版本徽标（10-18 用户令「加一个版本号」）：一眼看到当前跑的到底是哪个版本 -->
         <span class="pill" id="updBadge" title="当前运行版本（读自部署目录的 VERSION）"
@@ -645,9 +674,7 @@
       </label>
       <div id="updResult" style="display:none;margin-top:10px"></div>
     </div>
-    <!-- 功能开关（10-18 用户令「管理员可以开关，关闭后用户就不能同步会话」）——
-         ⛔ 只管"同步"，关闭后登录/积分/模型调用都不受影响。 -->
-    <div class="card" id="featCard">
+<div class="card" id="featCard">
       <h2>用户功能开关</h2>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;flex-wrap:wrap">
         <input type="checkbox" id="featSync" class="switch">
@@ -656,8 +683,7 @@
       </label>
       <p class="status" id="featStatus"></p>
     </div>
-    <!-- 站点图标（10-18 用户令「做成自定义图标，管理员可以上传改，默认现在的可以」） -->
-    <div class="card" id="brandCard">
+<div class="card" id="brandCard">
       <h2>站点图标</h2>
       <p class="hint" style="margin:0 0 8px">浏览器标签页上显示的图标。<b>不传则用内置默认图标</b>；上传后立即覆盖，刷新页面即生效。</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -669,70 +695,7 @@
       </div>
       <p class="hint" style="margin:8px 0 0">支持 PNG / JPEG / SVG，≤ 512KB。建议正方形 32×32 或 64×64（放大后浏览器会自动缩放）。</p>
     </div>
-    <div class="card">
-      <h2>上游 API <span class="pill ok">热生效</span></h2>
-      <p class="hint" id="auInfo">读取中…</p>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
-        <label style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:4px">
-          <span class="hint">上游 API 地址（https:// · http:// · 裸主机皆可；可带端口与路径前缀）</span>
-          <input class="field" id="auBase" spellcheck="false" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
-        </label>
-        <label style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:4px">
-          <span class="hint">网关密钥（已保存则留空不改）</span>
-          <input class="field" id="auKey" type="password" spellcheck="false" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
-        </label>
-        <button class="btn" id="auSave" style="height:38px">保存（热生效）</button>
-        <button class="btn" id="auTest" style="height:38px">测试连通性</button>
-      </div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
-        <label style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:4px">
-          <span class="hint">目录同步地址（可选：留空 = 与上游同址；「重新同步目录」走这里）</span>
-          <input class="field" id="auCatalogBase" spellcheck="false" placeholder="留空 = 用上面的地址"
-                 style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
-        </label>
-      </div>
-      <!-- 连通性测试结果（10-18）：逐端点列出状态码/耗时/原因，管理员不必去翻服务器日志 -->
-      <div id="auTestResult" style="display:none;margin-bottom:10px"></div>
-      <!-- 10-22 用户：「加一个聊天测试功能」——用保存的地址+密钥真发一条，验证模型 id 通不通。 -->
-      <div style="margin:12px 0 10px;padding-top:12px;border-top:1px solid var(--line-soft)">
-        <div style="font-weight:600;margin-bottom:6px">聊天测试 <span class="hint" style="font-weight:400">（走已保存的上游地址与密钥）</span></div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <!-- 10-22 用户：「能选的模型太少了」——加一个**真下拉**，候选直接问上游要全量 id
-               （不再只吃「模型管理」里那份可能被清空/排除的目录）。选完自动回填右边的输入框。 -->
-          <select id="auChatPick" title="上游实时返回的全部模型"
-                  style="max-width:280px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--field);color:var(--text)">
-            <option value="">（手填 / 自定义）</option>
-          </select>
-          <input id="auChatModel" list="auChatModels" placeholder="模型 id（可从左边选，也可手填）" style="width:240px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--field);color:var(--text)" />
-          <datalist id="auChatModels"></datalist>
-          <!-- 10-22 用户：「回复怎么还被截断了」——推理型模型会把预算烧在思考上，
-               默认 1024 起；这里给个显式上限，长回答不够就调大。 -->
-          <select id="auChatMax" title="回复上限（token）：推理模型会把一部分用在思考上，不够就调大"
-                  style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--field);color:var(--text)">
-            <option value="512">上限 512</option>
-            <option value="1024" selected>上限 1024</option>
-            <option value="2048">上限 2048</option>
-            <option value="4096">上限 4096</option>
-          </select>
-          <button class="btn sm" id="auChatRefresh" title="重新向上游要一次模型列表">刷新列表</button>
-          <button class="btn sm" id="auChatSend">发送测试</button>
-          <span class="hint" id="auChatStatus"></span>
-        </div>
-        <div class="hint" id="auChatCount" style="margin-top:4px"></div>
-        <textarea id="auChatPrompt" rows="2" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--text)">你好，用一句话介绍一下你自己</textarea>
-        <pre id="auChatOut" style="display:none;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--field);white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto"></pre>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-        <span class="hint" id="auDiskInfo" style="flex:1">服务器磁盘余量读取中…</span>
-        <button class="btn" id="auDiskRefresh" style="font-size:12px">刷新</button>
-      </div>
-      <div style="height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin:8px 0 4px">
-        <div id="auDiskBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--ok),var(--warn) 75%,var(--bad));transition:width .4s"></div>
-      </div>
-    </div>
-      <!-- 10-18 用户令：应用连接地址 + 复制（部署完自动生成，不硬编码）
-           ⛔ 放在「上游 API」卡下面 —— 那个位置是管理员最常看的配置区，藏在用户管理里没人看见。 -->
-      <div class="card" style="margin-top:14px">
+<div class="card" id="endpointCard" style="margin-top:14px">
         <h2>应用连接地址</h2>
         <p class="hint" style="margin:0 0 10px">
           把下面这个地址填到桌面端「设置 → 云账号 → 服务地址」，用户就能连上这台服务器。
@@ -744,63 +707,7 @@
           <span class="hint" id="appEndpointMsg"></span>
         </div>
       </div>
-
-    <!-- 知识库 / 记忆空间的上游（10-18 用户令「预留可配置的接口，以便自行配置飞牛OS」）——
-         ⛔ 留空 = 回退服务端环境变量；保存后**热生效**。对接步骤见 docs/FNOS-INTEGRATION.md。 -->
-    <div class="card" id="svcCard">
-      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">知识库 · 记忆空间 <span class="pill ok">热生效</span>
-        <!-- 10-18 用户令「你这个云端配置没有教程啊」⇒ 右上角给明确入口，教程页可整段交给另一个 AI -->
-        <a class="btn sm" id="svcGuide" href="fnos-guide.html" target="_blank" rel="noopener"
-           style="margin-left:auto;text-decoration:none;display:inline-flex;align-items:center;gap:5px">配置教程 · 飞牛OS</a>
-      </h2>
-      <p class="hint" id="svcInfo">读取中…</p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-bottom:12px">
-        <div>
-          <h3 class="sub" style="margin-top:0">知识库（WeKnora 兼容）</h3>
-          <label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
-            <span class="hint">服务地址（留空 = 用环境变量；支持 http / 内网 IP / 端口）</span>
-            <input class="field" id="svcKbBase" spellcheck="false" placeholder="如 http://192.168.1.10:8080"
-                   style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
-          </label>
-          <label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
-            <span class="hint">租户 API Key（留空 = 不修改；请求头 X-API-Key）</span>
-            <input class="field" id="svcKbKey" type="password" spellcheck="false"
-                   style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
-          </label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <label style="flex:1;min-width:90px;display:flex;flex-direction:column;gap:4px"><span class="hint">LLM 模型 id</span><input class="field" id="svcKbLlm" spellcheck="false" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px" /></label>
-            <label style="flex:1;min-width:90px;display:flex;flex-direction:column;gap:4px"><span class="hint">嵌入模型 id</span><input class="field" id="svcKbEmbed" spellcheck="false" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px" /></label>
-            <label style="flex:1;min-width:90px;display:flex;flex-direction:column;gap:4px"><span class="hint">视觉模型 id</span><input class="field" id="svcKbVlm" spellcheck="false" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px" /></label>
-          </div>
-        </div>
-        <div>
-          <h3 class="sub" style="margin-top:0">记忆空间（MemHub 兼容）</h3>
-          <label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
-            <span class="hint">服务地址（留空 = 用环境变量）</span>
-            <input class="field" id="svcMemBase" spellcheck="false" placeholder="如 http://192.168.1.10:8090"
-                   style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
-          </label>
-          <label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
-            <span class="hint">检索代理地址（MCP 网关；留空 = 用环境变量）</span>
-            <input class="field" id="svcMemProxy" spellcheck="false"
-                   style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
-          </label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-            <label style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:4px"><span class="hint">实例名</span><input class="field" id="svcMemInstance" spellcheck="false" placeholder="default" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px" /></label>
-            <label style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:4px"><span class="hint">API Key（留空 = 不修改）</span><input class="field" id="svcMemKey" type="password" spellcheck="false" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit;font-size:12.5px" /></label>
-          </div>
-          <p class="hint" style="margin:0">⛔ 记忆的「读取」走检索代理地址；它填错会让对话带不上记忆（写入仍走服务地址）。</p>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button class="btn" id="svcSave">保存（热生效）</button>
-        <button class="btn" id="svcTestKb" style="font-size:12px">测试知识库</button>
-        <button class="btn" id="svcTestMem" style="font-size:12px">测试记忆</button>
-        <span class="hint" id="svcStatus"></span>
-      </div>
-      <div id="svcTestResult" style="display:none;margin-top:10px"></div>
-    </div>
-    <div class="card" id="umCard">
+<div class="card" id="umCard">
       <!-- 10-22 用户：「用户管理界面卡片杂乱无章」。改成分段结构 ——
            头（标题 + 一句说明 + 右侧统计）/ 工具条（搜索 + 刷新）/ 批量栏（分组 + 分隔线）/ 表格。
            ⛔ 只动排版：所有 id、data-*、按钮文案、请求逻辑保持原样。 -->
@@ -881,73 +788,7 @@
         <p id="auStatus"></p><p id="auEntStatus"></p><p id="apStatus"></p>
       </div>
     </div>
-
-    <!-- 10-23 用户令：「在用户管理下面新增一个管理员记忆空间和管理员知识库，用户那边看不见就行」。
-         ⛔ 整张卡在 admin tab 内（navAdmin 只对管理员显示）⇒ 普通用户既看不到入口、也拿不到地址与密钥态。 -->
-    <div class="card" id="adSvcCard">
-      <div class="ad-head">
-        <div class="ad-head-main">
-          <h2>管理员服务 <span class="pill ok">仅管理员</span></h2>
-          <p class="hint">本机部署的腾讯记忆空间（TencentDB Agent Memory）与知识库（WeKnora）。这里是运维入口，普通用户看不到。</p>
-        </div>
-        <button class="btn sm ghost" id="adRefresh">刷新状态</button>
-      </div>
-
-      <div class="ad-grid">
-        <section class="ad-svc" id="adMem">
-          <div class="ad-svc-top">
-            <b>记忆空间</b>
-            <span class="pill plain" id="adMemState">检测中…</span>
-          </div>
-          <dl class="ad-kv">
-            <div><dt>面板 / API</dt><dd><code id="adMemBase">—</code></dd></div>
-            <div><dt>模型代理</dt><dd><code id="adMemProxy">—</code></dd></div>
-            <div><dt>实例</dt><dd><code id="adMemInst">—</code></dd></div>
-            <div><dt>管理密钥</dt><dd id="adMemKey">—</dd></div>
-          </dl>
-          <div class="ad-actions">
-            <button class="btn sm primary" id="adMemOpen">打开面板</button>
-            <button class="btn sm" id="adMemCopy">复制地址</button>
-            <button class="btn sm ghost" id="adMemTest">测试连通</button>
-          </div>
-          <p class="status" id="adMemMsg" role="status" aria-live="polite"></p>
-        </section>
-
-        <section class="ad-svc" id="adKb">
-          <div class="ad-svc-top">
-            <b>知识库</b>
-            <span class="pill plain" id="adKbState">检测中…</span>
-          </div>
-          <dl class="ad-kv">
-            <div><dt>API</dt><dd><code id="adKbBase">—</code></dd></div>
-            <div><dt>前端</dt><dd><code id="adKbUi">—</code></dd></div>
-            <div><dt>问答模型</dt><dd><code id="adKbLlm">—</code></dd></div>
-            <div><dt>向量模型</dt><dd><code id="adKbEmbed">—</code></dd></div>
-            <div><dt>管理密钥</dt><dd id="adKbKey">—</dd></div>
-          </dl>
-          <div class="ad-actions">
-            <button class="btn sm primary" id="adKbOpen">打开后台</button>
-            <button class="btn sm" id="adKbCopy">复制地址</button>
-            <button class="btn sm ghost" id="adKbTest">测试连通</button>
-          </div>
-          <p class="status" id="adKbMsg" role="status" aria-live="polite"></p>
-        </section>
-      </div>
-
-      <details class="ad-addr">
-        <summary>对外访问地址（浏览器打开用；留空则按当前域名 + 服务端口自动推导）</summary>
-        <div class="ad-addr-grid">
-          <label class="ad-field"><span class="hint">记忆空间面板</span>
-            <input class="field" id="adMemPublic" placeholder="http://你的域名:8125" /></label>
-          <label class="ad-field"><span class="hint">知识库前端</span>
-            <input class="field" id="adKbPublic" placeholder="http://你的域名:8081" /></label>
-          <button class="btn sm" id="adPubSave">保存地址</button>
-        </div>
-        <p class="status" id="adPubMsg" role="status" aria-live="polite"></p>
-      </details>
-    </div>
-
-    <div class="card" id="ivCard">
+<div class="card" id="ivCard">
       <!-- ⛔ 局部样式（类前缀 iv-）：生成行用 grid 对齐，⛔ 不用 flex-wrap 硬挤 ——
            上一版三行标签各自折行、统计数字又挤在按钮右边，整块看着"上下乱行"（用户 10-16 截图）。 -->
       <style>
@@ -1001,8 +842,75 @@
         · 点「账号」展开该码注册的账号明细（用户名 / 注册时间 / 最近登录 / 积分）；点「改额度」可随时调名额。
       </p>
     </div>
+</div>
 
-    <div class="card" id="amCard">
+<div class="tab" data-tab="adminModel" id="adminModelTab" hidden>
+  <div class="admin-head">
+    <h1>模型管理中心</h1>
+    <p>上游网关地址与密钥、模型目录与倍率、闲时时段，以及对用户开放的模型。</p>
+  </div>
+<div class="card" id="upstreamCard">
+      <h2>上游 API <span class="pill ok">热生效</span></h2>
+      <p class="hint" id="auInfo">读取中…</p>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+        <label style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:4px">
+          <span class="hint">上游 API 地址（https:// · http:// · 裸主机皆可；可带端口与路径前缀）</span>
+          <input class="field" id="auBase" spellcheck="false" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+        </label>
+        <label style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:4px">
+          <span class="hint">网关密钥（已保存则留空不改）</span>
+          <input class="field" id="auKey" type="password" spellcheck="false" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+        </label>
+        <button class="btn" id="auSave" style="height:38px">保存（热生效）</button>
+        <button class="btn" id="auTest" style="height:38px">测试连通性</button>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+        <label style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:4px">
+          <span class="hint">目录同步地址（可选：留空 = 与上游同址；「重新同步目录」走这里）</span>
+          <input class="field" id="auCatalogBase" spellcheck="false" placeholder="留空 = 用上面的地址"
+                 style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--field);font:inherit" />
+        </label>
+      </div>
+      <!-- 连通性测试结果（10-18）：逐端点列出状态码/耗时/原因，管理员不必去翻服务器日志 -->
+      <div id="auTestResult" style="display:none;margin-bottom:10px"></div>
+      <!-- 10-22 用户：「加一个聊天测试功能」——用保存的地址+密钥真发一条，验证模型 id 通不通。 -->
+      <div style="margin:12px 0 10px;padding-top:12px;border-top:1px solid var(--line-soft)">
+        <div style="font-weight:600;margin-bottom:6px">聊天测试 <span class="hint" style="font-weight:400">（走已保存的上游地址与密钥）</span></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <!-- 10-22 用户：「能选的模型太少了」——加一个**真下拉**，候选直接问上游要全量 id
+               （不再只吃「模型管理」里那份可能被清空/排除的目录）。选完自动回填右边的输入框。 -->
+          <select id="auChatPick" title="上游实时返回的全部模型"
+                  style="max-width:280px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--field);color:var(--text)">
+            <option value="">（手填 / 自定义）</option>
+          </select>
+          <input id="auChatModel" list="auChatModels" placeholder="模型 id（可从左边选，也可手填）" style="width:240px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--field);color:var(--text)" />
+          <datalist id="auChatModels"></datalist>
+          <!-- 10-22 用户：「回复怎么还被截断了」——推理型模型会把预算烧在思考上，
+               默认 1024 起；这里给个显式上限，长回答不够就调大。 -->
+          <select id="auChatMax" title="回复上限（token）：推理模型会把一部分用在思考上，不够就调大"
+                  style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--field);color:var(--text)">
+            <option value="512">上限 512</option>
+            <option value="1024" selected>上限 1024</option>
+            <option value="2048">上限 2048</option>
+            <option value="4096">上限 4096</option>
+          </select>
+          <button class="btn sm" id="auChatRefresh" title="重新向上游要一次模型列表">刷新列表</button>
+          <button class="btn sm" id="auChatSend">发送测试</button>
+          <span class="hint" id="auChatStatus"></span>
+        </div>
+        <div class="hint" id="auChatCount" style="margin-top:4px"></div>
+        <textarea id="auChatPrompt" rows="2" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--text)">你好，用一句话介绍一下你自己</textarea>
+        <pre id="auChatOut" style="display:none;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--field);white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto"></pre>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span class="hint" id="auDiskInfo" style="flex:1">服务器磁盘余量读取中…</span>
+        <button class="btn" id="auDiskRefresh" style="font-size:12px">刷新</button>
+      </div>
+      <div style="height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin:8px 0 4px">
+        <div id="auDiskBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--ok),var(--warn) 75%,var(--bad));transition:width .4s"></div>
+      </div>
+    </div>
+<div class="card" id="amCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">模型管理 <span class="pill ok">管理员</span>
         <!-- 闲时（10-18 用户令：「不用单独一张卡片，精简成选项放到模型管理卡片里面」）——
              默认只占标题行这一小段（开关 + 时段摘要 + 设置），点「设置」才展开编辑区。 -->
@@ -1079,10 +987,92 @@
       <div id="amToast" style="display:none;margin:0 0 10px;padding:8px 12px;border-radius:8px;font-size:12.5px;border:1px solid var(--line);background:var(--ok-soft,#e8f5ec);color:var(--ok,#1a7f37)"></div>
       <div id="amUserModels" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px 14px"></div>
     </div>
+</div>
 
-    <!-- 10-18：原「闲时时段」独立卡片已并入上方「模型管理」标题行的 .op-inline（用户令「不单独一张卡片」）。
-         ⛔ 别再把它拆回来 —— 那会让 #opAdd/#opSave/#opRows 出现重复 id。 -->
+<div class="tab" data-tab="adminMem" id="adminMemTab" hidden>
+  <div class="admin-head">
+    <h1>记忆空间管理中心</h1>
+    <p>本机部署的腾讯记忆空间（Memory Hub）：面板入口、记忆服务地址与模型代理。</p>
   </div>
+    <div class="card" id="svcMemCard">
+      <div class="svc-top">
+        <h2>记忆空间服务 <span class="pill ok">热生效</span></h2>
+        <span class="pill plain" id="svcMemState">检测中…</span>
+      </div>
+      <p class="hint" id="svcMemInfo">读取中…</p>
+      <div class="svc-grid">
+        <label class="svc-field"><span class="hint">服务地址（面板 / 记忆 API）</span>
+          <input class="field" id="svcMemBase" spellcheck="false" placeholder="如 http://127.0.0.1:8125" /></label>
+        <label class="svc-field"><span class="hint">检索代理地址（模型入口）</span>
+          <input class="field" id="svcMemProxy" spellcheck="false" placeholder="如 http://127.0.0.1:8096" /></label>
+        <label class="svc-field"><span class="hint">实例名</span>
+          <input class="field" id="svcMemInstance" spellcheck="false" placeholder="default" /></label>
+        <label class="svc-field"><span class="hint">API Key（留空 = 不修改）</span>
+          <input class="field" id="svcMemKey" type="password" spellcheck="false" /></label>
+      </div>
+      <p class="hint" style="margin:0">⛔ 记忆的「读取」走检索代理地址；填错会让对话带不上记忆（写入仍走服务地址）。</p>
+      <details class="svc-addr">
+        <summary>对外访问地址（浏览器打开用；留空按当前域名 + 端口自动推导）</summary>
+        <div class="svc-addr-row">
+          <input class="field" id="svcMemPublic" placeholder="http://你的域名:8125" />
+          <button class="btn sm" id="svcMemPubSave">保存地址</button>
+        </div>
+        <p class="status" id="svcMemPubMsg" role="status" aria-live="polite"></p>
+      </details>
+      <div class="svc-actions">
+        <button class="btn primary" id="svcSaveMem">保存（热生效）</button>
+        <button class="btn" id="svcTestMem">测试连通</button>
+        <button class="btn" id="svcMemOpen">打开面板</button>
+        <button class="btn ghost" id="svcMemCopy">复制地址</button>
+      </div>
+      <p class="status" id="svcMemStatus" role="status" aria-live="polite"></p>
+      <div id="svcMemTestResult" style="display:none;margin-top:10px"></div>
+    </div>
+</div>
+
+<div class="tab" data-tab="adminKb" id="adminKbTab" hidden>
+  <div class="admin-head">
+    <h1>知识库管理中心</h1>
+    <p>本机部署的腾讯知识库（WeKnora）：后台入口、知识库 API 与问答 / 向量模型。</p>
+  </div>
+    <div class="card" id="svcKbCard">
+      <div class="svc-top">
+        <h2>知识库服务 <span class="pill ok">热生效</span></h2>
+        <span class="pill plain" id="svcKbState">检测中…</span>
+      </div>
+      <p class="hint" id="svcKbInfo">读取中…</p>
+      <div class="svc-grid">
+        <label class="svc-field"><span class="hint">服务地址（API；留空 = 用环境变量）</span>
+          <input class="field" id="svcKbBase" spellcheck="false" placeholder="如 http://127.0.0.1:8080" /></label>
+        <label class="svc-field"><span class="hint">租户 API Key（留空 = 不修改；请求头 X-API-Key）</span>
+          <input class="field" id="svcKbKey" type="password" spellcheck="false" /></label>
+        <label class="svc-field"><span class="hint">问答模型 id</span>
+          <input class="field" id="svcKbLlm" spellcheck="false" placeholder="builtin-llm-default" /></label>
+        <label class="svc-field"><span class="hint">嵌入模型 id</span>
+          <input class="field" id="svcKbEmbed" spellcheck="false" placeholder="builtin-embedding-default" /></label>
+        <label class="svc-field"><span class="hint">视觉模型 id（可空）</span>
+          <input class="field" id="svcKbVlm" spellcheck="false" /></label>
+      </div>
+      <details class="svc-addr">
+        <summary>对外访问地址（浏览器打开用；留空按当前域名 + 端口自动推导）</summary>
+        <div class="svc-addr-row">
+          <input class="field" id="svcKbPublic" placeholder="http://你的域名:8081" />
+          <button class="btn sm" id="svcKbPubSave">保存地址</button>
+        </div>
+        <p class="status" id="svcKbPubMsg" role="status" aria-live="polite"></p>
+      </details>
+      <div class="svc-actions">
+        <button class="btn primary" id="svcSaveKb">保存（热生效）</button>
+        <button class="btn" id="svcTestKb">测试连通</button>
+        <button class="btn" id="svcKbOpen">打开后台</button>
+        <button class="btn ghost" id="svcKbCopy">复制地址</button>
+        <a class="btn sm" id="svcGuide" href="fnos-guide.html" target="_blank" rel="noopener"
+           style="margin-left:auto;text-decoration:none;display:inline-flex;align-items:center;gap:5px">配置教程 · 飞牛OS</a>
+      </div>
+      <p class="status" id="svcKbStatus" role="status" aria-live="polite"></p>
+      <div id="svcKbTestResult" style="display:none;margin-top:10px"></div>
+    </div>
+</div>
 </main>
 </div>
 
@@ -1143,16 +1133,17 @@
     if (tab === "user") loadPoints();
     if (tab === "pair") refreshPairing();
     if (tab === "cloud") refreshCloud();
-    if (tab === "admin") loadAdminPanel();
+    /* 10-23：四个中心各自只加载自己那一摊，不再一次全拉（原来切一次会打 10+ 个接口） */
+    if (tab === "adminUser") loadAdminUserTab();
+    if (tab === "adminModel") loadAdminModelTab();
+    if (tab === "adminMem") loadAdminMemTab();
+    if (tab === "adminKb") loadAdminKbTab();
+    if (tab === "admin") { show("adminUser"); return; }   /* 旧书签兼容 */
     try { history.replaceState(null, "", "#" + tab); } catch (e) { /* 忽略 */ }
     if (!found) show("user");
   }
   Array.prototype.forEach.call(document.querySelectorAll(".nav-item"), function (b) {
-    b.onclick = function () {
-      var t = b.getAttribute("data-tab");
-      if (t === "admin") { show("admin"); return; }
-      show(t);
-    };
+    b.onclick = function () { show(b.getAttribute("data-tab")); };
   });
 
   /* ── 我的权益（知识库 / 记忆：按时长 + 额度，未开通可自助扣积分激活）───────
@@ -1687,13 +1678,10 @@
       + (hint ? '<span class="hint">' + hint + "</span>" : "");
   }
 
-  /* ── 管理员服务卡（10-23）────────────────────────────────────────────────
-     ⛔ 只读 /admin/services 的结果，**不自己拼密钥**：密钥只显示「已配置」。
-     ⛔ 打开面板用 http://<当前域名>:<端口>：面板与知识库前端没有 TLS，用 https 打不通；
-        管理员若在下面填了「对外地址」，一律以填的为准。 */
-  function adPickPort(u, dflt) {
-    try { return new URL(u).port || String(dflt); } catch (e) { return String(dflt); }
-  }
+  /* ── 服务卡（记忆空间 / 知识库）：状态、面板入口、对外地址（10-23 拆成两个中心）──
+     ⛔ 只读 /admin/services，不自己拼密钥（密钥只显示「已配置」）。
+     ⛔ 打开面板用 http://<当前域名>:<端口> —— 面板与知识库前端没有 TLS，https 打不开；
+        管理员填了「对外地址」则以填的为准。 */
   function adOpenUrl(effective, publicBase, dflt) {
     if (publicBase) return publicBase;
     if (!effective) return "";
@@ -1702,7 +1690,6 @@
       var port = u.port || String(dflt);
       var host = /^(127\.0\.0\.1|localhost|0\.0\.0\.0|::1)$/.test(u.hostname) ? location.hostname : u.hostname;
       var scheme = /^https?:$/.test(u.protocol) ? u.protocol.replace(":", "") : "http";
-      /* 回环地址换成当前浏览器的主机名时，沿用它自己的协议；否则用后端给的协议 */
       if (host !== u.hostname) scheme = /^https:$/.test(location.protocol) && u.protocol === "https:" ? "https" : "http";
       return scheme + "://" + host + (port ? ":" + port : "");
     } catch (e) { return effective; }
@@ -1713,84 +1700,51 @@
     el.textContent = ok ? onText : offText;
   }
   function adCopy(text, msgEl) {
-    if (!text) { if (msgEl) msgEl.textContent = "还没有地址"; return; }
+    if (!text) { if (msgEl) { msgEl.className = "status"; msgEl.textContent = "还没有地址"; } return; }
     var done = function () { if (msgEl) { msgEl.className = "status ok"; msgEl.textContent = "已复制：" + text; } };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done)["catch"](done);
     else done();
   }
-  function loadAdSvc(first) {
-    if (!$("adSvcCard")) return;
-    api("/admin/services").then(function (r) {
+  /* 面板 / 后台地址缓存（loadServices 写，按钮读） */
+  var svcUrls = { mem: "", kb: "" };
+  function svcApplyState(j) {
+    var mem = (j && j.memory) || {}, kb = (j && j.kb) || {};
+    svcUrls.mem = adOpenUrl(mem.effectiveBase, mem.publicBase, 8125);
+    svcUrls.kb = adOpenUrl(kb.effectiveBase, kb.publicBase, 8081);
+    adPill($("svcMemState"), Boolean(mem.effectiveBase) && Boolean(mem.effectiveHasKey), "已配置", mem.effectiveBase ? "缺密钥" : "未配置");
+    adPill($("svcKbState"), Boolean(kb.effectiveBase) && Boolean(kb.effectiveHasKey), "已配置", kb.effectiveBase ? "缺密钥" : "未配置");
+    if ($("svcMemInfo")) {
+      $("svcMemInfo").textContent = "生效 " + (mem.effectiveBase || "—") + "　代理 " + (mem.effectiveProxyBase || "—")
+        + "　实例 " + (mem.instance || "default") + (mem.effectiveHasKey ? "　（key 已配）" : "　（key 未配 ⇒ 记忆不可用）")
+        + (svcUrls.mem ? "　面板 " + svcUrls.mem : "");
+    }
+    if ($("svcKbInfo")) {
+      $("svcKbInfo").textContent = "生效 " + (kb.effectiveBase || "—") + (kb.effectiveHasKey ? "　（key 已配）" : "　（key 未配 ⇒ 知识库不可用）")
+        + (svcUrls.kb ? "　后台 " + svcUrls.kb : "");
+    }
+    if ($("svcMemOpen")) $("svcMemOpen").disabled = !svcUrls.mem;
+    if ($("svcKbOpen")) $("svcKbOpen").disabled = !svcUrls.kb;
+  }
+  function svcOpen(which) { var u = svcUrls[which]; if (u) window.open(u, "_blank", "noopener"); }
+  function svcCopy(which) { adCopy(svcUrls[which] || "", $(which === "kb" ? "svcKbStatus" : "svcMemStatus")); }
+  /* 对外地址单独一个接口：⛔ 不走 /admin/services POST（那条会带着掩码密钥一起提交） */
+  function svcPubSave(which) {
+    var input = $(which === "kb" ? "svcKbPublic" : "svcMemPublic");
+    var msg = $(which === "kb" ? "svcKbPubMsg" : "svcMemPubMsg");
+    var body = which === "kb" ? { kb: input.value.trim() } : { memory: input.value.trim() };
+    if (msg) { msg.className = "status"; msg.textContent = "保存中…"; }
+    api("/admin/services/public-base", { method: "POST", body: body }).then(function (r) {
       var j = (r && r.j) || {};
-      if (!r.ok || !j.ok) {
-        adPill($("adMemState"), false, "", "不可读");
-        adPill($("adKbState"), false, "", "不可读");
-        return;
-      }
-      var mem = j.memory || {}, kb = j.kb || {};
-      /* 记忆空间 */
-      var memUrl = adOpenUrl(mem.effectiveBase, mem.publicBase, 8125);
-      adPill($("adMemState"), Boolean(mem.effectiveBase) && Boolean(mem.effectiveHasKey), "已配置", mem.effectiveBase ? "缺密钥" : "未配置");
-      $("adMemBase").textContent = mem.effectiveBase || "—";
-      $("adMemProxy").textContent = mem.effectiveProxyBase || "—";
-      $("adMemInst").textContent = mem.instance || "default";
-      $("adMemKey").textContent = mem.effectiveHasKey ? "已配置" : "未配置";
-      $("adMemOpen").disabled = !memUrl;
-      $("adMemOpen").setAttribute("data-url", memUrl);
-      /* 知识库 */
-      var kbUrl = adOpenUrl(kb.effectiveBase, kb.publicBase, 8081);
-      adPill($("adKbState"), Boolean(kb.effectiveBase) && Boolean(kb.effectiveHasKey), "已配置", kb.effectiveBase ? "缺密钥" : "未配置");
-      $("adKbBase").textContent = kb.effectiveBase || "—";
-      $("adKbUi").textContent = kbUrl || "—";
-      $("adKbLlm").textContent = kb.llmModelId || "（用服务端默认）";
-      $("adKbEmbed").textContent = kb.embedModelId || "（用服务端默认）";
-      $("adKbKey").textContent = kb.effectiveHasKey ? "已配置" : "未配置";
-      $("adKbOpen").disabled = !kbUrl;
-      $("adKbOpen").setAttribute("data-url", kbUrl);
-      if (first) {
-        $("adMemPublic").value = mem.publicBase || "";
-        $("adKbPublic").value = kb.publicBase || "";
-      }
-    })["catch"](function () {
-      adPill($("adMemState"), false, "", "读取失败");
-      adPill($("adKbState"), false, "", "读取失败");
-    });
+      if (r.ok && j.ok) { if (msg) { msg.className = "status ok"; msg.textContent = "已保存（下次打开即用新地址）"; } loadServices(); }
+      else if (msg) { msg.className = "status bad"; msg.textContent = "保存失败：" + ((j && (j.error || j.message)) || ("HTTP " + r.status)); }
+    })["catch"](function () { if (msg) { msg.className = "status bad"; msg.textContent = "保存失败：网络错误"; } });
   }
-  function adTest(which) {
-    var msg = $(which === "memory" ? "adMemMsg" : "adKbMsg");
-    if (msg) { msg.className = "status"; msg.textContent = "测试中…"; }
-    api("/admin/services/test", { method: "POST", body: { which: which } }).then(function (r) {
-      var j = (r && r.j) || {};
-      if (!msg) return;
-      if (r.ok && j.ok) { msg.className = "status ok"; msg.textContent = "连通：" + (j.message || (j.base + "（" + j.elapsedMs + "ms）")); }
-      else {
-        msg.className = "status bad";
-        msg.textContent = "不通：" + ((j && (j.message || j.error)) || ("HTTP " + (r && r.status))) ;
-      }
-    })["catch"](function () { if (msg) { msg.className = "status bad"; msg.textContent = "不通：网络错误"; } });
-  }
-  function adBind() {
-    if (!$("adSvcCard") || $("adSvcCard").getAttribute("data-bound")) return;
-    $("adSvcCard").setAttribute("data-bound", "1");
-    var open = function (id) { return function () { var u = $(id).getAttribute("data-url"); if (u) window.open(u, "_blank", "noopener"); }; };
-    $("adMemOpen").onclick = open("adMemOpen");
-    $("adKbOpen").onclick = open("adKbOpen");
-    $("adMemCopy").onclick = function () { adCopy(($("adMemOpen").getAttribute("data-url") || ""), $("adMemMsg")); };
-    $("adKbCopy").onclick = function () { adCopy(($("adKbOpen").getAttribute("data-url") || ""), $("adKbMsg")); };
-    $("adMemTest").onclick = function () { adTest("memory"); };
-    $("adKbTest").onclick = function () { adTest("kb"); };
-    $("adRefresh").onclick = function () { loadAdSvc(false); };
-    $("adPubSave").onclick = function () {
-      var msg = $("adPubMsg");
-      msg.className = "status"; msg.textContent = "保存中…";
-      api("/admin/services/public-base", { method: "POST", body: { memory: $("adMemPublic").value, kb: $("adKbPublic").value } }).then(function (r) {
-        var j = (r && r.j) || {};
-        if (r.ok && j.ok) { msg.className = "status ok"; msg.textContent = "已保存（下一次打开面板即用新地址）"; loadAdSvc(false); }
-        else { msg.className = "status bad"; msg.textContent = "保存失败：" + ((j && (j.error || j.message)) || ("HTTP " + r.status)); }
-      })["catch"](function () { msg.className = "status bad"; msg.textContent = "保存失败：网络错误"; });
-    };
-  }
-  adBind();
+  if ($("svcMemOpen")) $("svcMemOpen").onclick = function () { svcOpen("mem"); };
+  if ($("svcKbOpen")) $("svcKbOpen").onclick = function () { svcOpen("kb"); };
+  if ($("svcMemCopy")) $("svcMemCopy").onclick = function () { svcCopy("mem"); };
+  if ($("svcKbCopy")) $("svcKbCopy").onclick = function () { svcCopy("kb"); };
+  if ($("svcMemPubSave")) $("svcMemPubSave").onclick = function () { svcPubSave("mem"); };
+  if ($("svcKbPubSave")) $("svcKbPubSave").onclick = function () { svcPubSave("kb"); };
 
   function admSay(t, cls) { var st = $("admStatus"); if (!st) return; st.textContent = t || ""; st.className = "status" + (cls ? " " + cls : ""); }
   function loadAdminAll(filter) {
@@ -1977,8 +1931,21 @@
     /* ⛔ 19:0x 用户定案：记忆空间/知识库**不在用户中心内嵌**（iframe 的登录态是浏览器级 cookie，
        同一浏览器上任何人都能借管理员的登录直接用 = 绕过授权，用户实测指出）。入口与面板已撤除，
        管理员请直接访问 mem./kb.ppz123.asia（建议用无痕窗口）。 */
-    if (isAdmin) { $("navAdmin").hidden = false; loadAdminAll(); try { loadAdSvc(true); } catch (e) {} }
-    else { var a = $("navAdmin"); if (a && a.parentNode) a.parentNode.removeChild(a); }
+    /* 10-23：管理区拆成 4 个中心 —— 导航项与 tab 一起由 isAdmin 控制（普通用户连节点都被摘掉） */
+    var ADMIN_TABS = ["adminUser", "adminModel", "adminMem", "adminKb"];
+    if (isAdmin) {
+      /* 整组放出来（组标题 + 四个入口一起）；再逐个兜底，兼容没有组容器的旧结构 */
+      var grp = $("navGroupAdmin");
+      if (grp) grp.hidden = false;
+      ADMIN_TABS.forEach(function (t) { var b = $("navAdmin" + t.slice(5)); if (b) b.hidden = false; });
+      loadAdminAll();
+    }
+    else {
+      var grp = $("navGroupAdmin");
+      if (grp && grp.parentNode) grp.parentNode.removeChild(grp);
+      ADMIN_TABS.forEach(function (t) { var b = $("navAdmin" + t.slice(5)); if (b && b.parentNode) b.parentNode.removeChild(b); });
+      if (location.hash.indexOf("#admin") === 0) show("user");   /* 旧书签 #admin* 一律回落到用户中心 */
+    }
     var start = (location.hash || "#user").slice(1);
     show(["user", "pair", "cloud", "memory", "kb", "admin"].indexOf(start) >= 0 ? start : "user");
   }).catch(function () { window.location.replace("index.html"); });
@@ -2173,7 +2140,8 @@
   }
   function loadUpstreamCfg() {
     api("/admin/upstream").then(function (r) {
-      if (!r.ok || !r.j || !r.j.ok) { $("adminTab").hidden = true; return; }
+      /* 10-23：原 `#adminTab` 已拆成 4 个中心 ⇒ 这里改收「管理员」整组（不存在时静默跳过） */
+      if (!r.ok || !r.j || !r.j.ok) { var g = $("navGroupAdmin"); if (g) g.hidden = true; return; }
       $("auBase").value = r.j.base || "";
       if ($("auCatalogBase")) $("auCatalogBase").value = r.j.catalogBase || "";
       $("auKey").value = "";
@@ -2197,6 +2165,12 @@
       $("auDiskInfo").textContent = "服务器磁盘：总 " + auGb(r.j.totalBytes) + " GB · 已用 " + pct + "% · 剩余 " + auGb(r.j.freeBytes) + " GB";
     });
   }
+  /* 10-23 分中心加载：每个 tab 只拉自己用到的数据 */
+  function loadAdminUserTab() { loadVersion(); loadFeatures(); loadAdminPoints(""); loadInvites(); loadAdminAll(); }
+  function loadAdminModelTab() { loadUpstreamCfg(); loadDiskInfo(); loadAdminModels(); loadOffPeak(); loadChatModels(); }
+  function loadAdminMemTab() { loadServices(); }
+  function loadAdminKbTab() { loadServices(); }
+
   function loadAdminPanel() {
     loadVersion(); loadFeatures(); loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites(); loadChatModels();
     api("/admin/users").then(function (r) {
@@ -2480,11 +2454,16 @@
 
   /* ── 知识库 / 记忆空间上游（10-18）：回显 + 保存（热生效）+ 单服务测试 ──
      ⛔ 留空的字段由服务端解释为"回退环境变量 / 不修改"，前端不要自己补默认值。 */
-  function svcSay(text, cls) { var el = $("svcStatus"); if (!el) return; el.textContent = text || ""; el.className = "hint" + (cls ? " " + cls : ""); }
+  function svcSay(which, text, cls) {
+    var el = $(which === "kb" ? "svcKbStatus" : "svcMemStatus");
+    if (!el) return;
+    el.textContent = text || "";
+    el.className = "status" + (cls ? " " + cls : "");
+  }
   function loadServices() {
     if (!$("svcKbBase")) return;
     api("/admin/services").then(function (r) {
-      if (!r.ok || !r.j || !r.j.ok) { svcSay("读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
+      if (!r.ok || !r.j || !r.j.ok) { svcSay("kb", "读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
       var kb = r.j.kb || {}, mem = r.j.memory || {};
       $("svcKbBase").value = kb.base || "";
       $("svcKbKey").value = "";
@@ -2497,16 +2476,15 @@
       $("svcMemInstance").value = mem.instance || "";
       $("svcMemKey").value = "";
       $("svcMemKey").placeholder = mem.hasKey ? "已保存，留空不改" : "API Key";
-      /* ⛔ 这行是管理员排查"到底在用哪个地址"的唯一入口 —— 生效值必须摊开 */
-      var bits = [];
-      bits.push("知识库生效 " + (kb.effectiveBase || "—") + (kb.effectiveHasKey ? "（key 已配）" : "（key 未配 ⇒ 知识库不可用）"));
-      bits.push("记忆生效 " + (mem.effectiveBase || "—") + " / 代理 " + (mem.effectiveProxyBase || "—") + (mem.effectiveHasKey ? "（key 已配）" : "（key 未配）"));
-      if (!kb.base && kb.envBase) bits.push("知识库走环境变量 " + kb.envBase);
-      $("svcInfo").textContent = bits.join(" · ");
-    }).catch(function () { svcSay("读取失败：网络错误", "bad"); });
+      if ($("svcKbPublic")) $("svcKbPublic").value = kb.publicBase || "";
+      if ($("svcMemPublic")) $("svcMemPublic").value = mem.publicBase || "";
+      /* ⛔ 这行是管理员排查「到底在用哪个地址」的唯一入口 —— 生效值必须摊开 */
+      svcApplyState(r.j);
+    }).catch(function () { svcSay("kb", "读取失败：网络错误", "bad"); });
   }
-  function svcRenderTest(j) {
-    var box = $("svcTestResult"); if (!box) return;
+  function svcRenderTest(which, j) {
+    var box = $(which === "kb" ? "svcKbTestResult" : "svcMemTestResult");
+    if (!box) return;
     box.style.display = "";
     var rows = (j.probes || []).map(function (p) {
       var col = p.ok ? "var(--ok)" : "var(--bad)";
@@ -2523,33 +2501,38 @@
   function svcTest(which) {
     var baseInput = which === "kb" ? $("svcKbBase") : $("svcMemBase");
     var keyInput = which === "kb" ? $("svcKbKey") : $("svcMemKey");
-    svcSay("测试中（最多约 8 秒）…");
+    svcSay(which, "测试中（最多约 8 秒）…");
     api("/admin/services/test", { method: "POST", body: { which: which, base: baseInput.value.trim(), key: keyInput.value.trim() } }).then(function (r) {
       var j = r.j || {};
-      if (!r.ok || !j.probes) { svcSay("测试失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
-      svcRenderTest(j);
-      svcSay(j.ok ? "连通性正常" : "不可达（看下方逐行原因）", j.ok ? "ok" : "bad");
-    }).catch(function () { svcSay("测试失败：网络错误", "bad"); });
+      if (!r.ok || !j.probes) { svcSay(which, "测试失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      svcRenderTest(which, j);
+      svcSay(which, j.ok ? "连通性正常" : "不可达（看下方逐行原因）", j.ok ? "ok" : "bad");
+    }).catch(function () { svcSay(which, "测试失败：网络错误", "bad"); });
   }
   if ($("svcTestKb")) $("svcTestKb").onclick = function () { svcTest("kb"); };
   if ($("svcTestMem")) $("svcTestMem").onclick = function () { svcTest("memory"); };
-  if ($("svcSave")) $("svcSave").onclick = function () {
-    var btn = $("svcSave"); btn.disabled = true; svcSay("保存中…");
-    api("/admin/services", { method: "POST", body: {
-      kb: {
-        base: $("svcKbBase").value.trim(), key: $("svcKbKey").value.trim(),
-        llmModelId: $("svcKbLlm").value.trim(), embedModelId: $("svcKbEmbed").value.trim(), vlmModelId: $("svcKbVlm").value.trim(),
-      },
-      memory: {
-        base: $("svcMemBase").value.trim(), proxyBase: $("svcMemProxy").value.trim(),
-        key: $("svcMemKey").value.trim(), instance: $("svcMemInstance").value.trim(),
-      },
-    } }).then(function (r) {
-      btn.disabled = false;
-      if (r.ok && r.j && r.j.ok) { svcSay("已保存并热生效（下一次知识库/记忆调用即走新地址）", "ok"); loadServices(); }
-      else { svcSay("保存失败：" + ((r.j && r.j.error) || r.status), "bad"); }
-    }).catch(function () { btn.disabled = false; svcSay("保存失败：网络错误", "bad"); });
-  };
+  /* 两张卡各自保存，只提交自己那半边（后端已支持部分更新） */
+  function svcSaveOne(which) {
+    var btn = $(which === "kb" ? "svcSaveKb" : "svcSaveMem");
+    if (btn) btn.disabled = true;
+    svcSay(which, "保存中…");
+    var body = which === "kb"
+      ? { kb: {
+          base: $("svcKbBase").value.trim(), key: $("svcKbKey").value.trim(),
+          llmModelId: $("svcKbLlm").value.trim(), embedModelId: $("svcKbEmbed").value.trim(), vlmModelId: $("svcKbVlm").value.trim(),
+        } }
+      : { memory: {
+          base: $("svcMemBase").value.trim(), proxyBase: $("svcMemProxy").value.trim(),
+          key: $("svcMemKey").value.trim(), instance: $("svcMemInstance").value.trim(),
+        } };
+    api("/admin/services", { method: "POST", body: body }).then(function (r) {
+      if (btn) btn.disabled = false;
+      if (r.ok && r.j && r.j.ok) { svcSay(which, "已保存并热生效", "ok"); loadServices(); }
+      else { svcSay(which, "保存失败：" + ((r.j && r.j.error) || r.status), "bad"); }
+    }).catch(function () { if (btn) btn.disabled = false; svcSay(which, "保存失败：网络错误", "bad"); });
+  }
+  if ($("svcSaveKb")) $("svcSaveKb").onclick = function () { svcSaveOne("kb"); };
+  if ($("svcSaveMem")) $("svcSaveMem").onclick = function () { svcSaveOne("memory"); };
 
   /* ── 邀请码（管理员）：生成 / 记录 / 账号明细 / 额度监控 ── */
   var ivInvites = [];
