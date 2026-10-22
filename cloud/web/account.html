@@ -590,13 +590,22 @@
           </select>
           <input id="auChatModel" list="auChatModels" placeholder="模型 id（可从左边选，也可手填）" style="width:240px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--field);color:var(--text)" />
           <datalist id="auChatModels"></datalist>
+          <!-- 10-22 用户：「回复怎么还被截断了」——推理型模型会把预算烧在思考上，
+               默认 1024 起；这里给个显式上限，长回答不够就调大。 -->
+          <select id="auChatMax" title="回复上限（token）：推理模型会把一部分用在思考上，不够就调大"
+                  style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--field);color:var(--text)">
+            <option value="512">上限 512</option>
+            <option value="1024" selected>上限 1024</option>
+            <option value="2048">上限 2048</option>
+            <option value="4096">上限 4096</option>
+          </select>
           <button class="btn sm" id="auChatRefresh" title="重新向上游要一次模型列表">刷新列表</button>
           <button class="btn sm" id="auChatSend">发送测试</button>
           <span class="hint" id="auChatStatus"></span>
         </div>
         <div class="hint" id="auChatCount" style="margin-top:4px"></div>
         <textarea id="auChatPrompt" rows="2" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--text)">你好，用一句话介绍一下你自己</textarea>
-        <pre id="auChatOut" style="display:none;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--field);white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto"></pre>
+        <pre id="auChatOut" style="display:none;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--field);white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto"></pre>
       </div>
       <!-- 10-22 用户：「同步出来模型映射后的模型，sub2api 也是一样」——
            上游开了模型映射时 /v1/models 给的是别名，这里把别名翻成真实模型名。
@@ -2013,6 +2022,34 @@
     }).catch(function () { btn.disabled = false; btn.textContent = "自动探测映射"; $("auMapStatus").textContent = "网络错误"; });
   };
   loadModelMap();
+  /* 10-22 补回：聊天测试的**发送绑定**在上一轮移植时漏搬（只搬了候选加载，按钮点了没反应）。
+     ⛔ 同时把「上限」传给服务端，并把 finish_reason=length 明确标成「被截断」——
+        用户看到的「我是腾讯开发的混…」就是默认 256 token 被推理吃光的结果。 */
+  if ($("auChatSend")) $("auChatSend").onclick = function () {
+    var model = ($("auChatModel").value || "").trim();
+    var prompt = ($("auChatPrompt").value || "").trim();
+    if (!model || !prompt) { $("auChatStatus").textContent = "先填模型 id 和测试内容"; return; }
+    var btn = $("auChatSend"); btn.disabled = true; btn.textContent = "发送中…";
+    var maxTokens = Number(($("auChatMax") && $("auChatMax").value) || 1024) || 1024;
+    $("auChatStatus").textContent = "请求上游中（最多 45 秒 · 上限 " + maxTokens + " token）…";
+    $("auChatOut").style.display = "none";
+    api("/admin/upstream/chat", { method: "POST", body: { model: model, prompt: prompt, maxTokens: maxTokens } }).then(function (r) {
+      btn.disabled = false; btn.textContent = "发送测试";
+      var j = r.j || {};
+      if (r.ok && j.ok) {
+        var truncated = j.finishReason === "length" || j.finishReason === "max_tokens";
+        $("auChatStatus").textContent = "✓ " + (j.protocol === "anthropic" ? "Claude 协议" : "OpenAI 协议") + " · " + j.model + " · " + j.ms + "ms"
+          + (j.usage && j.usage.total_tokens ? " · " + j.usage.total_tokens + " tokens" : "")
+          + (truncated ? " · ⚠ 已到上限 " + (j.maxTokens || maxTokens) + " 被截断 → 调大左边「上限」再试" : "");
+        if (j.message) $("auChatStatus").textContent += " · " + j.message;
+        $("auChatOut").style.display = "";
+        $("auChatOut").textContent = j.content || (j.reasoning ? "（只有思考，没有正文）\n\n" + j.reasoning : "（空回复）");
+      } else {
+        $("auChatStatus").textContent = "✗ " + (j.message || j.error || ("HTTP " + r.status));
+        $("auChatOut").style.display = "none";
+      }
+    }).catch(function () { btn.disabled = false; btn.textContent = "发送测试"; $("auChatStatus").textContent = "网络错误"; });
+  };
   if ($("auTest")) $("auTest").onclick = function () {
     var base = $("auBase").value.trim();
     if (!base) { auSay("先填上游地址再测", "bad"); return; }
