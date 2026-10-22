@@ -2095,7 +2095,12 @@
         if (box.querySelector("#auSyncNow")) box.querySelector("#auSyncNow").onclick = doSyncNow;
 
         var openDialog = function () { syncDialog(j.modelCount || 0, doSyncNow); };
-        if (j.changed) {
+        /* ⛔ 别只看 `j.changed`：服务端只比较了「上游地址」，改的是**目录同步地址**或**新填了密钥**时
+           它仍为 false ⇒ 会漏保存，测通了却不生效。这里把三种变更都算进来。 */
+        var catNow = ($("auCatalogBase") ? $("auCatalogBase").value.trim() : "");
+        var keyNow = ($("auKey").value || "").trim();
+        var catDirty = catNow !== String(j.savedCatalogBase || "");
+        if (j.changed || catDirty || keyNow) {
           auSay("连通正常 —— 正在自动保存并热生效…");
           api("/admin/upstream", {
             method: "POST",
