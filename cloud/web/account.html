@@ -284,6 +284,100 @@
   .ent-cell .meta .meta-line { display: block; white-space: nowrap; }
   .ent-cell .ops { display: flex; gap: 8px; flex-wrap: wrap; }
   .ent-cell .ops .btn { min-height: 32px; min-width: 64px; }
+  /* ── 用户管理卡片（10-22 用户：「卡片杂乱无章」）────────────────────────────
+     结构：头（标题 + 说明 + 统计）/ 工具条 / 批量栏（分组）/ 表格（表头吸顶）。
+     ⛔ 全部限定 #umCard：同一页还有 6 张卡，别让这些规则漏出去。
+     ⛔ 颜色一律走主题变量，亮/暗自动跟随；间距走 4 的倍数。 */
+  #umCard .um-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--line-soft); }
+  #umCard .um-head-main { flex: 1 1 320px; min-width: 0; }
+  #umCard .um-head h2 { margin: 0 0 6px; }
+  #umCard .um-sub { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.65; max-width: 70ch; }
+  /* 统计做成品牌色胶囊：空串时不占位（JS 只在有内容时写） */
+  #umCard #admSummary:not(:empty) {
+    flex: none; display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px;
+    border-radius: 999px; background: var(--brand-soft); color: var(--brand-ink);
+    font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  #umCard .um-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 16px 0 12px; }
+  #umCard .um-search { display: flex; align-items: center; gap: 8px; flex: 1 1 280px; max-width: 400px; min-width: 0; }
+  #umCard .um-search .field { flex: 1; width: auto; min-height: 36px; padding: 8px 12px; border-radius: 8px; font-size: 13px; }
+  #umCard .um-toolbar .btn { min-height: 36px; }
+  #umCard .um-toolbar-end { display: flex; gap: 8px; margin-left: auto; }
+  /* 批量栏：四段，段间用竖线分隔（⛔ 不用渐变底 + 边框 + 阴影三件套） */
+  #umCard .bulk-bar {
+    display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap;
+    padding: 10px 14px; margin-bottom: 14px;
+    border: 1px solid var(--line-soft); border-radius: 10px; background: var(--field);
+  }
+  #umCard .bulk-grp { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  #umCard .bulk-grp + .bulk-grp { padding-left: 16px; border-left: 1px solid var(--line); }
+  #umCard .bulk-check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  /* 单位做成输入框内后缀：框宽不变，但「30 天 / 500 MB」一眼读得懂 */
+  #umCard .bulk-num { position: relative; display: inline-flex; align-items: center; }
+  #umCard .bulk-num > i { position: absolute; right: 10px; font-style: normal; font-size: 11.5px; color: var(--faint); pointer-events: none; }
+  #umCard .bulk-num > .field { width: 96px; padding-right: 30px; text-align: right; }
+  #umCard .bulk-label { font-size: 11.5px; font-weight: 600; color: var(--faint); white-space: nowrap; }
+  #umCard .bulk-grp .field { width: auto; min-height: 32px; padding: 5px 10px; border-radius: 8px; font-size: 12.5px; }
+  #umCard .bulk-grp .btn { min-height: 32px; }
+  #umCard .bulk-grp-end { margin-left: auto; }
+  /* 表格：定高容器 + 表头吸顶（账号一多，往下滚就看不到表头） */
+  #umCard .um-table-wrap { max-height: min(62vh, 720px); overflow: auto; border: 1px solid var(--line-soft); border-radius: 10px; }
+  /* 固定布局：列宽由 colgroup 决定 ⇒ 日期不会被挤成三行、权益列不会撑到 174px（10-22 实拍） */
+  #umCard .um-table { table-layout: fixed; min-width: 1450px; }
+  #umCard .um-table thead th { position: sticky; top: 0; z-index: 2; background: var(--field); border-bottom: 1px solid var(--line); }
+  #umCard .um-table tbody td { height: 44px; padding: 8px 12px; }
+  /* 窄屏横滚时勾选列 + 用户名固定（11 列难免滚动，至少要能一直看见是谁） */
+  #umCard .um-table th.adm-cb, #umCard .um-table td.adm-cb { position: sticky; left: 0; z-index: 3; background: var(--card); }
+  #umCard .um-table th:nth-child(2), #umCard .um-table td:nth-child(2) { position: sticky; left: 44px; z-index: 2; background: var(--card); box-shadow: 1px 0 0 var(--line-soft); }
+  #umCard .um-table thead th.adm-cb, #umCard .um-table thead th:nth-child(2) { background: var(--field); z-index: 4; }
+  #umCard .um-table tbody tr:hover td.adm-cb, #umCard .um-table tbody tr:hover td:nth-child(2) { background: var(--field); }
+
+  #umCard .um-table th.adm-cb, #umCard .um-table td.adm-cb { width: 44px; padding-left: 8px; padding-right: 4px; }
+  #umCard .um-table tbody tr:last-child td { border-bottom: 0; }
+  /* 单元格内的「输入框 + 按钮」：同高、同间距、居中对齐 */
+  #umCard .um-inline { display: flex; align-items: center; gap: 6px; justify-content: center; }
+  #umCard .um-inline .field { width: 60px; max-width: none; min-height: 30px; padding: 4px 8px; border-radius: 7px; font-size: 12.5px; text-align: center; }
+  #umCard .um-inline .btn { min-height: 30px; padding: 3px 10px; font-size: 12px; }
+  /* 权益列：全局 .ent-cell 有 min-width:240px（给白页面用），11 列表格里会把整表顶出去 185px ⇒
+     这里收到 150（徽标 + 一行元信息刚好），表格才能在一屏内不横向滚动。 */
+  #umCard .ent-cell { min-width: 0; gap: 4px; }
+  #umCard .ent-cell .ent-pill { padding: 4px 10px; font-size: 12px; }
+  #umCard .ent-cell .meta { font-size: 11.5px; line-height: 1.5; }
+  /* 操作列：⛔ 三按钮必须单行 —— 折成一列会让整行高到 85px，看着像「一列竖排的按钮」（10-22 实拍） */
+  #umCard .um-ops { display: flex; flex-wrap: nowrap; gap: 6px; justify-content: center; }
+  #umCard .um-ops .btn { min-height: 28px; padding: 3px 8px; font-size: 11.5px; }
+  /* 时间 / 数字不折行（「2026-10-22 22:41」折成三行是最刺眼的一处） */
+  #umCard .um-table td:nth-child(5), #umCard .um-table td:nth-child(6) { white-space: nowrap; }
+  /* 权益列的元信息允许折行（nowrap 会把列撑到 174px，11 列就超宽了） */
+  #umCard .ent-cell .meta .meta-line { white-space: normal; }
+  /* 空 / 加载 / 失败三态：图标 + 结论 + 下一步（表格外独立块，居中按容器算） */
+  #umCard .um-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 220px; padding: 32px 16px; text-align: center;
+    border: 1px solid var(--line-soft); border-radius: 10px; background: var(--field);
+  }
+  #umCard .um-state b { display: block; font-size: 13.5px; font-weight: 600; color: var(--text); }
+  #umCard .um-state .hint { display: block; max-width: 46ch; margin-top: 6px; line-height: 1.7; }
+  #umCard .um-state.is-bad b { color: var(--bad); }
+  #umCard .um-state.is-bad .um-empty-ico { border-color: var(--bad); color: var(--bad); opacity: .85; }
+  #umCard .um-empty { padding: 36px 16px; text-align: center; }
+  #umCard .um-empty b { display: block; font-size: 13.5px; font-weight: 600; color: var(--text); }
+  #umCard .um-empty .hint { display: block; max-width: 46ch; margin: 6px auto 0; line-height: 1.7; }
+  #umCard .um-empty.is-bad b { color: var(--bad); }
+  #umCard .um-empty-ico {
+    display: grid; place-items: center; width: 40px; height: 40px; margin: 0 auto 12px;
+    border-radius: 50%; border: 1px solid var(--line); background: var(--field); color: var(--faint);
+  }
+  #umCard .um-empty-ico svg { width: 20px; height: 20px; }
+  #umCard .um-empty.is-bad .um-empty-ico { border-color: var(--bad); opacity: .8; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  @media (max-width: 900px) {
+    #umCard .um-search { flex: 1 1 100%; max-width: none; }
+    #umCard .um-toolbar-end { margin-left: 0; }
+    #umCard .bulk-grp + .bulk-grp { padding-left: 0; border-left: 0; }
+    #umCard .bulk-grp-end { margin-left: 0; }
+  }
+
   /* 示例数据横幅（记忆页预览用；接入真实数据后应移除） */
   .demo-banner { background: var(--warn-soft); border: 1px solid var(--warn); color: var(--warn); padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
 </style>
@@ -685,44 +779,75 @@
       </div>
       <div id="svcTestResult" style="display:none;margin-top:10px"></div>
     </div>
-    <div class="card">
-      <h2>用户 · 权益 · 积分 <span class="pill ok">一处管理</span></h2>
-      <div class="hint" style="margin-bottom:4px">一个账号的全部管理动作都在这里：账号本身、知识库/记忆授权（按时长+额度）、积分发放与扣减。</div>
-
-      <h3 class="sub">账号一览</h3>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-        <input class="field" id="admq" placeholder="按用户名搜索…" style="flex:0 1 260px;min-width:160px" />
-        <button class="btn" id="admSearch">搜索</button>
-        <button class="btn" id="admAll">全部</button>
-        <button class="btn" id="admRefresh">刷新</button>
+    <div class="card" id="umCard">
+      <!-- 10-22 用户：「用户管理界面卡片杂乱无章」。改成分段结构 ——
+           头（标题 + 一句说明 + 右侧统计）/ 工具条（搜索 + 刷新）/ 批量栏（分组 + 分隔线）/ 表格。
+           ⛔ 只动排版：所有 id、data-*、按钮文案、请求逻辑保持原样。 -->
+      <div class="um-head">
+        <div class="um-head-main">
+          <h2>用户 · 权益 · 积分 <span class="pill ok">一处管理</span></h2>
+          <p class="um-sub">账号本身、知识库 / 记忆授权（按时长 + 额度）、积分发放与扣减，都在这张表里完成。</p>
+        </div>
         <span class="hint" id="admSummary"></span>
       </div>
-      <div class="bulk-bar">
-        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="admAllPick" aria-label="全选" /><span class="hint">全选</span></label>
-        <span class="hint" id="admPicked">未选账号</span>
-        <span style="width:1px;height:20px;background:var(--line)"></span>
-        <select class="field" id="admFeature" aria-label="作用对象">
-          <option value="knowledge">知识库</option>
-          <option value="memory">记忆</option>
-          <option value="both">知识库 + 记忆</option>
-        </select>
-        <input class="field" id="admDays" type="number" min="1" step="30" value="30" aria-label="续期天数" />
-        <button class="btn sm primary" id="admBulkGrant">批量开通 / 续期</button>
-        <input class="field" id="admQuota" type="number" min="0" step="128" placeholder="MB" aria-label="容量 MB" />
-        <button class="btn sm" id="admBulkQuota">批量改容量</button>
-        <button class="btn sm danger" id="admBulkOff">批量停用</button>
+
+      <div class="um-toolbar">
+        <div class="um-search">
+          <input class="field" id="admq" placeholder="按用户名搜索…" aria-label="按用户名搜索" />
+          <button class="btn sm" id="admSearch">搜索</button>
+        </div>
+        <div class="um-toolbar-end">
+          <button class="btn sm ghost" id="admAll">全部</button>
+          <button class="btn sm ghost" id="admRefresh">刷新</button>
+        </div>
       </div>
-      <div class="table-wrap">
-        <table>
+      <div class="bulk-bar">
+        <div class="bulk-grp">
+          <label class="bulk-check"><input type="checkbox" id="admAllPick" aria-label="全选" /><span class="hint">全选</span></label>
+          <span class="hint" id="admPicked">未选账号</span>
+        </div>
+        <div class="bulk-grp">
+          <span class="bulk-label">权益</span>
+          <select class="field" id="admFeature" aria-label="作用对象">
+            <option value="knowledge">知识库</option>
+            <option value="memory">记忆</option>
+            <option value="both">知识库 + 记忆</option>
+          </select>
+          <span class="bulk-num"><input class="field" id="admDays" type="number" min="1" step="30" value="30" aria-label="续期天数（天）" /><i aria-hidden="true">天</i></span>
+          <button class="btn sm primary" id="admBulkGrant">批量开通 / 续期</button>
+        </div>
+        <div class="bulk-grp">
+          <span class="bulk-label">容量</span>
+          <span class="bulk-num"><input class="field" id="admQuota" type="number" min="0" step="128" placeholder="0" aria-label="容量（MB）" /><i aria-hidden="true">MB</i></span>
+          <button class="btn sm" id="admBulkQuota">批量改容量</button>
+        </div>
+        <div class="bulk-grp bulk-grp-end">
+          <button class="btn sm danger" id="admBulkOff">批量停用</button>
+        </div>
+      </div>
+      <div class="table-wrap um-table-wrap" id="admTableWrap">
+        <table class="um-table">
+          <colgroup>
+            <col style="width:44px" /><col style="width:112px" />
+            <col style="width:86px" /><col style="width:86px" /><col style="width:148px" /><col style="width:94px" />
+            <col style="width:164px" /><col style="width:164px" />
+            <col style="width:176px" /><col style="width:176px" />
+            <col style="width:212px" />
+          </colgroup>
           <thead><tr>
-            <th class="adm-cb"></th>
-            <th>用户名</th><th>角色</th><th>状态</th><th>最近登录</th><th>积分余额</th>
-            <th>发积分</th><th>云存储（GB）</th><th>知识库</th><th>记忆</th><th>操作</th>
+            <th class="adm-cb" scope="col"><span class="sr-only">选择</span></th>
+            <th scope="col">用户名</th><th scope="col">角色</th><th scope="col">状态</th>
+            <th scope="col">最近登录</th><th scope="col">积分余额</th>
+            <th scope="col">发积分</th><th scope="col">云存储（GB）</th>
+            <th scope="col">知识库</th><th scope="col">记忆</th><th scope="col">操作</th>
           </tr></thead>
           <tbody id="admRows"></tbody>
         </table>
       </div>
-      <p class="status" id="admStatus"></p>
+      <!-- 10-22：空 / 加载 / 失败态放在表格**外面**。表格是 table-layout:fixed + 1450px 最小宽，
+           colspan 单元格的「居中」是按整表算的 ⇒ 提示文字会跑到可视区右侧（实拍偏 200px）。 -->
+      <div class="um-state" id="admState" hidden></div>
+      <p class="status" id="admStatus" role="status" aria-live="polite"></p>
 
 
       <!-- ⛔ 旧的三分区（① 用户 / ② 权益 / ③ 积分）：数据仍由原渲染器维护，但界面已由上面这张
@@ -1455,19 +1580,51 @@
     })();
   }
 
+  /* 表格三态：loading / empty / bad（null = 收起，显示表格） */
+  var ADM_ICO = '<span class="um-empty-ico" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="6.6" r="3.2" stroke="currentColor" stroke-width="1.6"/><path d="M3.8 17c0-3.4 2.8-5.1 6.2-5.1s6.2 1.7 6.2 5.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>';
+  function admState(kind, title, hint) {
+    var st = $("admState"), wrap = $("admTableWrap");
+    if (!st || !wrap) return;
+    if (!kind) { st.hidden = true; st.innerHTML = ""; wrap.hidden = false; return; }
+    /* 加载态**不隐藏表格**：刷新时列表整块消失再出现会闪；只在表里还没有数据行时放一句占位 */
+    if (kind === "loading") {
+      st.hidden = true; wrap.hidden = false;
+      var box = $("admRows");
+      if (box && !box.querySelector("tr[data-user]")) box.innerHTML = '<tr><td colspan="11" class="um-empty">正在读取账号…</td></tr>';
+      return;
+    }
+    wrap.hidden = true;
+    st.hidden = false;
+    st.className = "um-state" + (kind === "bad" ? " is-bad" : "");
+    st.innerHTML = (kind === "loading" ? "" : ADM_ICO)
+      + (title ? "<b>" + title + "</b>" : "")
+      + (hint ? '<span class="hint">' + hint + "</span>" : "");
+  }
+
   function admSay(t, cls) { var st = $("admStatus"); if (!st) return; st.textContent = t || ""; st.className = "status" + (cls ? " " + cls : ""); }
   function loadAdminAll(filter) {
     var box = $("admRows"); if (!box) return;
     bindBulkBar();
-    box.innerHTML = '<tr><td colspan="11" class="empty">读取中…</td></tr>';
+    admState("loading", "正在读取账号…");
     Promise.all([api("/admin/users"), api("/admin/entitlements")]).then(function (res) {
       var usersRes = (res[0] && res[0].j) || {}, entRes = (res[1] && res[1].j) || {};
-      if (!res[0].ok || !usersRes.ok) { box.innerHTML = '<tr><td colspan="10" class="empty">读取失败：' + esc(usersRes.error || res[0].status) + '</td></tr>'; return; }
+      if (!res[0].ok || !usersRes.ok) {
+        admState("bad", "读取失败：" + esc(usersRes.error || res[0].status), "检查服务是否在运行，然后点右上角「刷新」重试。");
+        return;
+      }
       var entMap = {}, rows = usersRes.users || [];
       (entRes.users || []).forEach(function (r) { entMap[r.username] = r.entitlements || {}; });
       var q = String(filter || "").trim().toLowerCase();
       if (q) rows = rows.filter(function (r) { return String(r.username).toLowerCase().indexOf(q) >= 0; });
-      if (!rows.length) { box.innerHTML = '<tr><td colspan="10" class="empty">没有匹配的账号</td></tr>'; return; }
+      if (!rows.length) {
+        admState(
+          "empty",
+          q ? "没有匹配的账号" : "还没有账号",
+          q ? "换个关键词，或点「全部」看完整列表。" : "用户在客户端注册后会出现在这里。"
+        );
+        return;
+      }
+      admState(null);
       box.innerHTML = rows.map(function (row) {
         var ent = entMap[row.username] || {};
         return '<tr data-user="' + esc(row.username) + '">' +
@@ -1477,11 +1634,11 @@
           '<td><span class="pill ' + (row.disabled ? "bad" : "ok") + '">' + (row.disabled ? "已停用" : "正常") + '</span></td>' +
           '<td>' + fmt(row.lastLogin) + '</td>' +
           '<td>' + Number(row.balance || 0).toFixed(2).replace(/\.00$/, "") + '</td>' +
-          '<td><div style="display:flex;gap:6px"><input class="field" data-pt type="number" placeholder="±分" style="width:84px" /><button class="btn sm" data-ptgo>发放</button></div></td>' +
-          '<td><div style="display:flex;gap:6px"><input class="field" data-gb type="number" min="0" step="1" style="width:72px" value="' + (row.quotaGB === undefined || row.quotaGB === null ? "" : row.quotaGB) + '" placeholder="GB" /><button class="btn sm" data-gbgo>保存</button></div></td>' +
+          '<td><div class="um-inline"><input class="field" data-pt type="number" aria-label="积分增减值（正数发放、负数扣减）" /><button class="btn sm" data-ptgo>发放</button></div></td>' +
+          '<td><div class="um-inline"><input class="field" data-gb type="number" min="0" step="1" value="' + (row.quotaGB === undefined || row.quotaGB === null ? "" : row.quotaGB) + '" placeholder="GB" aria-label="云存储配额（GB）" /><button class="btn sm" data-gbgo>保存</button></div></td>' +
           '<td>' + entCellHtml(ent.knowledge, "knowledge") + '</td>' +
           '<td>' + entCellHtml(ent.memory, "memory") + '</td>' +
-          '<td><div class="btn-row" style="flex-wrap:nowrap;margin:0">' +
+          '<td><div class="um-ops">' +
             '<button class="btn sm" data-toggle>' + (row.disabled ? "启用" : "停用") + '</button>' +
             '<button class="btn sm" data-reset>重置密码</button>' +
             (row.role === "admin" ? "" : '<button class="btn sm danger" data-deluser>删除</button>') +
@@ -1547,7 +1704,7 @@
           });
         });
       });
-    })["catch"](function () { box.innerHTML = '<tr><td colspan="10" class="empty">读取失败：网络错误</td></tr>'; });
+    })["catch"](function () { admState("bad", "读取失败：网络错误", "检查网络后点右上角「刷新」重试。"); });
   }
 
   /* 重置密码：弹窗输入（项目惯例不用 window.prompt）。 */
