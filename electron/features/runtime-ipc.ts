@@ -277,13 +277,8 @@ async function removeTargetsWithProgress(id: DevRuntimeId, targets: string[]): P
  *    真正的包体 `npm-global/node_modules/<pkg>` 原地不动 ⇒ 卡片显示「未安装」但包还在。 */
 const NPM_PACKAGE_ARTIFACTS: Partial<Record<DevRuntimeId, { dirs: string[]; shims: string[] }>> = {
   nuphus: { dirs: ["node_modules/@nuphus"], shims: ["nuphus-mcp", "nuphus-call"] },
-<<<<<<< HEAD
-  "playwright-cli": { dirs: ["node_modules/@playwright/cli"], shims: ["playwright-cli"] },
-  cloakbrowser: { dirs: ["node_modules/cloakbrowser"], shims: ["cloakbrowser"] },
-=======
   // REA（10-13）：包体目录 + rea / rea-agents 两个 shim；删完引擎重启后 [mcp_servers.rea]
   // 段自动消失（custom-model-apply 按 reaServerScript() 的存在性生成，见 ownedMcpServers）。
->>>>>>> f4c6e627 (feat(browser): 接入 Ego Lite，移除 Playwright/CloakBrowser，每会话独立 Space)
   rea: { dirs: ["node_modules/rea-agents"], shims: ["rea", "rea-agents"] },
 };
 
@@ -528,13 +523,7 @@ const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?:
   //    <tools>/npm-global），Windows/Linux 上既没装也不该提示 —— 列出来会永远显示「未检测到已装版本」，
   //    后台自动更新还会为它白跑一次 npm 安装。故带 platforms 约束，由 updateableToolIds() 统一过滤。
   "computer-use": { pkg: "open-computer-use", label: "Mac 电脑操作（Computer Use）", platforms: ["darwin"] },
-<<<<<<< HEAD
-  // 10-13 统一更新体系纳入：指纹浏览器就是个普通的 npm 包，装在同一套 npm-global 落位里，
-  //   installedVersionOf / runNpmInstall 对它完全成立 ⇒ 不需要为它单写一条路径。
-  cloakbrowser: { pkg: "cloakbrowser", label: "CloakBrowser 指纹浏览器" },
-=======
   // REA 逆向分析（10-13）：同一条在线更新链（fetchRegistryLatest = 国内镜像优先 + 官方回落）。
->>>>>>> f4c6e627 (feat(browser): 接入 Ego Lite，移除 Playwright/CloakBrowser，每会话独立 Space)
   rea: { pkg: "rea-agents", label: "REA 逆向分析" },
 };
 
