@@ -531,10 +531,17 @@ async function probeGet(base, probe, key, authHeader) {
     return {
       name: probe.name, path: probe.path, ok: r.ok, status: r.status,
       ms: Date.now() - t0, count,
+      /* ⛔ 10-22 客户现场：面板报「全 404」，而服务端本机实测同一地址是 401 ⇒
+         必须能看到「404 是谁返回的」。带上 Server 头、重定向后的最终 URL、响应体前 120 字：
+         nginx / Caddy / Cloudflare 的 404 页面各不相同，一眼就能分清是路径错、还是网络中间层。
+         ⛔ 只取前 120 字并脱敏，不进日志。 */
+      server: String(r.headers.get("server") || ""),
+      finalUrl: String(r.url || ""),
+      body: sanitize(text.replace(/\s+/g, " ").trim()).slice(0, 120),
       hint: r.ok ? (count == null && probe.wantList ? "能连通，但没解析出列表（端点存在、格式不同）" : "") : explainProbeStatus(r.status),
     };
   } catch (error) {
-    return { name: probe.name, path: probe.path, ok: false, status: 0, ms: Date.now() - t0, count: null, hint: classifyFetchError(error) };
+    return { name: probe.name, path: probe.path, ok: false, status: 0, ms: Date.now() - t0, count: null, server: "", finalUrl: "", body: "", hint: classifyFetchError(error) };
   }
 }
 /** 一组探测里挑"最好的那个"：有模型数的优先，其次能连通的 */

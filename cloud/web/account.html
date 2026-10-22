@@ -2001,11 +2001,20 @@
         var mark = p.ok ? (empty ? "⚠" : "✓") : (soft ? "—" : "✗");
         var hint = soft ? "未提供（可选）：这个上游没有该端点，不影响上面的连通结论"
           : (empty ? "能连通，但返回的不是模型列表（多为控制台首页 / 登录页）—— 这个地址不能用来读目录" : p.hint);
+        /* 10-22 客户现场「全 404 但服务端本机实测 401」⇒ 把「404 是谁返回的」摊开：
+           Server 头 + 最终 URL + 响应体前 120 字，能立刻分清「路径错」还是「网络中间层」。 */
+        var diag = "";
+        if (!p.ok && !soft) {
+          if (p.server) diag += "服务器：" + p.server + "　";
+          if (p.finalUrl && p.finalUrl !== "") diag += "实际地址：" + p.finalUrl + "　";
+          if (p.body) diag += "响应：" + p.body;
+        }
         return '<div style="padding:7px 0;border-top:1px solid var(--line-soft)">'
           + '<b style="color:' + col + '">' + mark + " " + esc(p.name) + "</b>"
           + '<span class="hint" style="margin-left:6px">HTTP ' + (p.status || "—") + " · " + p.ms + "ms"
           + (p.count != null ? " · " + p.count + " 个模型" : "") + "</span>"
           + (hint ? '<div class="hint" style="margin-top:3px">' + esc(hint) + "</div>" : "")
+          + (diag ? '<div class="hint" style="margin-top:3px;opacity:.85;word-break:break-all">' + esc(diag) + "</div>" : "")
           + "</div>";
       }).join("");
       var needSave = j.recognized && j.changed;
