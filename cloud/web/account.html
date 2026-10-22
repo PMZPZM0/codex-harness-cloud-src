@@ -1039,6 +1039,32 @@
     document.body.appendChild(wrap);
     $("mbClose").addEventListener("click", function () { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); });
   }
+  /* 10-22 用户：「检测通过，自动保存热更新，然后再特效弹窗模型同步，并且自动刷新模型目录缓存」——
+     连通成功后的收尾弹窗：脉冲光环 + 弹性入场，两个出口（立即同步 / 稍后）。 */
+  function syncDialog(count, onSync) {
+    var html =
+      '<style>@keyframes syncPulse{0%{box-shadow:0 0 0 0 rgba(26,127,55,.45)}70%{box-shadow:0 0 0 20px rgba(26,127,55,0)}100%{box-shadow:0 0 0 0 rgba(26,127,55,0)}}'
+      + '@keyframes syncPop{from{transform:translateY(8px) scale(.97);opacity:0}to{transform:none;opacity:1}}'
+      + '#mbModal>div{animation:syncPop .26s cubic-bezier(.2,.8,.2,1)}</style>'
+      + '<div style="text-align:center;padding:4px 0 2px">'
+      + '<div style="width:58px;height:58px;margin:0 auto 12px;border-radius:50%;display:flex;align-items:center;justify-content:center;'
+      + 'background:radial-gradient(circle at 32% 30%,var(--ok-soft,#e8f5ec),var(--ok,#1a7f37));color:#fff;font-size:27px;font-weight:700;'
+      + 'animation:syncPulse 1.7s ease-out infinite">✓</div>'
+      + '<div style="font-size:16.5px;font-weight:600;margin-bottom:5px">连通成功 · 已识别 ' + count + ' 个模型</div>'
+      + '<div class="hint">地址已自动保存并热生效，无需再点「保存」</div>'
+      + '</div>'
+      + '<div style="margin:16px 0 2px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px">'
+      + '<div class="hint" style="line-height:1.7">下一步：把上游的模型目录拉下来（<b>强制重拉，绕过 30 分钟缓存</b>），'
+      + '然后刷新「模型管理」与聊天测试的候选。</div></div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">'
+      + '<button class="btn sm" id="syncLater">稍后</button>'
+      + '<button class="btn" id="syncGo" style="background:var(--ok,#1a7f37);border-color:var(--ok,#1a7f37);color:#fff">立即同步 ' + count + ' 个模型</button>'
+      + '</div>';
+    showModal("模型同步", html);
+    var closeModal = function () { var m = $("mbModal"); if (m && m.parentNode) m.parentNode.removeChild(m); };
+    if ($("syncLater")) $("syncLater").onclick = closeModal;
+    if ($("syncGo")) $("syncGo").onclick = function () { this.disabled = true; this.textContent = "同步中…"; closeModal(); onSync(); };
+  }
   function esc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
   /* 文档预览：图片直接显示图；文本类显示分块正文（后端已校验"是你的库里的"）。 */
@@ -2017,7 +2043,8 @@
           + (diag ? '<div class="hint" style="margin-top:3px;opacity:.85;word-break:break-all">' + esc(diag) + "</div>" : "")
           + "</div>";
       }).join("");
-      var needSave = j.recognized && j.changed;
+      /* 10-22 用户令「检测通过，自动保存热更新」⇒ 不再显示「保存并同步」按钮（改由下面自动保存，失败时提示用顶部保存）。 */
+      var needSave = false;
       box.style.display = "";
       box.innerHTML = '<div style="padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field)">'
         + '<div style="font-weight:600;color:' + (j.recognized ? "var(--ok)" : j.ok ? "var(--warn)" : "var(--bad)") + '">' + esc(j.message || "") + "</div>"
@@ -2042,31 +2069,54 @@
           } else { auSay("保存失败：" + ((rr.j && rr.j.error) || rr.status), "bad"); }
         }).catch(function () { $("auAdopt").disabled = false; auSay("网络错误", "bad"); });
       };
-      /* 10-22 用户：「连通测试成功是不是要弹窗提醒确定模型同步啊，然后刷新缓存」——
-         已保存 + 识别出模型：弹一次确认 → **强制**同步目录（绕 30 分钟 TTL）→ 刷新表格与聊天测试候选。
-         取消也没关系：结果区留一个「同步到模型目录」按钮，随时能点。 */
-      if (j.recognized && !needSave) {
-        var doSyncNow = function () {
-          auSay("正在同步模型目录…");
-          api("/admin/models/sync", { method: "POST" }).then(function (x) {
-            var jj = (x && x.j) || {};
-            if (x.ok && jj.ok) {
-              auSay("已同步 " + (jj.count || jj.total || 0) + " 个模型，缓存已刷新", "ok");
-              try { loadAdminModels(); } catch (e) {}
-              try { loadChatModels(true); } catch (e) {}
-            } else {
-              auSay("同步失败：" + (jj.message || jj.error || ("HTTP " + x.status)), "bad");
-            }
-          }).catch(function () { auSay("同步失败（网络错误）", "bad"); });
-        };
+      /* 10-22 用户：「检测通过，自动保存热更新，然后再特效弹窗模型同步，并且自动刷新模型目录缓存」。
+         流程：识别成功 → 地址有变化就**自动保存并热生效** → 弹「特效弹窗」→ 确认则强制同步目录 + 刷新缓存
+         → 状态行写「已同步 N 个模型，缓存已刷新」。取消也不丢功能：结果区保留同步按钮。 */
+      var doSyncNow = function () {
+        auSay("正在同步模型目录…");
+        api("/admin/models/sync", { method: "POST" }).then(function (x) {
+          var jj = (x && x.j) || {};
+          if (x.ok && jj.ok) {
+            auSay("已同步 " + (jj.count || jj.total || 0) + " 个模型，缓存已刷新", "ok");
+            try { loadAdminModels(); } catch (e) {}
+            try { loadChatModels(true); } catch (e) {}
+          } else {
+            auSay("同步失败：" + (jj.message || jj.error || ("HTTP " + x.status)), "bad");
+          }
+        }).catch(function () { auSay("同步失败（网络错误）", "bad"); });
+      };
+      if (j.ok && j.recognized) {
+        /* 结果区常驻按钮（弹窗点「稍后」也能回来同步） */
         var holder = document.createElement("div");
         holder.style.cssText = "margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft)";
         holder.innerHTML = '<button class="btn sm" id="auSyncNow">同步到模型目录（' + (j.modelCount || 0) + ' 个）</button>'
           + '<span class="hint" style="margin-left:8px">强制重拉，绕过缓存</span>';
         if (box.firstElementChild) box.firstElementChild.appendChild(holder);
-        var syncNow = box.querySelector("#auSyncNow");
-        if (syncNow) syncNow.onclick = doSyncNow;
-        if (window.confirm("连通正常：识别到 " + (j.modelCount || 0) + " 个模型。\n要现在同步到模型目录并刷新缓存吗？")) doSyncNow();
+        if (box.querySelector("#auSyncNow")) box.querySelector("#auSyncNow").onclick = doSyncNow;
+
+        var openDialog = function () { syncDialog(j.modelCount || 0, doSyncNow); };
+        if (j.changed) {
+          auSay("连通正常 —— 正在自动保存并热生效…");
+          api("/admin/upstream", {
+            method: "POST",
+            body: {
+              base: $("auBase").value.trim(),
+              catalogBase: $("auCatalogBase") ? $("auCatalogBase").value.trim() : "",
+              gatewayKey: $("auKey").value.trim(),
+            },
+          }).then(function (rr) {
+            if (rr.ok && rr.j && rr.j.ok) {
+              auSay("已自动保存并热生效", "ok");
+              try { loadUpstreamCfg(); } catch (e) {}
+              openDialog();
+            } else {
+              auSay("自动保存失败：" + ((rr.j && rr.j.error) || rr.status) + "（可点「保存（热生效）」重试）", "bad");
+              openDialog();
+            }
+          }).catch(function () { auSay("自动保存失败（网络错误）", "bad"); openDialog(); });
+        } else {
+          openDialog();
+        }
       }
       auSay(needSave ? ("已识别 " + j.modelCount + " 个模型 —— 点「保存并同步」后模型管理才会更新") : (j.recognized ? "已识别 " + j.modelCount + " 个模型（模型管理已同步）" : (j.ok ? "能连通，但这个地址读不到模型列表" : "不可达（看上方逐行原因）")), needSave ? "warn" : (j.recognized ? "ok" : (j.ok ? "warn" : "bad")));
     }).catch(function () {
