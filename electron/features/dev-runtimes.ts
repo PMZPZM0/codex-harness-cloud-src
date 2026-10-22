@@ -56,16 +56,9 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   // nuphus 随包预解压内置（bundled，开箱即用；缺了可从随包 zip 修复）；
   // 浏览器自动化主通道是用户自行安装的 ego lite（见 browser-ipc + 设置页 Ego 卡），不再内置 Playwright。
   nuphus: { name: "Nuphus 桌面自动化", description: "35 个桌面自动化工具（屏幕截取、窗口控制、键鼠输入、剪贴板、OCR 感知），经 nuphus-call 按需调用，不占模型上下文；随包内置，开箱即用", size: "随包 30 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", bundled: true, noUninstall: true },
-<<<<<<< HEAD
-  "playwright-cli": { name: "Playwright 浏览器自动化", description: "命令行浏览器自动化 CLI（open / snapshot / click / type / screenshot），浏览器内核单独按需下载；随包内置，开箱即用", size: "随包 18 MB", marker: "npm-global\\node_modules\\@playwright\\cli\\package.json", bundled: true, noUninstall: true },
-  cloakbrowser: { name: "CloakBrowser 指纹浏览器", description: "反检测指纹浏览器 npm 包（过 Cloudflare Turnstile / reCAPTCHA / FingerprintJS），默认不用、需要时再装；npm 国内镜像下载，失败自动回落官方源", size: "约 4 MB", marker: "npm-global\\node_modules\\cloakbrowser\\package.json" },
-  // REA 逆向分析（10-13，源自 morluto/rea，npm rea-agents，MIT）：100MB > 50MB 内置线 ⇒ 按需下载
-  // （npm 国内镜像，失败回落官方源）。装完自动注册 [mcp_servers.rea]，配套内置专家「洞见」。
-=======
   // REA 逆向分析（10-13，源自 morluto/rea「REA: Reverse Engineer Anything」，npm rea-agents，MIT）：
   // 100MB > 50MB 内置线 ⇒ 按需下载（npm 国内镜像，失败回落官方源）。装完自动注册 [mcp_servers.rea]，
   // 配套内置专家「洞见 · 逆向工程专家」（requiresTool="rea"，未装时整队隐藏 —— readExpertTeams 口径）。
->>>>>>> f4c6e627 (feat(browser): 接入 Ego Lite，移除 Playwright/CloakBrowser，每会话独立 Space)
   rea: { name: "REA 逆向分析", description: "逆向工程 MCP（morluto/rea，MIT）：拆解 Electron/JS 应用、.NET 程序集、网站、SQLite 的实现并给证据链；内置专家「洞见」专用，装完重启应用生效；npm 国内镜像下载、重跑同卡即更新到最新版", size: "约 100 MB", marker: "npm-global\\node_modules\\rea-agents\\package.json" },
   // ⛔ 10-01 用户定稿：「50m 以内的工具都内置」—— 以下 7 项下载体积 ≤50MB，随包内置（builtIn），
   //    用户开箱即用、卡片显示「内置」徽标，不再进首启引导的下载清单。
