@@ -518,7 +518,15 @@ async function probeGet(base, probe, key, authHeader) {
     ? (authHeader === "x-api-key" ? { "X-API-Key": key } : { Authorization: `Bearer ${key}` })
     : {};
   try {
-    const r = await fetch(base + probe.path, { headers, signal: AbortSignal.timeout(8000) });
+    /* ⛔⛔ 10-22 修：`/admin/upstream/test` 传的是**整条 URL**（候选表 `catalogCandidates()` 给的
+       `c.url`），而这里原来只认 `base + probe.path` ⇒ `probe.path` 是 undefined ⇒
+       URL 变成 `https://wb.ppz123.asia/v1undefined` ⇒ 网关 catch-all 回 **404 HTML（6ms）**，
+       「测试连通性」全红，而目录同步（走 collectCatalogRows，用 candidate.url）其实是好的。
+       现场症状：面板五条候选全 404，服务端手工 curl 同一地址 401。
+       现在两种形态都认：有 `url` 用 url，否则 `base + path`。 */
+    const target = String(probe.url || "").trim()
+      || (String(base || "").replace(/\/+$/, "") + String(probe.path || ""));
+    const r = await fetch(target, { headers, signal: AbortSignal.timeout(8000) });
     const text = await r.text().catch(() => "");
     let count = null;
     try {
