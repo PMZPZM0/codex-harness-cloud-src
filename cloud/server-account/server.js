@@ -515,7 +515,13 @@ async function readUpstreamRates(base, key) {
 async function probeGet(base, probe, key, authHeader) {
   const t0 = Date.now();
   const headers = key
-    ? (authHeader === "x-api-key" ? { "X-API-Key": key } : { Authorization: `Bearer ${key}` })
+    ? (authHeader === "x-api-key"
+      ? { "X-API-Key": key }
+      /* ⛔ MemHub 认的不是 Bearer：X-Tdai-User-Key 带 user_key，X-Tdai-Service-Id 选实例
+         （10-23 实测：用 Bearer 一律 401，用这两个头 200） */
+      : authHeader === "tdai"
+        ? { "X-Tdai-User-Key": key, "X-Tdai-Service-Id": String(probe.serviceId || "default") }
+        : { Authorization: `Bearer ${key}` })
     : {};
   try {
     /* ⛔⛔ 10-22 修：`/admin/upstream/test` 传的是**整条 URL**（候选表 `catalogCandidates()` 给的
@@ -3050,13 +3056,14 @@ const server = http.createServer(async (req, res) => {
       return send(200, {
         ok: true,
         kb: {
-          base: kb.base || "", key: mask(kb.key), hasKey: Boolean(kb.key),
+          base: kb.base || "", publicBase: kb.publicBase || "", key: mask(kb.key), hasKey: Boolean(kb.key),
           llmModelId: kb.llmModelId || "", embedModelId: kb.embedModelId || "", vlmModelId: kb.vlmModelId || "",
           effectiveBase: WEKNORA_BASE, effectiveHasKey: Boolean(WEKNORA_ADMIN_KEY),
           envBase: WEKNORA_ENV_BASE, envHasKey: Boolean(WEKNORA_ENV_ADMIN_KEY),
         },
         memory: {
-          base: mem.base || "", proxyBase: mem.proxyBase || "", key: mask(mem.key), hasKey: Boolean(mem.key),
+          base: mem.base || "", proxyBase: mem.proxyBase || "", publicBase: mem.publicBase || "",
+          proxyPublicBase: mem.proxyPublicBase || "", key: mask(mem.key), hasKey: Boolean(mem.key),
           instance: mem.instance || "",
           effectiveBase: MEMHUB_BASE, effectiveProxyBase: MEMHUB_PROXY_BASE, effectiveHasKey: Boolean(MEMHUB_ADMIN_KEY),
           envBase: MEMHUB_ENV_BASE, envProxyBase: MEMHUB_ENV_PROXY_BASE, envHasKey: Boolean(MEMHUB_ENV_ADMIN_KEY),
@@ -3082,9 +3089,12 @@ const server = http.createServer(async (req, res) => {
       const memProxy = normOne(memIn.proxyBase, "记忆代理地址");
       if (!memProxy.ok) return send(400, { ok: false, error: memProxy.error });
       const keep = (v) => String(v == null ? "" : v).trim();
+      /* ⛔ 密钥字段：传空或传回掩码（含 ***）一律保留原值 —— 否则面板点一次「保存」就把真 key 写坏 */
+      const keepKey = (v, prev) => { const t = keep(v); if (!t || t.indexOf("***") >= 0) return String(prev || ""); return t; };
       db.services.kb = {
         base: kbBase.value,
-        key: keep(kbIn.key),
+        publicBase: kbBase.value ? normOne(kbIn.publicBase, "知识库对外地址").value || "" : "",
+        key: keepKey(kbIn.key, (db.services.kb || {}).key),
         llmModelId: keep(kbIn.llmModelId),
         embedModelId: keep(kbIn.embedModelId),
         vlmModelId: keep(kbIn.vlmModelId),
@@ -3092,7 +3102,9 @@ const server = http.createServer(async (req, res) => {
       db.services.memory = {
         base: memBase.value,
         proxyBase: memProxy.value,
-        key: keep(memIn.key),
+        publicBase: memBase.value ? normOne(memIn.publicBase, "记忆空间对外地址").value || "" : "",
+        proxyPublicBase: memProxy.value ? normOne(memIn.proxyPublicBase, "记忆代理对外地址").value || "" : "",
+        key: keepKey(memIn.key, (db.services.memory || {}).key),
         instance: keep(memIn.instance),
       };
       persist();
@@ -3104,6 +3116,28 @@ const server = http.createServer(async (req, res) => {
         memory: { effectiveBase: MEMHUB_BASE, effectiveProxyBase: MEMHUB_PROXY_BASE, effectiveHasKey: Boolean(MEMHUB_ADMIN_KEY) },
       });
     }
+    /* 10-23：「对外访问地址」单独一个接口改 —— ⛔ 不复用 /admin/services POST：
+       那里会把前端回传的掩码密钥当真值写回（sk-W6im***KEM），一次保存就把 key 弄坏。 */
+    if (p === "/admin/services/public-base" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const normOne = (raw, label) => {
+        const v = String(raw == null ? "" : raw).trim();
+        if (!v) return { ok: true, value: "" };
+        const n = normalizeUpstreamBase(v);
+        return n.ok ? { ok: true, value: n.base } : { ok: false, error: label + "：" + n.error };
+      };
+      const memPub = normOne(body && body.memory, "记忆空间对外地址");
+      if (!memPub.ok) return send(400, { ok: false, error: memPub.error });
+      const kbPub = normOne(body && body.kb, "知识库对外地址");
+      if (!kbPub.ok) return send(400, { ok: false, error: kbPub.error });
+      db.services.memory = Object.assign({}, db.services.memory || {}, { publicBase: memPub.value });
+      db.services.kb = Object.assign({}, db.services.kb || {}, { publicBase: kbPub.value });
+      persist();
+      console.log("[services] " + me.username + " 对外地址：记忆 " + (memPub.value || "（自动推导）") + " · 知识库 " + (kbPub.value || "（自动推导）"));
+      return send(200, { ok: true, memory: memPub.value, kb: kbPub.value });
+    }
+
     if (p === "/admin/services/test" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const body = await readBody();
@@ -3120,11 +3154,11 @@ const server = http.createServer(async (req, res) => {
       const probes = isKb
         ? [{ name: "知识库列表", path: "/api/v1/knowledge-bases?page_size=1", wantList: true }]
         : [
-          { name: "记忆服务（建用户端点，GET 预期 405）", path: "/api/v1/meta/user/create", wantList: false },
-          { name: "记忆服务根路径", path: "/", wantList: false },
+          { name: "记忆面板首页", path: "/", wantList: false },
+          { name: "记忆服务（用户列表，需 X-Tdai-User-Key）", path: "/api/v1/meta/user/list", wantList: false, serviceId: MEMHUB_INSTANCE },
         ];
       const results = [];
-      for (const probe of probes) results.push(await probeGet(norm.base, probe, key, isKb ? "x-api-key" : "bearer"));
+      for (const probe of probes) results.push(await probeGet(norm.base, probe, key, isKb ? "x-api-key" : "tdai"));
       const best = bestProbe(results);
       console.log(`[services] ${me.username} 测试 ${which} ${norm.base} → ${best ? "连通" : "不可达"}（${results.map((x) => `${x.status || "ERR"}@${x.ms}ms`).join(" / ")}）`);
       return send(200, {

@@ -378,6 +378,27 @@
     #umCard .bulk-grp-end { margin-left: 0; }
   }
 
+  /* ── 管理员服务卡（10-23）：两栏并排，窄屏堆叠；地址用等宽字体，密钥只显示「已配置」 ── */
+  #adSvcCard .ad-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--line-soft); }
+  #adSvcCard .ad-head-main { flex: 1 1 320px; min-width: 0; }
+  #adSvcCard .ad-head h2 { margin: 0 0 6px; }
+  #adSvcCard .ad-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
+  #adSvcCard .ad-svc { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
+  #adSvcCard .ad-svc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #adSvcCard .ad-svc-top b { font-size: 13.5px; font-weight: 600; }
+  #adSvcCard .ad-kv { display: grid; gap: 6px; margin: 0; font-size: 12.5px; }
+  #adSvcCard .ad-kv > div { display: grid; grid-template-columns: 78px 1fr; gap: 8px; align-items: baseline; min-width: 0; }
+  #adSvcCard .ad-kv dt { color: var(--muted); }
+  #adSvcCard .ad-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  #adSvcCard .ad-kv code { font-family: var(--mono, ui-monospace, Consolas, monospace); font-size: 12px; color: var(--text); }
+  #adSvcCard .ad-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+  #adSvcCard .ad-actions .btn { min-height: 32px; }
+  #adSvcCard .ad-addr { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line-soft); font-size: 12.5px; }
+  #adSvcCard .ad-addr summary { cursor: pointer; color: var(--muted); }
+  #adSvcCard .ad-addr-grid { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-top: 12px; }
+  #adSvcCard .ad-field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 240px; min-width: 0; }
+  #adSvcCard .ad-field .field { min-height: 34px; padding: 6px 10px; border-radius: 8px; font-size: 12.5px; }
+
   /* 示例数据横幅（记忆页预览用；接入真实数据后应移除） */
   .demo-banner { background: var(--warn-soft); border: 1px solid var(--warn); color: var(--warn); padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
 </style>
@@ -859,6 +880,71 @@
         <input id="apq" /><button id="apSearch"></button><button id="apAll"></button><span id="apSummary"></span>
         <p id="auStatus"></p><p id="auEntStatus"></p><p id="apStatus"></p>
       </div>
+    </div>
+
+    <!-- 10-23 用户令：「在用户管理下面新增一个管理员记忆空间和管理员知识库，用户那边看不见就行」。
+         ⛔ 整张卡在 admin tab 内（navAdmin 只对管理员显示）⇒ 普通用户既看不到入口、也拿不到地址与密钥态。 -->
+    <div class="card" id="adSvcCard">
+      <div class="ad-head">
+        <div class="ad-head-main">
+          <h2>管理员服务 <span class="pill ok">仅管理员</span></h2>
+          <p class="hint">本机部署的腾讯记忆空间（TencentDB Agent Memory）与知识库（WeKnora）。这里是运维入口，普通用户看不到。</p>
+        </div>
+        <button class="btn sm ghost" id="adRefresh">刷新状态</button>
+      </div>
+
+      <div class="ad-grid">
+        <section class="ad-svc" id="adMem">
+          <div class="ad-svc-top">
+            <b>记忆空间</b>
+            <span class="pill plain" id="adMemState">检测中…</span>
+          </div>
+          <dl class="ad-kv">
+            <div><dt>面板 / API</dt><dd><code id="adMemBase">—</code></dd></div>
+            <div><dt>模型代理</dt><dd><code id="adMemProxy">—</code></dd></div>
+            <div><dt>实例</dt><dd><code id="adMemInst">—</code></dd></div>
+            <div><dt>管理密钥</dt><dd id="adMemKey">—</dd></div>
+          </dl>
+          <div class="ad-actions">
+            <button class="btn sm primary" id="adMemOpen">打开面板</button>
+            <button class="btn sm" id="adMemCopy">复制地址</button>
+            <button class="btn sm ghost" id="adMemTest">测试连通</button>
+          </div>
+          <p class="status" id="adMemMsg" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="ad-svc" id="adKb">
+          <div class="ad-svc-top">
+            <b>知识库</b>
+            <span class="pill plain" id="adKbState">检测中…</span>
+          </div>
+          <dl class="ad-kv">
+            <div><dt>API</dt><dd><code id="adKbBase">—</code></dd></div>
+            <div><dt>前端</dt><dd><code id="adKbUi">—</code></dd></div>
+            <div><dt>问答模型</dt><dd><code id="adKbLlm">—</code></dd></div>
+            <div><dt>向量模型</dt><dd><code id="adKbEmbed">—</code></dd></div>
+            <div><dt>管理密钥</dt><dd id="adKbKey">—</dd></div>
+          </dl>
+          <div class="ad-actions">
+            <button class="btn sm primary" id="adKbOpen">打开后台</button>
+            <button class="btn sm" id="adKbCopy">复制地址</button>
+            <button class="btn sm ghost" id="adKbTest">测试连通</button>
+          </div>
+          <p class="status" id="adKbMsg" role="status" aria-live="polite"></p>
+        </section>
+      </div>
+
+      <details class="ad-addr">
+        <summary>对外访问地址（浏览器打开用；留空则按当前域名 + 服务端口自动推导）</summary>
+        <div class="ad-addr-grid">
+          <label class="ad-field"><span class="hint">记忆空间面板</span>
+            <input class="field" id="adMemPublic" placeholder="http://你的域名:8125" /></label>
+          <label class="ad-field"><span class="hint">知识库前端</span>
+            <input class="field" id="adKbPublic" placeholder="http://你的域名:8081" /></label>
+          <button class="btn sm" id="adPubSave">保存地址</button>
+        </div>
+        <p class="status" id="adPubMsg" role="status" aria-live="polite"></p>
+      </details>
     </div>
 
     <div class="card" id="ivCard">
@@ -1601,6 +1687,111 @@
       + (hint ? '<span class="hint">' + hint + "</span>" : "");
   }
 
+  /* ── 管理员服务卡（10-23）────────────────────────────────────────────────
+     ⛔ 只读 /admin/services 的结果，**不自己拼密钥**：密钥只显示「已配置」。
+     ⛔ 打开面板用 http://<当前域名>:<端口>：面板与知识库前端没有 TLS，用 https 打不通；
+        管理员若在下面填了「对外地址」，一律以填的为准。 */
+  function adPickPort(u, dflt) {
+    try { return new URL(u).port || String(dflt); } catch (e) { return String(dflt); }
+  }
+  function adOpenUrl(effective, publicBase, dflt) {
+    if (publicBase) return publicBase;
+    if (!effective) return "";
+    try {
+      var u = new URL(effective);
+      var port = u.port || String(dflt);
+      var host = /^(127\.0\.0\.1|localhost|0\.0\.0\.0|::1)$/.test(u.hostname) ? location.hostname : u.hostname;
+      var scheme = /^https?:$/.test(u.protocol) ? u.protocol.replace(":", "") : "http";
+      /* 回环地址换成当前浏览器的主机名时，沿用它自己的协议；否则用后端给的协议 */
+      if (host !== u.hostname) scheme = /^https:$/.test(location.protocol) && u.protocol === "https:" ? "https" : "http";
+      return scheme + "://" + host + (port ? ":" + port : "");
+    } catch (e) { return effective; }
+  }
+  function adPill(el, ok, onText, offText) {
+    if (!el) return;
+    el.className = "pill " + (ok ? "ok" : "warn");
+    el.textContent = ok ? onText : offText;
+  }
+  function adCopy(text, msgEl) {
+    if (!text) { if (msgEl) msgEl.textContent = "还没有地址"; return; }
+    var done = function () { if (msgEl) { msgEl.className = "status ok"; msgEl.textContent = "已复制：" + text; } };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done)["catch"](done);
+    else done();
+  }
+  function loadAdSvc(first) {
+    if (!$("adSvcCard")) return;
+    api("/admin/services").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) {
+        adPill($("adMemState"), false, "", "不可读");
+        adPill($("adKbState"), false, "", "不可读");
+        return;
+      }
+      var mem = j.memory || {}, kb = j.kb || {};
+      /* 记忆空间 */
+      var memUrl = adOpenUrl(mem.effectiveBase, mem.publicBase, 8125);
+      adPill($("adMemState"), Boolean(mem.effectiveBase) && Boolean(mem.effectiveHasKey), "已配置", mem.effectiveBase ? "缺密钥" : "未配置");
+      $("adMemBase").textContent = mem.effectiveBase || "—";
+      $("adMemProxy").textContent = mem.effectiveProxyBase || "—";
+      $("adMemInst").textContent = mem.instance || "default";
+      $("adMemKey").textContent = mem.effectiveHasKey ? "已配置" : "未配置";
+      $("adMemOpen").disabled = !memUrl;
+      $("adMemOpen").setAttribute("data-url", memUrl);
+      /* 知识库 */
+      var kbUrl = adOpenUrl(kb.effectiveBase, kb.publicBase, 8081);
+      adPill($("adKbState"), Boolean(kb.effectiveBase) && Boolean(kb.effectiveHasKey), "已配置", kb.effectiveBase ? "缺密钥" : "未配置");
+      $("adKbBase").textContent = kb.effectiveBase || "—";
+      $("adKbUi").textContent = kbUrl || "—";
+      $("adKbLlm").textContent = kb.llmModelId || "（用服务端默认）";
+      $("adKbEmbed").textContent = kb.embedModelId || "（用服务端默认）";
+      $("adKbKey").textContent = kb.effectiveHasKey ? "已配置" : "未配置";
+      $("adKbOpen").disabled = !kbUrl;
+      $("adKbOpen").setAttribute("data-url", kbUrl);
+      if (first) {
+        $("adMemPublic").value = mem.publicBase || "";
+        $("adKbPublic").value = kb.publicBase || "";
+      }
+    })["catch"](function () {
+      adPill($("adMemState"), false, "", "读取失败");
+      adPill($("adKbState"), false, "", "读取失败");
+    });
+  }
+  function adTest(which) {
+    var msg = $(which === "memory" ? "adMemMsg" : "adKbMsg");
+    if (msg) { msg.className = "status"; msg.textContent = "测试中…"; }
+    api("/admin/services/test", { method: "POST", body: { which: which } }).then(function (r) {
+      var j = (r && r.j) || {};
+      if (!msg) return;
+      if (r.ok && j.ok) { msg.className = "status ok"; msg.textContent = "连通：" + (j.message || (j.base + "（" + j.elapsedMs + "ms）")); }
+      else {
+        msg.className = "status bad";
+        msg.textContent = "不通：" + ((j && (j.message || j.error)) || ("HTTP " + (r && r.status))) ;
+      }
+    })["catch"](function () { if (msg) { msg.className = "status bad"; msg.textContent = "不通：网络错误"; } });
+  }
+  function adBind() {
+    if (!$("adSvcCard") || $("adSvcCard").getAttribute("data-bound")) return;
+    $("adSvcCard").setAttribute("data-bound", "1");
+    var open = function (id) { return function () { var u = $(id).getAttribute("data-url"); if (u) window.open(u, "_blank", "noopener"); }; };
+    $("adMemOpen").onclick = open("adMemOpen");
+    $("adKbOpen").onclick = open("adKbOpen");
+    $("adMemCopy").onclick = function () { adCopy(($("adMemOpen").getAttribute("data-url") || ""), $("adMemMsg")); };
+    $("adKbCopy").onclick = function () { adCopy(($("adKbOpen").getAttribute("data-url") || ""), $("adKbMsg")); };
+    $("adMemTest").onclick = function () { adTest("memory"); };
+    $("adKbTest").onclick = function () { adTest("kb"); };
+    $("adRefresh").onclick = function () { loadAdSvc(false); };
+    $("adPubSave").onclick = function () {
+      var msg = $("adPubMsg");
+      msg.className = "status"; msg.textContent = "保存中…";
+      api("/admin/services/public-base", { method: "POST", body: { memory: $("adMemPublic").value, kb: $("adKbPublic").value } }).then(function (r) {
+        var j = (r && r.j) || {};
+        if (r.ok && j.ok) { msg.className = "status ok"; msg.textContent = "已保存（下一次打开面板即用新地址）"; loadAdSvc(false); }
+        else { msg.className = "status bad"; msg.textContent = "保存失败：" + ((j && (j.error || j.message)) || ("HTTP " + r.status)); }
+      })["catch"](function () { msg.className = "status bad"; msg.textContent = "保存失败：网络错误"; });
+    };
+  }
+  adBind();
+
   function admSay(t, cls) { var st = $("admStatus"); if (!st) return; st.textContent = t || ""; st.className = "status" + (cls ? " " + cls : ""); }
   function loadAdminAll(filter) {
     var box = $("admRows"); if (!box) return;
@@ -1786,7 +1977,7 @@
     /* ⛔ 19:0x 用户定案：记忆空间/知识库**不在用户中心内嵌**（iframe 的登录态是浏览器级 cookie，
        同一浏览器上任何人都能借管理员的登录直接用 = 绕过授权，用户实测指出）。入口与面板已撤除，
        管理员请直接访问 mem./kb.ppz123.asia（建议用无痕窗口）。 */
-    if (isAdmin) { $("navAdmin").hidden = false; loadAdminAll(); }
+    if (isAdmin) { $("navAdmin").hidden = false; loadAdminAll(); try { loadAdSvc(true); } catch (e) {} }
     else { var a = $("navAdmin"); if (a && a.parentNode) a.parentNode.removeChild(a); }
     var start = (location.hash || "#user").slice(1);
     show(["user", "pair", "cloud", "memory", "kb", "admin"].indexOf(start) >= 0 ? start : "user");
