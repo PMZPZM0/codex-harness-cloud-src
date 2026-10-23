@@ -3681,7 +3681,8 @@ const server = http.createServer(async (req, res) => {
        开通/续费是显式动作，必须**当场重开本期配额**（used 归零，旧配额不结转）。 */
     const monthly = Math.max(0, Math.round(Number(plan.monthlyPoints) || 0));
     const period = (function () { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); })();
-    db.teamQuota[teamId] = { period, total: monthly, used: 0, resetAt: Date.now() + 32 * 86400000 };
+    /* startedAt = 本期起算点：月中升级后「本月已用」从这里重新累计（否则与清零后的 used 矛盾） */
+    db.teamQuota[teamId] = { period, total: monthly, used: 0, resetAt: Date.now() + 32 * 86400000, startedAt: Date.now() };
     if (monthly > 0) {
       const map = (db.teamPointsLedger[teamId] = db.teamPointsLedger[teamId] || {});
       const rid = "TQ" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -3977,6 +3978,12 @@ const server = http.createServer(async (req, res) => {
   if (!db.teamQuota || typeof db.teamQuota !== "object") db.teamQuota = {};
   if (!db.adminTasks || typeof db.adminTasks !== "object") db.adminTasks = {};
   if (!db.adminAudit || !Array.isArray(db.adminAudit)) db.adminAudit = [];
+  /* 审计统一入口：push + 上限裁剪。⛔ 原来只有「开通/关闭」那条路径裁剪，
+     发积分 / 批量 / 开通套餐无裁剪 ⇒ 长期无界增长（审查抓到）。 */
+  function auditPush(by, action, target, note) {
+    db.adminAudit.push({ at: Date.now(), by: String(by || ""), action: String(action || ""), target: String(target || ""), note: String(note || "") });
+    if (db.adminAudit.length > 5000) db.adminAudit = db.adminAudit.slice(-3000);
+  }
 
   function teamPolicyRaw() {
     const p = (db.teamPolicy && typeof db.teamPolicy === "object") ? db.teamPolicy : {};
@@ -4041,7 +4048,7 @@ const server = http.createServer(async (req, res) => {
       && (Number(ent.expiresAt || 0) === 0 || Date.now() < Number(ent.expiresAt));
     if (!cur || cur.period !== period) {
       const total = active ? monthly : 0;
-      db.teamQuota[teamId] = { period, total, used: 0, resetAt: Date.now() + 32 * 86400000 };
+      db.teamQuota[teamId] = { period, total, used: 0, resetAt: Date.now() + 32 * 86400000, startedAt: Date.now() };
       if (total > 0) {
         const map = (db.teamPointsLedger[teamId] = db.teamPointsLedger[teamId] || {});
         const rid = "TQ" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -4061,6 +4068,9 @@ const server = http.createServer(async (req, res) => {
       if (!x) return;
       if (String(x.kind) !== "consume" && String(x.kind) !== "refund") return;
       if (String(x.period || "") !== period) return;
+      /* ⛔ 月中重新开通/升级会把 used 清零，若 monthUsed 仍按整月累计，页面会出现
+         「本月已用 10055 / 配额 5000 却还剩 5000」的自相矛盾（实测）。以本期起点为界。 */
+      if (q.startedAt && Number(x.at || 0) < Number(q.startedAt)) return;
       /* ⛔ 配额消耗不写负数 delta（否则余额被双重扣），用 quotaCost 记量；退款为负值冲回。 */
       monthUsed += (Number(x.quotaCost) || 0) + (-Number(x.delta) || 0);
     });
@@ -4625,6 +4635,10 @@ const server = http.createServer(async (req, res) => {
     const role = teamRoleOf(teamId, who.username);
     if (!role) return send(403, { ok: false, error: "not-a-member" });
     if (!teamPolicyOf().kbEnabled) return send(403, { ok: false, error: "team-kb-disabled", message: "团队知识库未开通" });
+    /* ⛔ 到期降级（方案 §3.5）：过期 = 只读。检索仍可，上传/写入拒绝，避免"过期还能白用"。 */
+    if (teamEntitlementsOf(teamId).status === "expired") {
+      return send(402, { ok: false, error: "team-plan-expired", message: "团队套餐已过期（当前只读）：可以检索，不能上传。请 owner 续费后继续" });
+    }
     const team = db.teams[teamId];
     if ((team.settings || {}).uploadMode === "admin" && role === "member") {
       return send(403, { ok: false, error: "no-permission", message: "团队设置为「仅 owner/admin 可上传」" });
@@ -4769,7 +4783,9 @@ const server = http.createServer(async (req, res) => {
     if (!(cny > 0)) return send(400, { ok: false, error: "该套餐未设置金额，请联系管理员" });
     if (!topupEnabled()) return send(400, { ok: false, error: "topup-disabled", message: "支付渠道未配置，请联系管理员开通团队套餐" });
     const orderId = newBillingId("TB");
-    db.topups[orderId] = {
+    /* ⛔ db.topups 可能从未初始化（全新实例没充过值）⇒ 直接赋值会抛
+       "Cannot set properties of undefined"（线上实测 500）。个人下单路径本来就有这层兜底。 */
+    (db.topups || (db.topups = {}))[orderId] = {
       id: orderId, username: who.username, kind: "team-plan", teamId, planId, planName: plan.name,
       cny, points: Math.max(0, Math.round(Number(plan.points) || 0)), at: Date.now(), status: "pending",
     };
@@ -4836,6 +4852,8 @@ const server = http.createServer(async (req, res) => {
     if (!db.teams[teamId]) return send(404, { ok: false, error: "team-not-found" });
     if (!plan) return send(404, { ok: false, error: "套餐不存在" });
     const r = activateTeamPlan(teamId, plan, "管理员 " + me.username + " 手动开通", "teamgrant:" + teamId + ":" + planId + ":" + Date.now());
+    /* 审计：开通套餐也是「钱/权益」动作，必须留痕（方案 §7.2） */
+    auditPush(me.username, "team-grant-plan", teamId, "套餐 " + planId + "（赠 " + r.bonus + " 积分）");
     persist();
     console.log("[team] 管理员 " + me.username + " 为团队 " + teamId + " 手动开通「" + plan.name + "」");
     return send(200, { ok: true, entitlements: r.entitlements, bonus: r.bonus });
@@ -4923,9 +4941,8 @@ const server = http.createServer(async (req, res) => {
         delete cur.revokedAt; delete cur.revokedBy;
         results.push({ username: name, ok: true, action: "granted" });
       }
-      db.adminAudit.push({ at: Date.now(), by: me.username, action: "team-access:" + action, target: name, note });
+      auditPush(me.username, "team-access:" + action, name, note);
     });
-    if (db.adminAudit.length > 5000) db.adminAudit = db.adminAudit.slice(-3000);
     persist();
     const okCount = results.filter((r) => r.ok).length;
     console.log("[team] " + me.username + " " + action + " 团队开通：" + okCount + "/" + results.length);
@@ -5027,7 +5044,9 @@ const server = http.createServer(async (req, res) => {
       return send(400, { ok: false, error: "limit-reached", message: "该积分包每团队限购 " + pkg.limitPerTeam + " 次" });
     }
     const orderId = newBillingId("TB");
-    db.topups[orderId] = {
+    /* ⛔ db.topups 可能从未初始化（全新实例没充过值）⇒ 直接赋值会抛
+       "Cannot set properties of undefined"（线上实测 500）。个人下单路径本来就有这层兜底。 */
+    (db.topups || (db.topups = {}))[orderId] = {
       id: orderId, username: who.username, kind: "team-points", teamId, pkgId, planName: pkg.name,
       cny, points: Math.max(0, Math.round(Number(pkg.points) || 0) + Math.round(Number(pkg.bonusPoints) || 0)),
       at: Date.now(), status: "pending",
@@ -5045,6 +5064,42 @@ const server = http.createServer(async (req, res) => {
     return send(200, { ok: true, orderId, payUrl: billing.epay.gate + "/submit.php?" + new URLSearchParams(params).toString() });
   }
 
+  /* ══ 记忆用量上报（P1）：团队记忆走 MemHub，成员工具**直连**，云端无法观测 ⇒
+     由调用方上报 {scene, qty, ref}，服务端按单价扣费。⛔ 信任边界：只信已登录的团队成员，
+     限速 + 单次上限 + ref 幂等；金额小、可审计（每条都落到流水，异常可追）。 */
+  if (p.startsWith("/teams/") && p.endsWith("/points/report") && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/points/report".length);
+    if (!teamRoleOf(teamId, who.username)) return send(403, { ok: false, error: "not-a-member" });
+    const body = await readBody();
+    const scene = String((body && body.scene) || "").trim();
+    const ALLOW = ["memory_write", "memory_search"];
+    if (ALLOW.indexOf(scene) < 0) return send(400, { ok: false, error: "unsupported-scene", message: "只支持 memory_write / memory_search" });
+    const qty = Math.max(1, Math.min(100, Math.round(Number((body && body.qty) || 1))));
+    if (!rateLimit("treport:" + who.username, 240, 60_000)) return send(429, { ok: false, error: "上报太频繁，请稍后再试" });
+    if (teamEntitlementsOf(teamId).status === "expired" && scene === "memory_write") {
+      return send(402, { ok: false, error: "team-plan-expired", message: "团队套餐已过期（当前只读）：可以读，不能写入团队记忆" });
+    }
+    const rid = String((body && body.ref) || "").trim().slice(0, 64);
+    const ref = "report:" + teamId + ":" + (rid || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)));
+    const charge = teamConsume(teamId, scene, qty, ref);
+    if (!charge.ok) {
+      return send(402, { ok: false, error: charge.error, need: charge.need, available: charge.available, message: "团队积分不足，写入/检索被拒绝" });
+    }
+    /* 单价为 0 时也留一条计数行（后台能看到"谁在用、用了多少"，将来改价有基线） */
+    if (!charge.cost) {
+      const map = (db.teamPointsLedger[teamId] = db.teamPointsLedger[teamId] || {});
+      const id = "TM" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+      const period = teamPeriod(Date.now());
+      map[id] = { id, at: Date.now(), delta: 0, quotaCost: 0, kind: "consume", scene, ref,
+        note: scene + " 计量 " + qty + " 次（单价 0，免费）", actor: who.username, period };
+      persist();
+    }
+    console.log("[team] " + who.username + " 上报 " + scene + " ×" + qty + "（团队 " + teamId + "，扣 " + charge.cost + "）");
+    return send(200, { ok: true, cost: charge.cost, duplicate: Boolean(charge.duplicate), points: teamPointsSummary(teamId) });
+  }
+
   /* ══ 团队积分：余额 / 流水 / 管理员发放 ═════════════════════════════════════ */
   if (p.startsWith("/teams/") && p.endsWith("/points/grant") && req.method === "POST") {
     if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
@@ -5057,10 +5112,21 @@ const server = http.createServer(async (req, res) => {
     if (!note) return send(400, { ok: false, error: "必填原因（审计要求）" });
     if (Math.abs(points) > 10000000) return send(400, { ok: false, error: "单次不得超过 1000 万积分" });
     const row = teamAddPoints(teamId, points, "admin-grant", "admingrant:" + teamId + ":" + Date.now() + ":" + Math.random().toString(36).slice(2, 6), note, me.username);
-    db.adminAudit.push({ at: Date.now(), by: me.username, action: "team-points-grant", target: teamId, note: note + "（" + points + "）" });
+    auditPush(me.username, "team-points-grant", teamId, note + "（" + points + "）");
     persist();
     console.log("[team] " + me.username + " 给团队 " + teamId + " 发放 " + points + " 积分（" + note + "）");
     return send(200, { ok: true, row, summary: teamPointsSummary(teamId) });
+  }
+
+  /* ══ 审计（方案 §7.2）：谁在何时对谁做了什么。只读 + 可导出。 */
+  if (p === "/admin/team-audit" && req.method === "GET") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const limit = Math.max(1, Math.min(500, Math.round(Number(url.searchParams.get("limit") || 200) || 200)));
+    const q = String(url.searchParams.get("q") || "").trim().toLowerCase();
+    const rows = db.adminAudit.slice(-2000).reverse()
+      .filter((r) => !q || String(r.by).toLowerCase().indexOf(q) >= 0 || String(r.target).toLowerCase().indexOf(q) >= 0 || String(r.action).toLowerCase().indexOf(q) >= 0)
+      .slice(0, limit);
+    return send(200, { ok: true, rows, total: db.adminAudit.length });
   }
 
   /* ══ 批量：团队维度（B3 批量分配积分 / B5 批量设套餐）══════════════════════
@@ -5096,7 +5162,7 @@ const server = http.createServer(async (req, res) => {
       }
     });
     task.status = "done";
-    db.adminAudit.push({ at: Date.now(), by: me.username, action: "team-batch:" + action, target: taskId, note: "共 " + ids.length + "，成功 " + task.ok });
+    auditPush(me.username, "team-batch:" + action, taskId, "共 " + ids.length + "，成功 " + task.ok);
     persist();
     console.log("[team] " + me.username + " 批量 " + action + "：" + task.ok + "/" + ids.length + "（任务 " + taskId + "）");
     return send(200, { ok: true, task });
