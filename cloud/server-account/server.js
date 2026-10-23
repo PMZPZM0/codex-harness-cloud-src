@@ -3652,12 +3652,20 @@ location.replace("/");
         const warn = [];
         if (ptsOn && signupPoints() <= 0) warn.push("「注册赠送积分」开着但额度是 0 ⇒ 新用户会 0 积分，一调用就 402（要么把额度改成 >0，要么把开关关掉）");
         if (stOn && storageDefaultBytes() <= 0) warn.push("「默认云存储」开着但额度是 0 ⇒ 新用户没有云存储");
+        /* ⛔ 10-23：`signupPoints` / `storageGb` 是**生效值**（关闭时是 0）。
+           面板输入框必须显示「上次配置值」，否则关闭一次就把 0 写进输入框，
+           再打开开关必然提交 0 ⇒ 400 ⇒ 开关被弹回 OFF（用户感知：关掉就打不开了）。 */
+        const configuredPoints = Number.isFinite(Number(pol.signupPoints)) ? Math.round(Number(pol.signupPoints)) : SIGNUP_GRANT;
+        const configuredBytes = Number.isFinite(Number(pol.storageBytes)) && Number(pol.storageBytes) > 0 ? Math.round(Number(pol.storageBytes)) : STORAGE_LIMIT_BYTES;
         return {
           ok: true,
           warning: warn.join("；"),
           signupPoints: signupPoints(),
           storageBytes: storageDefaultBytes(),
           storageGb: gb(storageDefaultBytes()),
+          configuredSignupPoints: configuredPoints,
+          configuredStorageBytes: configuredBytes,
+          configuredStorageGb: gb(configuredBytes),
           signupPointsEnabled: pol.signupPointsEnabled !== false,
           storageEnabled: pol.storageEnabled !== false,
           env: { signupPoints: SIGNUP_GRANT, storageBytes: STORAGE_LIMIT_BYTES },

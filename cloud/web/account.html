@@ -2653,8 +2653,11 @@
     var onPts = j.signupPointsEnabled !== false, onSt = j.storageEnabled !== false;
     if ($("polSignupOn")) $("polSignupOn").checked = onPts;
     if ($("polStorageOn")) $("polStorageOn").checked = onSt;
-    if ($("polSignup")) { $("polSignup").value = j.signupPoints; $("polSignup").disabled = !onPts; }
-    if ($("polStorage")) { $("polStorage").value = j.storageGb; $("polStorage").disabled = !onSt; }
+    /* ⛔ 用 configured*（上次配置值），不是生效值 —— 关闭时生效值是 0，会把输入框写坏 */
+    var showPts = (j.configuredSignupPoints !== undefined) ? j.configuredSignupPoints : j.signupPoints;
+    var showGb = (j.configuredStorageGb !== undefined) ? j.configuredStorageGb : j.storageGb;
+    if ($("polSignup")) { $("polSignup").value = showPts; $("polSignup").disabled = !onPts; }
+    if ($("polStorage")) { $("polStorage").value = showGb; $("polStorage").disabled = !onSt; }
     var pill = $("polPill");
     if (pill) {
       pill.className = "pill " + (onPts || onSt ? "ok" : "warn");
@@ -2693,12 +2696,16 @@
     var onPts = $("polSignupOn").checked, onSt = $("polStorageOn").checked;
     var pts = Number($("polSignup").value), gb = Number($("polStorage").value);
     var body = { signupPointsEnabled: onPts, storageEnabled: onSt };
-    if (onPts) {
+    /* ⛔ 开关打开而输入框是空/0（典型：刚从关闭切回来）时**不要报错**：
+       不提交该字段，服务端会沿用上次配置（没有就回落到环境默认）。 */
+    var ptsRaw = String($("polSignup").value || "").trim();
+    var gbRaw = String($("polStorage").value || "").trim();
+    if (onPts && ptsRaw !== "") {
       if (!Number.isFinite(pts) || pts < 0) return { error: "注册赠送积分要填非负整数（想送 0 分就把它关掉）" };
       body.signupPoints = pts;
     }
-    if (onSt) {
-      if (!Number.isFinite(gb) || gb <= 0) return { error: "默认云存储要大于 0（GB）；不想给就把它关掉" };
+    if (onSt && gbRaw !== "") {
+      if (!Number.isFinite(gb) || gb <= 0) return { error: "默认云存储要填 0.1 ~ 10240 GB；不想给就把它关掉" };
       body.storageGb = gb;
     }
     return { body: body };
