@@ -3473,6 +3473,10 @@ const server = http.createServer(async (req, res) => {
   };
   const topupEnabled = () => { const b = billingOf(); return Boolean(b.epay.gate && b.epay.pid && b.epay.key); };
   /* 易支付标准签名：参数（去掉 sign / sign_type / 空值）按 key ASCII 升序拼 k=v&…，**直接拼上商户密钥**，MD5 小写 */
+  const safeEq = (a, b) => {
+    const ba = Buffer.from(String(a || ""), "utf8"), bb = Buffer.from(String(b || ""), "utf8");
+    return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+  };
   const md5Sign = (params, key) => {
     const line = Object.keys(params)
       .filter((k) => k !== "sign" && k !== "sign_type" && String(params[k] ?? "") !== "")
@@ -3482,6 +3486,9 @@ const server = http.createServer(async (req, res) => {
     return crypto.createHash("md5").update(line + String(key || ""), "utf8").digest("hex");
   };
   const newBillingId = (prefix) => prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+  /* ⛔ 审查修复（10-23）：套餐 / 订单 id 一律走白名单字符集 —— `db.plans["__proto__"] = …` 是原型污染、
+     奇形 id 会流进前端 data-* 属性。管理员是可信的，这是防御纵深。 */
+  const BILL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
   /* 用户端：套餐列表（登录即可） */
   if (p === "/plans" && req.method === "GET") {
@@ -3505,6 +3512,7 @@ const server = http.createServer(async (req, res) => {
     if (!rateLimit("buy:" + who.username, 6, 60_000)) return send(429, { ok: false, error: "操作太频繁，请稍后再试" });
     const body = await readBody();
     const planId = String((body && body.planId) || "").trim();
+    if (!BILL_ID_RE.test(planId)) return send(400, { ok: false, error: "非法的套餐 ID" });
     const plan = (db.plans || {})[planId];
     if (!plan || plan.active === false) return send(404, { ok: false, error: "套餐不存在或已下架" });
     const price = Math.max(0, Math.round(Number(plan.price) || 0));
@@ -3574,7 +3582,9 @@ const server = http.createServer(async (req, res) => {
       type: "alipay",
       out_trade_no: orderId,
       notify_url: base + "/pay/notify",
-      return_url: base + "/cloud/app/#subscribe",
+      /* ⛔ 审查修复（10-23）：客户机没有 /cloud/app/ 路由（回跳 404），两台的 /account.html 都在 ——
+         带 #subscribe，浏览器侧 session 还在时登录后直达订阅中心。 */
+      return_url: base + "/account.html#subscribe",
       name: "PPcode 积分充值 " + points,
       money: cny.toFixed(2),
     };
@@ -3587,13 +3597,23 @@ const server = http.createServer(async (req, res) => {
 
   /* 支付回调（易支付 notify，免鉴权 + 验签 + 金额校验 + 幂等）。⛔ 返回纯文本 success / fail。 */
   if (p === "/pay/notify" && (req.method === "GET" || req.method === "POST")) {
+    /* ⛔ 审查修复（10-23）：部分易支付通道用 POST x-www-form-urlencoded 回调 —— readBody 是
+       JSON-only，旧实现只读 query ⇒ 这类通道永远验签失败（钱收了积分不加）。POST 时把
+       form body 合并进参数（query 优先级高，键冲突不覆盖）。⛔ body 限 8KB。 */
+    let notifyRaw = "";
+    req.on("data", (c) => { notifyRaw += c; if (notifyRaw.length > 8192) req.destroy(); });
+    req.on("end", async () => {
+    try {
     const billing = billingOf();
     const params = Object.fromEntries(url.searchParams.entries());
+    if (req.method === "POST" && notifyRaw) {
+      for (const [k, v] of new URLSearchParams(notifyRaw)) if (!(k in params)) params[k] = v;
+    }
     const key = String(billing.epay.key || "");
     const sign = String(params.sign || "");
     const mysign = md5Sign(params, key);
     const plain = (text) => { res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" }); res.end(text); };
-    if (!key || !sign || sign.toLowerCase() !== mysign.toLowerCase()) return plain("fail");
+    if (!key || !sign || !safeEq(sign.toLowerCase(), mysign.toLowerCase())) return plain("fail");
     const orderId = String(params.out_trade_no || "");
     const order = (db.topups || {})[orderId];
     if (!order) return plain("fail");
@@ -3610,6 +3630,12 @@ const server = http.createServer(async (req, res) => {
     persist();
     console.log("[billing] " + order.username + " 充值 " + order.cny + " 元（订单 " + orderId + "）→ +" + order.points + " 积分");
     return plain("success");
+    } catch (e) {
+      console.log("[billing] notify 处理异常：" + (e && e.message));
+      return plain("fail");
+    }
+    });
+    return;
   }
 
   /* 管理端：套餐 CRUD（upsert / 删除 / 上下架） */
@@ -3627,6 +3653,7 @@ const server = http.createServer(async (req, res) => {
       return send(200, { ok: true, plans: Object.values(db.plans || {}) });
     }
     const id = String((body && body.id) || "").trim() || newBillingId("PLAN");
+    if (!BILL_ID_RE.test(id)) return send(400, { ok: false, error: "套餐 ID 只允许字母 / 数字 / 连字符 / 下划线（≤64 位）" });
     /* ⛔ 只带 id + active 的请求 = 上下架切换：**合并现有套餐**而不是整单覆盖 ——
        否则 toggle 一次就会把 features / 价格清空再撞「至少勾选一项权益」的 400（10-23 实测）。 */
     if ((db.plans || {})[id] && (body && body.name) === undefined && (body && body.features) === undefined) {
