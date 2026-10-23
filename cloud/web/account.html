@@ -592,6 +592,17 @@
   .mb-sub { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.65; max-width: 78ch; }
   .mb-bar { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 12px 0; }
   /* 到期自动清理开关（10-23 用户令「只提醒不自动删」）：两个中心共用同一份 policy，切任一个另一个跟着变 */
+  .sub-hero-top { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
+  .sub-balance { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .sub-balance b { font-size: 22px; font-variant-numeric: tabular-nums; color: var(--brand-ink); }
+  .sub-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .plan-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 13px; border: 1px solid var(--line); background: var(--card); transition: border-color var(--dur), transform var(--dur), box-shadow var(--dur); }
+  .plan-card:hover { border-color: var(--brand2); transform: translateY(-2px); box-shadow: var(--shadow); }
+  .plan-card h3 { margin: 0; font-size: 15px; }
+  .plan-price { font-size: 22px; font-weight: 700; color: var(--brand-ink); font-variant-numeric: tabular-nums; }
+  .plan-price small { font-size: 12px; font-weight: 500; color: var(--muted); }
+  .plan-feats { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .plan-feats b { color: var(--text); font-weight: 600; }
   .mb-auto { display: flex; align-items: center; gap: 9px; flex: none; cursor: pointer; user-select: none; }
   .mb-auto-txt { display: flex; flex-direction: column; line-height: 1.35; }
   .mb-auto-txt b { font-size: 12.5px; font-weight: 600; }
@@ -647,6 +658,7 @@
       <h3 class="nav-group-title">用户</h3>
       <button class="nav-item" data-tab="product"><span class="dot"></span>产品首页</button>
       <button class="nav-item" data-tab="user"><span class="dot"></span>用户中心</button>
+      <button class="nav-item" data-tab="subscribe"><span class="dot"></span>订阅中心</button>
       <button class="nav-item" data-tab="pair"><span class="dot"></span>配对中心</button>
       <button class="nav-item" data-tab="cloud"><span class="dot"></span>云端管理</button>
       <button class="nav-item" data-tab="memory"><span class="dot"></span>记忆空间</button>
@@ -659,6 +671,7 @@
       <button class="nav-item" data-tab="adminMem" id="navAdminMem"><span class="dot"></span>记忆空间管理中心</button>
       <button class="nav-item" data-tab="adminKb" id="navAdminKb"><span class="dot"></span>知识库管理中心</button>
       <button class="nav-item" data-tab="adminWbm" id="navAdminWbm"><span class="dot"></span>WorkBuddy Manager</button>
+      <button class="nav-item" data-tab="adminBilling" id="navAdminBilling"><span class="dot"></span>订阅与充值</button>
     </nav>
     <div class="side-foot">
       <span id="whoami">读取中…</span>
@@ -836,6 +849,100 @@
     </section>
 
     <!-- ── 云端管理 ─────────────────────────────────────────────── -->
+    <!-- ── 订阅中心（10-23 用户令「把 sub2api 那套付费订阅机制搬过来，我们是付费订阅积分」）──
+         套餐 = 权益打包（知识库 / 记忆），积分计价；充值走易支付（管理端配置，未配置置灰）。 -->
+    <section class="tab" data-tab="subscribe" hidden>
+      <div class="card sub-hero">
+        <div class="sub-hero-top">
+          <div>
+            <h2>订阅中心</h2>
+            <p class="hint">用积分订阅权益套餐：一个套餐同时开通多项权益并叠加续期；到期后进入宽限期，续费即恢复。</p>
+          </div>
+          <div class="sub-balance">
+            <span>当前积分</span>
+            <b id="subBalance">—</b>
+            <button class="btn sm primary" id="subTopupBtn">充值</button>
+            <span class="hint" id="subTopupNote"></span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>权益套餐</h2>
+        <div class="sub-plans" id="subPlans"><div class="empty">加载中…</div></div>
+      </div>
+      <div class="card">
+        <h2>我的订阅记录</h2>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th>时间</th><th>套餐</th><th>积分</th><th>时长</th><th>包含</th></tr></thead>
+          <tbody id="subOrders"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h2>充值记录</h2>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th>时间</th><th>金额</th><th>积分</th><th>状态</th></tr></thead>
+          <tbody id="subTopups"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ── 管理端「订阅与充值」（10-23）：套餐 CRUD / 支付渠道配置 / 充值对账与手动补单 ── -->
+    <section class="tab" data-tab="adminBilling" hidden>
+      <div class="card">
+        <h2>支付与积分比例</h2>
+        <p class="hint" style="margin:0 0 12px">走易支付协议（彩虹易支付 / sub2api 同款参数）：填网关、商户 ID、商户密钥；留空密钥 = 保持原密钥。比例 = 1 元人民币兑换多少积分。</p>
+        <div class="pol-grid">
+          <div class="pol-field"><label>1 元 = 多少积分</label><input class="field" id="blPointsPerCny" type="number" min="1" step="1" /></div>
+          <div class="pol-field"><label>最低充值（元）</label><input class="field" id="blMinCny" type="number" min="1" step="1" /></div>
+          <div class="pol-field"><label>支付网关地址</label><input class="field" id="blGate" placeholder="https://pay.example.com" /></div>
+          <div class="pol-field"><label>商户 ID（pid）</label><input class="field" id="blPid" /></div>
+          <div class="pol-field"><label>商户密钥（key，留空保持）</label><input class="field" id="blKey" type="password" autocomplete="new-password" /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="blSave">保存配置</button>
+          <span class="status" id="blStatus" role="status"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>套餐管理</h2>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th>名称</th><th>价格（积分）</th><th>时长（天）</th><th>包含</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="blPlanRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+        <h3 style="margin:16px 0 8px;font-size:14px" id="blPlanFormTitle">新建套餐</h3>
+        <div class="pol-grid">
+          <div class="pol-field"><label>套餐 ID（留空自动）</label><input class="field" id="plId" placeholder="plan-monthly" /></div>
+          <div class="pol-field"><label>名称</label><input class="field" id="plName" placeholder="全能月卡" /></div>
+          <div class="pol-field"><label>价格（积分）</label><input class="field" id="plPrice" type="number" min="0" step="100" /></div>
+          <div class="pol-field"><label>时长（天，0 = 永久，慎用）</label><input class="field" id="plDays" type="number" min="0" step="30" /></div>
+          <div class="pol-field"><label>排序（小在前）</label><input class="field" id="plSort" type="number" step="1" /></div>
+          <div class="pol-field"><label>描述</label><input class="field" id="plDesc" placeholder="适合 daily driver 的全能套餐" /></div>
+        </div>
+        <div class="pol-grid" style="margin-top:8px">
+          <div class="pol-field"><label>知识库 容量（MB，选填）</label><input class="field" id="plKbMb" type="number" min="0" /></div>
+          <div class="pol-field"><label>知识库 检索次数（选填）</label><input class="field" id="plKbQuota" type="number" min="0" /></div>
+          <div class="pol-field"><label>记忆 容量（MB，选填）</label><input class="field" id="plMemMb" type="number" min="0" /></div>
+          <div class="pol-field"><label>记忆 检索次数（选填）</label><input class="field" id="plMemQuota" type="number" min="0" /></div>
+        </div>
+        <div class="pol-actions">
+          <label class="mb-check"><input type="checkbox" id="plKbOn" checked /> <span>含知识库</span></label>
+          <label class="mb-check"><input type="checkbox" id="plMemOn" checked /> <span>含记忆</span></label>
+          <label class="mb-check"><input type="checkbox" id="plActive" checked /> <span>上架</span></label>
+          <button class="btn primary" id="plSave">保存套餐</button>
+          <button class="btn" id="plReset">清空表单</button>
+          <span class="status" id="plStatus" role="status"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>充值对账（最近 100 笔）</h2>
+        <p class="hint" style="margin:0 0 12px">支付回调丢失时用「补单」兜底：标记已支付并给用户加积分（幂等，重复点不会重复加）。</p>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th>时间</th><th>用户</th><th>金额</th><th>积分</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="blTopupRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
     <section class="tab" data-tab="cloud" hidden>
       <div class="page-head"><h1>云端管理</h1><p>云端数据概览、同步配置与数据处置。</p></div>
 
@@ -1900,6 +2007,8 @@
     });
     Array.prototype.forEach.call(document.querySelectorAll(".nav-item"), function (b) { b.classList.toggle("on", b.getAttribute("data-tab") === tab); });
     if (tab === "product") loadProductHome(false);
+    if (tab === "subscribe" && typeof loadSubscribe === "function") loadSubscribe();
+    if (tab === "adminBilling" && typeof loadAdminBilling === "function") loadAdminBilling();
     if (tab === "user") loadPoints();
     if (tab === "pair") refreshPairing();
     if (tab === "cloud") refreshCloud();
@@ -2833,7 +2942,7 @@
        同一浏览器上任何人都能借管理员的登录直接用 = 绕过授权，用户实测指出）。入口与面板已撤除，
        管理员请直接访问 mem./kb.ppz123.asia（建议用无痕窗口）。 */
     /* 10-23：管理区拆成 4 个中心 —— 导航项与 tab 一起由 isAdmin 控制（普通用户连节点都被摘掉） */
-    var ADMIN_TABS = ["adminUser", "adminModel", "adminMem", "adminKb", "adminWbm"];
+    var ADMIN_TABS = ["adminUser", "adminModel", "adminMem", "adminKb", "adminWbm", "adminBilling"];
     if (isAdmin) {
       /* 整组放出来（组标题 + 四个入口一起）；再逐个兜底，兼容没有组容器的旧结构 */
       var grp = $("navGroupAdmin");
@@ -2848,7 +2957,7 @@
       if (location.hash.indexOf("#admin") === 0) show("user");   /* 旧书签 #admin* 一律回落到用户中心 */
     }
     var start = (location.hash || "#user").slice(1);
-    show(["product", "user", "pair", "cloud", "memory", "kb", "admin"].indexOf(start) >= 0 ? start : "user");
+    show(["product", "user", "subscribe", "pair", "cloud", "memory", "kb", "admin", "adminBilling"].indexOf(start) >= 0 ? start : "user");
   }).catch(function () { window.location.replace("index.html"); });
 
   /* ── 用户管理（管理员，就地视图；10-15 从 admin.html 迁入并修正端点） ── */
@@ -5432,7 +5541,10 @@
         }
       }).catch(function () { box.checked = !box.checked; alert("保存失败：网络错误"); });
     });
-  })();
+  
+  /* 10-23：订阅中心是独立 <script>（body 尾），主 IIFE 里的工具不外露 ⇒ 挂一个最小桥。 */
+  window.__subBridge = { $: $, esc: esc, api: api, showModal: showModal };
+})();
 </script>
 <script>
 /* 10-18 主题开关（侧栏内，非悬浮）。checked = 亮色；apply() 反向同步 box.checked，
@@ -5557,5 +5669,293 @@
   });
 })();
 </script>
+<script>
+/* ── 订阅中心 + 订阅与充值管理（10-23 用户令「把 sub2api 那套付费订阅机制搬过来」）────────
+   ⛔ 判定权在服务端（/plans、/plans/buy、/topup/create、/pay/notify）；这里只做展示与发起。
+   ⛔ 充值轮询只读 /my/topups 的状态，不自判「成功」。 */
+(function () {
+  /* ⛔ 主逻辑在大 IIFE 里，$ / esc / api / showModal 经 window.__subBridge 桥进来（见主块收尾）。 */
+  var $ = window.__subBridge.$, esc = window.__subBridge.esc, api = window.__subBridge.api, showModal = window.__subBridge.showModal;
+
+  var SUB_POLL = null;
+
+  function fmtDT(ts) { return ts ? new Date(Number(ts)).toLocaleString("zh-CN", { hour12: false }) : "—"; }
+  function billSay(id, text, cls) { var el = $(id); if (el) { el.textContent = text || ""; el.className = "status" + (cls ? " " + cls : ""); } }
+
+  /* ── 用户端 ── */
+  function loadSubscribe() {
+    api("/plans").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { $("subPlans").innerHTML = '<div class="empty">读取失败：' + esc(j.error || ("HTTP " + r.status)) + "</div>"; return; }
+      $("subBalance").textContent = j.balance != null ? j.balance : "—";
+      var bl = j.billing || {};
+      var btn = $("subTopupBtn"), note = $("subTopupNote");
+      if (btn) btn.disabled = !bl.topupEnabled;
+      if (note) note.textContent = bl.topupEnabled
+        ? ("充值比例：1 元 = " + bl.pointsPerCny + " 积分" + (bl.minTopupCny ? "，最低 " + bl.minTopupCny + " 元" : ""))
+        : "（支付渠道未配置，充值暂不可用；需要积分请联系管理员发放）";
+      renderPlans(j.plans || [], Number(j.balance || 0));
+    })["catch"](function () { $("subPlans").innerHTML = '<div class="empty">读取失败：网络错误</div>'; });
+    api("/my/orders").then(function (r) {
+      var j = (r && r.j) || {}; var rows = j.orders || [];
+      $("subOrders").innerHTML = rows.length ? rows.map(function (o) {
+        return "<tr><td>" + esc(fmtDT(o.at)) + "</td><td>" + esc(o.planName || o.planId) + "</td><td>" + esc(o.points) + "</td><td>" + esc(o.days === 0 ? "永久" : o.days + " 天") + "</td><td>" + esc((o.features || []).join("、")) + "</td></tr>";
+      }).join("") : '<tr><td colspan="5" class="empty">还没有订阅记录 —— 上面的套餐买一个就有啦。</td></tr>';
+    })["catch"](function () {});
+    api("/my/topups").then(function (r) {
+      var j = (r && r.j) || {};
+      if (j.balance != null) $("subBalance").textContent = j.balance;
+      var rows = j.topups || [];
+      $("subTopups").innerHTML = rows.length ? rows.map(function (o) {
+        var st = o.status === "paid" ? '<span class="pill ok">已到账</span>' : o.status === "manual" ? '<span class="pill ok">已到账（补单）</span>' : o.status === "failed" ? '<span class="pill warn">失败</span>' : '<span class="pill plain">待支付</span>';
+        return "<tr><td>" + esc(fmtDT(o.at)) + "</td><td>" + esc(o.cny) + " 元</td><td>" + esc(o.points) + "</td><td>" + st + "</td></tr>";
+      }).join("") : '<tr><td colspan="4" class="empty">还没有充值记录。</td></tr>';
+    })["catch"](function () {});
+  }
+
+  function renderPlans(plans, balance) {
+    var box = $("subPlans");
+    if (!plans.length) { box.innerHTML = '<div class="empty">管理员还没有上架套餐。</div>'; return; }
+    box.innerHTML = plans.map(function (pl) {
+      var feats = [];
+      Object.keys(pl.features || {}).forEach(function (f) {
+        var cfg = pl.features[f] || {};
+        var bits = [];
+        if (cfg.quotaMb) bits.push(cfg.quotaMb + " MB");
+        if (cfg.quota) bits.push(cfg.quota + " 次");
+        feats.push("<div>" + (f === "knowledge" ? "📚 知识库" : "🧠 记忆") + "：<b>" + (bits.length ? bits.join(" · ") : "标准额度") + "</b></div>");
+      });
+      var afford = balance >= Number(pl.price || 0);
+      return '<article class="plan-card">'
+        + "<h3>" + esc(pl.name) + "</h3>"
+        + '<div class="plan-price">' + esc(pl.price) + ' <small>积分 / ' + (pl.days === 0 ? "永久" : pl.days + " 天") + "</small></div>"
+        + (pl.desc ? '<div class="hint">' + esc(pl.desc) + "</div>" : "")
+        + '<div class="plan-feats">' + feats.join("") + "</div>"
+        + '<button class="btn primary sm" data-buy="' + esc(pl.id) + '"' + (afford ? "" : " disabled title=\"积分不足，请先充值\"") + ">" + (afford ? "立即订阅" : "积分不足") + "</button>"
+        + "</article>";
+    }).join("");
+    Array.prototype.forEach.call(box.querySelectorAll("[data-buy]"), function (b) {
+      b.onclick = function () { buyPlan(b.getAttribute("data-buy")); };
+    });
+  }
+
+  function buyPlan(planId) {
+    var plan = null;
+    api("/plans").then(function (r) {
+      var j = (r && r.j) || {};
+      plan = (j.plans || []).filter(function (x) { return x.id === planId; })[0];
+      if (!plan) { alert("套餐不存在或已下架"); return; }
+      if (!confirm("用 " + plan.price + " 积分订阅「" + plan.name + "」（" + (plan.days === 0 ? "永久" : plan.days + " 天") + "）？\n\n会对套餐内权益做叠加续期（不会清掉现有额度）。")) return;
+      api("/plans/buy", { method: "POST", body: { planId: planId } }).then(function (r2) {
+        var j2 = (r2 && r2.j) || {};
+        if (!r2.ok || !j2.ok) {
+          if (j2.error === "insufficient-points") { alert("积分不足：需要 " + j2.need + "，当前 " + j2.balance + "。请先充值。"); }
+          else alert("订阅失败：" + (j2.error || ("HTTP " + r2.status)));
+          return;
+        }
+        showModal("订阅成功", '<div style="font-size:13.5px;line-height:1.9">已订阅「<b>' + esc(j2.planName) + '</b>」，权益已叠加续期并自动建库 / 发钥匙。<br>当前积分余额：<b>' + esc(j2.balance) + "</b></div>");
+        loadSubscribe();
+      })["catch"](function () { alert("订阅失败：网络错误"); });
+    })["catch"](function () { alert("读取套餐失败"); });
+  }
+
+  function topupOpen() {
+    api("/plans").then(function (r) {
+      var j = (r && r.j) || {}; var bl = j.billing || {};
+      if (!bl.topupEnabled) { alert("支付渠道未配置，请联系管理员发放积分。"); return; }
+      showModal("充值积分", '<div style="font-size:13.5px;line-height:1.9">'
+        + "<div style=\"margin-bottom:8px\">充值比例：<b>1 元 = " + esc(bl.pointsPerCny) + " 积分</b>（最低 " + esc(bl.minTopupCny) + " 元）</div>"
+        + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">'
+        + '<input class="field" id="topupCny" type="number" min="' + esc(bl.minTopupCny) + '" step="10" value="50" style="max-width:120px" /> 元'
+        + '<span class="hint" id="topupHint"></span></div>'
+        + '<div class="hint">点击「去支付」会跳到支付页面；支付完成后回到本页，积分会在 1 分钟内自动到账（也可以点「我已支付」立即刷新）。</div>'
+        + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
+        + '<button class="btn sm" id="topupCancel">取消</button>'
+        + '<button class="btn primary sm" id="topupGo">去支付</button></div>');
+      var inp = $("topupCny");
+      var calc = function () { var v = Number(inp && inp.value || 0); if ($("topupHint")) $("topupHint").textContent = v > 0 ? "= " + Math.round(v * Number(bl.pointsPerCny)) + " 积分" : ""; };
+      if (inp) inp.oninput = calc; calc();
+      if ($("topupCancel")) $("topupCancel").onclick = closeMbModal;
+      if ($("topupGo")) $("topupGo").onclick = function () {
+        var v = Number(inp && inp.value || 0);
+        if (!v || v < Number(bl.minTopupCny)) { alert("最低充值 " + bl.minTopupCny + " 元"); return; }
+        api("/topup/create", { method: "POST", body: { cny: v } }).then(function (r2) {
+          var j2 = (r2 && r2.j) || {};
+          if (!r2.ok || !j2.ok) { alert("发起充值失败：" + (j2.message || j2.error || ("HTTP " + r2.status))); return; }
+          window.open(j2.payUrl, "_blank");
+          closeMbModal();
+          startTopupPoll();
+        })["catch"](function () { alert("发起充值失败：网络错误"); });
+      };
+    })["catch"](function () { alert("读取充值配置失败"); });
+  }
+
+  function startTopupPoll() {
+    if (SUB_POLL) clearInterval(SUB_POLL);
+    var left = 60;
+    billSay("subTopupNote", "正在等待支付结果…（最多 5 分钟）");
+    SUB_POLL = setInterval(function () {
+      if (--left <= 0) { clearInterval(SUB_POLL); SUB_POLL = null; billSay("subTopupNote", ""); return; }
+      api("/my/topups").then(function (r) {
+        var j = (r && r.j) || {}; var rows = j.topups || [];
+        var pending = rows.some(function (o) { return o.status === "pending"; });
+        if (j.balance != null) $("subBalance").textContent = j.balance;
+        if (!pending) {
+          clearInterval(SUB_POLL); SUB_POLL = null;
+          billSay("subTopupNote", "支付已确认，积分已到账 ✓", "ok");
+          loadSubscribe();
+        }
+      })["catch"](function () {});
+    }, 5000);
+  }
+
+  /* ── 管理端 ── */
+  var ADMIN_PLANS = [];
+  function loadAdminBilling() {
+    api("/admin/plans").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { billSay("blStatus", "读取失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      ADMIN_PLANS = j.plans || [];
+      var b = j.billing || {};
+      if ($("blPointsPerCny")) $("blPointsPerCny").value = b.pointsPerCny;
+      if ($("blMinCny")) $("blMinCny").value = b.minTopupCny;
+      if ($("blGate")) $("blGate").value = (b.epay && b.epay.gate) || "";
+      if ($("blPid")) $("blPid").value = (b.epay && b.epay.pid) || "";
+      if ($("blKey")) $("blKey").value = "";
+      renderAdminPlans();
+      renderTopupAdmin();
+    })["catch"](function () { billSay("blStatus", "读取失败：网络错误", "bad"); });
+  }
+  function planFeatText(pl) {
+    var out = [];
+    Object.keys(pl.features || {}).forEach(function (f) {
+      var cfg = pl.features[f] || {}; var bits = [];
+      if (cfg.quotaMb) bits.push(cfg.quotaMb + " MB");
+      if (cfg.quota) bits.push(cfg.quota + " 次");
+      out.push((f === "knowledge" ? "知识库" : "记忆") + (bits.length ? "(" + bits.join("/") + ")" : ""));
+    });
+    return out.join(" + ");
+  }
+  function renderAdminPlans() {
+    var box = $("blPlanRows");
+    box.innerHTML = ADMIN_PLANS.length ? ADMIN_PLANS.map(function (pl) {
+      return "<tr><td>" + esc(pl.name) + ' <span class="hint">' + esc(pl.id) + "</span></td><td>" + esc(pl.price) + "</td><td>" + esc(pl.days === 0 ? "永久" : pl.days + " 天") + "</td><td>" + esc(planFeatText(pl)) + "</td><td>" + (pl.active !== false ? '<span class="pill ok">上架</span>' : '<span class="pill plain">下架</span>') + "</td>"
+        + '<td><div class="mb-ops"><button class="btn sm" data-pl-edit="' + esc(pl.id) + '">编辑</button>'
+        + '<button class="btn sm" data-pl-toggle="' + esc(pl.id) + '">' + (pl.active !== false ? "下架" : "上架") + "</button>"
+        + '<button class="btn sm danger" data-pl-del="' + esc(pl.id) + '">删除</button></div></td></tr>';
+    }).join("") : '<tr><td colspan="6" class="empty">还没有套餐 —— 用下面的表单建第一个。</td></tr>';
+    Array.prototype.forEach.call(box.querySelectorAll("[data-pl-edit]"), function (b) {
+      b.onclick = function () { fillPlanForm(b.getAttribute("data-pl-edit")); };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-pl-toggle]"), function (b) {
+      b.onclick = function () {
+        var pl = ADMIN_PLANS.filter(function (x) { return x.id === b.getAttribute("data-pl-toggle"); })[0];
+        if (!pl) return;
+        savePlan(Object.assign({}, pl, { active: pl.active === false }), "已" + (pl.active === false ? "上架" : "下架") + "「" + pl.name + "」");
+      };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-pl-del]"), function (b) {
+      b.onclick = function () {
+        if (!confirm("删除这个套餐？已购买用户不受影响（只是不能再买）。")) return;
+        api("/admin/plans", { method: "POST", body: { delete: true, id: b.getAttribute("data-pl-del") } }).then(function (r) {
+          var j = (r && r.j) || {};
+          if (!r.ok || !j.ok) { billSay("plStatus", "删除失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+          ADMIN_PLANS = j.plans || []; renderAdminPlans(); billSay("plStatus", "已删除", "ok");
+        })["catch"](function () { billSay("plStatus", "删除失败：网络错误", "bad"); });
+      };
+    });
+  }
+  function fillPlanForm(id) {
+    var pl = ADMIN_PLANS.filter(function (x) { return x.id === id; })[0];
+    if (!pl) return;
+    $("blPlanFormTitle").textContent = "编辑套餐：" + pl.name;
+    $("plId").value = pl.id; $("plName").value = pl.name; $("plDesc").value = pl.desc || "";
+    $("plPrice").value = pl.price; $("plDays").value = pl.days; $("plSort").value = pl.sort || 0;
+    $("plActive").checked = pl.active !== false;
+    var f = pl.features || {};
+    $("plKbOn").checked = Boolean(f.knowledge); $("plMemOn").checked = Boolean(f.memory);
+    $("plKbMb").value = f.knowledge && f.knowledge.quotaMb != null ? f.knowledge.quotaMb : "";
+    $("plKbQuota").value = f.knowledge && f.knowledge.quota != null ? f.knowledge.quota : "";
+    $("plMemMb").value = f.memory && f.memory.quotaMb != null ? f.memory.quotaMb : "";
+    $("plMemQuota").value = f.memory && f.memory.quota != null ? f.memory.quota : "";
+  }
+  function savePlan(payload, okText) {
+    api("/admin/plans", { method: "POST", body: payload }).then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { billSay("plStatus", "保存失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      ADMIN_PLANS = j.plans || []; renderAdminPlans();
+      billSay("plStatus", okText || "已保存", "ok");
+    })["catch"](function () { billSay("plStatus", "保存失败：网络错误", "bad"); });
+  }
+  function collectPlanForm() {
+    var features = {};
+    if ($("plKbOn").checked) features.knowledge = { quotaMb: $("plKbMb").value, quota: $("plKbQuota").value };
+    if ($("plMemOn").checked) features.memory = { quotaMb: $("plMemMb").value, quota: $("plMemQuota").value };
+    return {
+      id: $("plId").value.trim(), name: $("plName").value.trim(), desc: $("plDesc").value.trim(),
+      price: Number($("plPrice").value || 0), days: Number($("plDays").value || 0), sort: Number($("plSort").value || 0),
+      active: $("plActive").checked, features: features,
+    };
+  }
+  function renderTopupAdmin() {
+    api("/admin/topups").then(function (r) {
+      var j = (r && r.j) || {}; var rows = j.topups || [];
+      var box = $("blTopupRows");
+      box.innerHTML = rows.length ? rows.map(function (o) {
+        var st = o.status === "paid" ? '<span class="pill ok">已到账</span>' : o.status === "manual" ? '<span class="pill ok">手动补单</span>' : o.status === "failed" ? '<span class="pill warn">失败</span>' : '<span class="pill plain">待支付</span>';
+        var op = o.status === "pending" ? '<button class="btn sm" data-tp-manual="' + esc(o.id) + '">补单</button>' : "";
+        return "<tr><td>" + esc(fmtDT(o.at)) + "</td><td>" + esc(o.username) + "</td><td>" + esc(o.cny) + " 元</td><td>" + esc(o.points) + "</td><td>" + st + (o.note ? '<div class="hint">' + esc(o.note) + "</div>" : "") + "</td><td>" + op + "</td></tr>";
+      }).join("") : '<tr><td colspan="6" class="empty">还没有充值订单。</td></tr>';
+      Array.prototype.forEach.call(box.querySelectorAll("[data-tp-manual]"), function (b) {
+        b.onclick = function () {
+          if (!confirm("确认这笔订单已线下收款？标记后会给用户加积分（幂等）。")) return;
+          api("/admin/topups/manual", { method: "POST", body: { id: b.getAttribute("data-tp-manual") } }).then(function (r2) {
+            var j2 = (r2 && r2.j) || {};
+            if (!r2.ok || !j2.ok) { alert("补单失败：" + (j2.error || ("HTTP " + r2.status))); return; }
+            loadAdminBilling();
+          })["catch"](function () { alert("补单失败：网络错误"); });
+        };
+      });
+    })["catch"](function () {});
+  }
+  function saveBillingConfig() {
+    api("/admin/billing", { method: "POST", body: {
+      pointsPerCny: Number($("blPointsPerCny").value || 0), minTopupCny: Number($("blMinCny").value || 0),
+      epay: { gate: $("blGate").value, pid: $("blPid").value, key: $("blKey").value },
+    } }).then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { billSay("blStatus", "保存失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      billSay("blStatus", "已保存（渠道 " + (j.topupEnabled ? "已开通" : "未开通：网关 / 商户 / 密钥要填全）") + "）", j.topupEnabled ? "ok" : "warn");
+      loadAdminBilling();
+    })["catch"](function () { billSay("blStatus", "保存失败：网络错误", "bad"); });
+  }
+
+  /* ── 接线（幂等：重复执行不会重复绑） ── */
+  if (!$("subTopupBtn").dataset.bound) {
+    $("subTopupBtn").dataset.bound = "1";
+    $("subTopupBtn").onclick = topupOpen;
+  }
+  if ($("blSave") && !$("blSave").dataset.bound) {
+    $("blSave").dataset.bound = "1"; $("blSave").onclick = saveBillingConfig;
+  }
+  if ($("plSave") && !$("plSave").dataset.bound) {
+    $("plSave").dataset.bound = "1";
+    $("plSave").onclick = function () {
+      var payload = collectPlanForm();
+      if (!payload.name) { billSay("plStatus", "套餐名称必填", "bad"); return; }
+      savePlan(payload, "已保存「" + payload.name + "」");
+    };
+  }
+  if ($("plReset") && !$("plReset").dataset.bound) {
+    $("plReset").dataset.bound = "1";
+    $("plReset").onclick = function () {
+      $("blPlanFormTitle").textContent = "新建套餐";
+      ["plId", "plName", "plDesc", "plPrice", "plDays", "plSort", "plKbMb", "plKbQuota", "plMemMb", "plMemQuota"].forEach(function (id) { if ($(id)) $(id).value = ""; });
+      $("plKbOn").checked = true; $("plMemOn").checked = true; $("plActive").checked = true;
+    };
+  }
+})();
+</script>
+
 </body>
 </html>
