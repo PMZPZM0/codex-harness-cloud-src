@@ -412,6 +412,44 @@
   #svcMemCard .svc-addr-row, #svcKbCard .svc-addr-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
   #svcMemCard .svc-addr-row .field, #svcKbCard .svc-addr-row .field { flex: 1 1 260px; min-height: 34px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; }
 
+  /* ── 10-23 管理端「已开通成员」卡（知识库 / 记忆 两个中心共用一套类，前缀 mb-）──────
+     ⛔ 用户令「不用去后台了」：成员、状态、额度、资源 id 与批量操作全放在这两个中心里。
+     ⛔ 表格一律 `white-space:nowrap` + 横向滚动容器 —— 用户名/库 id 换行会把行高撑乱。 */
+  .mb-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--line-soft); }
+  .mb-head-main { flex: 1 1 340px; min-width: 0; }
+  .mb-head h2 { margin: 0 0 6px; }
+  .mb-sub { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.65; max-width: 78ch; }
+  .mb-bar { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 12px 0; }
+  .mb-grp { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .mb-grp + .mb-grp { padding-left: 14px; border-left: 1px solid var(--line); }
+  .mb-grp .field { width: auto; min-width: 84px; min-height: 32px; padding: 5px 10px; border-radius: 8px; font-size: 12.5px; }
+  .mb-grp .btn { min-height: 32px; }
+  .mb-grp-end { margin-left: auto; padding-left: 0; border-left: 0; }
+  .mb-label { font-size: 11.5px; font-weight: 600; color: var(--faint); white-space: nowrap; }
+  .mb-check { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12.5px; }
+  .mb-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .mb-table th {
+    text-align: left; font-weight: 600; color: var(--faint); font-size: 11.5px;
+    padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap;
+  }
+  .mb-table td { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; vertical-align: middle; }
+  .mb-table tbody tr:hover { background: var(--field); }
+  .mb-user { font-weight: 600; }
+  .mb-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--muted); }
+  .mb-empty { padding: 26px 10px; text-align: center; color: var(--muted); font-size: 12.5px; }
+  .mb-tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; line-height: 1.7; }
+  .mb-tag.on { background: var(--ok-soft, #e8f5ec); color: var(--ok, #1a7f37); }
+  .mb-tag.off { background: var(--field); color: var(--muted); }
+  .mb-tag.warn { background: var(--warn-soft, #fff4e5); color: var(--warn, #b25e00); }
+  .mb-ops { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mb-ops .btn { min-height: 28px; padding: 3px 10px; font-size: 12px; }
+  .mb-cb { width: 14px; height: 14px; accent-color: var(--accent, #6c4cf1); }
+  @media (max-width: 860px) {
+    .mb-grp + .mb-grp { padding-left: 0; border-left: 0; }
+    .mb-grp-end { margin-left: 0; }
+    .mb-hide-sm { display: none; }
+  }
+
   /* 示例数据横幅（记忆页预览用；接入真实数据后应移除） */
   .demo-banner { background: var(--warn-soft); border: 1px solid var(--warn); color: var(--warn); padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
 </style>
@@ -1028,6 +1066,77 @@
       <p class="status" id="svcMemStatus" role="status" aria-live="polite"></p>
       <div id="svcMemTestResult" style="display:none;margin-top:10px"></div>
     </div>
+
+    <!-- 10-23 记忆网关实况：⛔ 记忆网关没有运行期模型开关（模型与上游在容器 env 里）
+         ⇒ 这里只把"实际在用哪个上游/版本"摊开，不做点了没反应的假开关。 -->
+    <div class="card" id="memHealthCard" style="margin-top:14px">
+      <div class="mb-head">
+        <div class="mb-head-main">
+          <h2>记忆网关 <span class="pill plain" id="memHealthPill">读取中…</span></h2>
+          <p class="mb-sub">记忆请求实际经过的那层网关（版本 / 上游 / 限流 / 存储）。
+            它把请求转发给<b>模型通道</b>，所以记忆用哪个模型 = 模型管理里那条上游的模型；
+            要换模型请到「模型管理中心」改上游，别在这里找开关。</p>
+        </div>
+        <div class="mb-grp mb-grp-end">
+          <button class="btn sm" id="memHealthRefresh">刷新</button>
+          <button class="btn sm ghost" id="memGoModels">去模型管理</button>
+        </div>
+      </div>
+      <p class="hint" id="memHealthInfo" style="margin:12px 0 0">读取中…</p>
+    </div>
+
+    <!-- 10-23 用户令：已开通成员放前端，不用去记忆空间后台 -->
+    <div class="card" id="memMembersCard" style="margin-top:14px">
+      <div class="mb-head">
+        <div class="mb-head-main">
+          <h2>已开通成员 <span class="pill plain" id="memMbPill">读取中…</span></h2>
+          <p class="mb-sub">谁开通了记忆空间、记忆钥匙发下去没有、用了多少容量与检索次数，都在这张表里。勾选后可批量续期 / 改额度 / 停用 / 补发钥匙。</p>
+        </div>
+        <span class="hint" id="memMbSummary"></span>
+      </div>
+      <div class="mb-bar">
+        <div class="mb-grp">
+          <label class="mb-check"><input type="checkbox" class="mb-cb" id="memMbAll" /><span>全选</span></label>
+          <span class="hint" id="memMbPicked">未选成员</span>
+        </div>
+        <div class="mb-grp">
+          <span class="mb-label">续期</span>
+          <input class="field" id="memMbDays" type="number" min="0" step="30" value="30" aria-label="续期天数" />
+          <span class="mb-label">天</span>
+          <button class="btn sm primary" id="memMbGrant">批量开通 / 续期</button>
+        </div>
+        <div class="mb-grp">
+          <span class="mb-label">容量</span>
+          <input class="field" id="memMbCap" type="number" min="0" step="128" placeholder="0" aria-label="容量 MB" />
+          <span class="mb-label">MB</span>
+          <button class="btn sm" id="memMbQuota">批量改容量</button>
+        </div>
+        <div class="mb-grp">
+          <span class="mb-label">次数</span>
+          <input class="field" id="memMbTimes" type="number" min="0" step="100" placeholder="0" aria-label="检索次数上限" />
+          <button class="btn sm" id="memMbTimesApply">批量改次数</button>
+        </div>
+        <div class="mb-grp">
+          <button class="btn sm" id="memMbEnsure">补齐 / 补发钥匙</button>
+          <button class="btn sm danger" id="memMbOff">批量停用</button>
+        </div>
+        <div class="mb-grp mb-grp-end">
+          <label class="mb-check"><input type="checkbox" class="mb-cb" id="memMbShowAll" /><span class="hint">显示全部账号</span></label>
+          <button class="btn sm ghost" id="memMbRefresh">刷新</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="mb-table">
+          <thead><tr>
+            <th style="width:34px"><span class="sr-only">选择</span></th>
+            <th>成员</th><th>状态</th><th>到期</th><th>容量</th><th class="mb-hide-sm">检索次数</th>
+            <th class="mb-hide-sm">记忆钥匙</th><th>操作</th>
+          </tr></thead>
+          <tbody id="memMbRows"></tbody>
+        </table>
+      </div>
+      <p class="status" id="memMbStatus" role="status" aria-live="polite"></p>
+    </div>
 </div>
 
 <div class="tab" data-tab="adminKb" id="adminKbTab" hidden>
@@ -1042,22 +1151,39 @@
       </div>
       <p class="hint" id="svcKbInfo">读取中…</p>
       <div class="svc-grid">
-        <label class="svc-field"><span class="hint">服务地址（API；留空 = 用环境变量）</span>
+        <label class="svc-field"><span class="hint">服务地址（API）</span>
           <input class="field" id="svcKbBase" spellcheck="false" placeholder="如 http://127.0.0.1:8080" /></label>
-        <label class="svc-field"><span class="hint">租户 API Key（留空 = 不修改；请求头 X-API-Key）</span>
-          <input class="field" id="svcKbKey" type="password" spellcheck="false" /></label>
-        <label class="svc-field"><span class="hint">问答模型 id</span>
-          <input class="field" id="svcKbLlm" spellcheck="false" placeholder="builtin-llm-default" /></label>
-        <label class="svc-field"><span class="hint">嵌入模型 id</span>
-          <input class="field" id="svcKbEmbed" spellcheck="false" placeholder="builtin-embedding-default" /></label>
-        <label class="svc-field"><span class="hint">视觉模型 id（可空）</span>
-          <input class="field" id="svcKbVlm" spellcheck="false" /></label>
+        <label class="svc-field"><span class="hint">租户 API Key（留空不改）</span>
+          <input class="field" id="svcKbKey" type="password" spellcheck="false" placeholder="请求头 X-API-Key" /></label>
+        <label class="svc-field"><span class="hint">问答模型（KnowledgeQA）</span>
+          <input class="field" id="svcKbLlm" list="kbLlmList" spellcheck="false" placeholder="点箭头选，或手填 id" /></label>
+        <label class="svc-field"><span class="hint">嵌入模型（Embedding）</span>
+          <input class="field" id="svcKbEmbed" list="kbEmbedList" spellcheck="false" placeholder="点箭头选，或手填 id" /></label>
+        <label class="svc-field"><span class="hint">视觉模型（VLLM，可空）</span>
+          <input class="field" id="svcKbVlm" list="kbVlmList" spellcheck="false" placeholder="留空 = 不接受图片" /></label>
+      </div>
+      <!-- 10-23：模型改成**下拉可选手填**（数据来自 WeKnora 自身已注册的模型）——
+           原来只给一个空框填 UUID，管理员根本不知道该填什么。 -->
+      <datalist id="kbLlmList"></datalist>
+      <datalist id="kbEmbedList"></datalist>
+      <datalist id="kbVlmList"></datalist>
+      <p class="hint" style="margin:0">请求头 <b>X-API-Key</b>；地址与密钥留空 = 沿用环境变量/凭据。
+        模型列表读自知识库自己（`GET /api/v1/models`）。改完保存只会影响<b>之后新建</b>的库；
+        已有用户库要点<b>「应用到全部用户库」</b>才会换模型（不会动文档）。</p>
+      <div class="svc-actions" style="margin-top:10px">
+        <button class="btn sm" id="svcKbModels">读取模型列表</button>
+        <button class="btn sm" id="svcKbApplyAll">应用到全部用户库</button>
+        <span class="hint" id="svcKbModelMsg" role="status" aria-live="polite"></span>
       </div>
       <details class="svc-addr">
-        <summary>对外访问地址（浏览器打开用；留空按当前域名 + 端口自动推导）</summary>
+        <summary>浏览器访问地址（API 对外地址 / 后台界面地址；留空按端口自动推导）</summary>
         <div class="svc-addr-row">
-          <input class="field" id="svcKbPublic" placeholder="http://你的域名:8081" />
-          <button class="btn sm" id="svcKbPubSave">保存地址</button>
+          <input class="field" id="svcKbUi" placeholder="后台界面 http://你的域名:8081（⛔ 不是 API 的 8080）" />
+          <button class="btn sm" id="svcKbUiSave">保存后台地址</button>
+        </div>
+        <div class="svc-addr-row">
+          <input class="field" id="svcKbPublic" placeholder="API 对外地址 http://你的域名:8080" />
+          <button class="btn sm" id="svcKbPubSave">保存 API 地址</button>
         </div>
         <p class="status" id="svcKbPubMsg" role="status" aria-live="polite"></p>
       </details>
@@ -1071,6 +1197,54 @@
       </div>
       <p class="status" id="svcKbStatus" role="status" aria-live="polite"></p>
       <div id="svcKbTestResult" style="display:none;margin-top:10px"></div>
+    </div>
+
+    <!-- 10-23 用户令：已开通成员放前端，不用去 WeKnora 后台 -->
+    <div class="card" id="kbMembersCard" style="margin-top:14px">
+      <div class="mb-head">
+        <div class="mb-head-main">
+          <h2>已开通成员 <span class="pill plain" id="kbMbPill">读取中…</span></h2>
+          <p class="mb-sub">谁开通了知识库、库建好没有、用了多少容量，都在这张表里。勾选后可批量续期 / 改容量 / 停用 / 补齐库 —— 不用再进知识库后台逐个点。</p>
+        </div>
+        <span class="hint" id="kbMbSummary"></span>
+      </div>
+      <div class="mb-bar">
+        <div class="mb-grp">
+          <label class="mb-check"><input type="checkbox" class="mb-cb" id="kbMbAll" /><span>全选</span></label>
+          <span class="hint" id="kbMbPicked">未选成员</span>
+        </div>
+        <div class="mb-grp">
+          <span class="mb-label">续期</span>
+          <input class="field" id="kbMbDays" type="number" min="0" step="30" value="30" aria-label="续期天数" />
+          <span class="mb-label">天</span>
+          <button class="btn sm primary" id="kbMbGrant">批量开通 / 续期</button>
+        </div>
+        <div class="mb-grp">
+          <span class="mb-label">容量</span>
+          <input class="field" id="kbMbCap" type="number" min="0" step="128" placeholder="0" aria-label="容量 MB" />
+          <span class="mb-label">MB</span>
+          <button class="btn sm" id="kbMbQuota">批量改容量</button>
+        </div>
+        <div class="mb-grp">
+          <button class="btn sm" id="kbMbEnsure">补齐 / 重建库</button>
+          <button class="btn sm danger" id="kbMbOff">批量停用</button>
+        </div>
+        <div class="mb-grp mb-grp-end">
+          <label class="mb-check"><input type="checkbox" class="mb-cb" id="kbMbShowAll" /><span class="hint">显示全部账号</span></label>
+          <button class="btn sm ghost" id="kbMbRefresh">刷新</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="mb-table">
+          <thead><tr>
+            <th style="width:34px"><span class="sr-only">选择</span></th>
+            <th>成员</th><th>状态</th><th>到期</th><th>容量</th>
+            <th class="mb-hide-sm">知识库 id</th><th>操作</th>
+          </tr></thead>
+          <tbody id="kbMbRows"></tbody>
+        </table>
+      </div>
+      <p class="status" id="kbMbStatus" role="status" aria-live="polite"></p>
     </div>
 </div>
 </main>
@@ -1710,7 +1884,10 @@
   function svcApplyState(j) {
     var mem = (j && j.memory) || {}, kb = (j && j.kb) || {};
     svcUrls.mem = adOpenUrl(mem.effectiveBase, mem.publicBase, 8125);
-    svcUrls.kb = adOpenUrl(kb.effectiveBase, kb.publicBase, 8081);
+    /* ⛔ 知识库「打开后台」必须用**界面**地址：API 在 8080，浏览器打开 8080 只有一句
+       `{"error":"Unauthorized: missing authentication"}`（10-23 用户实拍）。
+       服务端会按端口约定推导（8080→8081），这里优先 uiBase，其次才回落到 API 地址。 */
+    svcUrls.kb = adOpenUrl(kb.effectiveUiBase || kb.effectiveBase, "", 8081);
     adPill($("svcMemState"), Boolean(mem.effectiveBase) && Boolean(mem.effectiveHasKey), "已配置", mem.effectiveBase ? "缺密钥" : "未配置");
     adPill($("svcKbState"), Boolean(kb.effectiveBase) && Boolean(kb.effectiveHasKey), "已配置", kb.effectiveBase ? "缺密钥" : "未配置");
     if ($("svcMemInfo")) {
@@ -1720,7 +1897,8 @@
     }
     if ($("svcKbInfo")) {
       $("svcKbInfo").textContent = "生效 " + (kb.effectiveBase || "—") + (kb.effectiveHasKey ? "　（key 已配）" : "　（key 未配 ⇒ 知识库不可用）")
-        + (svcUrls.kb ? "　后台 " + svcUrls.kb : "");
+        + "　后台界面 " + (kb.effectiveUiBase || "—")
+        + (svcUrls.kb && svcUrls.kb !== (kb.effectiveUiBase || "") ? "（打开用 " + svcUrls.kb + "）" : "");
     }
     if ($("svcMemOpen")) $("svcMemOpen").disabled = !svcUrls.mem;
     if ($("svcKbOpen")) $("svcKbOpen").disabled = !svcUrls.kb;
@@ -2168,8 +2346,8 @@
   /* 10-23 分中心加载：每个 tab 只拉自己用到的数据 */
   function loadAdminUserTab() { loadVersion(); loadFeatures(); loadAdminPoints(""); loadInvites(); loadAdminAll(); }
   function loadAdminModelTab() { loadUpstreamCfg(); loadDiskInfo(); loadAdminModels(); loadOffPeak(); loadChatModels(); }
-  function loadAdminMemTab() { loadServices(); }
-  function loadAdminKbTab() { loadServices(); }
+  function loadAdminMemTab() { loadServices(); loadMemHealth(); loadMembers("memory"); }
+  function loadAdminKbTab() { loadServices(); loadMembers("knowledge"); loadKbModels(); }
 
   function loadAdminPanel() {
     loadVersion(); loadFeatures(); loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites(); loadChatModels();
@@ -2471,6 +2649,7 @@
       $("svcKbLlm").value = kb.llmModelId || "";
       $("svcKbEmbed").value = kb.embedModelId || "";
       $("svcKbVlm").value = kb.vlmModelId || "";
+      if ($("svcKbUi")) $("svcKbUi").value = kb.uiBase || "";
       $("svcMemBase").value = mem.base || "";
       $("svcMemProxy").value = mem.proxyBase || "";
       $("svcMemInstance").value = mem.instance || "";
@@ -2533,6 +2712,295 @@
   }
   if ($("svcSaveKb")) $("svcSaveKb").onclick = function () { svcSaveOne("kb"); };
   if ($("svcSaveMem")) $("svcSaveMem").onclick = function () { svcSaveOne("memory"); };
+
+  /* ══ 10-23 知识库：模型下拉 / 应用到全部库 / 后台地址 ══════════════════════════
+     ⛔ 模型列表来自 WeKnora 自己的 `GET /api/v1/models`（不是云管理的模型目录）：
+        知识库只认它自己注册过的模型 id（UUID），拿云目录的模型名去填只会 400。 */
+  function kbModelSay(t, bad) {
+    var el = $("svcKbModelMsg");
+    if (!el) return;
+    el.textContent = t || "";
+    el.style.color = bad ? "var(--bad)" : "";
+  }
+  function kbFillList(id, rows) {
+    var el = $(id); if (!el) return;
+    el.innerHTML = (rows || []).map(function (m) {
+      /* value 用 id（真正要存的东西），label 显示人话名 —— 两列都带上名称与来源，避免同名模型分不清 */
+      var label = (m.title || m.name || m.id) + (m.name && m.title && m.title !== m.name ? "（" + m.name + "）" : "") + " · " + m.id;
+      return '<option value="' + esc(m.id) + '" label="' + esc(label) + '"></option>';
+    }).join("");
+  }
+  function loadKbModels() {
+    kbModelSay("读取模型中…");
+    api("/admin/service-models").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { kbModelSay("读取失败：" + (j.error || ("HTTP " + r.status)) + "（仍可手填模型 id）", true); return; }
+      kbFillList("kbLlmList", j.llm);
+      kbFillList("kbEmbedList", j.embed);
+      kbFillList("kbVlmList", j.vlm);
+      var llmN = (j.llm || []).length, embN = (j.embed || []).length, vlmN = (j.vlm || []).length;
+      kbModelSay("已读到 " + (j.count || 0) + " 个模型：问答 " + llmN + " · 嵌入 " + embN + " · 视觉 " + vlmN + (llmN ? "" : "（没有可用的问答模型 ⇒ 先去知识库后台加一个）"), !llmN);
+    }).catch(function () { kbModelSay("读取失败：网络错误（仍可手填模型 id）", true); });
+  }
+  if ($("svcKbModels")) $("svcKbModels").onclick = loadKbModels;
+  if ($("svcKbApplyAll")) $("svcKbApplyAll").onclick = function () {
+    var btn = this;
+    var llm = $("svcKbLlm").value.trim(), embed = $("svcKbEmbed").value.trim(), vlm = $("svcKbVlm").value.trim();
+    if (!llm && !embed) { kbModelSay("先选好问答 / 嵌入模型（点上面两个输入框右侧的箭头）", true); return; }
+    if (!confirm("把当前模型配置应用到所有已建好的用户库？\n\n问答：" + (llm || "—") + "\n嵌入：" + (embed || "—") + "\n视觉：" + (vlm || "不启用") + "\n\n只改库的模型配置，不动已上传的文档。")) return;
+    btn.disabled = true;
+    kbModelSay("先保存到服务端…");
+    api("/admin/services", { method: "POST", body: { kb: { base: $("svcKbBase").value.trim(), key: "", llmModelId: llm, embedModelId: embed, vlmModelId: vlm } } })
+      .then(function (r) {
+        if (!r.ok || !r.j || !r.j.ok) throw new Error((r.j && r.j.error) || ("HTTP " + r.status));
+        kbModelSay("正在逐个应用（每库约 1 秒，别关页面）…");
+        return api("/admin/kb/apply-models", { method: "POST", body: {} });
+      })
+      .then(function (r) {
+        btn.disabled = false;
+        var j = (r && r.j) || {};
+        if (!r.ok || !j.ok) { kbModelSay("应用失败：" + (j.error || ("HTTP " + r.status)), true); return; }
+        if (!j.total) { kbModelSay("还没有已建好的用户库（有人开通并首次使用后会自动建）"); return; }
+        var fail = (j.failed || []);
+        kbModelSay("应用完成：" + j.done + "/" + j.total + (fail.length ? "，失败 " + fail.length + " 个（" + fail.slice(0, 2).map(function (f) { return f.username + "：" + f.error; }).join("；") + "）" : ""), fail.length > 0);
+        loadMembers("knowledge");
+      })
+      .catch(function (e) { btn.disabled = false; kbModelSay("应用失败：" + ((e && e.message) || "网络错误"), true); });
+  };
+  if ($("svcKbUiSave")) $("svcKbUiSave").onclick = function () {
+    var v = $("svcKbUi").value.trim(), msg = $("svcKbPubMsg");
+    msg.className = "status"; msg.textContent = "保存中…";
+    api("/admin/services/public-base", { method: "POST", body: { kbUi: v } }).then(function (r) {
+      if (r.ok && r.j && r.j.ok) { msg.className = "status ok"; msg.textContent = "已保存：打开后台将用 " + (r.j.effectiveUiBase || v || "自动推导"); loadServices(); }
+      else { msg.className = "status bad"; msg.textContent = "保存失败：" + ((r.j && r.j.error) || ("HTTP " + r.status)); }
+    }).catch(function () { msg.className = "status bad"; msg.textContent = "保存失败：网络错误"; });
+  };
+
+  /* ══ 10-23 已开通成员（知识库 / 记忆 两个中心共用）════════════════════════════
+     数据源：`GET /admin/members?feature=…`（本地状态，不逐个问上游）
+     批量：`POST /admin/entitlements/batch`、`POST /admin/members/ensure`（服务端串行）
+     ⛔ 勾选状态存在 MB[which].sel 里（按用户名），重渲染不丢；不依赖 DOM 顺序。 */
+  var MB = {
+    knowledge: { rows: [], sel: {}, showAll: false },
+    memory: { rows: [], sel: {}, showAll: false }
+  };
+  function mbIds(which) {
+    var p = which === "knowledge" ? "kb" : "mem";
+    return { all: p + "MbAll", picked: p + "MbPicked", rows: p + "MbRows", pill: p + "MbPill", summary: p + "MbSummary", status: p + "MbStatus", refresh: p + "MbRefresh", showAll: p + "MbShowAll" };
+  }
+  function mbSay(which, t, cls) {
+    var el = $(mbIds(which).status); if (!el) return;
+    el.textContent = t || ""; el.className = "status" + (cls ? " " + cls : "");
+  }
+  function mbPickedNames(which) {
+    var st = MB[which];
+    return st.rows.filter(function (r) { return st.sel[r.username]; }).map(function (r) { return r.username; });
+  }
+  function mbSyncPicked(which) {
+    var names = mbPickedNames(which), el = $(mbIds(which).picked);
+    if (el) el.textContent = names.length ? ("已选 " + names.length + " 个成员") : "未选成员";
+  }
+  function mbTag(r) {
+    if (r.enabled) return '<span class="mb-tag on">已开通</span>';
+    if (r.expired) return '<span class="mb-tag warn">已到期</span>';
+    return '<span class="mb-tag off">未开通</span>';
+  }
+  function mbRender(which) {
+    var st = MB[which], ids = mbIds(which), box = $(ids.rows);
+    if (!box) return;
+    var rows = st.rows.filter(function (r) { return st.showAll ? true : (r.enabled || r.expired); });
+    var isKb = which === "knowledge";
+    if (!rows.length) {
+      box.innerHTML = '<tr><td colspan="' + (isKb ? 7 : 8) + '" class="mb-empty">'
+        + (st.showAll ? "还没有账号" : ("还没有人开通" + (isKb ? "知识库" : "记忆空间") + " —— 勾「显示全部账号」或去用户管理中心开通"))
+        + '</td></tr>';
+      mbSyncPicked(which);
+      return;
+    }
+    box.innerHTML = rows.map(function (r) {
+      var cap = r.enabled
+        ? ((Math.round((r.usedMb || 0) * 10) / 10) + " / " + (r.quotaMb || 0) + " MB")
+        : (r.quotaMb ? ("预设 " + r.quotaMb + " MB") : "—");
+      var extra = isKb
+        ? (r.resourceId
+          ? '<span class="mb-mono" title="' + esc(r.resourceId) + '">' + esc(String(r.resourceId).slice(0, 8)) + '…</span>'
+          : '<span class="mb-tag off">未建库</span>')
+        : (r.quota ? ((r.usedCount || 0) + " / " + r.quota) : "不限") + '|' + (r.keyMask ? '<span class="mb-mono">' + esc(r.keyMask) + '</span>' : '<span class="mb-tag off">未发</span>');
+      var cells = isKb
+        ? ('<td class="mb-hide-sm">' + extra + '</td>')
+        : ('<td class="mb-hide-sm">' + extra.split("|")[0] + '</td>' + '<td class="mb-hide-sm">' + extra.split("|")[1] + '</td>');
+      var ops = '<div class="mb-ops">'
+        + '<button class="btn sm" data-mbop="grant" data-u="' + esc(r.username) + '">' + (r.enabled ? "续 30 天" : "开通 30 天") + '</button>'
+        + (r.enabled ? '<button class="btn sm" data-mbop="ensure" data-u="' + esc(r.username) + '">' + (isKb ? "补建库" : "补钥匙") + '</button>' : "")
+        + (r.enabled ? '<button class="btn sm danger" data-mbop="off" data-u="' + esc(r.username) + '">停用</button>' : "")
+        + '</div>';
+      return '<tr data-user="' + esc(r.username) + '">'
+        + '<td><input type="checkbox" class="mb-cb mb-pick" data-u="' + esc(r.username) + '"' + (st.sel[r.username] ? " checked" : "") + ' /></td>'
+        + '<td class="mb-user">' + esc(r.username) + (r.role === "admin" ? ' <span class="mb-tag off">管理员</span>' : "") + '</td>'
+        + '<td>' + mbTag(r) + (r.enabled && !r.hasResource ? ' <span class="mb-tag warn">' + (isKb ? "库未建" : "钥匙未发") + '</span>' : "") + '</td>'
+        + '<td>' + (r.enabled || r.expired ? esc(entDate(r.expiresAt)) : "—") + '</td>'
+        + '<td>' + esc(cap) + '</td>'
+        + cells
+        + '<td>' + ops + '</td>'
+        + '</tr>';
+    }).join("");
+    Array.prototype.forEach.call(box.querySelectorAll(".mb-pick"), function (cb) {
+      cb.addEventListener("change", function () {
+        st.sel[cb.getAttribute("data-u")] = cb.checked;
+        mbSyncPicked(which);
+      });
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-mbop]"), function (b) {
+      b.addEventListener("click", function () { mbRowOp(which, b.getAttribute("data-mbop"), b.getAttribute("data-u")); });
+    });
+    mbSyncPicked(which);
+  }
+  function mbRowOp(which, op, username) {
+    var isKb = which === "knowledge", label = isKb ? "知识库" : "记忆";
+    if (op === "off") {
+      if (!confirm("停用「" + username + "」的" + label + "？数据不会删除，续期即恢复。")) return;
+      api("/admin/entitlements", { method: "POST", body: { username: username, feature: which, enabled: false } }).then(function (r) {
+        if (r.ok && r.j && r.j.ok) { mbSay(which, "已停用 " + username + " 的" + label, "ok"); loadMembers(which); }
+        else mbSay(which, "停用失败：" + ((r.j && r.j.error) || ("HTTP " + r.status)), "bad");
+      });
+      return;
+    }
+    if (op === "grant") {
+      api("/admin/entitlements", { method: "POST", body: { username: username, feature: which, enabled: true, days: 30 } }).then(function (r) {
+        if (r.ok && r.j && r.j.ok) { mbSay(which, "已为 " + username + " 开通/续期 30 天", "ok"); loadMembers(which); }
+        else mbSay(which, "操作失败：" + ((r.j && r.j.error) || ("HTTP " + r.status)), "bad");
+      });
+      return;
+    }
+    if (op === "ensure") {
+      mbSay(which, "正在补齐 " + username + " …");
+      api("/admin/members/ensure", { method: "POST", body: { feature: which, users: [username] } }).then(function (r) {
+        var j = (r && r.j) || {};
+        if (r.ok && j.ok && !(j.failed || []).length) { mbSay(which, username + " 已就绪", "ok"); loadMembers(which); }
+        else mbSay(which, "补齐失败：" + ((j.failed && j.failed[0] && j.failed[0].error) || j.error || ("HTTP " + r.status)), "bad");
+      });
+    }
+  }
+  function loadMembers(which) {
+    var st = MB[which], ids = mbIds(which);
+    mbSay(which, "读取中…");
+    api("/admin/members?feature=" + which).then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { mbSay(which, "读取失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      st.rows = j.users || [];
+      /* 勾选只保留还存在的成员（删号后不留幽灵勾选） */
+      var alive = {};
+      st.rows.forEach(function (x) { alive[x.username] = true; });
+      Object.keys(st.sel).forEach(function (n) { if (!alive[n]) delete st.sel[n]; });
+      var s = j.summary || {};
+      if ($(ids.pill)) {
+        $(ids.pill).textContent = (s.active || 0) + " 人已开通";
+        $(ids.pill).className = "pill " + ((s.active || 0) ? "ok" : "plain");
+      }
+      if ($(ids.summary)) {
+        $(ids.summary).textContent = "共 " + (s.total || 0) + " 账号 · 已开通 " + (s.active || 0)
+          + " · 已到期 " + (s.expired || 0) + " · 未开通 " + (s.off || 0)
+          + (which === "knowledge" || which === "memory" ? " · 资源已就绪 " + (s.provisioned || 0) : "");
+      }
+      mbRender(which);
+      mbSay(which, "");
+    }).catch(function () { mbSay(which, "读取失败：网络错误", "bad"); });
+  }
+  function mbBulk(which, action, extra) {
+    var names = mbPickedNames(which);
+    if (!names.length) { mbSay(which, "先勾选要操作的成员（表头左侧是全选）", "bad"); return; }
+    var body = { feature: which, action: action, users: names };
+    if (extra) Object.keys(extra).forEach(function (k) { body[k] = extra[k]; });
+    var label = which === "knowledge" ? "知识库" : "记忆";
+    var what = action === "grant" ? ("开通/续期 " + (body.days || 30) + " 天")
+      : action === "quota" ? ("改额度（" + (body.quotaMb !== undefined ? ("容量 " + body.quotaMb + " MB") : "") + (body.quota !== undefined ? (" 次数 " + body.quota) : "") + "）")
+        : "停用";
+    if (!confirm("对 " + names.length + " 个成员的「" + label + "」执行：" + what + "？")) return;
+    mbSay(which, "批量处理中（" + names.length + " 个）…");
+    api("/admin/entitlements/batch", { method: "POST", body: body }).then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { mbSay(which, "批量失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      var fail = j.failed || [];
+      var failNote = fail.length ? ("，失败 " + fail.length + " 个（" + fail.slice(0, 3).map(function (f) { return f.username + "：" + f.error; }).join("；") + "）") : "";
+      mbSay(which, "批量完成：成功 " + j.done + " 个" + failNote, fail.length ? "bad" : "ok");
+      loadMembers(which);
+    }).catch(function () { mbSay(which, "批量失败：网络错误", "bad"); });
+  }
+  function mbEnsureBulk(which) {
+    var names = mbPickedNames(which);
+    var isKb = which === "knowledge";
+    if (!names.length) { mbSay(which, "先勾选成员（不选＝全部已开通成员）", "bad"); return; }
+    if (!confirm("为 " + names.length + " 个成员补齐" + (isKb ? "知识库（缺库就新建，已有的不动）" : "记忆钥匙") + "？")) return;
+    mbSay(which, "正在逐个补齐（每个约 1 秒，别关页面）…");
+    api("/admin/members/ensure", { method: "POST", body: { feature: which, users: names } }).then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { mbSay(which, "补齐失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      var fail = j.failed || [];
+      var failNote = fail.length ? ("，失败 " + fail.length + " 个（" + fail.slice(0, 3).map(function (f) { return f.username + "：" + f.error; }).join("；") + "）") : "";
+      mbSay(which, "补齐完成：成功 " + j.done + "/" + j.total + failNote, fail.length ? "bad" : "ok");
+      loadMembers(which);
+    }).catch(function () { mbSay(which, "补齐失败：网络错误", "bad"); });
+  }
+  function mbBind(which) {
+    var ids = mbIds(which), st = MB[which];
+    if ($(ids.all)) $(ids.all).onchange = function () {
+      var on = this.checked;
+      var visible = st.rows.filter(function (r) { return st.showAll ? true : (r.enabled || r.expired); });
+      visible.forEach(function (r) { st.sel[r.username] = on; });
+      Array.prototype.forEach.call(document.querySelectorAll("#" + ids.rows + " .mb-pick"), function (cb) { cb.checked = on; });
+      mbSyncPicked(which);
+    };
+    if ($(ids.showAll)) $(ids.showAll).onchange = function () { st.showAll = this.checked; mbRender(which); };
+    if ($(ids.refresh)) $(ids.refresh).onclick = function () { loadMembers(which); };
+    var p = which === "knowledge" ? "kb" : "mem";
+    var grant = $(p + "MbGrant");
+    if (grant) grant.onclick = function () {
+      var days = parseInt(($(p + "MbDays") && $(p + "MbDays").value) || "30", 10);
+      mbBulk(which, "grant", { days: isNaN(days) ? 30 : days });
+    };
+    var quota = $(p + "MbQuota");
+    if (quota) quota.onclick = function () {
+      var capEl = $(p + "MbCap");
+      if (!capEl || capEl.value === "") { mbSay(which, "先填容量（MB，0 = 不限）", "bad"); return; }
+      mbBulk(which, "quota", { quotaMb: Math.max(0, parseInt(capEl.value, 10) || 0) });
+    };
+    var times = $(p + "MbTimesApply");
+    if (times) times.onclick = function () {
+      var tEl = $(p + "MbTimes");
+      if (!tEl || tEl.value === "") { mbSay(which, "先填检索次数上限（0 = 不限）", "bad"); return; }
+      mbBulk(which, "quota", { quota: Math.max(0, parseInt(tEl.value, 10) || 0) });
+    };
+    var ensure = $(p + "MbEnsure");
+    if (ensure) ensure.onclick = function () { mbEnsureBulk(which); };
+    var off = $(p + "MbOff");
+    if (off) off.onclick = function () { mbBulk(which, "off"); };
+  }
+  mbBind("knowledge"); mbBind("memory");
+
+  /* 记忆网关实况（只读）：⛔ 不提供"改模型"开关 —— 网关的模型在容器 env 里，云管理改不了，
+     给个点了没反应的按钮比不给更糟。 */
+  function loadMemHealth() {
+    var info = $("memHealthInfo"), pill = $("memHealthPill");
+    if (!info) return;
+    api("/admin/service-health?which=memory").then(function (r) {
+      var j = (r && r.j) || {}, h = j.health || {};
+      if (!r.ok || !j.ok) {
+        if (pill) { pill.className = "pill warn"; pill.textContent = "不可达"; }
+        info.textContent = "读不到记忆网关（" + (j.note || j.error || ("HTTP " + r.status)) + "）：检查上面的「检索代理地址」。";
+        return;
+      }
+      if (pill) { pill.className = "pill ok"; pill.textContent = "v" + (h.version || "?"); }
+      info.textContent = "上游 " + (h.upstream || "—")
+        + (h.rateLimit ? "　·　限流 " + h.rateLimit : "")
+        + (h.storage ? "　·　存储 " + (h.storage.effective || "—") + (h.storage.degraded ? "（降级）" : "") : "")
+        + "　·　探测地址 " + (j.base || "—");
+    }).catch(function () {
+      if (pill) { pill.className = "pill warn"; pill.textContent = "不可达"; }
+      info.textContent = "读不到记忆网关：网络错误。";
+    });
+  }
+  if ($("memHealthRefresh")) $("memHealthRefresh").onclick = loadMemHealth;
+  if ($("memGoModels")) $("memGoModels").onclick = function () { show("adminModel"); };
 
   /* ── 邀请码（管理员）：生成 / 记录 / 账号明细 / 额度监控 ── */
   var ivInvites = [];
@@ -3772,8 +4240,9 @@
     bar.style.display = "block";
     fill.style.width = Math.max(0, Math.min(100, p.pct || 0)) + "%";
     fill.classList.toggle("err", Boolean(p.error));
-    label.textContent = p.label + (p.error ? "（" + p.error.split("
-").slice(-1)[0] + "）" : "");
+    /* ⛔ 这里原来是一个**真正的换行**夹在字符串里（`split("⏎")`）⇒ 整个 <script> 语法错误、
+       更新进度条从来没跑起来。转义成 \n 才解析得动。 */
+    label.textContent = p.label + (p.error ? "（" + String(p.error).split("\n").slice(-1)[0] + "）" : "");
   }
 
   function poll() {
