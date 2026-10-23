@@ -2978,14 +2978,16 @@
       var cap = r.enabled
         ? ((Math.round((r.usedMb || 0) * 10) / 10) + " / " + (r.quotaMb || 0) + " MB")
         : (r.quotaMb ? ("预设 " + r.quotaMb + " MB") : "—");
-      var extra = isKb
-        ? (r.resourceId
+      /* 各中心的专属列：知识库 = 库 id；记忆 = 检索次数 + 钥匙（掩码） */
+      var cells;
+      if (isKb) {
+        cells = '<td class="mb-hide-sm">' + (r.resourceId
           ? '<span class="mb-mono" title="' + esc(r.resourceId) + '">' + esc(String(r.resourceId).slice(0, 8)) + '…</span>'
-          : '<span class="mb-tag off">未建库</span>')
-        : (r.quota ? ((r.usedCount || 0) + " / " + r.quota) : "不限") + '|' + (r.keyMask ? '<span class="mb-mono">' + esc(r.keyMask) + '</span>' : '<span class="mb-tag off">未发</span>');
-      var cells = isKb
-        ? ('<td class="mb-hide-sm">' + extra + '</td>')
-        : ('<td class="mb-hide-sm">' + extra.split("|")[0] + '</td>' + '<td class="mb-hide-sm">' + extra.split("|")[1] + '</td>');
+          : '<span class="mb-tag off">未建库</span>') + '</td>';
+      } else {
+        cells = '<td class="mb-hide-sm">' + (r.quota ? ((r.usedCount || 0) + " / " + r.quota) : "不限") + '</td>'
+          + '<td class="mb-hide-sm">' + (r.keyMask ? '<span class="mb-mono">' + esc(r.keyMask) + '</span>' : '<span class="mb-tag off">未发</span>') + '</td>';
+      }
       var ops = '<div class="mb-ops">'
         + '<button class="btn sm" data-mbop="grant" data-u="' + esc(r.username) + '">' + (r.enabled ? "续 30 天" : "开通 30 天") + '</button>'
         + (r.enabled ? '<button class="btn sm" data-mbop="ensure" data-u="' + esc(r.username) + '">' + (isKb ? "补建库" : "补钥匙") + '</button>' : "")
@@ -3057,7 +3059,7 @@
       if ($(ids.summary)) {
         $(ids.summary).textContent = "共 " + (s.total || 0) + " 账号 · 已开通 " + (s.active || 0)
           + " · 已到期 " + (s.expired || 0) + " · 未开通 " + (s.off || 0)
-          + (which === "knowledge" || which === "memory" ? " · 资源已就绪 " + (s.provisioned || 0) : "");
+          + " · 资源已就绪 " + (s.provisioned || 0);
       }
       mbRender(which);
       mbSay(which, "");
