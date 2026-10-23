@@ -1281,6 +1281,7 @@
         </div>
         <div class="mb-grp">
           <button class="btn sm" id="memMbEnsure">补齐 / 补发钥匙</button>
+          <button class="btn sm danger" id="memMbClean" title="清掉已过期且过了宽限期的记忆空间（删远端数据）">清理已过期</button>
           <button class="btn sm danger" id="memMbOff">批量停用</button>
         </div>
         <div class="mb-grp mb-grp-end">
@@ -1479,7 +1480,8 @@
           <button class="btn sm" id="kbMbQuota">批量改容量</button>
         </div>
         <div class="mb-grp">
-          <button class="btn sm" id="kbMbEnsure">补齐 / 重建库</button>
+          <button class="btn sm danger" id="kbMbClean" title="清掉已过期且过了宽限期的知识库（删远端数据）">清理已过期</button>
+        <button class="btn sm" id="kbMbEnsure">补齐 / 重建库</button>
           <button class="btn sm danger" id="kbMbOff">批量停用</button>
         </div>
         <div class="mb-grp mb-grp-end">
@@ -1761,11 +1763,40 @@
   /* ── 我的权益（知识库 / 记忆：按时长 + 额度，未开通可自助扣积分激活）───────
      ⛔ 判定权在服务端（/entitlements）；这里只做展示与发起开通，别在前端复刻规则。 */
   function entDate(ts) { return ts ? new Date(ts).toLocaleDateString() : "永久"; }
+  /* 到期提醒（10-23）：权益 ≤7 天到期或已过期时弹一次；每会话只弹一次（sessionStorage）。 */
+  function expiryReminder(j) {
+    try { if (sessionStorage.getItem("chc-expiry-notice") === "1") return; sessionStorage.setItem("chc-expiry-notice", "1"); } catch (e) { /* 无痕模式忽略 */ }
+    var labels = j.labels || {}, cleanup = j.cleanup || {};
+    var rows = (j.expiring || []).map(function (f) {
+      var c = cleanup[f] || {}, name = labels[f] || f;
+      var line = c.expired
+        ? ("已过期 " + Math.abs(c.daysLeft || 0) + " 天" + (c.graceLeftDays > 0 ? "（" + c.graceLeftDays + " 天后自动清理空间）" : "（已过宽限期，随时会被清理）"))
+        : ("还剩 " + c.daysLeft + " 天到期");
+      return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-soft)">'
+        + '<b style="min-width:5em">' + esc(name) + "</b>"
+        + '<span style="color:' + (c.expired ? "var(--bad)" : "var(--warn,#b26b00)") + '">' + esc(line) + "</span></div>";
+    }).join("");
+    var html = '<div style="font-size:13.5px;line-height:1.85">'
+      + '<div style="margin-bottom:6px">你的以下资源即将到期或已过期：</div>' + rows
+      + '<div class="hint" style="margin-top:10px">过期后有 ' + (j.graceDays || 3) + ' 天宽限期，之后系统会自动清理对应空间（知识库文档 / 记忆内容），<b>数据将无法恢复</b>。续期后立即恢复使用。</div>'
+      + '</div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">'
+      + '<button class="btn sm" id="expLater">稍后</button>'
+      + '<button class="btn primary" id="expRenew">去续费</button></div>';
+    showModal("资源到期提醒", html);
+    if ($("expLater")) $("expLater").onclick = function () { var m = $("mbModal"); if (m && m.parentNode) m.parentNode.removeChild(m); };
+    if ($("expRenew")) $("expRenew").onclick = function () {
+      var m = $("mbModal"); if (m && m.parentNode) m.parentNode.removeChild(m);
+      show("user");
+      var box = $("entList"); if (box && box.scrollIntoView) box.scrollIntoView({ block: "center" });
+    };
+  }
+
   function loadEntitlements() {
     var box = $("entList"); if (!box) return;
     api("/entitlements").then(function (r) {
       if (!r || !r.ok || !r.j || !r.j.ok) { box.innerHTML = '<div class="empty">读取失败</div>'; return; }
       var ents = r.j.entitlements || {}, prices = r.j.pricing || {}, labels = r.j.labels || {};
+      if ((r.j.expiring || []).length) expiryReminder(r.j);
       var rows = "", onCount = 0;
       ["knowledge", "memory"].forEach(function (f) {
         var st = ents[f] || {}, pr = prices[f] || {}, label = labels[f] || f, on = !!st.enabled;
@@ -3751,8 +3782,18 @@
     if (el) el.textContent = names.length ? ("已选 " + names.length + " 个成员") : "未选成员";
   }
   function mbTag(r) {
-    if (r.enabled) return '<span class="mb-tag on">已开通</span>';
-    if (r.expired) return '<span class="mb-tag warn">已到期</span>';
+    var c = r.cleanup || {};
+    /* 已清理：资源已删，续期后要重新建库/发钥匙 */
+    if (c.cleanedAt) return '<span class="mb-tag off">已清理</span> <span class="hint">' + (c.cleanedBy === "auto" ? "自动" : "手动") + '清理</span>';
+    if (r.enabled) {
+      if (c.daysLeft !== null && c.daysLeft !== undefined && c.daysLeft <= 7) return '<span class="mb-tag on">已开通</span> <span class="mb-tag warn">剩 ' + c.daysLeft + ' 天</span>';
+      return '<span class="mb-tag on">已开通</span>';
+    }
+    if (r.expired) {
+      if (c.pastGrace) return '<span class="mb-tag warn">已到期</span> <span class="mb-tag off">可清理</span>';
+      var g = c.graceLeftDays;
+      return '<span class="mb-tag warn">已到期</span>' + (g !== null && g !== undefined ? ' <span class="mb-tag off">' + g + ' 天后自动清理</span>' : "");
+    }
     return '<span class="mb-tag off">未开通</span>';
   }
   function mbRender(which) {
@@ -3785,6 +3826,7 @@
         + '<button class="btn sm" data-mbop="grant" data-u="' + esc(r.username) + '">' + (r.enabled ? "续 30 天" : "开通 30 天") + '</button>'
         + (r.enabled ? '<button class="btn sm" data-mbop="ensure" data-u="' + esc(r.username) + '">' + (isKb ? "补建库" : "补钥匙") + '</button>' : "")
         + (r.enabled ? '<button class="btn sm danger" data-mbop="off" data-u="' + esc(r.username) + '">停用</button>' : "")
+        + (r.cleanup && r.cleanup.cleanable ? '<button class="btn sm danger" data-mbop="clean" data-u="' + esc(r.username) + '">清理</button>' : "")
         + '</div>';
       return '<tr data-user="' + esc(r.username) + '">'
         + '<td><input type="checkbox" class="mb-cb mb-pick" data-u="' + esc(r.username) + '"' + (st.sel[r.username] ? " checked" : "") + ' /></td>'
@@ -3824,6 +3866,17 @@
       });
       return;
     }
+    if (op === "clean") {
+      var what = isKb ? "知识库及其文档" : "记忆空间里的全部记忆";
+      if (!confirm("清理「" + username + "」的" + label + "空间？\n\n这一步会删除远端数据（" + what + "），不可恢复。")) return;
+      mbSay(which, "正在清理 " + username + " …");
+      api("/admin/members/clean", { method: "POST", body: { feature: which, users: [username] } }).then(function (r) {
+        var j = (r && r.j) || {};
+        if (r.ok && j.ok && j.done) { mbSay(which, "已清理 " + username + " 的" + label, "ok"); loadMembers(which); }
+        else mbSay(which, "清理失败：" + ((j.failed && j.failed[0] && j.failed[0].message) || j.error || ("HTTP " + r.status)), "bad");
+      });
+      return;
+    }
     if (op === "ensure") {
       mbSay(which, "正在补齐 " + username + " …");
       api("/admin/members/ensure", { method: "POST", body: { feature: which, users: [username] } }).then(function (r) {
@@ -3833,6 +3886,31 @@
       });
     }
   }
+  /* 批量清理：有勾选清勾选的（未到期会逐条回报原因），没勾选只清"已过期且过宽限期"的 */
+  function mbCleanBulk(which, btn) {
+    var st = MB[which], isKb = which === "knowledge", label = isKb ? "知识库" : "记忆空间";
+    var picked = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
+    var targets = picked.length ? picked : st.rows.filter(function (r) { return r.cleanup && r.cleanup.cleanable; }).map(function (r) { return r.username; });
+    if (!targets.length) { mbSay(which, "没有可清理的账号（要么都已清理，要么还没过宽限期）", "bad"); return; }
+    var what = isKb ? "知识库与文档" : "记忆空间里的全部记忆";
+    if (!confirm("清理 " + targets.length + " 个账号的" + label + "？\n\n会删除远端数据（" + what + "），不可恢复。\n未到期 / 未过宽限期的会逐条报错，不会被删。")) return;
+    btn.disabled = true;
+    mbSay(which, "正在清理 " + targets.length + " 个账号（服务端逐个执行）…");
+    api("/admin/members/clean", { method: "POST", body: { feature: which, users: targets } }).then(function (r) {
+      btn.disabled = false;
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { mbSay(which, "清理失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      var failed = j.failed || [];
+      mbSay(which, "清理完成：成功 " + (j.done || 0) + " / " + (j.total || 0)
+        + (failed.length ? ("；未清：" + failed.slice(0, 3).map(function (f) { return f.username + "（" + (f.message || f.error) + "）"; }).join("；")) : ""),
+        failed.length ? "bad" : "ok");
+      st.sel = {};
+      loadMembers(which);
+    })["catch"](function () { btn.disabled = false; mbSay(which, "清理失败：网络错误", "bad"); });
+  }
+  if ($("kbMbClean")) $("kbMbClean").onclick = function () { mbCleanBulk("knowledge", this); };
+  if ($("memMbClean")) $("memMbClean").onclick = function () { mbCleanBulk("memory", this); };
+
   function loadMembers(which) {
     var st = MB[which], ids = mbIds(which);
     mbSay(which, "读取中…");
@@ -3851,7 +3929,7 @@
       }
       if ($(ids.summary)) {
         $(ids.summary).textContent = "共 " + (s.total || 0) + " 账号 · 已开通 " + (s.active || 0)
-          + " · 已到期 " + (s.expired || 0) + " · 未开通 " + (s.off || 0)
+          + " · 已到期 " + (s.expired || 0) + " · 未开通 " + (s.off || 0) + " · 可清理 " + (s.cleanable || 0)
           + " · 资源已就绪 " + (s.provisioned || 0);
       }
       mbRender(which);
