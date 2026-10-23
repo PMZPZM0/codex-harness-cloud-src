@@ -34,8 +34,18 @@ const codeOnly = (source) => String(source)
   .filter((line) => !/^\s*\/\//.test(line))
   .map((line) => line.replace(/\s\/\/[^'"`]*$/, ""))
   .join("\n");
+/* ⛔ 云助手仓：包版本的真相源是 electron-builder.assistant.yml 的 extraMetadata.version
+   （与仓库 package.json 的桌面版版本线互不污染，见该 yml 头注释）——
+   守卫要钉的是「用户装的那一版」有没有要点条目，所以必须读助手的版本，不是仓的 package.json。 */
+const assistantVersion = (() => {
+  try {
+    return String(
+      read("electron-builder.assistant.yml").match(/extraMetadata:[\s\S]{0,200}?version:\s*([\d.]+)/)?.[1] || ""
+    );
+  } catch { return ""; }
+})();
 const pkg = JSON.parse(read("package.json"));
-const VERSION = String(pkg.version);
+const VERSION = assistantVersion || String(pkg.version);
 
 /* ── ① 要点数据：真跑（当前版本必须有条目）────────────────────────────── */
 const BODY = `
@@ -151,7 +161,18 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const FEATURE = path.join(process.cwd(), "dist-electron", "features", "whats-new-ipc.js");
-const VERSION = require(path.join(process.cwd(), "package.json")).version;
+const VERSION = (() => {
+  try {
+    return String(
+      require("fs").readFileSync(path.join(process.cwd(), "electron-builder.assistant.yml"), "utf8")
+        .match(/extraMetadata:[\\s\\S]{0,200}?version:\\s*([\\d.]+)/)?.[1] || ""
+    );
+  } catch { return ""; }
+})();
+/* ⛔ 不许再兜底 package.json：stub 的 app.getVersion() 必须与守卫主体插值进来的版本
+   （同一份 assistant yml）完全一致 —— 一边 0.0.45 一边 0.0.47 时，状态机会把
+   「升级」判成「回退」⇒ 5 条真跑断言全假红。 */
+if (!VERSION) { console.log("DATA " + JSON.stringify({ fatal: "读不到 assistant 版本" })); process.exit(0); }
 if (!fs.existsSync(FEATURE)) { console.log("DATA " + JSON.stringify({ fatal: "缺少 dist-electron 产物（先 npm run build）" })); process.exit(0); }
 
 let userData = "";

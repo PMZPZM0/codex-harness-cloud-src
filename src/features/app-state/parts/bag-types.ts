@@ -1425,4 +1425,7 @@ export interface Bag {
   insertFavorite: (item: FavoriteItem) => void;
   sendFavorite: (item: FavoriteItem) => Promise<void>;
   favoriteToMemory: (ids: string[], scope: MemoryLayerScope) => Promise<FavoritesToMemoryResult>;
+  /* ⛔ 10-23 补登记（同步主仓 0.0.47）：part07/03-seg 的滑窗下滚辅助函数 —— 【93】从 parts 推断出它、
+     而 Bag 里没有（推断有/Bag 没有 = 1 项红）。生成器不在本仓，按实测值补进声明面。 */
+  slideTurnWindowDown: (id: string) => void;
 }
