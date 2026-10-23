@@ -2375,7 +2375,7 @@ const server = http.createServer(async (req, res) => {
          这是"勾选管理哪些模型生效"的执行点 —— 界面只是表达，这里是强制。 */
       const allowed = new Set(Array.isArray(db.userModels[effectiveUsername]) ? db.userModels[effectiveUsername] : []);
       if (p.endsWith("models")) {
-        // 模型清单也按勾选过滤（客户端因此只看得到自己启用的）
+        // 清单口径 = 管理员设定的开放目录（available），见下面 shape()
         const availSet = Array.isArray(db.modelCatalog.available) && db.modelCatalog.available.length
           ? new Set(db.modelCatalog.available) : null;
         const shape = (payload, source) => {
@@ -3645,8 +3645,16 @@ location.replace("/");
       const gb = (bytes) => Math.round((Number(bytes) / 1073741824) * 100) / 100;
       const view = () => {
         const pol = db.policy || {};
+        /* ⛔ 10-23：开关打开但额度 0 = 「看着开了其实没给」的陷阱（实测新用户 balance=0 直接 402）。
+           这里显式回一条 warning，前端用黄色状态提示，不让管理员以为已经开了。 */
+        const ptsOn = pol.signupPointsEnabled !== false;
+        const stOn = pol.storageEnabled !== false;
+        const warn = [];
+        if (ptsOn && signupPoints() <= 0) warn.push("「注册赠送积分」开着但额度是 0 ⇒ 新用户会 0 积分，一调用就 402（要么把额度改成 >0，要么把开关关掉）");
+        if (stOn && storageDefaultBytes() <= 0) warn.push("「默认云存储」开着但额度是 0 ⇒ 新用户没有云存储");
         return {
           ok: true,
+          warning: warn.join("；"),
           signupPoints: signupPoints(),
           storageBytes: storageDefaultBytes(),
           storageGb: gb(storageDefaultBytes()),
@@ -3825,9 +3833,11 @@ location.replace("/");
       }
       const base = wbmBase();
       try {
+        const panelTimeout = AbortSignal.timeout(8000);
         const lr = await fetch(base + "/api/login", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username: auth.username, password: auth.password }),
+          signal: panelTimeout,
         });
         if (!lr.ok) {
           return send(400, { ok: false, error: "wbm-login-failed", message: "面板登录失败（HTTP " + lr.status + "）：检查「面板免密登录」里的账号密码" });
@@ -3839,6 +3849,7 @@ location.replace("/");
         const cr = await fetch(base + "/api/keys", {
           method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
           body: JSON.stringify({ name: "codex-cloud" }),
+          signal: AbortSignal.timeout(8000),
         });
         const cj = await cr.json().catch(() => null);
         const newKey = String((cj && cj.key) || "");
@@ -3848,15 +3859,28 @@ location.replace("/");
         /* 删掉同名旧密钥，避免每次点击堆一把（⛔ 只动我们自己建的那一类名字） */
         let revoked = 0;
         try {
-          const kl = await fetch(base + "/api/keys", { headers: { Cookie: cookie } });
+          const kl = await fetch(base + "/api/keys", { headers: { Cookie: cookie }, signal: AbortSignal.timeout(8000) });
           const kj = await kl.json().catch(() => []);
           for (const row of Array.isArray(kj) ? kj : []) {
             if (!row || row.name !== "codex-cloud" || String(row.prefix || "") === newKey.slice(0, 12)) continue;
-            const dr = await fetch(base + "/api/keys/" + encodeURIComponent(String(row.id)), { method: "DELETE", headers: { Cookie: cookie } });
+            const dr = await fetch(base + "/api/keys/" + encodeURIComponent(String(row.id)), { method: "DELETE", headers: { Cookie: cookie }, signal: AbortSignal.timeout(8000) });
             if (dr.ok) revoked++;
           }
         } catch { /* 清理失败不影响主流程 */ }
-        const target = base.replace(/\/+$/, "") + "/v1";
+        /* ⛔ base 可能已经被填成 `.../v1` —— 再拼一次就成 `/v1/v1`（本项目踩过同类坑） */
+        const root = base.replace(/\/+$/, "").replace(/\/v1$/i, "");
+        const target = root + "/v1";
+        /* ⛔ 先验证「新密钥 + 新地址」真能拉到模型，再落库。
+           否则一旦面板给的密钥没权限，就会把整条通道切到一个 401 的上游 ——
+           正是本轮要修的那类"看起来配好了其实全 401"。验证失败则删掉刚建的密钥、不动 db。 */
+        const probe = await fetch(target + "/models", { headers: { Authorization: "Bearer " + newKey }, signal: AbortSignal.timeout(8000) });
+        if (!probe.ok) {
+          try { if (cj && cj.id) await fetch(base + "/api/keys/" + encodeURIComponent(String(cj.id)), { method: "DELETE", headers: { Cookie: cookie }, signal: AbortSignal.timeout(5000) }); } catch { /* 清理失败不影响结论 */ }
+          return send(502, {
+            ok: false, error: "wbm-key-unusable",
+            message: "新密钥在 " + target + " 上不可用（HTTP " + probe.status + "）—— 已撤销，未改动上游配置。检查面板里是否有模型/账号可用。",
+          });
+        }
         db.upstream = { ...(db.upstream || {}), base: target, gatewayKey: newKey };
         persist();
         console.log("[wbm] " + me.username + " 已签发面板密钥 " + newKey.slice(0, 8) + "…（撤销同名旧密钥 " + revoked + " 把）→ 上游 " + target);

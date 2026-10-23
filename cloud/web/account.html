@@ -2660,6 +2660,11 @@
       pill.className = "pill " + (onPts || onSt ? "ok" : "warn");
       pill.textContent = (!onPts && !onSt) ? "两项都关闭" : (onPts && onSt ? "生效中" : "部分关闭");
     }
+    /* ⛔ 开关开着但额度 0 = 最容易被误判为"已开启"的状态（新用户直接 402），单独标黄 */
+    if (j.warning) {
+      if (pill) { pill.className = "pill warn"; pill.textContent = "⚠ 额度为 0"; }
+      polSay(j.warning, true);
+    }
   }
   function loadPolicy() {
     if (!$("policyCard")) return;
