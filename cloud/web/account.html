@@ -1432,7 +1432,8 @@
       <li><b>指向本机</b>：回本页点「把模型通道指到这台 Manager」，再去「模型管理中心」补网关密钥并同步目录，
         之后客户端（PPcode / 桌面版）就能拉到模型。</li>
     </ol>
-    <p class="hint" style="margin:10px 0 0">⛔ 面板直连公网端口时，登录锁定与来源 IP 管控会失效；长期用建议套一层 HTTPS 反代。</p>
+    <!-- 10-23：这条提示按"配没配对外地址"说真话，别写死成已反代或没反代 -->
+    <p class="hint" id="wbmProxyNote" style="margin:10px 0 0"></p>
   </div>
 </div>
 </main>
@@ -2110,6 +2111,19 @@
     if ($("svcWbmUpstream")) {
       $("svcWbmUpstream").textContent = "模型通道上游 " + (wbm.upstreamBase || "—")
         + (wbm.hasGatewayKey ? "　（网关密钥已配）" : "　（网关密钥未配 ⇒ 客户端调不通）");
+    }
+    /* 面板暴露方式按**实际配置**说（用户 10-23：「这个注释还在，不是已经加了反代吗」）：
+       配了对外地址 = 走反代，7864 只绑回环；没配 = 只能直连端口，登录保护打折。 */
+    var proxyNote = $("wbmProxyNote");
+    if (proxyNote) {
+      if (wbm.publicBase) {
+        proxyNote.innerHTML = "面板已走 <b>HTTPS 反代</b>对外（<code>" + esc(wbm.publicBase) + "</code>），"
+          + "Manager 自己的 7864 <b>只绑本机回环</b>、公网直接打不开 ⇒ 登录锁定与来源 IP 管控照常生效。"
+          + "⛔ 换域名 / 端口时记得回来改「对外地址」，否则「打开面板」会指到旧地址。";
+      } else {
+        proxyNote.innerHTML = "⛔ 还没填「对外地址」：面板只能直连公网端口，登录锁定与来源 IP 管控会失效 —— "
+          + "套一层 HTTPS 反代（如 <code>https://你的域名:7865</code> → <code>127.0.0.1:7864</code>）后填进来，这条提示会自动变成已保护。";
+      }
     }
     if ($("svcWbmOpen")) $("svcWbmOpen").disabled = !svcUrls.wbm;
     if ($("svcMemOpen")) $("svcMemOpen").disabled = !svcUrls.mem;
