@@ -1023,6 +1023,44 @@ function pointsVerify(username) {
    ⛔ 它不是上游网关密钥 —— 上游密钥只在服务端由代理注入，客户端永远拿不到。 */
 if (typeof db.proxyTokens !== "object" || !db.proxyTokens) db.proxyTokens = {};
 const PROXY_TOKEN_PREFIX = "wap_";
+
+/* 10-23：代理的模型清单**缓存 20 秒**。原因（实测）：上游面板对 /v1/models 有速率限制，
+   30 个并发直接 429 ⇒ 旧实现一律翻成 502 upstream-unreachable，客户端以为上游挂了。
+   清单本身几秒内不变，缓存 + 失败时回落到本地目录（db.modelCatalog.list）更符合事实。
+   ⛔ 缓存键必须带「上游地址 + 密钥尾号」：换源/换密钥后不能命中旧清单（10-20 踩过同类坑）。 */
+const MODEL_LIST_TTL_MS = Math.max(1000, Number(process.env.HARNESS_MODELS_TTL_MS || 20000));
+let modelListCache = { key: "", at: 0, payload: null };
+
+/* 10-23：上游 WBM 的并发闸门是 `pool.max_in_flight_global`（默认 2），超过就直接回
+   503 "all accounts are temporarily unavailable"。实测 20 并发里 17 个这样失败 ——
+   客户端看到的是"用不了"，而不是"排一下队"。
+   ⇒ 在这里做**有界等待队列**：同时最多 N 个请求打到上游，其余排队（默认等 45s）。
+   ⛔ 队列满 / 等超时才回 503（带 Retry-After），这样"真挤爆"仍然是明确信号。
+   ⛔ N 必须 ≤ 上游闸门，否则队列没意义（默认取 2，可用 HARNESS_PROXY_MAX_INFLIGHT 调）。 */
+const PROXY_MAX_INFLIGHT = Math.max(1, Number(process.env.HARNESS_PROXY_MAX_INFLIGHT || 2));
+const PROXY_QUEUE_MAX = Math.max(0, Number(process.env.HARNESS_PROXY_QUEUE_MAX || 64));
+const PROXY_QUEUE_WAIT_MS = Math.max(1000, Number(process.env.HARNESS_PROXY_QUEUE_WAIT_MS || 45000));
+let proxyInflight = 0;
+const proxyWaiters = [];
+function proxyAcquire() {
+  if (proxyInflight < PROXY_MAX_INFLIGHT) { proxyInflight++; return Promise.resolve(true); }
+  if (proxyWaiters.length >= PROXY_QUEUE_MAX) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const entry = { resolve, timer: null };
+    entry.timer = setTimeout(() => {
+      const i = proxyWaiters.indexOf(entry);
+      if (i >= 0) proxyWaiters.splice(i, 1);
+      resolve(false);
+    }, PROXY_QUEUE_WAIT_MS);
+    proxyWaiters.push(entry);
+  });
+}
+function proxyRelease() {
+  /* 直接把槽位转交给下一个等待者，不先减再加（避免中间被抢） */
+  const next = proxyWaiters.shift();
+  if (next) { clearTimeout(next.timer); next.resolve(true); return; }
+  proxyInflight = Math.max(0, proxyInflight - 1);
+}
 /* ⛔ 20:2x 用户令「不要被人家破解拿去用」：来源绑定从 5 收紧到 **1** ——
    令牌**只在首次使用的那个网络/IP** 可用，换个网络立刻拒（提示重新签发）。
    真实上游地址与网关密钥始终只在服务端（客户端只拿得到 /cloud-api/proxy 这类代理路径）。 */
@@ -1632,16 +1670,27 @@ const server = http.createServer(async (req, res) => {
       if (!user) return send(401, { ok: false, error: "用户名或密码不对" });
       if (user.disabled) return send(403, { ok: false, error: "该账号已被停用，联系管理员" });
       if (Date.now() < user.lockUntil) return send(429, { ok: false, error: "该账号已被临时锁定，稍后再试" });
-      if (!rateLimit(`login-u:${username}`, 5, 15 * 60_000)) {
-        user.lockUntil = Date.now() + 15 * 60_000; persist();
-        return send(429, { ok: false, error: "失败次数过多，账号锁定 15 分钟" });
-      }
       const accountName = user.username;   // ⛔ 大小写回退命中时以存储名为准（session/设备/积分都按它查）
       if (!verifyPassword(user, body.password)) {
-        user.failCount = (user.failCount || 0) + 1; persist();
+        /* ⛔ 只统计**失败**（10-23 修）：旧实现用 rateLimit(login-u) 卡每次登录请求，
+           连成功登录也算一次 ⇒ 桌面端重连 5 次就把账号锁 15 分钟，用户看到"账号被锁定"
+           但密码是对的，极难自证。现在按失败次数 + 15 分钟滑窗。 */
+        const now = Date.now();
+        const windowMs = 15 * 60_000;
+        if (now - (user.lastFailAt || 0) > windowMs) user.failCount = 0;   // 滑窗过期就重新计数
+        user.failCount = (user.failCount || 0) + 1;
+        user.lastFailAt = now;
+        if (user.failCount >= 5) {
+          user.lockUntil = now + windowMs;
+          user.failCount = 0;
+          persist();
+          console.log(`[auth] 账号 ${accountName} 连续失败 5 次 ⇒ 锁定 15 分钟（来源 ${ip}）`);
+          return send(429, { ok: false, error: "失败次数过多，账号锁定 15 分钟" });
+        }
+        persist();
         return send(401, { ok: false, error: "用户名或密码不对" });
       }
-      user.failCount = 0; user.lastLogin = Date.now(); persist();
+      user.failCount = 0; user.lastFailAt = 0; user.lastLogin = Date.now(); persist();
       /* 10-18 设备管理：登录即登记本机（否则云端「已配对设备」永远是 0）。
          ⛔ 登记失败不阻断登录 —— 设备上限/缺 machineId 都不该让人登不进来。 */
       const reg = (() => { try { return registerLoginDevice(accountName, body.machineId, body.machineName); } catch { return { ok: false, reason: "exception" }; } })();
@@ -2208,12 +2257,25 @@ const server = http.createServer(async (req, res) => {
       const known = new Set((db.modelCatalog.list || []).map((m) => m.id));
       const avail = Array.isArray(db.modelCatalog.available) && db.modelCatalog.available.length
         ? new Set(db.modelCatalog.available) : null;
-      const ids = Array.isArray(body && body.ids)
-        ? body.ids.map(String).filter((id) => known.has(id) && (!avail || avail.has(id)))
-        : [];
+      /* ⛔ 10-23：`ids` 缺失/类型不对时**不能静默清空** —— 旧实现会返回 200 并把该用户的
+         已勾选模型全清掉（实测：客户端把字段写成 models 时，"保存成功"但一个模型都没启用，
+         用户侧表现为"勾了也不能用"）。现在缺字段直接 400，让调用方立刻发现。 */
+      if (!body || !Array.isArray(body.ids)) {
+        return send(400, { ok: false, error: "ids-required", message: "请求体需要 { ids: [模型 id...] }（空数组表示全部取消）" });
+      }
+      const asked = body.ids.map(String);
+      const ids = asked.filter((id) => known.has(id) && (!avail || avail.has(id)));
+      const dropped = asked.filter((id) => !ids.includes(id));
       db.userModels[who.username] = Array.from(new Set(ids));
       persist();
-      return send(200, { ok: true, enabledCount: db.userModels[who.username].length, enabled: db.userModels[who.username] });
+      return send(200, {
+        ok: true,
+        enabledCount: db.userModels[who.username].length,
+        enabled: db.userModels[who.username],
+        dropped: dropped.slice(0, 20),
+        droppedCount: dropped.length,
+        message: dropped.length ? ("有 " + dropped.length + " 个模型不在开放目录里，已忽略：" + dropped.slice(0, 3).join(", ")) : "",
+      });
     }
     /* 签发 / 轮换本用户的代理令牌（明文**仅此一次**返回，之后无法再取）。
        ⛔ 10-14：鉴权从「只认网页会话」改为 accountWho()（会话 或 设备令牌）——
@@ -2314,23 +2376,41 @@ const server = http.createServer(async (req, res) => {
       const allowed = new Set(Array.isArray(db.userModels[effectiveUsername]) ? db.userModels[effectiveUsername] : []);
       if (p.endsWith("models")) {
         // 模型清单也按勾选过滤（客户端因此只看得到自己启用的）
+        const availSet = Array.isArray(db.modelCatalog.available) && db.modelCatalog.available.length
+          ? new Set(db.modelCatalog.available) : null;
+        const shape = (payload, source) => {
+          const data = Array.isArray(payload && payload.data)
+            ? payload.data.filter((m) => !availSet || availSet.has(String(m.id || ""))) : [];
+          return { ...(payload || {}), data, source };
+        };
+        const cacheKey = currentUpstreamBase() + "|" + String(currentGatewayKey()).slice(-6);
+        /* 命中缓存直接回（不发上游） */
+        if (modelListCache.payload && modelListCache.key === cacheKey && Date.now() - modelListCache.at < MODEL_LIST_TTL_MS) {
+          return send(200, shape(modelListCache.payload, "cache"));
+        }
         const upstreamList = await (async () => {
           try {
-            const r = await fetch(upstreamUrl("models"), { headers: { Authorization: `Bearer ${currentGatewayKey()}` } });
-            return r.ok ? await r.json() : null;
+            const r = await fetch(upstreamUrl("models"), { headers: { Authorization: `Bearer ${currentGatewayKey()}` }, signal: AbortSignal.timeout(8000) });
+            if (!r.ok) {
+              console.log("[proxy] 上游模型清单 " + r.status + "（限流/异常）→ 回落本地目录");
+              return null;
+            }
+            return await r.json();
           } catch { return null; }
         })();
-        if (!upstreamList) return send(502, { ok: false, error: "upstream-unreachable" });
-        /* ⛔ 20:5x 用户令「怎么不是云端管理里面勾选那个显示那个啊，全出来了」：
-           清单口径 = **管理员设定的开放目录**（modelCatalog.available），而不是用户的勾选。
-           用户端要看到"开放的全部模型"才能**自行勾选**（旧实现只回已勾的 ⇒ 用户永远看不到新模型）。
-           未设置 available 时兼容为全部。`enabled` 语义仍由客户端按各自的 userModels 标注。 */
-        const avail = Array.isArray(db.modelCatalog.available) && db.modelCatalog.available.length
-          ? new Set(db.modelCatalog.available) : null;
-        const data = Array.isArray(upstreamList.data)
-          ? upstreamList.data.filter((m) => !avail || avail.has(String(m.id || "")))
-          : [];
-        return send(200, { ...upstreamList, data });
+        if (upstreamList && Array.isArray(upstreamList.data)) {
+          modelListCache = { key: cacheKey, at: Date.now(), payload: upstreamList };
+          return send(200, shape(upstreamList, "upstream"));
+        }
+        /* 上游拿不到：先用上次成功的那份，再用本地目录（pullModelCatalog 维护的） */
+        if (modelListCache.payload && modelListCache.key === cacheKey) {
+          return send(200, shape(modelListCache.payload, "stale"));
+        }
+        const local = Array.isArray(db.modelCatalog.list) ? db.modelCatalog.list : [];
+        if (local.length) {
+          return send(200, { object: "list", data: shape({ data: local }, "catalog").data, source: "catalog" });
+        }
+        return send(502, { ok: false, error: "upstream-unreachable", message: "上游模型清单读不到（可能被限流），本地目录也是空的 —— 去「模型管理中心」点一次同步" });
       }
       /* 余额预检：≤0 直接拒（不让上游白跑；管理员发放后即可继续） */
       const myBalance = pointsOf(effectiveUsername).balance;
@@ -2344,12 +2424,40 @@ const server = http.createServer(async (req, res) => {
       }
       /* 转发：只替换 Authorization，其余原样（模型、参数、流式标志） */
       const target = upstreamUrl(p.endsWith("models") ? "models" : "chat/completions");
-      try {
-        const upstream = await fetch(target, {
-          method: req.method,
-          headers: { Authorization: `Bearer ${currentGatewayKey()}`, "Content-Type": String(req.headers["content-type"] || "application/json") },
-          body: req.method === "POST" ? bodyBuf : undefined,
+      /* 排队拿上游槽位（前面已把 models 分支 return 掉，这里只会是对话） */
+      const queuedAt = Date.now();
+      const slot = await proxyAcquire();
+      if (!slot) {
+        return send(503, {
+          ok: false, error: "proxy-busy",
+          message: "上游通道已满（当前上限 " + PROXY_MAX_INFLIGHT + " 路并发），请稍后重试",
+          retryAfterSeconds: 5,
         });
+      }
+      const waited = Date.now() - queuedAt;
+      if (waited > 1500) console.log("[proxy] 排队 " + waited + "ms 后拿到上游槽位（在跑 " + proxyInflight + "）");
+      try {
+        /* ⛔ 10-23：上游 WBM 有并发闸门（pool.max_in_flight_global，默认 2），突发并发直接回
+           503 "all accounts are temporarily unavailable" —— 实测 20 并发里 17 个这样失败。
+           这里在**还没向客户端回任何字节**之前重试几次（退避 350/900/1800ms），把"瞬时挤爆"
+           变成"慢一点但成功"；真·额度耗尽仍如实透传（重试完还是 5xx 就原样回）。
+           ⛔ 只在 status 是 503/429 时重试：4xx（模型不存在 / 参数错）重试没有意义。 */
+        const retries = Math.max(0, Number(process.env.HARNESS_PROXY_RETRIES || 2));
+        const backoff = [400, 1200];
+        let upstream = null;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+          upstream = await fetch(target, {
+            method: req.method,
+            headers: { Authorization: `Bearer ${currentGatewayKey()}`, "Content-Type": String(req.headers["content-type"] || "application/json") },
+            body: req.method === "POST" ? bodyBuf : undefined,
+          });
+          if (upstream.status !== 503 && upstream.status !== 429) break;
+          if (attempt === retries) break;
+          try { if (upstream.body) await upstream.body.cancel(); } catch { /* 忽略 */ }
+          const wait = backoff[Math.min(attempt, backoff.length - 1)];
+          console.log("[proxy] 上游 " + upstream.status + "（并发闸门/限流）→ " + wait + "ms 后重试 " + (attempt + 1) + "/" + retries + " · 模型 " + wantedModel);
+          await new Promise((r) => setTimeout(r, wait));
+        }
         res.writeHead(upstream.status, { "Content-Type": String(upstream.headers.get("content-type") || "application/json"), "Cache-Control": "no-store" });
         /* 透传的同时**采集**响应（最多留 256KB 用于解析用量），不改动发回客户端的字节 */
         const seen = [];
@@ -2484,6 +2592,8 @@ const server = http.createServer(async (req, res) => {
         } catch { /* 记分失败不影响调用本身 */ }
       } catch (error) {
         send(502, { ok: false, error: "upstream-unreachable", message: sanitize(error && error.message) });
+      } finally {
+        proxyRelease();
       }
       return;
     }
@@ -3699,6 +3809,72 @@ location.replace("/");
         source: o ? "admin" : "env",
       });
     }
+    /* 10-23：把「模型通道」指到本机 WBM 时**顺手签发一把面板密钥**。
+       ⛔ 只切地址不换密钥 = 全体用户 401（实测：云侧存的还是旧网关密钥，面板上根本不存在）。
+       做法：用面板免密登录存的管理员账号登进面板 → 建一把名为 codex-cloud 的密钥 →
+       删掉同名的旧密钥 → 写进 db.upstream（地址 + 密钥）→ 立刻同步目录。 */
+    if (p === "/admin/wbm/provision" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const auth = (db.panelAuth && db.panelAuth.wbm) || {};
+      if (!auth.username || !auth.password) {
+        return send(400, {
+          ok: false,
+          error: "panel-credentials-missing",
+          message: "还没配 Manager 管理员账号 —— 先在「面板免密登录」卡里填一次，再点这个按钮（否则签不出密钥，切过去会 401）",
+        });
+      }
+      const base = wbmBase();
+      try {
+        const lr = await fetch(base + "/api/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: auth.username, password: auth.password }),
+        });
+        if (!lr.ok) {
+          return send(400, { ok: false, error: "wbm-login-failed", message: "面板登录失败（HTTP " + lr.status + "）：检查「面板免密登录」里的账号密码" });
+        }
+        const rawCookie = lr.headers.get("set-cookie") || "";
+        const cookie = rawCookie.split(";")[0];
+        if (!cookie) return send(400, { ok: false, error: "wbm-login-failed", message: "面板登录没有回会话 cookie" });
+        /* 先建新密钥（面板只能在**创建时**回明文） */
+        const cr = await fetch(base + "/api/keys", {
+          method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+          body: JSON.stringify({ name: "codex-cloud" }),
+        });
+        const cj = await cr.json().catch(() => null);
+        const newKey = String((cj && cj.key) || "");
+        if (!cr.ok || !newKey) {
+          return send(400, { ok: false, error: "wbm-key-failed", message: "面板签发密钥失败：" + sanitize(String((cj && (cj.message || cj.error)) || ("HTTP " + cr.status))) });
+        }
+        /* 删掉同名旧密钥，避免每次点击堆一把（⛔ 只动我们自己建的那一类名字） */
+        let revoked = 0;
+        try {
+          const kl = await fetch(base + "/api/keys", { headers: { Cookie: cookie } });
+          const kj = await kl.json().catch(() => []);
+          for (const row of Array.isArray(kj) ? kj : []) {
+            if (!row || row.name !== "codex-cloud" || String(row.prefix || "") === newKey.slice(0, 12)) continue;
+            const dr = await fetch(base + "/api/keys/" + encodeURIComponent(String(row.id)), { method: "DELETE", headers: { Cookie: cookie } });
+            if (dr.ok) revoked++;
+          }
+        } catch { /* 清理失败不影响主流程 */ }
+        const target = base.replace(/\/+$/, "") + "/v1";
+        db.upstream = { ...(db.upstream || {}), base: target, gatewayKey: newKey };
+        persist();
+        console.log("[wbm] " + me.username + " 已签发面板密钥 " + newKey.slice(0, 8) + "…（撤销同名旧密钥 " + revoked + " 把）→ 上游 " + target);
+        const pulled = await Promise.race([
+          pullModelCatalog(true),
+          new Promise((resolve) => setTimeout(() => resolve(null), 6000)),
+        ]);
+        return send(200, {
+          ok: true, base: target, keyPrefix: newKey.slice(0, 8), revoked,
+          sync: pulled
+            ? { ok: Boolean(pulled.ok), count: pulled.count || 0, error: pulled.error || "", message: pulled.message || "" }
+            : { ok: false, pending: true, message: "上游响应较慢，目录同步仍在后台进行" },
+        });
+      } catch (e) {
+        return send(400, { ok: false, error: "wbm-provision-failed", message: "连不上面板：" + sanitize(String((e && e.message) || e)) });
+      }
+    }
+
     if (p === "/admin/upstream" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const body = await readBody();
