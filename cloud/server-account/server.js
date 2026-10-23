@@ -1543,6 +1543,12 @@ const server = http.createServer(async (req, res) => {
         还会把访客 IP 暴露给 GitHub。⇒ 服务端取 + TTL 缓存 + 落盘兜底。
      ⛔ 国内镜像与直连**并行**问、取版本最高的那份：镜像缓存滞后会给旧版本（与 /api/updates 同一条纪律）。 */
   const PRODUCT_REPO = process.env.HARNESS_PRODUCT_REPO || "PMZPZM0/PPcode";
+  /* 10-23 用户令「我的首页放 Codex Harness，客户机放 PPcode」：仓库与文案走环境变量，
+     代码只留默认值（= 客户机形态 PPcode）。⛔ 页面里不再写死产品名。 */
+  const PRODUCT_NAME = process.env.HARNESS_PRODUCT_NAME || "PPcode";
+  const PRODUCT_SUB = process.env.HARNESS_PRODUCT_SUB
+    || "把 Codex 引擎、多会话、专家团、技能与记忆整合成一个本地优先的桌面环境 —— 你的代码与会话始终留在自己机器上。";
+  const PRODUCT_DESC = process.env.HARNESS_PRODUCT_DESC || "完整内核与全部能力；云端账号开箱即用，本地优先存储。";
   const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=10`;
   const PRODUCT_TTL_MS = Math.max(60_000, Number(process.env.HARNESS_PRODUCT_TTL_MS || 10 * 60_000));
   const PRODUCT_CACHE_FILE = path.join(path.dirname(DATA_FILE), "product-cache.json");
@@ -1696,6 +1702,7 @@ const server = http.createServer(async (req, res) => {
     const repoUrl = "https://github.com/" + PRODUCT_REPO;
     return send(200, {
       ok: Boolean(latest),
+      product: { name: PRODUCT_NAME, sub: PRODUCT_SUB, desc: PRODUCT_DESC },
       repo: { slug: PRODUCT_REPO, url: repoUrl, releasesUrl: repoUrl + "/releases", latestUrl: repoUrl + "/releases/latest" },
       fetchedAt: data.fetchedAt || 0,
       cached: Boolean(data.cached),

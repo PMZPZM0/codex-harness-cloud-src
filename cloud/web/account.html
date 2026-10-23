@@ -567,7 +567,7 @@
       <div class="card prod-hero">
         <span class="pill plain prod-badge" id="prodBadge">正在检查最新版本…</span>
         <h1 class="prod-h1">为深度使用而生的<br /><em>AI 编码工作台</em></h1>
-        <p class="prod-sub">PPcode 把 Codex 引擎、多会话、专家团、技能与记忆整合成一个本地优先的桌面环境 ——
+        <p class="prod-sub" id="prodSub">把 Codex 引擎、多会话、专家团、技能与记忆整合成一个本地优先的桌面环境 ——
           你的代码与会话始终留在自己机器上。</p>
         <div class="prod-facts">
           <div class="prod-fact"><b id="prodFactVer">—</b><span>当前版本</span></div>
@@ -583,9 +583,9 @@
           <button class="btn sm ghost" id="prodRefresh" style="margin-left:auto">刷新</button></h2>
         <p class="hint" style="margin:0 0 12px">三个平台共用同一套内核与更新通道。镜像与官方包内容一致，可用 SHA256 校验。</p>
         <article class="prod-card">
-          <div class="prod-card-head"><strong>PPcode</strong><span class="prod-card-ver" id="prodVersion">—</span>
+          <div class="prod-card-head"><strong id="prodName">客户端</strong><span class="prod-card-ver" id="prodVersion">—</span>
             <span class="pill ok">桌面客户端</span></div>
-          <p class="prod-card-desc">完整内核与全部能力；云端账号开箱即用，本地优先存储。</p>
+          <p class="prod-card-desc" id="prodDesc">完整内核与全部能力；云端账号开箱即用，本地优先存储。</p>
           <div class="prod-dl-row">
             <span class="prod-os">Windows <small>x64</small> <small class="prod-size" id="prodSizeWin"></small></span>
             <span class="prod-dl-actions">
@@ -1671,6 +1671,11 @@
         return;
       }
       PRODUCT = j;
+      var pr = j.product || {};
+      if ($("prodName")) $("prodName").textContent = pr.name || "客户端";
+      if ($("prodSub") && pr.sub) $("prodSub").textContent = pr.sub;
+      if ($("prodDesc") && pr.desc) $("prodDesc").textContent = pr.desc;
+      try { document.title = (pr.name || "客户端") + " · 产品首页 · 控制台"; } catch (e) { /* 忽略 */ }
       var rel = j.latest || {}, d = rel.downloads || {};
       var m0 = (j.mirrors || [])[0] || { prefix: "", name: "国内镜像" };
       var win = d.win, macArm = d.macArm, macX64 = d.macX64;
