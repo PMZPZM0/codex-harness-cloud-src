@@ -270,3 +270,43 @@ GET    /admin/teams                 全站团队（管理员）
 | 积分扣减 / 流水幂等 | `addPoints` 的 ref 幂等模式，扩展到团队池 |
 | 邀请码与关系记录 | 现有 `db.invites` / `inviteRelations` 结构，团队邀请另表但不另造校验 |
 | 管理端列表与配置页 | 现有三板块（配置/列表/对账）版式，团队管理照此排 |
+
+---
+
+## 8. 实现进度（2026-10-23 · v1.5.93）
+
+### 8.1 已完成（线上实测）
+
+| 模块 | 落地内容 | 状态 |
+|---|---|---|
+| 团队主体 | `POST/GET /teams`、`GET /teams/:id`、`PATCH /teams/:id`（改名/设置）、`POST /teams/:id/dissolve`（二次确认） | ✅ |
+| 成员 | 邀请码（一次性/7 天）、`POST /teams/join`、成员列表、改角色、移除、转让 owner | ✅ |
+| 团队记忆 | **真对接 MemHub**：`POST /teams/:id/provision` 建团队用户空间，`GET /teams/:id/memory` 下发凭据（对外基址） | ✅ |
+| 团队知识库 | **真对接 WeKnora**：建团队库 `t-<id>` + MCP 端点、`kb/search` 代理、`kb/upload`、`kb/docs`、`kb/delete` | ✅ |
+| 菜单/页面 | 侧栏「团队」组（概览 / 记忆空间 / 知识库 / 成员 / 设置）+ 管理员「团队管理」 | ✅ |
+| 团队套餐 | `db.teamPlans` + `/team-plans`、`/team-plans/buy`（易支付）、`/admin/team-plans[/grant]`、回调 `kind=team-plan` | ✅ |
+| 团队积分池 | `db.teamPointsLedger`（ref 幂等）+ `/teams/:id/points`；套餐赠送积分入池 | ✅ |
+| 邀请落地 | `/teams/:id/invite` 生成 `?team=<code>` 链接，打开即**自动加入** | ✅ |
+
+### 8.2 与设计稿的差异（实现时定的）
+
+1. **内容不落云端**：团队记忆/知识库的**内容**在 MemHub / WeKnora，云管理只做「建空间 / 发凭据 / 验权限 / 检索代理」。设计稿里 `teamEntitlements` 只管席位与容量，不存条目。
+2. **团队 ID 形态固定**：`^T[A-Z0-9]{4,40}$`（服务端生成）。理由：ID 直接当对象键，宽松白名单会被 `__proto__` 绕过（实测会写 `Object.prototype`）。
+3. **GET 不建空间**：`kb/docs|search|delete|upload` 在未开通时返回 **409 `team-kb-not-provisioned`**，开通只能由 owner/admin 显式点「开通 / 修复团队空间」。
+4. **手动开通不幂等（仅积分）**：席位/容量覆盖，赠送积分每次发放（续费语义）⇒ 后台加了二次确认。
+
+### 8.3 部署侧必须配的两项（否则成员连不上）
+
+| 项 | 位置 | 说明 |
+|---|---|---|
+| 知识库对外地址 | `db.services.kb.uiBase`（云端管理 → 知识库 → 后台地址） | MCP 端点用 `<uiBase>/mcp/<id>`；客户机内部是 `127.0.0.1:8080`，直接用成员连不上 |
+| 记忆对外地址 | `db.services.memory.publicBase`（云端管理 → 记忆服务 → 对外地址） | 团队记忆 baseUrl = `<publicBase>/claude-code/default/v1`；缺省回落内部地址并在页面告警 |
+
+另：WeKnora 的**解析**依赖 embedding 模型可达。客户机发现 `EMBEDDING_BASE_URL=http://172.17.0.1:11434/v1`（直连 IP）被 SSRF 校验拒绝，导致**所有**知识库文档 `parse_status=failed`；已改为 `http://host.docker.internal:11434/v1` 并把主机加入 `SSRF_WHITELIST_EXTRA`（`.env`，改动前已备份）。此问题与团队无关，但会让团队知识库「上传成功却检索不到」。
+
+### 8.4 未完成（P1/P2 剩余）
+
+- **桌面端工具 `scope` 参数**：`memory_write/memory_search/knowledge_search` 加团队作用域 + 团队凭据本地存储（三仓同步，未开始）。
+- 团队知识库**通过 MCP 直传**的用量不计入云端 `kbUsedMb`（云端只统计经过 `/kb/upload` 的量）。
+- 团队套餐到期**降级只读**（当前只标记 expired，不限制读写）。
+- 成员级配额细分、审计导出（P2）。

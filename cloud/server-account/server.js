@@ -305,8 +305,16 @@ async function ensureKnowledgeForUnlocked(username) {
     const data = (ep && ep.data) || {};
     cur.endpointId = String(data.id || "");
     cur.mcpToken = String(data.token || "");
-    cur.mcpUrl = cur.endpointId ? `${WEKNORA_BASE}/mcp/${cur.endpointId}` : "";
+    /* ⛔ 10-23 审查修复：MCP 端点必须用**对外基址**（kbUiBase）——
+           WEKNORA_BASE 在客户机是 http://127.0.0.1:8080，发给成员的 Codex 连不上（实测）。
+           公网 8082 反代把 /mcp/* 转给 app，其余转前端，所以 uiBase 就是正确入口。 */
+    cur.mcpUrl = cur.endpointId ? `${kbUiBase()}/mcp/${cur.endpointId}` : "";
     persist();
+  }
+  /* 历史数据自愈：存量的内网 mcpUrl（127.0.0.1）改写成对外基址，成员才连得上 */
+  if (cur.endpointId) {
+    const want = kbUiBase().replace(/\/+$/, "") + "/mcp/" + cur.endpointId;
+    if (cur.mcpUrl !== want) { cur.mcpUrl = want; persist(); }
   }
   return { ok: true, kbId: cur.kbId, kbName: cur.kbName || kbName, mcpUrl: cur.mcpUrl, mcpToken: cur.mcpToken };
 }
@@ -387,6 +395,16 @@ function kbUiBase() {
     if (u.port === "8080") { u.port = "8081"; return u.toString().replace(/\/+$/, ""); }
   } catch { /* 地址不合法 ⇒ 原样返回，前端会显示"未配置" */ }
   return WEKNORA_BASE;
+}
+
+/** 记忆服务的**对外代理基址**（发给成员的 Codex 用）。
+    ⛔ MEMHUB_PROXY_BASE 在客户机是 http://127.0.0.1:8096 —— 发给成员机器必然连不上（10-23 实测）。
+       对外地址取管理员配置的 db.services.memory.publicBase（云端管理 → 记忆服务 → 对外地址），
+       没配才回落内部地址（同机自用仍可用）。 */
+function memPublicProxyBase() {
+  const cur = (db.services && db.services.memory) || {};
+  const own = String(cur.publicBase || "").trim().replace(/\/+$/, "");
+  return own || MEMHUB_PROXY_BASE;
 }
 
 /** WeKnora 里**已注册的模型**（管理端下拉数据源）。
@@ -1668,7 +1686,7 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ ok: false, error: "origin-not-allowed" }));
     return;
   }
-  const cors = ALLOWED_ORIGINS.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Max-Age": "600", Vary: "Origin" } : {};
+  const cors = ALLOWED_ORIGINS.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS", "Access-Control-Max-Age": "600", Vary: "Origin" } : {};
   if (req.method === "OPTIONS") { res.writeHead(204, cors).end(); return; }
   const url = new URL(req.url, "http://127.0.0.1");
   const p = url.pathname.replace(/\/+$/, "") || "/";
@@ -3464,7 +3482,11 @@ const server = http.createServer(async (req, res) => {
       const res = await fetch(`${WEKNORA_BASE}/api/v1/knowledge-bases/${info.kbId}/knowledge/file`, { method: "POST", headers: { "X-API-Key": WEKNORA_ADMIN_KEY }, body: form });
       const text = await res.text();
       if (!res.ok) {
-        /* 上游的人话版错误：把 VLM/多模态这类"需要额外配置"的情形翻译成用户能懂的一句话。 */
+        /* 上游的人话版错误：把 VLM/多模态这类"需要额外配置"、以及同名文件（409 duplicate_file）
+           翻译成用户能懂的一句话。 */
+        if (res.status === 409 || /duplicate_file/i.test(text)) {
+          return send(409, { ok: false, error: "duplicate-file", message: "你的知识库里已有同名文档「" + name + "」，请改名后重传，或先删掉旧文档" });
+        }
         const hint = /VLM|多模态|multimodal/i.test(text)
           ? "该文件需要视觉模型解析（当前未开启），请改传 PDF / Word / Excel / Markdown / txt"
           : "";
@@ -3583,6 +3605,82 @@ const server = http.createServer(async (req, res) => {
     if (bonus > 0) addPoints(username, bonus, "plan-bonus", "plan:" + plan.id + ":" + Date.now(), "订阅「" + plan.name + "」赠送积分");
     return { states, bonus, days, features: picked };
   };
+
+  /* ══ 团队套餐 / 团队积分池 / 团队权益（10-23 设计 §2.5 §2.6）══════════════════════
+     ⛔ 与个人套餐**分表**（db.teamPlans）：定价维度是「席位」，混进 db.plans 会让两个后台互相污染。
+     ⛔ 团队积分池**不允许转给个人**（洗积分 + 对账黑洞），只能被团队能力消耗或管理员发放。
+     ⛔ 本段必须在 /pay/notify 之前定义 —— 同一请求内代码顺序执行，const 声明前是 TDZ。 */
+  if (!db.teamPlans || typeof db.teamPlans !== "object") db.teamPlans = {};
+  if (!db.teamEntitlements || typeof db.teamEntitlements !== "object") db.teamEntitlements = {};
+  if (!db.teamPointsLedger || typeof db.teamPointsLedger !== "object") db.teamPointsLedger = {};
+  if (!db.teamOrders || typeof db.teamOrders !== "object") db.teamOrders = {};
+
+  /** 团队权益（席位 / 容量 / 到期）；无记录时按免费档给默认值。 */
+  const teamEntitlementsOf = (teamId) => {
+    const cur = db.teamEntitlements[teamId];
+    const team = (db.teams || {})[teamId];
+    const fallbackSeats = Number((team && team.seatLimit) || 3);
+    if (!cur || typeof cur !== "object") {
+      return { planId: "", planName: "免费档", seats: fallbackSeats, kbQuotaMb: 0, memQuotaMb: 0, startsAt: 0, expiresAt: 0, status: "free", kbUsedMb: 0, memUsedMb: 0 };
+    }
+    const expired = Number(cur.expiresAt || 0) > 0 && Date.now() >= Number(cur.expiresAt);
+    return {
+      planId: String(cur.planId || ""), planName: String(cur.planName || ""),
+      seats: Math.max(1, Number(cur.seats) || fallbackSeats),
+      kbQuotaMb: Math.max(0, Number(cur.kbQuotaMb) || 0),
+      memQuotaMb: Math.max(0, Number(cur.memQuotaMb) || 0),
+      startsAt: Number(cur.startsAt || 0), expiresAt: Number(cur.expiresAt || 0),
+      status: expired ? "expired" : String(cur.status || "active"),
+      kbUsedMb: Math.max(0, Number(cur.kbUsedMb) || 0), memUsedMb: Math.max(0, Number(cur.memUsedMb) || 0),
+    };
+  };
+
+  /** 团队积分池：余额 + 最近流水。⛔ 余额 = 流水求和，不单独存冗余数字（防漂移）。 */
+  const teamPointsOf = (teamId) => {
+    const map = db.teamPointsLedger[teamId] || {};
+    const rows = Object.values(map).sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
+    return { balance: rows.reduce((n, x) => n + Number(x.delta || 0), 0), rows: rows.slice(0, 50) };
+  };
+
+  /** 记一笔团队积分（ref 幂等：同 ref 只入账一次）。 */
+  const teamAddPoints = (teamId, delta, kind, ref, note, actor) => {
+    const d = Math.round(Number(delta) || 0);
+    if (!d) return null;
+    db.teamPointsLedger[teamId] = db.teamPointsLedger[teamId] || {};
+    if (ref && Object.values(db.teamPointsLedger[teamId]).some((x) => x && x.ref === ref)) return null;
+    const id = "TP" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const row = { id, at: Date.now(), delta: d, kind: String(kind || "consume"), ref: String(ref || ""), note: String(note || ""), actor: String(actor || "") };
+    db.teamPointsLedger[teamId][id] = row;
+    const team = (db.teams || {})[teamId];
+    if (team) team.pointsPool = Math.max(0, Number(team.pointsPool || 0) + d);
+    return row;
+  };
+
+  /** 开通团队套餐：席位 + 容量生效（叠加续期，从「当前到期日与今天较晚者」起算）+ 赠送团队积分。 */
+  const activateTeamPlan = (teamId, plan, note, ref) => {
+    const team = (db.teams || {})[teamId];
+    if (!team) return { ok: false, error: "team-not-found" };
+    const cur = teamEntitlementsOf(teamId);
+    const days = Math.max(0, Math.round(Number(plan.days) || 0));   /* 0 = 永久（管理员自配，慎用） */
+    const seats = Math.max(0, Math.round(Number(plan.seats) || 0));
+    const from = Math.max(Number(cur.expiresAt || 0), Date.now());
+    const expiresAt = days > 0 ? from + days * 86400000 : 0;
+    const next = {
+      planId: String(plan.id || ""), planName: String(plan.name || ""),
+      seats: seats || cur.seats,
+      kbQuotaMb: Math.max(0, Number(plan.kbQuotaMb) || 0),
+      memQuotaMb: Math.max(0, Number(plan.memQuotaMb) || 0),
+      startsAt: Date.now(), expiresAt, status: "active",
+      kbUsedMb: Number(cur.kbUsedMb || 0), memUsedMb: Number(cur.memUsedMb || 0),
+      note: String(note || ""),
+    };
+    db.teamEntitlements[teamId] = next;
+    team.seatLimit = Math.max(1, Number(next.seats) || 1);
+    const bonus = Math.max(0, Math.round(Number(plan.points) || 0));
+    if (bonus > 0) teamAddPoints(teamId, bonus, "team-plan-bonus", ref || ("team-plan:" + plan.id + ":" + Date.now()), "开通「" + plan.name + "」赠送团队积分", "system");
+    return { ok: true, entitlements: next, bonus, days, seats: team.seatLimit };
+  };
+
   /* ⛔ 审查修复（10-23）：套餐 / 订单 id 一律走白名单字符集 —— `db.plans["__proto__"] = …` 是原型污染、
      奇形 id 会流进前端 data-* 属性。管理员是可信的，这是防御纵深。 */
   const BILL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -3753,6 +3851,20 @@ const server = http.createServer(async (req, res) => {
         cny: order.cny, points: order.points, days: plan ? plan.days : 0, at: Date.now(), note: "支付订单 " + orderId,
       };
       console.log("[billing] " + order.username + " 支付套餐「" + order.planName + "」" + order.cny + " 元 → 已开通（赠 " + order.points + " 积分）");
+    } else if (order.kind === "team-plan") {
+      /* 团队套餐订单：席位 + 容量生效 + 赠送团队积分（⛔ 个人积分不动） */
+      const plan = (db.teamPlans || {})[order.planId];
+      if (plan) {
+        const r = activateTeamPlan(order.teamId, plan, "购买「" + plan.name + "」（订单 " + orderId + "）", "teamplan:" + orderId);
+        order.granted = { seats: r.seats, bonus: r.bonus, days: r.days };
+      } else {
+        order.note = "团队套餐已下架/删除，权益未开通 —— 请管理员核对";
+      }
+      (db.teamOrders || (db.teamOrders = {}))[orderId] = {
+        id: orderId, teamId: order.teamId, username: order.username, planId: order.planId, planName: order.planName,
+        cny: order.cny, points: order.points, days: plan ? plan.days : 0, at: Date.now(), note: "支付订单 " + orderId,
+      };
+      console.log("[team] 团队 " + order.teamId + " 支付套餐「" + order.planName + "」" + order.cny + " 元 → 已开通");
     } else {
       addPoints(order.username, order.points, "topup", "topup:" + orderId, "充值 " + order.cny + " 元 → " + order.points + " 积分");
       console.log("[billing] " + order.username + " 充值 " + order.cny + " 元（订单 " + orderId + "）→ +" + order.points + " 积分");
@@ -3822,6 +3934,18 @@ const server = http.createServer(async (req, res) => {
      ⛔ 存储设计：团队记忆与团队知识库走**云侧自带存储**（db.teamStore），不依赖 WeKnora ——
         客户机没配 WeKnora 时个人 KB 用不了，团队能力也必须能独立工作；WeKnora 大库接入 = P1。
      ⛔ 个人 / 团队完全隔离：个人积分·订阅·记忆·知识库永不进入团队检索结果。 */
+  /* ⛔ 审查（10-23）：`/teams/<id>` 的 id 直接当对象键用（db.teams[id]、db.teamIntegrations[id]）
+     —— `__proto__` / 奇形字符会污染原型或写出脏键。**入口统一白名单**，比逐路由校验可靠。 */
+  /* ⛔ 严格到生成规则本身（"T" + base36 大写 + 4 位随机）：`__proto__` 这类**只由下划线组成**的
+     键能骗过「[A-Za-z0-9_-]」宽松白名单（实测：管理员解散 `__proto__` 会把 status 写到
+     Object.prototype 上）。宁可窄，团队 ID 由服务端生成，不会有别的形态。 */
+  const TEAM_ID_RE = /^T[A-Z0-9]{4,40}$/;
+  const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k);
+  const teamOf = (id) => (hasOwn(db.teams, id) ? db.teams[id] : null);
+  if (p.startsWith("/teams/")) {
+    const seg0 = p.slice("/teams/".length).split("/")[0];
+    if (seg0 && seg0 !== "join" && !TEAM_ID_RE.test(seg0)) return send(400, { ok: false, error: "非法的团队 ID" });
+  }
   if (!db.teamPolicy || typeof db.teamPolicy !== "object") {
     db.teamPolicy = { enabled: true, freeSeats: 3, memoryEnabled: true, kbEnabled: true, maxEntryChars: 2000 };
   }
@@ -3842,7 +3966,7 @@ const server = http.createServer(async (req, res) => {
   };
   /** 当前用户在团队里的角色（含 owner 覆盖）；非成员返回空串。 */
   const teamRoleOf = (teamId, username) => {
-    const team = db.teams[teamId];
+    const team = teamOf(teamId);
     if (!team || team.status !== "active") return "";
     if (team.owner === username) return "owner";
     const m = (db.teamMembers[teamId] || {})[username];
@@ -3885,14 +4009,15 @@ const server = http.createServer(async (req, res) => {
   }
   /* ⛔ 详情路由必须排除所有「子资源」路径，否则 /teams/:id/integrations 会被它先吞掉
      （p.slice 得到 "ID/integrations" ⇒ 判成非成员，实测 10-23 踩到）。 */
-  if (p.startsWith("/teams/") && req.method === "GET" && !p.includes("/memory") && !p.includes("/kb")
-      && !p.includes("/members") && !p.includes("/invite") && !p.includes("/integrations")) {
+  /* ⛔ 判定改为**路径段数 == 3**（/teams/<id>）。旧实现靠 includes 黑名单，每加一个子资源
+     都得记着补一条，漏一条就被详情路由吞掉（10-23 在 /integrations 上踩过一次）。 */
+  if (p.startsWith("/teams/") && req.method === "GET" && p.split("/").filter(Boolean).length === 2) {
     const who = accountWho();
     if (!who) return send(401, { ok: false, error: "unauthorized" });
     const teamId = p.slice("/teams/".length);
     const role = teamRoleOf(teamId, who.username);
     if (!role) return send(403, { ok: false, error: "not-a-member" });
-    const team = db.teams[teamId];
+    const team = teamOf(teamId);
     const integrations = db.teamIntegrations[teamId] || {};
     const members = Object.entries(db.teamMembers[teamId] || {}).filter(([, m]) => m && m.status === "active")
       .map(([u, m]) => ({ username: u, role: m.role, joinedAt: m.joinedAt }));
@@ -3902,6 +4027,8 @@ const server = http.createServer(async (req, res) => {
       role, seats: teamSeatUsage(teamId),
       members: [{ username: team.owner, role: "owner", joinedAt: team.createdAt }].concat(members.filter((m) => m.username !== team.owner)),
       integrations: { kbReady: Boolean(integrations.kbId), memoryReady: Boolean(integrations.memKey) },
+      entitlements: teamEntitlementsOf(teamId),
+      points: { balance: teamPointsOf(teamId).balance },
       policy: teamPolicyOf(),
     });
   }
@@ -3912,7 +4039,7 @@ const server = http.createServer(async (req, res) => {
     if (!who) return send(401, { ok: false, error: "unauthorized" });
     const teamId = p.slice("/teams/".length, -"/invite".length);
     const role = teamRoleOf(teamId, who.username);
-    const team = db.teams[teamId];
+    const team = teamOf(teamId);
     if (!role) return send(403, { ok: false, error: "not-a-member" });
     const settings = (team && team.settings) || {};
     if (role === "member" && !settings.allowMemberInvite) return send(403, { ok: false, error: "no-permission", message: "成员不能邀请（管理员可在团队设置里开启）" });
@@ -3986,7 +4113,15 @@ const server = http.createServer(async (req, res) => {
       const data = (ep && ep.data) || {};
       cur.endpointId = String(data.id || "");
       cur.mcpToken = String(data.token || "");
-      cur.mcpUrl = cur.endpointId ? `${WEKNORA_BASE}/mcp/${cur.endpointId}` : "";
+      /* ⛔ 10-23 审查修复：MCP 端点必须用**对外基址**（kbUiBase）——
+           WEKNORA_BASE 在客户机是 http://127.0.0.1:8080，发给成员的 Codex 连不上（实测）。
+           公网 8082 反代把 /mcp/* 转给 app，其余转前端，所以 uiBase 就是正确入口。 */
+      cur.mcpUrl = cur.endpointId ? `${kbUiBase()}/mcp/${cur.endpointId}` : "";
+    }
+    /* 历史数据自愈（同上）：已存的 127.0.0.1 端点改写成对外基址 */
+    if (cur.endpointId) {
+      const want = kbUiBase().replace(/\/+$/, "") + "/mcp/" + cur.endpointId;
+      if (cur.mcpUrl !== want) cur.mcpUrl = want;
     }
     persist();
     return { ok: true, kbId: cur.kbId, kbName: cur.kbName || kbName, mcpUrl: cur.mcpUrl, mcpToken: cur.mcpToken };
@@ -4007,11 +4142,14 @@ const server = http.createServer(async (req, res) => {
       if (!key) throw new Error(`建团队记忆空间未返回 key（${res.status}）`);
       cur.memKey = String(key);
       cur.memUserId = String((json.data && json.data.user_id) || "");
-      cur.memBaseUrl = `${MEMHUB_PROXY_BASE}/claude-code/default/v1`;
+      cur.memBaseUrl = `${memPublicProxyBase()}/claude-code/default/v1`;
       persist();
       console.log("[team] 团队 " + teamId + " 记忆空间已建（memUserId=" + cur.memUserId + "）");
     }
-    return { ok: true, baseUrl: cur.memBaseUrl || `${MEMHUB_PROXY_BASE}/claude-code/default/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key", memUserId: cur.memUserId || "" };
+    /* 每次都现算 baseUrl（管理员改了对外地址立刻生效，不用重建空间） */
+    const memBase = `${memPublicProxyBase()}/claude-code/default/v1`;
+    if (cur.memBaseUrl !== memBase) { cur.memBaseUrl = memBase; persist(); }
+    return { ok: true, baseUrl: memBase, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key", memUserId: cur.memUserId || "" };
   }
 
   /* 开通团队的两套空间（owner/admin；幂等，已建则只补缺） */
@@ -4045,8 +4183,11 @@ const server = http.createServer(async (req, res) => {
     const policy = teamPolicyOf();
     return send(200, {
       ok: true, role, policy,
-      knowledge: policy.kbEnabled && cur.kbId ? { ready: true, kbId: cur.kbId, kbName: cur.kbName || "", mcpUrl: cur.mcpUrl || "", mcpToken: cur.mcpToken || "" } : { ready: false },
-      memory: policy.memoryEnabled && cur.memKey ? { ready: true, baseUrl: cur.memBaseUrl || `${MEMHUB_PROXY_BASE}/claude-code/default/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key", memUserId: cur.memUserId || "" } : { ready: false },
+      /* ⛔ mcpUrl 在这里**按 endpointId 现算**（对外基址），不读库里存的旧值 —— 历史数据里存的是
+         内网 127.0.0.1，成员机器连不上（10-23 实测）。 */
+      knowledge: policy.kbEnabled && cur.kbId ? { ready: true, kbId: cur.kbId, kbName: cur.kbName || "", mcpUrl: cur.endpointId ? kbUiBase().replace(/\/+$/, "") + "/mcp/" + cur.endpointId : "", mcpToken: cur.mcpToken || "" } : { ready: false },
+      /* ⛔ baseUrl 现算（对外基址），不读库里存的旧值 —— 历史数据存的是 127.0.0.1:8096 */
+      memory: policy.memoryEnabled && cur.memKey ? { ready: true, baseUrl: `${memPublicProxyBase()}/claude-code/default/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key", memUserId: cur.memUserId || "" } : { ready: false },
     });
   }
 
@@ -4061,7 +4202,9 @@ const server = http.createServer(async (req, res) => {
     const query = String((body && body.query) || "").trim().slice(0, 500);
     if (!query) return send(400, { ok: false, error: "缺少检索词" });
     if (!rateLimit(`tkbsearch:${who.username}`, 30, 60_000)) return send(429, { ok: false, error: "检索太频繁，请稍后再试" });
-    const info = await ensureTeamKnowledge(teamId);
+    const integS = db.teamIntegrations[teamId] || {};
+    if (!integS.kbId) return send(409, { ok: false, error: "team-kb-not-provisioned", message: "团队知识库还没开通，请 owner 先点「开通 / 修复团队空间」" });
+    const info = { kbId: integS.kbId, kbName: integS.kbName || "" };
     const found = await weknoraAdmin("/api/v1/knowledge-search", { method: "POST", body: { query, knowledge_base_ids: [info.kbId] } });
     const hits = (found && (found.data || found.results)) || [];
     return send(200, {
@@ -4087,7 +4230,7 @@ const server = http.createServer(async (req, res) => {
     return send(200, {
       ok: true, backend: "memhub", ready: Boolean(cur.memKey),
       memory: cur.memKey
-        ? { baseUrl: cur.memBaseUrl || `${MEMHUB_PROXY_BASE}/claude-code/default/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key", memUserId: cur.memUserId || "" }
+        ? { baseUrl: `${memPublicProxyBase()}/claude-code/default/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key", memUserId: cur.memUserId || "" }
         : null,
       note: "团队记忆存在 MemHub 的团队空间里（同一把 userKey = 同一空间）；读写走成员本机的 Codex 记忆工具。",
     });
@@ -4121,9 +4264,309 @@ const server = http.createServer(async (req, res) => {
         id: t.id, name: t.name, owner: t.owner, createdAt: t.createdAt, status: t.status,
         seats: teamSeatUsage(t.id), members: Object.keys(db.teamMembers[t.id] || {}).length,
         kbReady: Boolean(integ.kbId), memoryReady: Boolean(integ.memKey),
+        entitlements: teamEntitlementsOf(t.id), pointsBalance: teamPointsOf(t.id).balance,
       };
     }).sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
     return send(200, { ok: true, teams: rows, policy: teamPolicyOf() });
+  }
+
+
+  /* ── 团队设置 / 解散 / 成员角色 / 转让（10-23 设计 §3.4）────────────────────
+     ⛔ 权限矩阵与服务端一致：改名与设置 = owner/admin；角色与转让 = 仅 owner；
+        自己不能改自己的角色、不能移除自己（避免团队突然无人可管）。 */
+  if (p.startsWith("/teams/") && p.split("/").filter(Boolean).length === 2 && req.method === "PATCH") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length);
+    const role = teamRoleOf(teamId, who.username);
+    if (!role) return send(403, { ok: false, error: "not-a-member" });
+    if (role === "member") return send(403, { ok: false, error: "no-permission", message: "只有 owner / admin 可以修改团队设置" });
+    const body = await readBody();
+    const team = db.teams[teamId];
+    if (body && body.name !== undefined) {
+      const name = String(body.name || "").trim().slice(0, 40);
+      if (!name) return send(400, { ok: false, error: "团队名称不能为空" });
+      team.name = name;
+    }
+    if (body && body.settings && typeof body.settings === "object") {
+      const s = (team.settings = team.settings || {});
+      if (body.settings.allowMemberInvite !== undefined) s.allowMemberInvite = body.settings.allowMemberInvite === true;
+      if (body.settings.memoryWriteMode !== undefined) s.memoryWriteMode = body.settings.memoryWriteMode === "contributor-only" ? "contributor-only" : "all";
+      if (body.settings.uploadMode !== undefined) s.uploadMode = body.settings.uploadMode === "admin" ? "admin" : "all";
+    }
+    persist();
+    console.log("[team] " + who.username + " 修改团队 " + teamId + " 设置");
+    return send(200, { ok: true, team: { id: team.id, name: team.name, settings: team.settings } });
+  }
+  if (p.startsWith("/teams/") && p.endsWith("/dissolve") && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/dissolve".length);
+    const team = teamOf(teamId);
+    if (!team) return send(404, { ok: false, error: "team-not-found" });
+    if (team.owner !== who.username && !(me && me.role === "admin")) return send(403, { ok: false, error: "no-permission", message: "只有 owner 可以解散团队" });
+    const body = await readBody();
+    if (!body || body.confirm !== true) return send(400, { ok: false, error: "confirm-required", message: "解散是不可逆操作，需要二次确认" });
+    team.status = "dissolved"; team.dissolvedAt = Date.now(); team.dissolvedBy = who.username;
+    persist();
+    console.log("[team] " + who.username + " 解散团队 " + teamId + "（" + team.name + "）");
+    return send(200, { ok: true });
+  }
+  if (p.startsWith("/teams/") && p.indexOf("/members/") > 0 && req.method === "PATCH") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const rest = p.slice("/teams/".length);
+    const idx = rest.indexOf("/members/");
+    const teamId = rest.slice(0, idx);
+    const target = decodeURIComponent(rest.slice(idx + "/members/".length));
+    const team = db.teams[teamId];
+    if (!team) return send(404, { ok: false, error: "team-not-found" });
+    const role = teamRoleOf(teamId, who.username);
+    if (role !== "owner" && !(me && me.role === "admin")) return send(403, { ok: false, error: "no-permission", message: "只有 owner 可以调整成员" });
+    if (target === who.username) return send(400, { ok: false, error: "self-target", message: "不能对自己操作（转让请用转让 owner）" });
+    if (target === team.owner) return send(400, { ok: false, error: "owner-target", message: "不能调整 owner，请先转让" });
+    const body = await readBody();
+    const members = (db.teamMembers[teamId] = db.teamMembers[teamId] || {});
+    if (!members[target] || members[target].status !== "active") return send(404, { ok: false, error: "member-not-found" });
+    if (body && body.action === "remove") {
+      members[target].status = "removed"; members[target].removedAt = Date.now(); members[target].removedBy = who.username;
+      persist();
+      console.log("[team] " + who.username + " 移除成员 " + target + "（" + teamId + "）");
+      return send(200, { ok: true, removed: target });
+    }
+    const nextRole = body && body.role === "admin" ? "admin" : "member";
+    members[target].role = nextRole;
+    persist();
+    console.log("[team] " + who.username + " 设置 " + target + " 角色为 " + nextRole);
+    return send(200, { ok: true, username: target, role: nextRole });
+  }
+  if (p.startsWith("/teams/") && p.endsWith("/transfer") && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/transfer".length);
+    const team = teamOf(teamId);
+    if (!team) return send(404, { ok: false, error: "team-not-found" });
+    if (team.owner !== who.username) return send(403, { ok: false, error: "no-permission", message: "只有 owner 可以转让" });
+    const body = await readBody();
+    const target = String((body && body.username) || "").trim();
+    const members = db.teamMembers[teamId] || {};
+    if (!target || !members[target] || members[target].status !== "active") return send(404, { ok: false, error: "member-not-found" });
+    members[who.username] = { role: "admin", status: "active", joinedAt: team.createdAt, invitedBy: "" };
+    members[target].role = "owner";
+    team.owner = target;
+    persist();
+    console.log("[team] owner 转让：" + teamId + " " + who.username + " → " + target);
+    return send(200, { ok: true, owner: target });
+  }
+
+  /* ── 团队知识库：上传 / 文档列表 / 删除（真 WeKnora 团队库）──────────────────
+     ⛔ 与个人 /kb/upload 同构：浏览器 base64 → 服务端 multipart 转发；⛔ 删除前必须校验
+        文档属于本团队库（管理员 Key 是租户级的，不校验就能删别人的）。 */
+  if (p.startsWith("/teams/") && p.endsWith("/kb/upload") && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/kb/upload".length);
+    const role = teamRoleOf(teamId, who.username);
+    if (!role) return send(403, { ok: false, error: "not-a-member" });
+    if (!teamPolicyOf().kbEnabled) return send(403, { ok: false, error: "team-kb-disabled", message: "团队知识库未开通" });
+    const team = db.teams[teamId];
+    if ((team.settings || {}).uploadMode === "admin" && role === "member") {
+      return send(403, { ok: false, error: "no-permission", message: "团队设置为「仅 owner/admin 可上传」" });
+    }
+    if (!rateLimit("tkbupload:" + who.username, 10, 60_000)) return send(429, { ok: false, error: "上传太频繁，请稍后再试" });
+    const body = await readBodyLarge(24 * 1024 * 1024);
+    const name = String((body && body.name) || "").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 120) || "upload.txt";
+    const b64 = String((body && body.contentB64) || "");
+    if (!b64) return send(400, { ok: false, error: "缺少文件内容" });
+    const ext = String(name.split(".").pop() || "").toLowerCase();
+    const IMAGE_EXT = ["png", "jpg", "jpeg", "gif", "bmp", "webp", "heic", "heif", "tif", "tiff", "svg"];
+    if (IMAGE_EXT.indexOf(ext) >= 0 && !WEKNORA_VLM_MODEL_ID) {
+      return send(400, { ok: false, error: "image-not-supported", reason: "图片解析需要视觉模型（当前未开启）。请上传 PDF / Word / Excel / Markdown / txt 等文本资料。" });
+    }
+    let buf = null;
+    try { buf = Buffer.from(b64, "base64"); } catch { return send(400, { ok: false, error: "文件内容不是合法 base64" }); }
+    if (!buf || !buf.length) return send(400, { ok: false, error: "文件是空的" });
+    const ent = teamEntitlementsOf(teamId);
+    const mb = buf.length / 1048576;
+    if (ent.kbQuotaMb > 0 && ent.kbUsedMb + mb > ent.kbQuotaMb) {
+      return send(402, { ok: false, error: "quota-exceeded", quotaMb: ent.kbQuotaMb, usedMb: ent.kbUsedMb, message: "团队知识库容量不足（" + ent.kbUsedMb + " / " + ent.kbQuotaMb + " MB），请升级团队套餐" });
+    }
+    const integU = db.teamIntegrations[teamId] || {};
+    if (!integU.kbId) return send(409, { ok: false, error: "team-kb-not-provisioned", message: "团队知识库还没开通，请 owner 先开通" });
+    const info = { kbId: integU.kbId, kbName: integU.kbName || "" };
+    const form = new FormData();
+    form.append("file", new Blob([buf]), name);
+    const res = await fetch(`${WEKNORA_BASE}/api/v1/knowledge-bases/${info.kbId}/knowledge/file`, { method: "POST", headers: { "X-API-Key": WEKNORA_ADMIN_KEY }, body: form });
+    const text = await res.text();
+    if (!res.ok) {
+      /* ⛔ 同名文件 WeKnora 返回 409 duplicate_file —— 原样透出「上游拒绝：409 …」用户看不懂，
+         这里翻成人话（改个名或先删旧文档）。其余仍按 502 处理。 */
+      if (res.status === 409 || /duplicate_file/i.test(text)) {
+        return send(409, { ok: false, error: "duplicate-file", message: "团队库里已有同名文档「" + name + "」，请改名后重传，或先在列表里删掉旧文档" });
+      }
+      const hint = /VLM|多模态|multimodal/i.test(text) ? "该文件需要视觉模型解析（当前未开启），请改传 PDF / Word / Excel / Markdown / txt" : "";
+      return send(502, { ok: false, error: hint || sanitize(`上游拒绝：${res.status} ${text.slice(0, 160)}`) });
+    }
+    const cur = (db.teamEntitlements[teamId] = db.teamEntitlements[teamId] || {});
+    cur.kbUsedMb = Math.round((Number(cur.kbUsedMb || 0) + mb) * 10) / 10;
+    persist();
+    console.log("[team] " + who.username + " 上传团队文档「" + name + "」→ " + teamId);
+    return send(200, { ok: true, name, size: buf.length, usedMb: cur.kbUsedMb, quotaMb: ent.kbQuotaMb });
+  }
+  if (p.startsWith("/teams/") && p.endsWith("/kb/docs") && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/kb/docs".length);
+    if (!teamRoleOf(teamId, who.username)) return send(403, { ok: false, error: "not-a-member" });
+    if (!teamPolicyOf().kbEnabled) return send(403, { ok: false, error: "team-kb-disabled", message: "团队知识库未开通" });
+    /* ⛔ 审查（10-23）：GET 不能有副作用 —— 旧实现这里 ensureTeamKnowledge()，
+       任何成员打开页面都会替团队**新建知识库**，绕过「只有 owner 可开通」的权限设计。 */
+    const integ = db.teamIntegrations[teamId] || {};
+    if (!integ.kbId) return send(409, { ok: false, error: "team-kb-not-provisioned", message: "团队知识库还没开通，请 owner 在「团队概览」点「开通 / 修复团队空间」" });
+    const info = { kbId: integ.kbId, kbName: integ.kbName || "" };
+    const list = await weknoraAdmin(`/api/v1/knowledge-bases/${info.kbId}/knowledge`);
+    const docs = ((list && list.data) || []).map((k) => ({
+      id: String(k.id || ""), title: String(k.title || k.file_name || ""), size: Number(k.file_size || 0),
+      parseStatus: String(k.parse_status || ""),
+      /* ⛔ WeKnora 的 created_at 是 ISO 字符串（"2026-10-23T22:31:00+08:00"），Number() 会得到 NaN */
+      createdAt: (function () { const v = k.created_at; const t = typeof v === "number" ? v : Date.parse(String(v || "")); return Number.isFinite(t) ? t : 0; })(),
+    })).sort((a, b) => b.createdAt - a.createdAt);
+    return send(200, { ok: true, kbId: info.kbId, kbName: info.kbName, docs, entitlements: teamEntitlementsOf(teamId) });
+  }
+  if (p.startsWith("/teams/") && p.endsWith("/kb/delete") && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/kb/delete".length);
+    const role = teamRoleOf(teamId, who.username);
+    if (!role) return send(403, { ok: false, error: "not-a-member" });
+    if (role === "member") return send(403, { ok: false, error: "no-permission", message: "只有 owner / admin 可以删除团队文档" });
+    const body = await readBody();
+    const id = String((body && body.id) || "").trim();
+    if (!id) return send(400, { ok: false, error: "缺少文档 id" });
+    const integD = db.teamIntegrations[teamId] || {};
+    if (!integD.kbId) return send(409, { ok: false, error: "team-kb-not-provisioned", message: "团队知识库还没开通" });
+    const info = { kbId: integD.kbId, kbName: integD.kbName || "" };
+    const list = await weknoraAdmin(`/api/v1/knowledge-bases/${info.kbId}/knowledge`);
+    if (!((list && list.data) || []).some((k) => k.id === id)) return send(403, { ok: false, error: "not-team-doc" });
+    await weknoraAdmin(`/api/v1/knowledge/${encodeURIComponent(id)}`, { method: "DELETE" });
+    console.log("[team] " + who.username + " 删除团队文档 " + id + "（" + teamId + "）");
+    return send(200, { ok: true });
+  }
+
+  /* ── 团队积分池 ─────────────────────────────────────────────────────────── */
+  if (p.startsWith("/teams/") && p.endsWith("/points") && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/points".length);
+    if (!teamRoleOf(teamId, who.username)) return send(403, { ok: false, error: "not-a-member" });
+    const pool = teamPointsOf(teamId);
+    return send(200, { ok: true, balance: pool.balance, rows: pool.rows, entitlements: teamEntitlementsOf(teamId) });
+  }
+
+  /* ── 团队套餐：用户端列表 / 购买（owner）/ 管理员 CRUD 与手动开通 ──────────── */
+  if (p === "/team-plans" && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const plans = Object.values(db.teamPlans || {}).filter((x) => x && x.active !== false)
+      .sort((a, b) => (Number(a.sort) || 0) - (Number(b.sort) || 0) || String(a.id).localeCompare(String(b.id)));
+    return send(200, { ok: true, plans, topupEnabled: topupEnabled(), billing: { pointsPerCny: billingOf().pointsPerCny } });
+  }
+  if (p === "/team-plans/buy" && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    if (!rateLimit("teambuy:" + who.username, 6, 60_000)) return send(429, { ok: false, error: "操作太频繁，请稍后再试" });
+    const body = await readBody();
+    const teamId = String((body && body.teamId) || "").trim();
+    const planId = String((body && body.planId) || "").trim();
+    if (!BILL_ID_RE.test(planId)) return send(400, { ok: false, error: "非法的套餐 ID" });
+    if (!TEAM_ID_RE.test(teamId)) return send(400, { ok: false, error: "非法的团队 ID" });
+    const role = teamRoleOf(teamId, who.username);
+    if (role !== "owner" && !(me && me.role === "admin")) return send(403, { ok: false, error: "no-permission", message: "只有团队 owner 可以购买团队套餐" });
+    const plan = (db.teamPlans || {})[planId];
+    if (!plan || plan.active === false) return send(404, { ok: false, error: "套餐不存在或已下架" });
+    const cny = Math.round(Number(plan.priceCny) * 100) / 100;
+    if (!(cny > 0)) return send(400, { ok: false, error: "该套餐未设置金额，请联系管理员" });
+    if (!topupEnabled()) return send(400, { ok: false, error: "topup-disabled", message: "支付渠道未配置，请联系管理员开通团队套餐" });
+    const orderId = newBillingId("TB");
+    db.topups[orderId] = {
+      id: orderId, username: who.username, kind: "team-plan", teamId, planId, planName: plan.name,
+      cny, points: Math.max(0, Math.round(Number(plan.points) || 0)), at: Date.now(), status: "pending",
+    };
+    persist();
+    const billing = billingOf();
+    const base = publicBaseOf(req).replace(/\/+$/, "");
+    const params = {
+      pid: billing.epay.pid, type: "alipay", out_trade_no: orderId, notify_url: base + "/pay/notify",
+      return_url: base.replace(/\/cloud-api\/*$/, "") + "/account.html#teamSettings",
+      name: "团队套餐 " + plan.name, money: cny.toFixed(2),
+    };
+    params.sign = md5Sign(params, billing.epay.key); params.sign_type = "MD5";
+    console.log("[team] " + who.username + " 下单团队套餐「" + plan.name + "」" + cny + " 元（订单 " + orderId + "）");
+    return send(200, { ok: true, orderId, payUrl: billing.epay.gate + "/submit.php?" + new URLSearchParams(params).toString() });
+  }
+  if (p === "/admin/team-plans" && req.method === "GET") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    return send(200, { ok: true, plans: Object.values(db.teamPlans || {}), topupEnabled: topupEnabled() });
+  }
+  if (p === "/admin/team-plans" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBody();
+    if (body && body.delete) {
+      const id = String(body.id || "").trim();
+      if (!db.teamPlans[id]) return send(404, { ok: false, error: "套餐不存在" });
+      delete db.teamPlans[id]; persist();
+      return send(200, { ok: true, plans: Object.values(db.teamPlans) });
+    }
+    const id = String((body && body.id) || "").trim() || newBillingId("TPLAN");
+    if (!BILL_ID_RE.test(id)) return send(400, { ok: false, error: "套餐 ID 只允许字母 / 数字 / 连字符 / 下划线（≤64 位）" });
+    /* 只带 id + active = 上下架切换：合并现值，不整单覆盖（与个人套餐同规矩） */
+    if (db.teamPlans[id] && (body && body.name) === undefined && (body && body.seats) === undefined) {
+      db.teamPlans[id].active = body.active === undefined ? true : body.active !== false;
+      persist();
+      return send(200, { ok: true, plans: Object.values(db.teamPlans) });
+    }
+    const name = String((body && body.name) || "").trim();
+    if (!name) return send(400, { ok: false, error: "套餐名称必填" });
+    db.teamPlans[id] = {
+      id, name, desc: String((body && body.desc) || "").trim(),
+      priceCny: Math.max(0, Math.round(Number(body.priceCny) || 0) * 100) / 100,
+      points: Math.max(0, Math.round(Number(body.points) || 0)),
+      seats: Math.max(1, Math.round(Number(body.seats) || 3)),
+      days: Math.max(0, Math.round(Number(body.days) || 0)),
+      kbQuotaMb: Math.max(0, Math.round(Number(body.kbQuotaMb) || 0)),
+      memQuotaMb: Math.max(0, Math.round(Number(body.memQuotaMb) || 0)),
+      active: body.active === undefined ? true : body.active !== false,
+      sort: Math.round(Number(body.sort) || 0),
+    };
+    persist();
+    console.log("[team] " + me.username + " 保存团队套餐「" + name + "」（" + id + "）");
+    return send(200, { ok: true, plans: Object.values(db.teamPlans) });
+  }
+  if (p === "/admin/team-plans/grant" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBody();
+    const teamId = String((body && body.teamId) || "").trim();
+    const planId = String((body && body.planId) || "").trim();
+    if (!TEAM_ID_RE.test(teamId)) return send(400, { ok: false, error: "非法的团队 ID" });
+    const plan = (db.teamPlans || {})[planId];
+    if (!db.teams[teamId]) return send(404, { ok: false, error: "team-not-found" });
+    if (!plan) return send(404, { ok: false, error: "套餐不存在" });
+    const r = activateTeamPlan(teamId, plan, "管理员 " + me.username + " 手动开通", "teamgrant:" + teamId + ":" + planId + ":" + Date.now());
+    persist();
+    console.log("[team] 管理员 " + me.username + " 为团队 " + teamId + " 手动开通「" + plan.name + "」");
+    return send(200, { ok: true, entitlements: r.entitlements, bonus: r.bonus });
+  }
+  if (p === "/admin/teams/dissolve" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBody();
+    const teamId = String((body && body.teamId) || "").trim();
+    if (!TEAM_ID_RE.test(teamId)) return send(400, { ok: false, error: "非法的团队 ID" });
+    const team = teamOf(teamId);
+    if (!team) return send(404, { ok: false, error: "team-not-found" });
+    team.status = "dissolved"; team.dissolvedAt = Date.now(); team.dissolvedBy = me.username;
+    persist();
+    console.log("[team] 管理员 " + me.username + " 强制解散团队 " + teamId);
+    return send(200, { ok: true });
   }
 
   /* 管理端：邀请机制管理（10-23）—— 奖励配置 + 每位用户的邀请数 / 累计奖励 / 明细 */
