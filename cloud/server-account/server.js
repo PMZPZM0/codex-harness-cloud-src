@@ -267,7 +267,9 @@ function kbUiBase() {
 }
 
 /** WeKnora 里**已注册的模型**（管理端下拉数据源）。
-    ⛔ 只读，不改任何东西；拉不到就让前端回落手填（不能因为上游抽风就把配置框变成死框）。 */
+    ⛔ 只读，不改任何东西；拉不到就让前端回落手填（不能因为上游抽风就把配置框变成死框）。
+    · `baseUrl` / `provider` 来自 `parameters`；`hasKey` 来自 `credentials.api_key.configured`
+      （⛔ 只知道"配没配"，密钥本身永远不会从 WeKnora 回传）。 */
 async function weknoraModelList() {
   const j = await weknoraAdmin("/api/v1/models");
   const rows = (j && (j.data || j.models)) || [];
@@ -278,8 +280,15 @@ async function weknoraModelList() {
     type: String(m.type || ""),
     source: String(m.source || ""),
     note: String(m.description || ""),
+    baseUrl: String((m.parameters && m.parameters.base_url) || ""),
+    provider: String((m.parameters && m.parameters.provider) || ""),
+    hasKey: Boolean(m.credentials && m.credentials.api_key && m.credentials.api_key.configured),
+    builtin: Boolean(m.is_builtin),
   })).filter((m) => m.id);
 }
+
+/** 知识库模型的三种类型（WeKnora 的 `type` 字段是大小写敏感的枚举）。 */
+const KB_MODEL_TYPES = ["KnowledgeQA", "Embedding", "VLLM"];
 
 /** 成员行：把「权益状态」与「已下发的集成凭据」合成一行（⛔ 绝不下发明文密钥）。 */
 function memberRow(u, feature) {
@@ -497,6 +506,15 @@ let lastCatalogError = null;
 function splitUpstreamBase(base) {
   const b = String(base || "").trim().replace(/\/+$/, "");
   return { root: b.replace(/\/v1$/i, ""), openai: /\/v1$/i.test(b) ? b : `${b}/v1` };
+}
+
+/** 上游 URL（10-23）：管理员填的地址**带不带 /v1 都合法**（两种都有人填）。
+ *  ⛔ 直接 `${base}/v1/...` 拼会在"已经带 /v1"的部署上拼成 `/v1/v1/...` ⇒
+ *     上游回一句 `{"detail":"Method Not Allowed"}`，客户端只看到 405、完全不知为什么
+ *     （客户机实测：upstream.base = https://wb.ppz123.asia/v1）。统一走这里。 */
+function upstreamUrl(pathAfterV1) {
+  const { openai } = splitUpstreamBase(currentUpstreamBase());
+  return `${openai}/${String(pathAfterV1 || "").replace(/^\/+/, "")}`;
 }
 
 function catalogCandidates(base) {
@@ -2165,7 +2183,7 @@ const server = http.createServer(async (req, res) => {
         // 模型清单也按勾选过滤（客户端因此只看得到自己启用的）
         const upstreamList = await (async () => {
           try {
-            const r = await fetch(`${currentUpstreamBase()}/v1/models`, { headers: { Authorization: `Bearer ${currentGatewayKey()}` } });
+            const r = await fetch(upstreamUrl("models"), { headers: { Authorization: `Bearer ${currentGatewayKey()}` } });
             return r.ok ? await r.json() : null;
           } catch { return null; }
         })();
@@ -2192,7 +2210,7 @@ const server = http.createServer(async (req, res) => {
         return send(403, { ok: false, error: "model-not-enabled", message: "该模型未在「限时福利」里启用 —— 请在云端管理的模型列表里勾选后重试" });
       }
       /* 转发：只替换 Authorization，其余原样（模型、参数、流式标志） */
-      const target = `${currentUpstreamBase()}/v1/${p.endsWith("models") ? "models" : "chat/completions"}`;
+      const target = upstreamUrl(p.endsWith("models") ? "models" : "chat/completions");
       try {
         const upstream = await fetch(target, {
           method: req.method,
@@ -2920,7 +2938,92 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    /* 管理员：权益总览 / 开通·续期·停用 / 价格表 */
+    /* ── 10-23（用户令「知识库要配 LLM 密钥的吧，留好配置 API 地址和密钥的接口」）──────
+       知识库要能答话，光有"选哪个模型"不够：那个模型背后得有 **API 地址 + 密钥**。
+       这三条把 WeKnora 的模型资源完整搬到前端：
+         POST /admin/service-models/save   建/改一个 remote 模型（地址进 parameters.base_url）
+         POST /admin/service-models/key    只换密钥（走 PUT /models/{id}/credentials）
+         POST /admin/service-models/delete 删模型（⛔ 被知识库引用时 WeKnora 会拒，原样回报）
+       ⛔ 实测口径（10-23）：
+         · 创建 `POST /api/v1/models` 需要 name / type / source 必填，`parameters` 必填；
+         · **更新**（PUT）里带的 api_key 会被**忽略**并写 warn 日志 ⇒ 密钥只能走 /credentials；
+         · base_url 有 SSRF 校验：**内网/不可解析地址会被拒**（报 "Base URL 未通过安全校验"）。 */
+    if (p === "/admin/service-models/save" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      if (!WEKNORA_ADMIN_KEY) return send(400, { ok: false, error: "知识库密钥未配置，无法写模型" });
+      const body = await readBody();
+      const type = String((body && body.type) || "").trim();
+      if (!KB_MODEL_TYPES.includes(type)) return send(400, { ok: false, error: "类型必须是 " + KB_MODEL_TYPES.join(" / ") });
+      const name = String((body && body.name) || "").trim();
+      if (!name) return send(400, { ok: false, error: "模型名不能为空（填上游真实的 model id，如 deepseek-v4.1-flash）" });
+      const norm = normalizeUpstreamBase(String((body && body.baseUrl) || "").trim());
+      if (!norm.ok) return send(400, { ok: false, error: "API 地址：" + norm.error });
+      const apiKey = String((body && body.apiKey) || "").trim();
+      const displayName = String((body && body.displayName) || "").trim() || name;
+      const provider = String((body && body.provider) || "openai").trim() || "openai";
+      let id = String((body && body.id) || "").trim();
+      try {
+        if (id) {
+          /* 更新：先把原 parameters 取回来再合并 —— PUT 是"整体替换"，只发 base_url 会把
+             embedding_parameters / supports_vision 这些丢掉。 */
+          const cur = await weknoraAdmin(`/api/v1/models/${id}`);
+          const params = Object.assign({}, (cur && cur.data && cur.data.parameters) || {}, { base_url: norm.base, provider });
+          await weknoraAdmin(`/api/v1/models/${id}`, { method: "PUT", body: { name, display_name: displayName, type, parameters: params } });
+        } else {
+          const created = await weknoraAdmin("/api/v1/models", {
+            method: "POST",
+            body: { name, display_name: displayName, type, source: "remote", description: "云管理后台配置", parameters: { base_url: norm.base, provider } },
+          });
+          id = String((created && created.data && created.data.id) || "");
+          if (!id) throw new Error("知识库没有返回模型 id");
+        }
+        if (apiKey) await weknoraAdmin(`/api/v1/models/${id}/credentials`, { method: "PUT", body: { api_key: apiKey } });
+        console.log(`[services] ${me.username} ${apiKey ? "写入" : "保存"}知识库模型 ${name}（${type}）→ ${norm.base}`);
+        return send(200, { ok: true, id, name, type, baseUrl: norm.base, hasKey: Boolean(apiKey), created: !body.id });
+      } catch (e) {
+        const msg = sanitize(String((e && e.message) || e));
+        const ssrf = /SSRF|安全校验/i.test(msg);
+        return send(502, {
+          ok: false,
+          error: msg,
+          hint: ssrf
+            ? "知识库会拦截内网/无法解析的地址（SSRF 防护）。请填公网可访问的 API 根地址（含 /v1），或让运维把该域名加入 WeKnora 的 SSRF_WHITELIST_EXTRA。"
+            : "",
+        });
+      }
+    }
+    if (p === "/admin/service-models/key" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      if (!WEKNORA_ADMIN_KEY) return send(400, { ok: false, error: "知识库密钥未配置" });
+      const body = await readBody();
+      const id = String((body && body.id) || "").trim();
+      const apiKey = String((body && body.apiKey) || "").trim();
+      if (!id) return send(400, { ok: false, error: "缺少模型 id" });
+      if (!apiKey) return send(400, { ok: false, error: "密钥不能为空" });
+      try {
+        await weknoraAdmin(`/api/v1/models/${id}/credentials`, { method: "PUT", body: { api_key: apiKey } });
+        console.log(`[services] ${me.username} 更新知识库模型密钥 ${id}`);
+        return send(200, { ok: true, id });
+      } catch (e) {
+        return send(502, { ok: false, error: sanitize(String((e && e.message) || e)) });
+      }
+    }
+    if (p === "/admin/service-models/delete" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      if (!WEKNORA_ADMIN_KEY) return send(400, { ok: false, error: "知识库密钥未配置" });
+      const body = await readBody();
+      const id = String((body && body.id) || "").trim();
+      if (!id) return send(400, { ok: false, error: "缺少模型 id" });
+      try {
+        await weknoraAdmin(`/api/v1/models/${id}`, { method: "DELETE" });
+        console.log(`[services] ${me.username} 删除知识库模型 ${id}`);
+        return send(200, { ok: true, id });
+      } catch (e) {
+        return send(502, { ok: false, error: sanitize(String((e && e.message) || e)), hint: "被知识库引用的模型不能删，先换掉再删" });
+      }
+    }
+
+    /* 管理端：权益总览 / 开通·续期·停用 / 价格表 */
     if (p === "/admin/entitlements" && req.method === "GET") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const users = db.users.map((u) => ({ username: u.username, role: u.role, disabled: !!u.disabled, entitlements: entitlementsSummary(u.username) }));
@@ -3324,16 +3427,21 @@ const server = http.createServer(async (req, res) => {
       const keepKey = (v, prev) => { const t = keep(v); if (!t || t.indexOf("***") >= 0) return String(prev || ""); return t; };
 
       if (kbIn) {
-        const kbBase = normOne(kbIn.base, "知识库地址");
-        if (!kbBase.ok) return send(400, { ok: false, error: kbBase.error });
         const cur = db.services.kb || {};
         /* ⛔ 用「{...cur} 再覆盖」而不是整对象重建：publicBase / uiBase 这类
-           前端不一定每次都提交的字段，重建会把它们静默清空（10-23 拆中心时踩过一次）。 */
+           前端不一定每次都提交的字段，重建会把它们静默清空（10-23 拆中心时踩过一次）。
+           ⛔ base 也改成"传了才改"：模型接入保存时只提交模型字段，不能顺手把 base 清成空串
+           （空串在这些部署里代表"回退环境变量"，而有的部署环境变量本来就是空的 ⇒ 知识库直接断）。 */
         const next = Object.assign({}, cur);
-        next.base = kbBase.value;
-        if (kbIn.publicBase !== undefined) next.publicBase = kbBase.value ? (normOne(kbIn.publicBase, "知识库对外地址").value || "") : "";
-        if (kbIn.uiBase !== undefined) next.uiBase = kbBase.value ? (normOne(kbIn.uiBase, "知识库后台地址").value || "") : "";
-        next.key = keepKey(kbIn.key, cur.key);
+        if (kbIn.base !== undefined) {
+          const kbBase = normOne(kbIn.base, "知识库地址");
+          if (!kbBase.ok) return send(400, { ok: false, error: kbBase.error });
+          next.base = kbBase.value;
+          if (kbIn.publicBase === undefined) next.publicBase = kbBase.value ? next.publicBase || "" : "";
+        }
+        if (kbIn.publicBase !== undefined) next.publicBase = normOne(kbIn.publicBase, "知识库对外地址").value || "";
+        if (kbIn.uiBase !== undefined) next.uiBase = normOne(kbIn.uiBase, "知识库后台地址").value || "";
+        if (kbIn.key !== undefined) next.key = keepKey(kbIn.key, cur.key);
         /* ⛔ 模型 id 只在**提交了**这个字段时才改：只保存地址时不能把模型配置清空 */
         if (kbIn.llmModelId !== undefined) next.llmModelId = keep(kbIn.llmModelId);
         if (kbIn.embedModelId !== undefined) next.embedModelId = keep(kbIn.embedModelId);
@@ -3341,19 +3449,23 @@ const server = http.createServer(async (req, res) => {
         db.services.kb = next;
       }
       if (memIn) {
-        const memBase = normOne(memIn.base, "记忆地址");
-        if (!memBase.ok) return send(400, { ok: false, error: memBase.error });
-        const memProxy = normOne(memIn.proxyBase, "记忆代理地址");
-        if (!memProxy.ok) return send(400, { ok: false, error: memProxy.error });
         const cur = db.services.memory || {};
-        db.services.memory = {
-          base: memBase.value,
-          proxyBase: memProxy.value,
-          publicBase: memBase.value ? normOne(memIn.publicBase, "记忆空间对外地址").value || "" : "",
-          proxyPublicBase: memProxy.value ? normOne(memIn.proxyPublicBase, "记忆代理对外地址").value || "" : "",
-          key: keepKey(memIn.key, cur.key),
-          instance: keep(memIn.instance),
-        };
+        const next = Object.assign({}, cur);
+        if (memIn.base !== undefined) {
+          const memBase = normOne(memIn.base, "记忆地址");
+          if (!memBase.ok) return send(400, { ok: false, error: memBase.error });
+          next.base = memBase.value;
+        }
+        if (memIn.proxyBase !== undefined) {
+          const memProxy = normOne(memIn.proxyBase, "记忆代理地址");
+          if (!memProxy.ok) return send(400, { ok: false, error: memProxy.error });
+          next.proxyBase = memProxy.value;
+        }
+        if (memIn.publicBase !== undefined) next.publicBase = normOne(memIn.publicBase, "记忆空间对外地址").value || "";
+        if (memIn.proxyPublicBase !== undefined) next.proxyPublicBase = normOne(memIn.proxyPublicBase, "记忆代理对外地址").value || "";
+        if (memIn.key !== undefined) next.key = keepKey(memIn.key, cur.key);
+        if (memIn.instance !== undefined) next.instance = keep(memIn.instance);
+        db.services.memory = next;
       }
       persist();
       applyServiceOverrides();                                     // ⛔ 热生效（免重启）
