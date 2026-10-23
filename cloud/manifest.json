@@ -1,5 +1,5 @@
 {
-  "version": "1.5.44",
+  "version": "1.5.45",
   "releasedAt": "2026-10-23",
   "repo": "PMZPZM0/codex-harness-cloud-src",
   "notes": "发版清单：改这里就够，脚本与服务端都读它（不再硬编码文件列表）。",
@@ -8,7 +8,7 @@
       "src": "cloud/VERSION",
       "kind": "server",
       "as": "VERSION",
-      "sha256": "08148f9555d9d40ca736d33588c5fb87d2c74b78945cf9edc69ce6d4b49d2e26",
+      "sha256": "893bc4bb66760da3553636fc1e2140cabae97cd103888b99415e1dd5476c98f5",
       "bytes": 7
     },
     {
@@ -22,8 +22,8 @@
       "src": "cloud/web/account.html",
       "kind": "web",
       "as": "account.html",
-      "sha256": "4766f866d4a841791414b7c16297d786c23a40c417a1ba42d474edc860b55a83",
-      "bytes": 335071
+      "sha256": "4b4d7b89638f77bf9f57de05d84f274dfde7f582dff418059c659bdbfaebef5e",
+      "bytes": 335429
     },
     {
       "src": "cloud/web/index.html",

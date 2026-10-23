@@ -71,6 +71,10 @@
   .switch:checked:active::after { transform: translateX(12px); }
   .switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
   .switch:disabled { opacity: .45; cursor: default; }
+  /* ⛔ [hidden] 只是 UA 默认 display:none —— 本项目很多块自带 display:flex ⇒ 属性会被压掉、
+     元素照样占位（实测：用户管理的空态块白占 220px、模型卡的「删除模型」按钮明明该藏却亮着）。
+     给一条兜底，别在每个块上各写一遍。 */
+  [hidden] { display: none !important; }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.65 Inter, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
