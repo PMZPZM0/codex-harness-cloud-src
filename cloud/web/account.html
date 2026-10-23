@@ -1996,7 +1996,7 @@
         }).join("");
         if ($("prodFeatPill")) $("prodFeatPill").textContent = (j.features || []).length + " 项";
       }
-      var rels = j.releases || [];
+      var rels = (j.releases || []).slice(0, 2);   /* ⛔ 用户定稿：只展示最新 2 个版本（服务端已裁，这里兜底防旧缓存） */
       if (logBox) {
         logBox.innerHTML = rels.length ? rels.map(function (x, i) {
           return '<details class="pf-rel' + (i === 0 ? " latest" : "") + '"' + (i === 0 ? " open" : "") + ">"
