@@ -393,17 +393,17 @@
   .admin-head h1 { margin: 0 0 4px; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
   .admin-head p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; max-width: 78ch; }
 
-  #svcMemCard .svc-top, #svcKbCard .svc-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
-  #svcMemCard .svc-top h2, #svcKbCard .svc-top h2 { margin: 0; }
-  #svcMemCard .svc-grid, #svcKbCard .svc-grid {
+  #svcMemCard .svc-top, #svcKbCard .svc-top, #svcWbmCard .svc-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  #svcMemCard .svc-top h2, #svcKbCard .svc-top h2, #svcWbmCard .svc-top h2 { margin: 0; }
+  #svcMemCard .svc-grid, #svcKbCard .svc-grid, #svcWbmCard .svc-grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 14px; margin: 14px 0 12px;
   }
-  #svcMemCard .svc-field, #svcKbCard .svc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  #svcMemCard .svc-field .field, #svcKbCard .svc-field .field {
+  #svcMemCard .svc-field, #svcKbCard .svc-field, #svcWbmCard .svc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  #svcMemCard .svc-field .field, #svcKbCard .svc-field .field, #svcWbmCard .svc-field .field {
     min-height: 34px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px;
   }
-  #svcMemCard .svc-actions, #svcKbCard .svc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  #svcMemCard .svc-actions .btn, #svcKbCard .svc-actions .btn { min-height: 34px; }
+  #svcMemCard .svc-actions, #svcKbCard .svc-actions, #svcWbmCard .svc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  #svcMemCard .svc-actions .btn, #svcKbCard .svc-actions .btn, #svcWbmCard .svc-actions .btn { min-height: 34px; }
   #svcMemCard .svc-actions .status, #svcKbCard .svc-actions .status { margin-left: 4px; }
   #svcMemCard .svc-addr, #svcKbCard .svc-addr {
     margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 12.5px;
@@ -416,6 +416,11 @@
   #kbModelCard .svc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   #kbModelCard .svc-field .field { min-height: 34px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; }
   #kbModelCard .svc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  /* Manager 三步说明：⛔ 列表里带长路径，不给 code 一点内边距会排成一团乱行 */
+  #wbmGuideCard .wbm-steps { margin: 12px 0 0; padding-left: 22px; color: var(--muted); font-size: 12.5px; line-height: 1.85; }
+  #wbmGuideCard .wbm-steps li { margin-bottom: 6px; }
+  #wbmGuideCard .wbm-steps li > b { color: var(--text); font-weight: 600; }
+  #wbmGuideCard .wbm-steps code, .admin-head code { padding: 1px 5px; border-radius: 5px; background: var(--field); border: 1px solid var(--line-soft); font-size: 11.5px; }
 
   /* ── 10-23 管理端「已开通成员」卡（知识库 / 记忆 两个中心共用一套类，前缀 mb-）──────
      ⛔ 用户令「不用去后台了」：成员、状态、额度、资源 id 与批量操作全放在这两个中心里。
@@ -486,6 +491,7 @@
       <button class="nav-item" data-tab="adminModel" id="navAdminModel"><span class="dot"></span>模型管理中心</button>
       <button class="nav-item" data-tab="adminMem" id="navAdminMem"><span class="dot"></span>记忆空间管理中心</button>
       <button class="nav-item" data-tab="adminKb" id="navAdminKb"><span class="dot"></span>知识库管理中心</button>
+      <button class="nav-item" data-tab="adminWbm" id="navAdminWbm"><span class="dot"></span>WorkBuddy Manager</button>
     </nav>
     <div class="side-foot">
       <span id="whoami">读取中…</span>
@@ -1295,6 +1301,51 @@
       <p class="status" id="kbMbStatus" role="status" aria-live="polite"></p>
     </div>
 </div>
+
+<!-- ── 10-23 用户令「WorkBuddy Manager 也部署一下，管理员里单独加一个选项」──────────
+     ⛔ 它是**模型池网关**（CodeBuddy 账号池），不是本服务的一部分：
+        它提供模型 → 本服务「模型通道的上游」指向它的 /v1 → 客户端才走得到模型。 -->
+<div class="tab" data-tab="adminWbm" id="adminWbmTab" hidden>
+  <div class="admin-head">
+    <h1>WorkBuddy Manager</h1>
+    <p>模型池网关（上游账号池）：它出模型，模型通道的上游指到它的 <code>/v1</code>，客户端才有模型可用。</p>
+  </div>
+  <div class="card" id="svcWbmCard">
+    <div class="svc-top">
+      <h2>Manager 服务 <span class="pill plain" id="svcWbmState">检测中…</span></h2>
+      <span class="hint" id="svcWbmInfo">读取中…</span>
+    </div>
+    <div class="svc-grid">
+      <label class="svc-field"><span class="hint">服务地址（API 根，镜像默认 7864）</span>
+        <input class="field" id="svcWbmBase" spellcheck="false" placeholder="生效中：http://127.0.0.1:7864" /></label>
+      <label class="svc-field"><span class="hint">对外地址（浏览器打开面板用）</span>
+        <input class="field" id="svcWbmPublic" spellcheck="false" placeholder="如 http://你的域名:7864" /></label>
+      <label class="svc-field"><span class="hint">网关密钥（下游调用用；留空不改）</span>
+        <input class="field" id="svcWbmKey" type="password" spellcheck="false" placeholder="在 Manager 面板里签发后粘过来" /></label>
+    </div>
+    <p class="hint" id="svcWbmUpstream" style="margin:0">读取中…</p>
+    <div class="svc-actions">
+      <button class="btn primary" id="svcWbmSave">保存（热生效）</button>
+      <button class="btn" id="svcWbmTest">测试连通</button>
+      <button class="btn" id="svcWbmOpen">打开面板</button>
+      <button class="btn ghost" id="svcWbmCopy">复制地址</button>
+      <button class="btn sm" id="svcWbmPoint">把模型通道指到这台 Manager</button>
+    </div>
+    <p class="status" id="svcWbmStatus" role="status" aria-live="polite"></p>
+  </div>
+
+  <div class="card" id="wbmGuideCard" style="margin-top:14px">
+    <h2>三步接上（新装按这个顺序）</h2>
+    <ol class="wbm-steps">
+      <li><b>登录面板</b>：点上面「打开面板」，用初始管理员密码登录（密码在服务器
+        <code>/opt/workbuddy-manager/admin-password.txt</code>，只有 root 可读 —— ⛔ 别贴到聊天里）。</li>
+      <li><b>纳管账号</b>：面板里扫码 / 导入账号，它会自动同步可用模型列表。</li>
+      <li><b>指向本机</b>：回本页点「把模型通道指到这台 Manager」，再去「模型管理中心」补网关密钥并同步目录，
+        之后客户端（PPcode / 桌面版）就能拉到模型。</li>
+    </ol>
+    <p class="hint" style="margin:10px 0 0">⛔ 面板直连公网端口时，登录锁定与来源 IP 管控会失效；长期用建议套一层 HTTPS 反代。</p>
+  </div>
+</div>
 </main>
 </div>
 
@@ -1360,6 +1411,7 @@
     if (tab === "adminModel") loadAdminModelTab();
     if (tab === "adminMem") loadAdminMemTab();
     if (tab === "adminKb") loadAdminKbTab();
+    if (tab === "adminWbm") loadAdminWbmTab();
     if (tab === "admin") { show("adminUser"); return; }   /* 旧书签兼容 */
     try { history.replaceState(null, "", "#" + tab); } catch (e) { /* 忽略 */ }
     if (!found) show("user");
@@ -1931,7 +1983,10 @@
     else done();
   }
   /* 面板 / 后台地址缓存（loadServices 写，按钮读） */
-  var svcUrls = { mem: "", kb: "" };
+  var svcUrls = { mem: "", kb: "", wbm: "" };
+  /* 模型通道当前上游（Manager 卡片里显示 / 一键改写时要用） */
+  var wbmUpstreamBase = "";
+  var wbmEffectiveBase = "";
   function svcApplyState(j) {
     var mem = (j && j.memory) || {}, kb = (j && j.kb) || {};
     svcUrls.mem = adOpenUrl(mem.effectiveBase, mem.publicBase, 8125);
@@ -1951,6 +2006,21 @@
         + "　后台界面 " + (kb.effectiveUiBase || "—")
         + (svcUrls.kb && svcUrls.kb !== (kb.effectiveUiBase || "") ? "（打开用 " + svcUrls.kb + "）" : "");
     }
+    /* WorkBuddy Manager：面板地址与 KB/记忆 同款推导（域名 + 端口 7864） */
+    var wbm = (j && j.wbm) || {};
+    svcUrls.wbm = adOpenUrl(wbm.effectiveBase, wbm.publicBase, 7864);
+    wbmUpstreamBase = wbm.upstreamBase || "";
+    wbmEffectiveBase = wbm.effectiveBase || "";
+    if ($("svcWbmState")) adPill($("svcWbmState"), Boolean(wbm.effectiveBase), "已配置", "未配置");
+    if ($("svcWbmInfo")) {
+      $("svcWbmInfo").textContent = "生效 " + (wbm.effectiveBase || "—")
+        + (svcUrls.wbm ? "　面板 " + svcUrls.wbm : "");
+    }
+    if ($("svcWbmUpstream")) {
+      $("svcWbmUpstream").textContent = "模型通道上游 " + (wbm.upstreamBase || "—")
+        + (wbm.hasGatewayKey ? "　（网关密钥已配）" : "　（网关密钥未配 ⇒ 客户端调不通）");
+    }
+    if ($("svcWbmOpen")) $("svcWbmOpen").disabled = !svcUrls.wbm;
     if ($("svcMemOpen")) $("svcMemOpen").disabled = !svcUrls.mem;
     if ($("svcKbOpen")) $("svcKbOpen").disabled = !svcUrls.kb;
   }
@@ -2161,7 +2231,7 @@
        同一浏览器上任何人都能借管理员的登录直接用 = 绕过授权，用户实测指出）。入口与面板已撤除，
        管理员请直接访问 mem./kb.ppz123.asia（建议用无痕窗口）。 */
     /* 10-23：管理区拆成 4 个中心 —— 导航项与 tab 一起由 isAdmin 控制（普通用户连节点都被摘掉） */
-    var ADMIN_TABS = ["adminUser", "adminModel", "adminMem", "adminKb"];
+    var ADMIN_TABS = ["adminUser", "adminModel", "adminMem", "adminKb", "adminWbm"];
     if (isAdmin) {
       /* 整组放出来（组标题 + 四个入口一起）；再逐个兜底，兼容没有组容器的旧结构 */
       var grp = $("navGroupAdmin");
@@ -2399,6 +2469,7 @@
   function loadAdminModelTab() { loadUpstreamCfg(); loadDiskInfo(); loadAdminModels(); loadOffPeak(); loadChatModels(); }
   function loadAdminMemTab() { loadServices(); loadMemHealth(); loadMembers("memory"); }
   function loadAdminKbTab() { loadServices(); loadMembers("knowledge"); loadKbModels(); }
+  function loadAdminWbmTab() { loadServices(); loadWbmHealth(); }
 
   function loadAdminPanel() {
     loadVersion(); loadFeatures(); loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites(); loadChatModels();
@@ -2715,6 +2786,13 @@
       $("svcMemKey").placeholder = mem.hasKey ? "已保存，留空不改" : "API Key";
       if ($("svcKbPublic")) $("svcKbPublic").value = kb.publicBase || "";
       if ($("svcMemPublic")) $("svcMemPublic").value = mem.publicBase || "";
+      var wbm = r.j.wbm || {};
+      if ($("svcWbmBase")) {
+        $("svcWbmBase").value = wbm.base || "";
+        $("svcWbmBase").placeholder = "生效中：" + (wbm.effectiveBase || "http://127.0.0.1:7864");
+      }
+      if ($("svcWbmPublic")) $("svcWbmPublic").value = wbm.publicBase || "";
+      if ($("svcWbmKey")) { $("svcWbmKey").value = ""; $("svcWbmKey").placeholder = wbm.hasGatewayKey ? "已配（留空不改）" : "在 Manager 面板里签发后粘过来"; }
       /* ⛔ 这行是管理员排查「到底在用哪个地址」的唯一入口 —— 生效值必须摊开 */
       svcApplyState(r.j);
     }).catch(function () { svcSay("kb", "读取失败：网络错误", "bad"); });
@@ -2931,6 +3009,88 @@
       if (r.ok && r.j && r.j.ok) { msg.className = "status ok"; msg.textContent = "已保存：打开后台将用 " + (r.j.effectiveUiBase || v || "自动推导"); loadServices(); }
       else { msg.className = "status bad"; msg.textContent = "保存失败：" + ((r.j && r.j.error) || ("HTTP " + r.status)); }
     }).catch(function () { msg.className = "status bad"; msg.textContent = "保存失败：网络错误"; });
+  };
+
+  /* ══ 10-23 WorkBuddy Manager（模型池网关）：状态 / 地址 / 指向上游 ══════════════
+     ⛔ 它的会话体系与云账号完全独立：本页只做「地址 + 存活探测 + 打开面板」，
+        **不代它登录**、不存它的管理员密码（那在服务器的 0600 文件里）。 */
+  function wbmSay(t, cls) {
+    var el = $("svcWbmStatus"); if (!el) return;
+    el.textContent = t || ""; el.className = "status" + (cls ? " " + cls : "");
+  }
+  function loadWbmHealth() {
+    var pill = $("svcWbmState");
+    if (!pill) return;
+    api("/admin/wbm/health").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) {
+        pill.className = "pill warn";
+        pill.textContent = "不可达";
+        wbmSay("读不到 Manager（" + (j.note || j.error || ("HTTP " + r.status)) + "）：检查上面的服务地址 / 容器是否在跑。", "bad");
+        return;
+      }
+      pill.className = "pill ok";
+      pill.textContent = "可达 " + (j.ms != null ? j.ms + "ms" : "");
+      if (j.upstreamOk) wbmSay("Manager 正常，且已纳管账号（upstream_ok）", "ok");
+      else wbmSay("Manager 正常，但还没纳管任何账号 —— 去面板扫码/导入账号后模型才会出现（新装就是这样）", "");
+    })["catch"](function () {
+      pill.className = "pill warn"; pill.textContent = "不可达";
+      wbmSay("读不到 Manager：网络错误", "bad");
+    });
+  }
+  function wbmOpen() { var u = svcUrls.wbm; if (u) window.open(u, "_blank", "noopener"); }
+  if ($("svcWbmOpen")) $("svcWbmOpen").onclick = wbmOpen;
+  if ($("svcWbmCopy")) $("svcWbmCopy").onclick = function () { adCopy(svcUrls.wbm || "", $("svcWbmStatus")); };
+  if ($("svcWbmTest")) $("svcWbmTest").onclick = function () { wbmSay("检测中…"); loadWbmHealth(); };
+  if ($("svcWbmSave")) $("svcWbmSave").onclick = function () {
+    var btn = this;
+    var base = $("svcWbmBase").value.trim(), pub = $("svcWbmPublic").value.trim(), key = $("svcWbmKey").value.trim();
+    btn.disabled = true;
+    wbmSay("保存中…");
+    api("/admin/services", { method: "POST", body: { wbm: { base: base, publicBase: pub } } })
+      .then(function (r) {
+        var j = (r && r.j) || {};
+        if (!r.ok || !j.ok) throw new Error(j.error || ("HTTP " + r.status));
+        if (!key) return { keySaved: false };
+        /* 网关密钥归「模型通道的上游」管，不归 Manager 自己的库 —— 这里顺手写进 upstream */
+        var up = wbmUpstreamBase || ((j.wbm && j.wbm.effectiveBase) || base || "").replace(/\/+$/, "") + "/v1";
+        return api("/admin/upstream", { method: "POST", body: { base: up, gatewayKey: key } }).then(function (x) {
+          var jj = (x && x.j) || {};
+          if (!x.ok || !jj.ok) throw new Error("密钥写入失败：" + (jj.error || ("HTTP " + x.status)));
+          return { keySaved: true, sync: jj.sync || null };
+        });
+      })
+      .then(function (res) {
+        btn.disabled = false;
+        wbmSay("已保存并热生效" + (res.keySaved ? "（网关密钥已更新）" : "") + (res.sync ? ("；目录同步：" + (res.sync.ok ? ("识别 " + res.sync.count + " 个模型") : (res.sync.message || res.sync.error || "未同步"))) : ""), "ok");
+        $("svcWbmKey").value = "";
+        loadServices();
+        loadWbmHealth();
+      })
+      .catch(function (e) {
+        btn.disabled = false;
+        wbmSay("保存失败：" + ((e && e.message) || "网络错误"), "bad");
+      });
+  };
+  if ($("svcWbmPoint")) $("svcWbmPoint").onclick = function () {
+    var btn = this;
+    /* ⛔ 上游走**服务端可达**的地址：面板地址可能是公网域名，云端自己调会绕一圈；
+       优先用「生效地址」(db 里那份，通常是 127.0.0.1:7864)，其次才用框里刚填的。 */
+    var base = (wbmEffectiveBase || $("svcWbmBase").value.trim() || "").replace(/\/+$/, "");
+    if (!base) { wbmSay("先保存 Manager 服务地址", "bad"); return; }
+    var target = /\/v1$/.test(base) ? base : base + "/v1";
+    if (!confirm("把「模型通道」的上游指向 " + target + " ？\n\n之后用户/客户端的模型都从这台 Manager 出；网关密钥沿用现有的（没有就去模型管理中心填）。")) return;
+    btn.disabled = true;
+    wbmSay("正在切换上游并同步目录（最多约 6 秒）…");
+    api("/admin/upstream", { method: "POST", body: { base: target } }).then(function (r) {
+      btn.disabled = false;
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { wbmSay("切换失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      var s2 = j.sync || {};
+      wbmSay("上游已指向 " + j.base + (s2.ok ? ("，已识别 " + s2.count + " 个模型") : ("；目录同步：" + (s2.message || s2.error || "未返回"))), s2.ok ? "ok" : "");
+      loadServices();
+      loadWbmHealth();
+    })["catch"](function () { btn.disabled = false; wbmSay("切换失败：网络错误", "bad"); });
   };
 
   /* ══ 10-23 已开通成员（知识库 / 记忆 两个中心共用）════════════════════════════
