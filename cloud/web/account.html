@@ -978,6 +978,9 @@
       </div>
 
       <div class="card" id="tmHasTeam" hidden>
+        <div class="hint" id="tmExpired" hidden style="margin:0 0 12px;padding:8px 10px;border:1px solid #e0b4b4;border-radius:8px;color:#c0392b;line-height:1.8">
+          团队套餐已过期（当前<b>只读</b>）：可以查看与检索，<b>不能上传 / 写入</b>。请 owner 在「团队设置」续费，或由管理员开通。
+        </div>
         <div class="sub-hero-top">
           <div>
             <span class="hint">当前团队</span>
@@ -999,7 +1002,7 @@
             <div class="hint" id="tmPointsWarn" style="margin-top:4px;color:#c0392b" hidden></div>
           </div>
           <div class="sub-balance">
-            <span>本月已用</span>
+            <span>本期已用</span>
             <b id="tmMonthUsed">—</b>
           </div>
         </div>
@@ -1274,8 +1277,22 @@
           <span class="status" id="atBatchStatus" role="status"></span>
         </div>
         <div class="table-wrap"><table class="mb-table">
-          <thead><tr><th style="width:5%"><input type="checkbox" id="atTeamAll2" /></th><th style="width:17%">团队</th><th style="width:11%">Owner</th><th style="width:8%">成员</th><th style="width:13%">套餐</th><th style="width:15%">积分（余额 / 本月已用）</th><th style="width:10%">共享空间</th><th style="width:8%">状态</th><th style="width:13%">操作</th></tr></thead>
-          <tbody id="atRows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+          <thead><tr><th style="width:5%"><input type="checkbox" id="atTeamAll2" /></th><th style="width:17%">团队</th><th style="width:11%">Owner</th><th style="width:8%">成员</th><th style="width:13%">套餐</th><th style="width:15%">积分（余额 / 本期已用）</th><th style="width:10%">共享空间</th><th style="width:8%">状态</th><th style="width:13%">操作</th></tr></thead>
+          <tbody id="atRows"><tr><td colspan="9" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h2>操作审计</h2>
+        <p class="hint" style="margin:0 0 10px">开通 / 关闭、发放积分、批量操作、强制解散都会留痕（服务端保留最近 2000 条，默认展示 200 条）。</p>
+        <div class="pol-actions" style="margin-bottom:10px">
+          <input class="field" id="atAuditQ" placeholder="按管理员 / 对象 / 动作筛选" style="max-width:260px" />
+          <button class="btn" id="atAuditLoad">查询</button>
+          <button class="btn" id="atAuditExport">导出 CSV</button>
+          <span class="status" id="atAuditStatus" role="status"></span>
+        </div>
+        <div class="table-wrap" style="max-height:420px;overflow:auto"><table class="mb-table">
+          <thead><tr><th style="width:18%">时间</th><th style="width:15%">管理员</th><th style="width:23%">动作</th><th style="width:20%">对象</th><th style="width:24%">备注</th></tr></thead>
+          <tbody id="atAuditRows"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -6823,6 +6840,7 @@
         $("tmRoleLine").innerHTML = "我的角色：<b>" + esc(roleName) + "</b> · 成员 " + esc((j.members || []).length) + " 人 · 创建于 " + esc(fmtDT(team.createdAt));
       }
       if ($("tmSeats")) $("tmSeats").textContent = (seats.used != null ? seats.used : "—") + " / " + (seats.limit != null ? seats.limit : "—");
+      if ($("tmExpired")) $("tmExpired").hidden = String(ent.status || "") !== "expired";
       if ($("tmPlan")) $("tmPlan").textContent = ent.planName ? ent.planName + "（" + (ent.seats || 0) + " 席位）" : "免费档（3 席位）";
       if ($("tmExpire")) $("tmExpire").textContent = Number(ent.expiresAt || 0) > 0 ? fmtDT(ent.expiresAt) + (ent.status === "expired" ? "（已过期）" : "") : "永久 / 免费档";
       loadPointsSummary(t.id);
@@ -7164,6 +7182,7 @@
     loadAdminTeamList();
     loadAdminAccess();
     loadAdminPricing();
+    loadAudit();
   }
 
   var AT_TEAMS = [];
@@ -7295,6 +7314,37 @@
   }
 
   /* ── 团队积分设置（单价 + 积分包）── */
+  /* ⛔ CSV 公式注入：Excel 会把以 = + - @ 开头的单元格当公式执行。
+     备注是管理员自由文本、团队名也可自填 ⇒ 所有单元格统一加引号 + 前缀转义。 */
+  function csvCell(v) {
+    var t = String(v == null ? "" : v);
+    if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;
+    return '"' + t.replace(/"/g, '""') + '"';
+  }
+
+  var AT_AUDIT = [];
+  function loadAudit() {
+    if (!$("atAuditRows")) return;
+    var q = (($("atAuditQ") || {}).value || "").trim();
+    $("atAuditRows").innerHTML = '<tr><td colspan="5" class="empty">加载中…</td></tr>';
+    api("/admin/team-audit?limit=200&q=" + encodeURIComponent(q)).then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { $("atAuditRows").innerHTML = '<tr><td colspan="5" class="empty">' + esc(j.error || "读取失败") + "</td></tr>"; return; }
+      AT_AUDIT = j.rows || [];
+      if ($("atAuditStatus")) $("atAuditStatus").textContent = "共 " + (j.total || 0) + " 条，展示 " + AT_AUDIT.length + " 条";
+      if (!AT_AUDIT.length) { $("atAuditRows").innerHTML = '<tr><td colspan="5" class="empty">没有匹配的记录</td></tr>'; return; }
+      var LABEL = { "team-access:grant": "开通团队功能", "team-access:revoke": "关闭团队功能",
+        "team-points-grant": "发放团队积分", "team-grant-plan": "开通团队套餐" };
+      $("atAuditRows").innerHTML = AT_AUDIT.map(function (x) {
+        var act = String(x.action || "");
+        var label = LABEL[act] || act.replace("team-batch:", "批量：");
+        return "<tr><td>" + esc(fmtDT(x.at)) + "</td><td>" + esc(x.by) + "</td><td>" + esc(label)
+          + '<div class="hint">' + esc(act) + "</div></td><td>" + esc(x.target) + "</td><td>"
+          + (x.note ? esc(x.note) : '<span class="hint">—</span>') + "</td></tr>";
+      }).join("");
+    });
+  }
+
   function loadAdminPricing() {
     api("/admin/team-points/packages").then(function (r) {
       var j = r.j || {};
@@ -7730,19 +7780,20 @@
   };
   if ($("atExport")) $("atExport").onclick = function () {
     if (!AT_TEAMS.length) { say("atBatchStatus", "没有可导出的团队", "warn"); return; }
-    var head = ["团队ID", "名称", "Owner", "席位", "套餐", "到期", "可用积分", "本月已用", "记忆", "知识库", "状态"];
+    var head = ["团队ID", "名称", "Owner", "席位", "套餐", "到期", "可用积分", "本期已用", "记忆", "知识库", "状态"];
     var lines = [head.join(",")];
     AT_TEAMS.forEach(function (t) {
       var ent = t.entitlements || {};
+      /* 团队名是用户自填文本（可含 = + - @）⇒ 同样走 csvCell 防公式注入 */
       lines.push([
-        t.id, '"' + String(t.name || "").replace(/"/g, '""') + '"', t.owner,
+        t.id, t.name, t.owner,
         ((t.seats && t.seats.used) || 0) + "/" + ((t.seats && t.seats.limit) || 0),
-        '"' + String(ent.planName || "免费档").replace(/"/g, '""') + '"',
+        ent.planName || "免费档",
         Number(ent.expiresAt) > 0 ? new Date(Number(ent.expiresAt)).toLocaleDateString("zh-CN") : "无",
         t.pointsAvailable || 0, t.monthUsed || 0,
         t.memoryReady ? "已开通" : "未开通", t.kbReady ? "已开通" : "未开通",
         t.status === "dissolved" ? "已解散" : "在用"
-      ].join(","));
+      ].map(csvCell).join(","));
     });
     var blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     var a = document.createElement("a");
@@ -7750,6 +7801,22 @@
     a.download = "teams-" + new Date().toISOString().slice(0, 10) + ".csv";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     say("atBatchStatus", "已导出 " + AT_TEAMS.length + " 个团队", "ok");
+  };
+
+  if ($("atAuditLoad")) $("atAuditLoad").onclick = loadAudit;
+  if ($("atAuditExport")) $("atAuditExport").onclick = function () {
+    if (!AT_AUDIT.length) { say("atAuditStatus", "没有可导出的记录", "warn"); return; }
+    var lines = ["时间,管理员,动作,对象,备注"];
+    AT_AUDIT.forEach(function (x) {
+      lines.push([new Date(Number(x.at)).toLocaleString("zh-CN", { hour12: false }),
+        x.by, x.action, x.target, x.note].map(csvCell).join(","));
+    });
+    var blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "team-audit-" + new Date().toISOString().slice(0, 10) + ".csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    say("atAuditStatus", "已导出 " + AT_AUDIT.length + " 条", "ok");
   };
 
   if ($("atPlanReset")) $("atPlanReset").onclick = function () {
