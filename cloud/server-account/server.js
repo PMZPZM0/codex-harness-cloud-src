@@ -1601,6 +1601,47 @@ function inviteList() {
 }
 /** 是否强制要邀请码：**表非空 ∥ 配了主码**。
  *  ⛔ 两者都空 ⇒ 回归开放注册 —— 否则全新部署一个码都没有，谁也注册不了（把自己锁在门外）。 */
+/* ── 邀请机制（10-23 用户需求）：每个用户一个**唯一邀请链接**，注册即记关系 + 给邀请人发积分奖励 ──
+   db.invites[code] 复用现有码表（用户个人码打 owner 标记；管理员手发码 owner 为空，两者走同一校验路径）。
+   db.inviteRelations[invitee] = { inviter, code, at, rewarded, points }  ← 权威关系表（一对一）
+   db.invitePolicy = { enabled, rewardPoints }                            ← 管理员可配的奖励积分 */
+if (!db.inviteRelations || typeof db.inviteRelations !== "object") db.inviteRelations = {};
+const invitePolicyOf = () => {
+  const p = (db.invitePolicy && typeof db.invitePolicy === "object") ? db.invitePolicy : {};
+  return { enabled: p.enabled !== false, rewardPoints: Math.max(0, Math.round(Number(p.rewardPoints) || 0)) };
+};
+/** 取（或在必要时生成）某用户的个人邀请码 —— 懒生成 + 幂等；返回码字符串。 */
+function ensureInviteCode(username) {
+  const user = db.users.find((u) => u.username === username);
+  if (!user) return "";
+  const cur = normalizeInvite(user.inviteCode);
+  if (cur && db.invites[cur] && db.invites[cur].owner === username) return cur;
+  for (let i = 0; i < 30; i += 1) {
+    const candidate = crypto.randomBytes(4).toString("hex");
+    if (db.invites[candidate]) continue;
+    db.invites[candidate] = {
+      code: candidate, note: username + " 的个人邀请码", createdBy: "self:" + username, owner: username,
+      createdAt: Date.now(), maxUses: 0, usedCount: 0, usedBy: [], disabled: false, expiresAt: 0, lastUsedAt: 0,
+    };
+    user.inviteCode = candidate;
+    persist();
+    console.log("[invite] 为用户 " + username + " 生成个人邀请码 " + candidate);
+    return candidate;
+  }
+  return "";
+}
+function inviteLinkOf(code, req) {
+  /* 站点根 = API 基址去掉 /cloud-api（publicBaseOf 是唯一真相源，反代头已在里面处理） */
+  const base = String(publicBaseOf(req) || "").replace(/\/cloud-api\/*$/, "").replace(/\/+$/, "");
+  return base + "/index.html?invite=" + code;
+}
+/** 邀请明细（给某邀请人）：谁通过他的码注册、奖励是否发放。 */
+function inviteesOf(username) {
+  return Object.keys(db.inviteRelations)
+    .filter((k) => db.inviteRelations[k] && db.inviteRelations[k].inviter === username)
+    .map((k) => ({ username: k, ...db.inviteRelations[k] }))
+    .sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
+}
 function inviteRequired() {
   return Object.keys(db.invites).length > 0 || Boolean(REGISTER_INVITE_CODE);
 }
@@ -2079,8 +2120,27 @@ const server = http.createServer(async (req, res) => {
          ⛔ 用 provisionFor（fire-and-forget + 幂等 + 失败只记日志），绝不 await ——
             远端建库 1~3 秒，等它就是让「注册」按钮转圈。
          ⛔ 所有消费入口（/integrations、/kb/*）仍会再调 ensure*，这里只是提前预热。 */
+      /* 邀请关系与奖励（10-23）：仅**个人码**（有 owner）计数发奖；管理员手发码只记 usedBy 不记关系。 */
+      let inviteReward = 0;
+      if (invite && invite.owner) {
+        const policy = invitePolicyOf();
+        const invitedBy = String(invite.owner);
+        const ownerExists = db.users.some((u) => u.username === invitedBy && !u.disabled);
+        let rewarded = false;
+        if (policy.enabled && policy.rewardPoints > 0 && ownerExists) {
+          addPoints(invitedBy, policy.rewardPoints, "invite", "invite:" + invite.code + ":" + username,
+            "邀请 " + username + " 注册奖励");
+          inviteReward = policy.rewardPoints;
+          rewarded = true;
+        }
+        db.inviteRelations[username] = {
+          inviter: invitedBy, code: invite.code, at: Date.now(), rewarded, points: inviteReward,
+        };
+        console.log("[invite] " + username + " 通过 " + invitedBy + " 的邀请码注册" + (rewarded ? "，奖励 " + inviteReward + " 积分" : "（奖励未发放）"));
+      }
       provisionFor(username, "knowledge");
-      provisionFor(username, "memory");      return send(200, { ok: true, token: issueSession(username), account: publicView(user), points: { balance: pointsOf(username).balance, granted: grant } });
+      provisionFor(username, "memory");
+      return send(200, { ok: true, token: issueSession(username), account: publicView(user), points: { balance: pointsOf(username).balance, granted: grant }, invite: inviteReward ? { rewarded: true, points: inviteReward } : undefined });
     }
 
     /* 登录 */
@@ -3566,6 +3626,23 @@ const server = http.createServer(async (req, res) => {
     return send(200, { ok: true, orderId, payUrl, cny, planName: plan.name });
   }
 
+  /* 用户端：我的邀请（10-23）—— 个人邀请码 / 链接 / 邀请人数 / 累计奖励 / 明细 */
+  if (p === "/my/invite" && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const code = ensureInviteCode(who.username);
+    const list = inviteesOf(who.username);
+    const totalReward = list.reduce((n, x) => n + Number(x.points || 0), 0);
+    return send(200, {
+      ok: true,
+      code, link: code ? inviteLinkOf(code, req) : "",
+      policy: invitePolicyOf(),
+      count: list.length,
+      totalReward,
+      invitees: list.slice(0, 100).map((x) => ({ username: x.username, at: Number(x.at || 0), rewarded: Boolean(x.rewarded), points: Number(x.points || 0) })),
+    });
+  }
+
   /* 用户端：我的订阅流水 / 充值记录（最近 50 条，新的在前） */
   if (p === "/my/orders" && req.method === "GET") {
     const who = accountWho();
@@ -3724,6 +3801,50 @@ const server = http.createServer(async (req, res) => {
     persist();
     console.log("[billing] " + me.username + " 保存套餐「" + name + "」（" + id + "）");
     return send(200, { ok: true, plans: Object.values(db.plans || {}) });
+  }
+
+  /* 管理端：邀请机制管理（10-23）—— 奖励配置 + 每位用户的邀请数 / 累计奖励 / 明细 */
+  if (p === "/admin/invite" && req.method === "GET") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const rows = db.users.map((u) => {
+      const list = inviteesOf(u.username);
+      return {
+        username: u.username, role: u.role, disabled: Boolean(u.disabled),
+        code: normalizeInvite(u.inviteCode) || "",
+        invitedCount: list.length,
+        totalReward: list.reduce((n, x) => n + Number(x.points || 0), 0),
+        lastAt: list.length ? Number(list[0].at || 0) : 0,
+        invitees: list.slice(0, 200).map((x) => ({ username: x.username, at: Number(x.at || 0), rewarded: Boolean(x.rewarded), points: Number(x.points || 0) })),
+      };
+    }).sort((a, b) => b.invitedCount - a.invitedCount || a.username.localeCompare(b.username));
+    return send(200, {
+      ok: true, policy: invitePolicyOf(),
+      totals: {
+        inviters: rows.filter((r) => r.invitedCount > 0).length,
+        invited: rows.reduce((n, r) => n + r.invitedCount, 0),
+        rewardPoints: rows.reduce((n, r) => n + r.totalReward, 0),
+      },
+      users: rows,
+    });
+  }
+  if (p === "/admin/invite/save" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBody();
+    const n = Number(body && body.rewardPoints);
+    if (!Number.isFinite(n) || n < 0 || n > 1e7) return send(400, { ok: false, error: "奖励积分要填 0 ~ 10000000 的整数" });
+    db.invitePolicy = { enabled: body.enabled !== false, rewardPoints: Math.round(n) };
+    persist();
+    console.log("[invite] " + me.username + " 设置邀请奖励：" + (db.invitePolicy.enabled ? db.invitePolicy.rewardPoints + " 积分/人" : "已关闭"));
+    return send(200, { ok: true, policy: invitePolicyOf() });
+  }
+  /* 一次性给所有存量用户补个人邀请码（懒生成路径只覆盖第一个查看的用户） */
+  if (p === "/admin/invite/backfill" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    let made = 0;
+    for (const u of db.users) { const before = u.inviteCode; if (ensureInviteCode(u.username) && u.inviteCode !== before) made += 1; }
+    persist();
+    console.log("[invite] " + me.username + " 补发个人邀请码 " + made + " 个");
+    return send(200, { ok: true, made, total: db.users.length });
   }
 
   /* 管理端：手动开通套餐（支付渠道未配置 / 线下收款时的兜底；同样走 activatePlan） */

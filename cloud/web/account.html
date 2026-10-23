@@ -661,6 +661,7 @@
       <button class="nav-item" data-tab="product"><span class="dot"></span>产品首页</button>
       <button class="nav-item" data-tab="user"><span class="dot"></span>用户中心</button>
       <button class="nav-item" data-tab="subscribe"><span class="dot"></span>订阅中心</button>
+      <button class="nav-item" data-tab="invite"><span class="dot"></span>邀请好友</button>
       <button class="nav-item" data-tab="pair"><span class="dot"></span>配对中心</button>
       <button class="nav-item" data-tab="cloud"><span class="dot"></span>云端管理</button>
       <button class="nav-item" data-tab="memory"><span class="dot"></span>记忆空间</button>
@@ -674,6 +675,7 @@
       <button class="nav-item" data-tab="adminKb" id="navAdminKb"><span class="dot"></span>知识库管理中心</button>
       <button class="nav-item" data-tab="adminWbm" id="navAdminWbm"><span class="dot"></span>WorkBuddy Manager</button>
       <button class="nav-item" data-tab="adminBilling" id="navAdminBilling"><span class="dot"></span>订阅与充值</button>
+      <button class="nav-item" data-tab="adminInvite" id="navAdminInvite"><span class="dot"></span>邀请管理</button>
     </nav>
     <div class="side-foot">
       <span id="whoami">读取中…</span>
@@ -896,6 +898,60 @@
     </section>
 
     <!-- ── 管理端「订阅与充值」（10-23）：套餐 CRUD / 支付渠道配置 / 充值对账与手动补单 ── -->
+    <!-- ── 邀请好友（10-23 用户需求）：每人唯一邀请链接 + 邀请记录 + 奖励 ── -->
+    <section class="tab" data-tab="invite" hidden>
+      <div class="card">
+        <h2>邀请好友</h2>
+        <p class="hint" style="margin:0 0 12px">把你的专属链接发给朋友，对方通过它注册后，你会自动获得积分奖励。</p>
+        <div class="pol-grid">
+          <div class="pol-field"><label>我的邀请码</label><input class="field" id="invCode" readonly /></div>
+          <div class="pol-field" style="grid-column:span 2"><label>我的邀请链接</label><input class="field" id="invLink" readonly /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="invCopyLink">复制邀请链接</button>
+          <button class="btn" id="invCopyCode">复制邀请码</button>
+          <span class="status" id="invStatus" role="status"></span>
+        </div>
+        <div class="hint" id="invPolicy" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <h2>我的邀请统计</h2>
+        <div class="sub-hero-top" style="margin-bottom:10px">
+          <div><span class="hint">已邀请</span> <b id="invCount" style="font-size:20px">—</b> <span class="hint">人</span></div>
+          <div><span class="hint">累计获得</span> <b id="invReward" style="font-size:20px">—</b> <span class="hint">积分</span></div>
+        </div>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th>被邀请人</th><th>注册时间</th><th>奖励</th></tr></thead>
+          <tbody id="invRows"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ── 邀请管理（10-23）：奖励配置 + 每位用户的邀请数与明细 ── -->
+    <section class="tab" data-tab="adminInvite" hidden>
+      <div class="card">
+        <h2>邀请奖励配置</h2>
+        <p class="hint" style="margin:0 0 12px">被邀请人通过任一用户的专属邀请链接注册成功后，自动给邀请人加分。</p>
+        <div class="pol-grid">
+          <div class="pol-field"><label>每人奖励（积分）</label><input class="field" id="aiReward" type="number" min="0" step="100" /></div>
+          <div class="pol-field"><label>是否启用奖励</label><label class="mb-check" style="margin-top:8px"><input type="checkbox" id="aiEnabled" checked /> <span>启用（关闭后只记关系不发分）</span></label></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="aiSave">保存配置</button>
+          <button class="btn" id="aiBackfill">为存量用户补发邀请码</button>
+          <span class="status" id="aiStatus" role="status"></span>
+        </div>
+        <div class="hint" id="aiTotals" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <h2>邀请统计（按邀请人数排序）</h2>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th>用户</th><th>邀请码</th><th>邀请人数</th><th>累计奖励</th><th>最近邀请</th><th>操作</th></tr></thead>
+          <tbody id="aiRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
     <!-- ── 订阅与充值（10-23 用户定稿三板块）：余额充值配置 / 订阅套餐设置 / 支付设置 ── -->
     <section class="tab" data-tab="adminBilling" hidden>
       <div class="card">
@@ -2062,6 +2118,8 @@
     /* ⛔ 10-23 修复（第二次）：订阅块是**自包含**独立 IIFE，自己把加载函数挂到 window.__subApi。
        上一版挂 __subBridge 时，桥那行因插错作用域恒抛错 ⇒ 桥从未创建 ⇒ 两个 tab 从不加载。 */
     if (tab === "subscribe" && window.__subApi && typeof window.__subApi.loadSubscribe === "function") window.__subApi.loadSubscribe();
+    if (tab === "invite" && window.__subApi && typeof window.__subApi.loadInvite === "function") window.__subApi.loadInvite();
+    if (tab === "adminInvite" && window.__subApi && typeof window.__subApi.loadAdminInvite === "function") window.__subApi.loadAdminInvite();
     if (tab === "adminBilling" && window.__subApi && typeof window.__subApi.loadAdminBilling === "function") window.__subApi.loadAdminBilling();
     if (tab === "user") loadPoints();
     if (tab === "pair") refreshPairing();
@@ -2996,7 +3054,7 @@
        同一浏览器上任何人都能借管理员的登录直接用 = 绕过授权，用户实测指出）。入口与面板已撤除，
        管理员请直接访问 mem./kb.ppz123.asia（建议用无痕窗口）。 */
     /* 10-23：管理区拆成 4 个中心 —— 导航项与 tab 一起由 isAdmin 控制（普通用户连节点都被摘掉） */
-    var ADMIN_TABS = ["adminUser", "adminModel", "adminMem", "adminKb", "adminWbm", "adminBilling"];
+    var ADMIN_TABS = ["adminUser", "adminModel", "adminMem", "adminKb", "adminWbm", "adminBilling", "adminInvite"];
     if (isAdmin) {
       /* 整组放出来（组标题 + 四个入口一起）；再逐个兜底，兼容没有组容器的旧结构 */
       var grp = $("navGroupAdmin");
@@ -3011,7 +3069,7 @@
       if (location.hash.indexOf("#admin") === 0) show("user");   /* 旧书签 #admin* 一律回落到用户中心 */
     }
     var start = (location.hash || "#user").slice(1);
-    show(["product", "user", "subscribe", "pair", "cloud", "memory", "kb", "admin", "adminBilling"].indexOf(start) >= 0 ? start : "user");
+    show(["product", "user", "subscribe", "invite", "pair", "cloud", "memory", "kb", "admin", "adminBilling", "adminInvite"].indexOf(start) >= 0 ? start : "user");
   }).catch(function () { window.location.replace("index.html"); });
 
   /* ── 用户管理（管理员，就地视图；10-15 从 admin.html 迁入并修正端点） ── */
@@ -5782,6 +5840,77 @@
   window.__subApi.loadSubscribe = loadSubscribe;
   window.__subApi.loadAdminBilling = loadAdminBilling;
 
+  /* ── 邀请（10-23 用户需求）：用户端「邀请好友」+ 管理端「邀请管理」 ──
+     ⛔ 判定权在服务端（/my/invite、/admin/invite）；这里只展示与发起。 */
+  function invSay(id, text, cls) { var el = $(id); if (el) { el.textContent = text || ""; el.className = "status" + (cls ? " " + cls : ""); } }
+  function invCopy(text, btn) {
+    var done = function () { var l = btn.textContent; btn.textContent = "已复制 ✓"; setTimeout(function () { btn.textContent = l; }, 1600); };
+    var fail = function () { var l = btn.textContent; btn.textContent = "复制失败"; setTimeout(function () { btn.textContent = l; }, 1600); };
+    if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(done, fail); return; }
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; ta.style.left = "-9999px";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy") ? done() : fail(); } catch (e) { fail(); }
+    document.body.removeChild(ta);
+  }
+
+  function loadInvite() {
+    api("/my/invite").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { invSay("invStatus", "读取失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      if ($("invCode")) $("invCode").value = j.code || "";
+      if ($("invLink")) $("invLink").value = j.link || "";
+      if ($("invCount")) $("invCount").textContent = j.count != null ? j.count : 0;
+      if ($("invReward")) $("invReward").textContent = j.totalReward != null ? j.totalReward : 0;
+      var p = j.policy || {};
+      if ($("invPolicy")) $("invPolicy").innerHTML = p.enabled && p.rewardPoints > 0
+        ? ("当前规则：成功邀请 1 人 = <b>" + p.rewardPoints + " 积分</b>（被邀请人注册后自动到账）")
+        : "当前未开启邀请奖励（仍可邀请，只记录关系）";
+      var rows = j.invitees || [];
+      if ($("invRows")) $("invRows").innerHTML = rows.length ? rows.map(function (x) {
+        return "<tr><td>" + esc(x.username) + "</td><td>" + esc(fmtDT(x.at)) + "</td><td>"
+          + (x.rewarded ? "+" + esc(x.points) + " 积分" : '<span class="hint">未发放</span>') + "</td></tr>";
+      }).join("") : '<tr><td colspan="3" class="empty">还没有邀请记录 —— 把上面的链接发给朋友吧。</td></tr>';
+    })["catch"](function () { invSay("invStatus", "读取失败：网络错误", "bad"); });
+  }
+
+  var AI_ROWS = [];
+  function loadAdminInvite() {
+    api("/admin/invite").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { invSay("aiStatus", "读取失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      var p = j.policy || {};
+      if ($("aiReward")) $("aiReward").value = p.rewardPoints != null ? p.rewardPoints : 0;
+      if ($("aiEnabled")) $("aiEnabled").checked = p.enabled !== false;
+      AI_ROWS = j.users || [];
+      var t = j.totals || {};
+      if ($("aiTotals")) $("aiTotals").innerHTML = "全站：<b>" + (t.inviters || 0) + "</b> 人当过邀请人 · 共邀请 <b>" + (t.invited || 0)
+        + "</b> 人 · 累计发放 <b>" + (t.rewardPoints || 0) + "</b> 积分";
+      if ($("aiRows")) $("aiRows").innerHTML = AI_ROWS.length ? AI_ROWS.map(function (x) {
+        return "<tr><td>" + esc(x.username) + (x.role === "admin" ? ' <span class="pill plain">管理员</span>' : "") + (x.disabled ? ' <span class="pill warn">停用</span>' : "") + "</td>"
+          + "<td>" + (x.code ? '<span class="hint">' + esc(x.code) + "</span>" : '<span class="hint">未生成</span>') + "</td>"
+          + "<td><b>" + esc(x.invitedCount) + "</b></td><td>" + esc(x.totalReward) + "</td>"
+          + "<td>" + (x.lastAt ? esc(fmtDT(x.lastAt)) : "—") + "</td>"
+          + '<td><button class="btn sm" data-ai-detail="' + esc(x.username) + '">明细</button></td></tr>';
+      }).join("") : '<tr><td colspan="6" class="empty">还没有用户。</td></tr>';
+      Array.prototype.forEach.call(document.querySelectorAll("[data-ai-detail]"), function (b) {
+        b.onclick = function () {
+          var row = AI_ROWS.filter(function (y) { return y.username === b.getAttribute("data-ai-detail"); })[0];
+          if (!row) return;
+          var list = row.invitees || [];
+          showModal("「" + row.username + "」的邀请明细",
+            '<div style="font-size:13px;line-height:1.9">邀请 <b>' + row.invitedCount + "</b> 人 · 累计奖励 <b>" + row.totalReward + "</b> 积分"
+            + (list.length ? '<table class="mb-table" style="margin-top:10px"><thead><tr><th>被邀请人</th><th>时间</th><th>奖励</th></tr></thead><tbody>'
+              + list.map(function (x) {
+                return "<tr><td>" + esc(x.username) + "</td><td>" + esc(fmtDT(x.at)) + "</td><td>" + (x.rewarded ? "+" + esc(x.points) : "未发放") + "</td></tr>";
+              }).join("") + "</tbody></table>" : '<div class="hint" style="margin-top:8px">还没有邀请记录。</div>') + "</div>");
+        };
+      });
+    })["catch"](function () { invSay("aiStatus", "读取失败：网络错误", "bad"); });
+  }
+  window.__subApi.loadInvite = loadInvite;
+  window.__subApi.loadAdminInvite = loadAdminInvite;
+
   function billSay(id, text, cls) { var el = $(id); if (el) { el.textContent = text || ""; el.className = "status" + (cls ? " " + cls : ""); } }
 
   /* ── 用户端 ── */
@@ -6119,6 +6248,37 @@
       var payload = collectPlanForm();
       if (!payload.name) { billSay("plStatus", "套餐名称必填", "bad"); return; }
       savePlan(payload, "已保存「" + payload.name + "」");
+    };
+  }
+  if ($("invCopyLink") && !$("invCopyLink").dataset.bound) {
+    $("invCopyLink").dataset.bound = "1";
+    $("invCopyLink").onclick = function () { var v = $("invLink").value; if (!v) { invSay("invStatus", "链接还没生成，稍后重试", "warn"); return; } invCopy(v, this); };
+  }
+  if ($("invCopyCode") && !$("invCopyCode").dataset.bound) {
+    $("invCopyCode").dataset.bound = "1";
+    $("invCopyCode").onclick = function () { var v = $("invCode").value; if (!v) { invSay("invStatus", "邀请码还没生成，稍后重试", "warn"); return; } invCopy(v, this); };
+  }
+  if ($("aiSave") && !$("aiSave").dataset.bound) {
+    $("aiSave").dataset.bound = "1";
+    $("aiSave").onclick = function () {
+      api("/admin/invite/save", { method: "POST", body: { rewardPoints: Number($("aiReward").value || 0), enabled: $("aiEnabled").checked } }).then(function (r) {
+        var j = (r && r.j) || {};
+        if (!r.ok || !j.ok) { invSay("aiStatus", "保存失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+        invSay("aiStatus", "已保存", "ok");
+        showModal("已保存", "<div style=\"font-size:13.5px\">邀请奖励：" + (j.policy.enabled ? "<b>" + j.policy.rewardPoints + " 积分/人</b>" : "已关闭") + "</div>");
+        loadAdminInvite();
+      })["catch"](function () { invSay("aiStatus", "保存失败：网络错误", "bad"); });
+    };
+  }
+  if ($("aiBackfill") && !$("aiBackfill").dataset.bound) {
+    $("aiBackfill").dataset.bound = "1";
+    $("aiBackfill").onclick = function () {
+      api("/admin/invite/backfill", { method: "POST", body: {} }).then(function (r) {
+        var j = (r && r.j) || {};
+        if (!r.ok || !j.ok) { invSay("aiStatus", "补发失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+        showModal("补发完成", "<div style=\"font-size:13.5px\">本次新生成邀请码 <b>" + j.made + "</b> 个（共 " + j.total + " 个账号）。</div>");
+        loadAdminInvite();
+      })["catch"](function () { invSay("aiStatus", "补发失败：网络错误", "bad"); });
     };
   }
   if ($("plReset") && !$("plReset").dataset.bound) {
