@@ -171,6 +171,23 @@ async function weknoraAdmin(pathname, options = {}) {
   return json;
 }
 
+/** 把测试接口回的那坨 JSON 压成一句人话（向量维度 / 回话片段 / 模型名）。 */
+function testNote(j) {
+  if (!j) return "";
+  const d = (j.data && typeof j.data === "object") ? j.data : j;
+  const bits = [];
+  const msg = String(d.message || "").trim();
+  if (msg) bits.push(msg.slice(0, 60));
+  const dim = d.dimension || (d.embedding && d.embedding.dimension) || (d.data && d.data.dimension);
+  if (dim && !/维度/.test(msg)) bits.push("向量维度 " + dim);
+  const reply = d.response || d.content || d.reply || d.answer
+    || (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content);
+  if (reply) bits.push("回话「" + String(reply).replace(/\s+/g, " ").slice(0, 28) + "」");
+  const model = d.model || d.model_name;
+  if (model) bits.push("模型 " + model);
+  return bits.join(" · ");
+}
+
 /* ── 10-23 知识库「后台免密」的账号从哪来 ────────────────────────────────────
    用户令「这三个都自动登录」。WBM 有部署时生成的管理员密码、记忆空间有 admin key，
    只有知识库是**账号密码**制（登录 = POST /auth/login {email,password}，租户 API Key
@@ -3081,6 +3098,83 @@ const server = http.createServer(async (req, res) => {
             : "",
         });
       }
+    }
+    /* 连通性测试（用户令「三个对应三个模型配置，对应连通性测试」）：
+       直接把这一块填的（或存储的）**地址 + 密钥 + 模型名**交给 WeKnora 自己去打一次上游：
+         · 问答 / 视觉 → POST /api/v1/initialization/remote/check（发一句 ping 等回话）
+         · 嵌入        → POST /api/v1/initialization/embedding/test（真的算一条向量）
+       ⛔ 密钥不回传：带 modelId 时由 WeKnora 用**存储的**密钥回填（fillSecretsFromStoredModel），
+          所以"没重新输密钥"也能测；前端刚填的 apiKey 优先。 */
+    if (p === "/admin/service-models/test" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      if (!WEKNORA_ADMIN_KEY) return send(400, { ok: false, error: "知识库密钥未配置，无法测试" });
+      const body = await readBody();
+      const type = String((body && body.type) || "").trim();
+      if (!KB_MODEL_TYPES.includes(type)) return send(400, { ok: false, error: "类型必须是 " + KB_MODEL_TYPES.join(" / ") });
+      const id = String((body && body.id) || "").trim();
+      let name = String((body && body.name) || "").trim();
+      let baseUrl = String((body && body.baseUrl) || "").trim();
+      let provider = "openai";
+      if (id) {
+        try {
+          const cur = await weknoraAdmin(`/api/v1/models/${id}`);
+          const m = (cur && cur.data) || {};
+          const p0 = m.parameters || {};
+          if (!name) name = String(m.name || "");
+          if (!baseUrl) baseUrl = String(p0.base_url || "");
+          provider = String(p0.provider || provider);
+        } catch (e) {
+          return send(400, { ok: false, error: "读不到这个模型：" + sanitize(String((e && e.message) || e)) });
+        }
+      }
+      if (!name) return send(400, { ok: false, error: "缺少模型名（填上游真实的 model id）" });
+      if (!baseUrl) {
+        return send(400, {
+          ok: false,
+          error: "这个模型还没有 API 地址，测不了",
+          hint: "内置模型（builtin-…）没有上游地址。在这一块里填一个公网可访问的 API 地址（含 /v1）再测。",
+        });
+      }
+      const norm = normalizeUpstreamBase(baseUrl);
+      if (!norm.ok) return send(400, { ok: false, error: "API 地址：" + norm.error });
+      const apiKey = String((body && body.apiKey) || "").trim();
+      const pathname = type === "Embedding" ? "/api/v1/initialization/embedding/test" : "/api/v1/initialization/remote/check";
+      const started = Date.now();
+      let res = null, text = "";
+      try {
+        res = await fetch(`${WEKNORA_BASE}${pathname}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-API-Key": WEKNORA_ADMIN_KEY },
+          body: JSON.stringify({ modelId: id || undefined, modelName: name, baseUrl: norm.base, provider, apiKey: apiKey || undefined }),
+        });
+        text = await res.text();
+      } catch (e) {
+        return send(200, { ok: false, ms: Date.now() - started, error: "知识库自己都调不通：" + sanitize(String((e && e.message) || e)) });
+      }
+      const ms = Date.now() - started;
+      let j = null;
+      try { j = text ? JSON.parse(text) : null; } catch { /* 非 JSON（网关页 / 纯文本） */ }
+      if (!res.ok) {
+        const raw = String((j && ((j.error && j.error.message) || j.message)) || text.slice(0, 240));
+        const ssrf = /SSRF|安全校验/i.test(raw);
+        return send(200, {
+          ok: false, ms, status: res.status,
+          error: sanitize(raw),
+          hint: ssrf ? "知识库只允许公网可达的地址；内网域名要加进 WeKnora 的 SSRF_WHITELIST_EXTRA。" : "",
+        });
+      }
+      if (j && j.success === false) {
+        return send(200, { ok: false, ms, status: res.status, error: sanitize(String(j.message || "上游没通过测试").slice(0, 240)) });
+      }
+      /* ⛔⛔ 判据是 data.available：WeKnora 在"密钥错/模型不存在"时照样回 HTTP 200 + success:true，
+            只在 data.available=false 里给原因（实测 401 也是这样）—— 只看 HTTP 会把失败当成功。 */
+      const dd = (j && (j.data || j)) || {};
+      if (dd.available === false) {
+        return send(200, { ok: false, ms, status: res.status, error: sanitize(String(dd.message || "上游不可用").slice(0, 240)) });
+      }
+      const note = testNote(j);
+      console.log(`[services] ${me.username} 测试知识库模型 ${name}（${type}）→ ${norm.base}：${note || "ok"}`);
+      return send(200, { ok: true, ms, status: res.status, type, name, baseUrl: norm.base, note });
     }
     if (p === "/admin/service-models/key" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });

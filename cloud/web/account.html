@@ -416,6 +416,15 @@
   #kbModelCard .svc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   #kbModelCard .svc-field .field { min-height: 34px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; }
   #kbModelCard .svc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  /* 三个类型 = 三份配置（10-23 用户令）：并排，窄屏自动折成一列 */
+  #kbModelBlocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 14px 0 12px; }
+  #kbModelBlocks .kb-model { border: 1px solid var(--line-soft); border-radius: 10px; padding: 12px 12px 10px; background: var(--panel-2, transparent); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  #kbModelBlocks .kb-model-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #kbModelBlocks .kb-model-head b { font-size: 13px; }
+  #kbModelBlocks .kb-model-head .kb-model-sub { font-size: 11px; color: var(--muted); }
+  #kbModelBlocks .kb-model-head .pill { margin-left: auto; }
+  #kbModelBlocks .kb-model-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+  #kbModelBlocks .kb-model-actions .hint { flex: 1 1 100%; font-size: 11.5px; line-height: 1.6; word-break: break-word; }
   /* Manager 三步说明：⛔ 列表里带长路径，不给 code 一点内边距会排成一团乱行 */
   #wbmGuideCard .wbm-steps { margin: 12px 0 0; padding-left: 22px; color: var(--muted); font-size: 12.5px; line-height: 1.85; }
   #wbmGuideCard .wbm-steps li { margin-bottom: 6px; }
@@ -1234,29 +1243,65 @@
             保存后会直接写进知识库（WeKnora），并自动把它设成对应类型的默认模型。（密钥只写不读，保存后只显示「已配」。）</p>
         </div>
         <div class="mb-grp mb-grp-end">
+          <span class="hint" id="kbSrcMsg" role="status" aria-live="polite"></span>
           <button class="btn sm ghost" id="kbSrcRefresh">刷新列表</button>
         </div>
       </div>
-      <div class="svc-grid">
-        <label class="svc-field"><span class="hint">模型名（上游真实 model id）</span>
-          <input class="field" id="kbSrcName" spellcheck="false" placeholder="如 deepseek-v4.1-flash" /></label>
-        <label class="svc-field"><span class="hint">展示名（可空，默认同模型名）</span>
-          <input class="field" id="kbSrcDisplay" spellcheck="false" placeholder="如 限时福利 · deepseek" /></label>
-        <label class="svc-field"><span class="hint">类型</span>
-          <select class="field" id="kbSrcType">
-            <option value="KnowledgeQA">问答（KnowledgeQA）</option>
-            <option value="Embedding">嵌入（Embedding）</option>
-            <option value="VLLM">视觉（VLLM）</option>
-          </select></label>
-        <label class="svc-field"><span class="hint">API 地址（OpenAI 兼容根，含 /v1）</span>
-          <input class="field" id="kbSrcBase" spellcheck="false" placeholder="https://你的上游/v1" /></label>
-        <label class="svc-field"><span class="hint">API Key（留空 = 不改已有密钥）</span>
-          <input class="field" id="kbSrcKey" type="password" spellcheck="false" placeholder="sk-…" /></label>
-      </div>
-      <div class="svc-actions" style="margin-top:4px">
-        <button class="btn primary" id="kbSrcSave">保存并设为默认</button>
-        <button class="btn sm ghost" id="kbSrcReset">清空表单</button>
-        <span class="hint" id="kbSrcMsg" role="status" aria-live="polite"></span>
+      <!-- 用户令「三个对应三个模型配置，对应连通性测试」：一个类型一块，各自保存 + 各自测试 -->
+      <div id="kbModelBlocks">
+        <div class="kb-model" data-type="KnowledgeQA">
+          <div class="kb-model-head">
+            <b>问答模型</b><span class="kb-model-sub">KnowledgeQA</span>
+            <span class="pill plain" data-state>未配置</span>
+          </div>
+          <label class="svc-field"><span class="hint">模型名（上游真实 model id）</span>
+            <input class="field" data-f="name" list="kbLlmList" spellcheck="false" placeholder="如 deepseek-v4.1-flash" /></label>
+          <label class="svc-field"><span class="hint">API 地址（OpenAI 兼容根，含 /v1）</span>
+            <input class="field" data-f="base" spellcheck="false" placeholder="https://你的上游/v1" /></label>
+          <label class="svc-field"><span class="hint">API Key（留空 = 不改已有密钥）</span>
+            <input class="field" data-f="key" type="password" spellcheck="false" placeholder="sk-…" /></label>
+          <div class="kb-model-actions">
+            <button class="btn sm primary" data-act="save">保存并设为默认</button>
+            <button class="btn sm" data-act="test">测试连通</button>
+            <span class="hint" data-msg role="status" aria-live="polite"></span>
+          </div>
+        </div>
+
+        <div class="kb-model" data-type="Embedding">
+          <div class="kb-model-head">
+            <b>嵌入模型</b><span class="kb-model-sub">Embedding</span>
+            <span class="pill plain" data-state>未配置</span>
+          </div>
+          <label class="svc-field"><span class="hint">模型名（上游真实 model id）</span>
+            <input class="field" data-f="name" list="kbEmbedList" spellcheck="false" placeholder="如 bge-m3" /></label>
+          <label class="svc-field"><span class="hint">API 地址（OpenAI 兼容根，含 /v1）</span>
+            <input class="field" data-f="base" spellcheck="false" placeholder="https://你的上游/v1" /></label>
+          <label class="svc-field"><span class="hint">API Key（留空 = 不改已有密钥）</span>
+            <input class="field" data-f="key" type="password" spellcheck="false" placeholder="sk-…" /></label>
+          <div class="kb-model-actions">
+            <button class="btn sm primary" data-act="save">保存并设为默认</button>
+            <button class="btn sm" data-act="test">测试连通</button>
+            <span class="hint" data-msg role="status" aria-live="polite"></span>
+          </div>
+        </div>
+
+        <div class="kb-model" data-type="VLLM">
+          <div class="kb-model-head">
+            <b>视觉模型</b><span class="kb-model-sub">VLLM（可空）</span>
+            <span class="pill plain" data-state>未配置</span>
+          </div>
+          <label class="svc-field"><span class="hint">模型名（上游真实 model id）</span>
+            <input class="field" data-f="name" list="kbVlmList" spellcheck="false" placeholder="如 glm-5v-turbo；留空 = 不启用" /></label>
+          <label class="svc-field"><span class="hint">API 地址（OpenAI 兼容根，含 /v1）</span>
+            <input class="field" data-f="base" spellcheck="false" placeholder="https://你的上游/v1" /></label>
+          <label class="svc-field"><span class="hint">API Key（留空 = 不改已有密钥）</span>
+            <input class="field" data-f="key" type="password" spellcheck="false" placeholder="sk-…" /></label>
+          <div class="kb-model-actions">
+            <button class="btn sm primary" data-act="save">保存并设为默认</button>
+            <button class="btn sm" data-act="test">测试连通</button>
+            <span class="hint" data-msg role="status" aria-live="polite"></span>
+          </div>
+        </div>
       </div>
       <p class="hint" style="margin:10px 0 0">⛔ 知识库会做 SSRF 校验：<b>内网 / 无法解析</b>的地址会被拒（报「Base URL 未通过安全校验」），
         要填公网可访问的地址；确有内网需求需把域名加进 WeKnora 的 <code>SSRF_WHITELIST_EXTRA</code>。</p>
@@ -2963,6 +3008,7 @@
       kbFillList("kbVlmList", j.vlm);
       var llmN = (j.llm || []).length, embN = (j.embed || []).length, vlmN = (j.vlm || []).length;
       kbModelSay("已读到 " + (j.count || 0) + " 个模型：问答 " + llmN + " · 嵌入 " + embN + " · 视觉 " + vlmN + (llmN ? "" : "（没有可用的问答模型 ⇒ 先在下面「模型接入」里加一个）"), !llmN);
+      kbBlocksSync(j);
       kbSrcRender(j.all || []);
     }).catch(function () { kbModelSay("读取失败：网络错误（仍可手填模型 id）", true); kbSrcRender([]); });
   }
@@ -2970,22 +3016,119 @@
 
   /* ── 模型接入：把「API 地址 + 密钥 + 模型名」写进知识库（WeKnora 的模型资源）──────
      ⛔ 密钥只写不读：保存后行里只显示「已配」，WeKnora 也不会把 api_key 回传（只有 configured 标记）。 */
-  var kbSrcEditId = "";
+  /* ── 模型接入：三个类型 = 三份配置，各自「保存并设为默认」+「测试连通」────────
+     ⛔ 密钥只写不读：保存后只显示「已配」，WeKnora 也不会回传 api_key。
+     ⛔ 内置模型（source != remote）不能改地址，改了会 400 ⇒ 保存时按"新建"处理。 */
   var KB_TYPE_LABEL = { KnowledgeQA: "问答", Embedding: "嵌入", VLLM: "视觉" };
-  var KB_TYPE_FIELD = { KnowledgeQA: "svcKbLlm", Embedding: "svcKbEmbed", VLLM: "svcKbVlm" };
   var KB_TYPE_KEY = { KnowledgeQA: "llmModelId", Embedding: "embedModelId", VLLM: "vlmModelId" };
+  var kbSrcModel = {};                                  // type → { id, remote, hasKey }
   function kbSrcSay(t, bad) {
     var el = $("kbSrcMsg"); if (!el) return;
     el.textContent = t || "";
     el.style.color = bad ? "var(--bad)" : (t ? "var(--ok)" : "");
   }
-  function kbSrcReset() {
-    kbSrcEditId = "";
-    ["kbSrcName", "kbSrcDisplay", "kbSrcBase", "kbSrcKey"].forEach(function (id) { if ($(id)) $(id).value = ""; });
-    if ($("kbSrcType")) $("kbSrcType").value = "KnowledgeQA";
-    kbSrcSay("");
+  function kbBlock(type) { return document.querySelector('#kbModelBlocks .kb-model[data-type="' + type + '"]'); }
+  function kbBlockEl(type, sel) { var el = kbBlock(type); return el ? el.querySelector(sel) : null; }
+  function kbBlockSay(type, text, bad) {
+    var el = kbBlockEl(type, "[data-msg]");
+    if (!el) return;
+    el.textContent = text || "";
+    el.style.color = bad ? "var(--bad)" : (text ? "var(--ok)" : "");
   }
-  if ($("kbSrcReset")) $("kbSrcReset").onclick = kbSrcReset;
+  function kbBlockState(type) {
+    var pill = kbBlockEl(type, "[data-state]"), m = kbSrcModel[type];
+    if (!pill) return;
+    if (!m || !m.id) { pill.className = "pill plain"; pill.textContent = "未配置"; return; }
+    pill.className = "pill " + (m.hasKey ? "ok" : "warn");
+    pill.textContent = m.hasKey ? "已配密钥" : "缺密钥";
+  }
+  /** 用一条模型数据填一块；force=true 时覆盖已填内容（点表格「编辑」用） */
+  function kbBlockFill(type, m, force) {
+    var el = kbBlock(type); if (!el) return;
+    var nameEl = el.querySelector('[data-f="name"]'), baseEl = el.querySelector('[data-f="base"]'), keyEl = el.querySelector('[data-f="key"]');
+    if (!m) { el.setAttribute("data-id", ""); kbSrcModel[type] = null; kbBlockState(type); return; }
+    if (force || !nameEl.value) nameEl.value = m.name || "";
+    if (force || !baseEl.value) baseEl.value = m.baseUrl || "";
+    if (keyEl) { keyEl.value = ""; keyEl.placeholder = m.hasKey ? "已配（留空不改）" : "sk-…"; }
+    el.setAttribute("data-id", m.id || "");
+    kbSrcModel[type] = { id: m.id || "", remote: (m.source || "") === "remote", hasKey: Boolean(m.hasKey) };
+    kbBlockState(type);
+  }
+  function kbBlockRead(type) {
+    return {
+      name: (kbBlockEl(type, '[data-f="name"]') || {}).value ? kbBlockEl(type, '[data-f="name"]').value.trim() : "",
+      base: (kbBlockEl(type, '[data-f="base"]') || {}).value ? kbBlockEl(type, '[data-f="base"]').value.trim() : "",
+      key: (kbBlockEl(type, '[data-f="key"]') || {}).value ? kbBlockEl(type, '[data-f="key"]').value.trim() : "",
+    };
+  }
+  /** 列表刷新后：给每块挑出"这一类型的当前模型"，只在不覆盖用户输入的前提下回填 */
+  function kbBlocksSync(j) {
+    ["KnowledgeQA", "Embedding", "VLLM"].forEach(function (type) {
+      var pool = type === "KnowledgeQA" ? (j.llm || []) : type === "Embedding" ? (j.embed || []) : (j.vlm || []);
+      var wantId = (j.current && j.current[type === "KnowledgeQA" ? "llm" : type === "Embedding" ? "embed" : "vlm"]) || "";
+      var hit = pool.filter(function (x) { return x.id === wantId; })[0] || pool[0] || null;
+      kbBlockFill(type, hit, false);
+    });
+  }
+  function kbBlockSave(type, btn) {
+    var v = kbBlockRead(type), cur = kbSrcModel[type] || {};
+    if (!v.name) { kbBlockSay(type, "先填模型名（上游真实 model id）", true); return; }
+    if (!v.base) { kbBlockSay(type, "先填 API 地址（含 /v1）", true); return; }
+    var id = cur.id && cur.remote ? cur.id : "";        // 内置模型不能改 ⇒ 走新建
+    if (!id && !v.key) { kbBlockSay(type, "新建模型必须填 API Key", true); return; }
+    btn.disabled = true;
+    kbBlockSay(type, "保存中…");
+    api("/admin/service-models/save", {
+      method: "POST",
+      body: { id: id || undefined, name: v.name, displayName: "", type: type, baseUrl: v.base, apiKey: v.key },
+    }).then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) throw new Error((j.error || ("HTTP " + r.status)) + (j.hint ? "（" + j.hint + "）" : ""));
+      /* 顺手设成该类型的默认（只提交模型字段，⛔ 不提交 base，免得把服务地址清空） */
+      var body = { kb: {} };
+      body.kb[KB_TYPE_KEY[type]] = j.id;
+      return api("/admin/services", { method: "POST", body: body }).then(function () { return j.id; });
+    }).then(function (newId) {
+      btn.disabled = false;
+      var el = kbBlock(type);
+      if (el) { el.setAttribute("data-id", newId); var k = el.querySelector('[data-f="key"]'); if (k) k.value = ""; }
+      kbSrcModel[type] = { id: newId, remote: true, hasKey: Boolean(v.key) || Boolean(cur.hasKey) };
+      kbBlockState(type);
+      kbBlockSay(type, "已保存并设为默认" + (v.key ? "（密钥已写入）" : "") + "。已有用户库要换模型，点服务卡上的「应用到全部用户库」。");
+      loadKbModels();
+      loadServices();
+    })["catch"](function (e) {
+      btn.disabled = false;
+      kbBlockSay(type, "保存失败：" + ((e && e.message) || "网络错误"), true);
+    });
+  }
+  function kbBlockTest(type, btn) {
+    var v = kbBlockRead(type), cur = kbSrcModel[type] || {};
+    if (!v.name) { kbBlockSay(type, "先填模型名再测", true); return; }
+    btn.disabled = true;
+    kbBlockSay(type, "测试中…（要等上游回一句话，可能要几秒）");
+    api("/admin/service-models/test", {
+      method: "POST",
+      body: { type: type, id: cur.remote && cur.id ? cur.id : undefined, name: v.name, baseUrl: v.base, apiKey: v.key },
+    }).then(function (r) {
+      btn.disabled = false;
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) {
+        kbBlockSay(type, "✗ " + (j.message || j.error || ("HTTP " + r.status)) + (j.hint ? "（" + j.hint + "）" : ""), true);
+        return;
+      }
+      kbBlockSay(type, "✓ 通了" + (j.ms != null ? "（" + j.ms + " ms）" : "") + (j.note ? "：" + j.note : ""));
+    })["catch"](function () {
+      btn.disabled = false;
+      kbBlockSay(type, "测试失败：网络错误", true);
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("#kbModelBlocks .kb-model"), function (el) {
+    var type = el.getAttribute("data-type");
+    var save = el.querySelector('[data-act="save"]'), test = el.querySelector('[data-act="test"]');
+    if (save) save.addEventListener("click", function () { kbBlockSave(type, this); });
+    if (test) test.addEventListener("click", function () { kbBlockTest(type, this); });
+  });
   if ($("kbSrcRefresh")) $("kbSrcRefresh").onclick = function () { loadKbModels(); };
   function kbSrcRender(rows) {
     var box = $("kbSrcRows"); if (!box) return;
@@ -3001,6 +3144,7 @@
         + '<td>' + (m.hasKey ? '<span class="mb-tag on">已配</span>' : '<span class="mb-tag warn">未配</span>') + '</td>'
         + '<td class="mb-hide-sm"><span class="mb-mono" title="' + esc(m.id) + '">' + esc(String(m.id).slice(0, 8)) + '…</span></td>'
         + '<td><div class="mb-ops">'
+        + '<button class="btn sm" data-kbsrc="test" data-id="' + esc(m.id) + '">测试</button>'
         + '<button class="btn sm" data-kbsrc="edit" data-id="' + esc(m.id) + '">编辑</button>'
         + (m.builtin ? "" : '<button class="btn sm danger" data-kbsrc="del" data-id="' + esc(m.id) + '">删除</button>')
         + '</div></td></tr>';
@@ -3010,15 +3154,27 @@
         var id = b.getAttribute("data-id");
         var row = rows.filter(function (x) { return x.id === id; })[0];
         if (!row) return;
-        if (b.getAttribute("data-kbsrc") === "edit") {
-          kbSrcEditId = row.id;
-          $("kbSrcName").value = row.name || "";
-          $("kbSrcDisplay").value = row.title && row.title !== row.name ? row.title : "";
-          $("kbSrcType").value = row.type || "KnowledgeQA";
-          $("kbSrcBase").value = row.baseUrl || "";
-          $("kbSrcKey").value = "";
+        var act = b.getAttribute("data-kbsrc");
+        if (act === "test") {
+          /* 表格里直接测：用存储的密钥（modelId 让服务端回填 secret） */
+          var blk = kbBlock(row.type);
+          if (blk) blk.scrollIntoView({ block: "center" });
+          var prev = kbSrcModel[row.type];
+          kbSrcModel[row.type] = { id: row.id, remote: (row.source || "") === "remote", hasKey: Boolean(row.hasKey) };
+          if (blk) {
+            var nEl = blk.querySelector('[data-f="name"]'), bEl = blk.querySelector('[data-f="base"]');
+            if (nEl) nEl.value = row.name || "";
+            if (bEl) bEl.value = row.baseUrl || "";
+          }
+          kbBlockTest(row.type, b);
+          kbSrcModel[row.type] = prev && prev.id ? prev : kbSrcModel[row.type];
+          return;
+        }
+        if (act === "edit") {
+          kbBlockFill(row.type, row, true);
+          var el2 = kbBlock(row.type);
+          if (el2) { el2.scrollIntoView({ block: "center" }); var f = el2.querySelector('[data-f="name"]'); if (f) f.focus(); }
           kbSrcSay("正在编辑「" + (row.title || row.name) + "」，密钥留空 = 不改");
-          $("kbSrcName").focus();
           return;
         }
         if (!confirm("从知识库里删掉模型「" + (row.title || row.name) + "」？\n\n如果它正被某个知识库用着，WeKnora 会拒绝（先换掉再删）。")) return;
@@ -3028,43 +3184,10 @@
           if (!x.ok || !jj.ok) { kbSrcSay("删除失败：" + (jj.error || ("HTTP " + x.status)) + (jj.hint ? "（" + jj.hint + "）" : ""), true); return; }
           kbSrcSay("已删除");
           loadKbModels();
-        }).catch(function () { kbSrcSay("删除失败：网络错误", true); });
+        })["catch"](function () { kbSrcSay("删除失败：网络错误", true); });
       });
     });
   }
-  if ($("kbSrcSave")) $("kbSrcSave").onclick = function () {
-    var btn = this;
-    var name = $("kbSrcName").value.trim(), baseUrl = $("kbSrcBase").value.trim();
-    var type = $("kbSrcType").value, apiKey = $("kbSrcKey").value.trim();
-    if (!name) { kbSrcSay("先填模型名（上游真实的 model id）", true); return; }
-    if (!baseUrl) { kbSrcSay("先填 API 地址（含 /v1）", true); return; }
-    if (!kbSrcEditId && !apiKey) { kbSrcSay("新建模型必须填 API Key", true); return; }
-    btn.disabled = true;
-    kbSrcSay("保存中…");
-    api("/admin/service-models/save", {
-      method: "POST",
-      body: { id: kbSrcEditId || undefined, name: name, displayName: $("kbSrcDisplay").value.trim(), type: type, baseUrl: baseUrl, apiKey: apiKey },
-    }).then(function (r) {
-      var j = (r && r.j) || {};
-      if (!r.ok || !j.ok) throw new Error((j.error || ("HTTP " + r.status)) + (j.hint ? "（" + j.hint + "）" : ""));
-      /* 存了就用它当默认：只提交模型字段（⛔ 不要顺手提交 base，免得把服务地址清掉） */
-      var body = { kb: {} };
-      body.kb[KB_TYPE_KEY[type]] = j.id;
-      return api("/admin/services", { method: "POST", body: body }).then(function () {
-        var field = $(KB_TYPE_FIELD[type]);
-        if (field) field.value = j.id;
-        btn.disabled = false;
-        kbSrcSay("已保存「" + name + "」并设为知识库的" + (KB_TYPE_LABEL[type] || type) + "模型" + (apiKey ? "（密钥已写入）" : "") + "。要让已有用户库也换模型，点上面的「应用到全部用户库」。");
-        kbSrcReset();
-        loadKbModels();
-        loadServices();
-      });
-    }).catch(function (e) {
-      btn.disabled = false;
-      kbSrcSay("保存失败：" + ((e && e.message) || "网络错误"), true);
-    });
-  };
-
   if ($("svcKbApplyAll")) $("svcKbApplyAll").onclick = function () {
     var btn = this;
     var llm = $("svcKbLlm").value.trim(), embed = $("svcKbEmbed").value.trim(), vlm = $("svcKbVlm").value.trim();
