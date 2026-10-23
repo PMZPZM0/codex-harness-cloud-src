@@ -675,6 +675,15 @@
       <button class="nav-item" data-tab="memory"><span class="dot"></span>记忆空间</button>
       <button class="nav-item" data-tab="kb"><span class="dot"></span>知识库</button>
     </nav>
+    <!-- 10-23 团队协作体系：独立的「团队」分组（设计文档 §4）。未加入团队时各组页面显示引导卡。 -->
+    <nav class="nav-group" id="navGroupTeam" aria-label="团队功能">
+      <h3 class="nav-group-title">团队</h3>
+      <button class="nav-item" data-tab="teamOverview"><span class="dot"></span>团队概览</button>
+      <button class="nav-item" data-tab="teamMemory"><span class="dot"></span>团队记忆空间</button>
+      <button class="nav-item" data-tab="teamKB"><span class="dot"></span>团队知识库</button>
+      <button class="nav-item" data-tab="teamMembers"><span class="dot"></span>团队成员</button>
+      <button class="nav-item" data-tab="teamSettings"><span class="dot"></span>团队设置</button>
+    </nav>
     <nav class="nav-group nav-group-admin" id="navGroupAdmin" aria-label="管理员功能" hidden>
       <h3 class="nav-group-title">管理员</h3>
       <button class="nav-item" data-tab="adminUser" id="navAdminUser"><span class="dot"></span>用户管理</button>
@@ -684,6 +693,7 @@
       <button class="nav-item" data-tab="adminWbm" id="navAdminWbm"><span class="dot"></span>WorkBuddy Manager</button>
       <button class="nav-item" data-tab="adminBilling" id="navAdminBilling"><span class="dot"></span>订阅与充值</button>
       <button class="nav-item" data-tab="adminInvite" id="navAdminInvite"><span class="dot"></span>邀请管理</button>
+      <button class="nav-item" data-tab="adminTeams" id="navAdminTeams"><span class="dot"></span>团队管理</button>
     </nav>
     <div class="side-foot">
       <span id="whoami">读取中…</span>
@@ -941,6 +951,235 @@
         <div class="table-wrap"><table class="mb-table">
           <thead><tr><th style="width:34%">被邀请人</th><th style="width:36%">注册时间</th><th style="width:30%">奖励</th></tr></thead>
           <tbody id="invRows"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+<!-- ── 团队概览（10-23 团队协作体系 §3.1/§3.2）：无团队时引导卡；有团队时切换器 + 席位/套餐/空间状态 ── -->
+    <section class="tab" data-tab="teamOverview" hidden>
+      <div class="card" id="tmNoTeam" hidden>
+        <h2>团队协作</h2>
+        <p class="hint" style="margin:0 0 12px">你还没有加入任何团队。团队成员共享一套<b>团队记忆空间</b>与<b>团队知识库</b>；个人积分、订阅、权益与团队<b>完全隔离</b>，不会互相影响。</p>
+        <div class="pol-grid">
+          <div class="pol-field" style="grid-column:span 2"><label>创建新团队</label><input class="field" id="tmNewName" placeholder="例如：Codex 项目组" maxlength="40" /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="tmCreate">创建团队</button>
+          <span class="status" id="tmCreateStatus" role="status"></span>
+        </div>
+        <div class="pol-grid" style="margin-top:16px">
+          <div class="pol-field" style="grid-column:span 2"><label>用团队邀请码加入</label><input class="field" id="tmJoinCode" placeholder="管理员或 owner 给你的团队邀请码" maxlength="32" /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn" id="tmJoin">加入团队</button>
+          <span class="status" id="tmJoinStatus" role="status"></span>
+        </div>
+        <div class="hint" id="tmDisabledNote" style="margin-top:12px" hidden>团队功能当前未开通（管理员可在「团队管理」里开启）。</div>
+      </div>
+
+      <div class="card" id="tmHasTeam" hidden>
+        <div class="sub-hero-top">
+          <div>
+            <span class="hint">当前团队</span>
+            <select class="field" id="tmSwitch" style="max-width:280px;margin-top:6px"></select>
+            <div class="hint" id="tmRoleLine" style="margin-top:8px"></div>
+          </div>
+          <div class="sub-balance">
+            <span>席位</span>
+            <b id="tmSeats">—</b>
+          </div>
+        </div>
+        <div class="pol-grid" style="margin-top:14px">
+          <div class="pol-field"><label>团队套餐</label><div id="tmPlan" class="hint">—</div></div>
+          <div class="pol-field"><label>到期时间</label><div id="tmExpire" class="hint">—</div></div>
+          <div class="pol-field"><label>团队积分池</label><div id="tmPool" class="hint">—</div></div>
+        </div>
+        <div class="pol-actions" style="margin-top:12px">
+          <button class="btn primary" id="tmProvision">开通 / 修复团队空间</button>
+          <button class="btn" id="tmGotoMemory">团队记忆空间</button>
+          <button class="btn" id="tmGotoKb">团队知识库</button>
+          <span class="status" id="tmProvStatus" role="status"></span>
+        </div>
+        <div class="hint" id="tmSpaceState" style="margin-top:10px"></div>
+      </div>
+    </section>
+
+    <!-- ── 团队记忆空间：凭据在这里取，内容在 MemHub（云端不存内容）── -->
+    <section class="tab" data-tab="teamMemory" hidden>
+      <div class="card">
+        <h2>团队记忆空间</h2>
+        <p class="hint" style="margin:0 0 12px">团队记忆存在 MemHub 的<b>团队空间</b>里（全体成员共用同一把 key = 同一个空间）。本机 Codex 用下面的凭据接入后，写入的记忆自动归团队，个人记忆不受影响。</p>
+        <div class="pol-grid">
+          <div class="pol-field" style="grid-column:span 2"><label>接入地址（baseUrl）</label><input class="field" id="tmmBase" readonly /></div>
+          <div class="pol-field" style="grid-column:span 2"><label>团队 User Key</label><input class="field" id="tmmKey" readonly /></div>
+          <div class="pol-field"><label>实例 ID</label><input class="field" id="tmmInstance" readonly /></div>
+          <div class="pol-field"><label>鉴权头</label><input class="field" id="tmmHeader" readonly /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="tmmCopy">复制接入配置（JSON）</button>
+          <button class="btn" id="tmmReload">刷新</button>
+          <span class="status" id="tmmStatus" role="status"></span>
+        </div>
+        <div class="hint" id="tmmState" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <h2>共享记录规范</h2>
+        <ul class="hint" style="margin:0;padding-left:18px;line-height:2">
+          <li>一条只写一个事实，带依据（文件 / 命令 / 结论来源），单条 ≤ 2000 字。</li>
+          <li>冲突不覆盖：新结论写明 <code>supersedes</code> 旧条目，保留历史可追溯。</li>
+          <li>⛔ 禁止写入密钥、令牌、个人隐私、未脱敏客户数据。</li>
+          <li>成员离队后其贡献内容保留，归属标注「已离队」。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ── 团队知识库：凭据 + 检索 + 上传 + 文档列表 ── -->
+    <section class="tab" data-tab="teamKB" hidden>
+      <div class="card">
+        <h2>团队知识库</h2>
+        <p class="hint" style="margin:0 0 12px">团队知识库是独立的 WeKnora 库（<code>t-&lt;团队ID&gt;</code>），与个人知识库<b>不共享索引</b>。本机 Codex 可用下面的 MCP 端点直连检索，也可以直接在这里检索 / 上传。</p>
+        <div class="pol-grid">
+          <div class="pol-field" style="grid-column:span 2"><label>MCP 端点</label><input class="field" id="tmkMcp" readonly /></div>
+          <div class="pol-field" style="grid-column:span 2"><label>MCP Token</label><input class="field" id="tmkToken" readonly /></div>
+          <div class="pol-field"><label>知识库 ID</label><input class="field" id="tmkKbId" readonly /></div>
+          <div class="pol-field"><label>容量</label><input class="field" id="tmkQuota" readonly /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="tmkCopy">复制接入配置（JSON）</button>
+          <button class="btn" id="tmkReload">刷新</button>
+          <span class="status" id="tmkStatus" role="status"></span>
+        </div>
+        <div class="hint" id="tmkState" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <h2>检索团队知识库</h2>
+        <div class="pol-grid">
+          <div class="pol-field" style="grid-column:span 2"><label>关键词</label><input class="field" id="tmkQuery" placeholder="例如：接口规范 / 部署流程" /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="tmkSearch">检索</button>
+          <span class="status" id="tmkSearchStatus" role="status"></span>
+        </div>
+        <div id="tmkHits" class="hint" style="margin-top:12px"></div>
+      </div>
+      <div class="card">
+        <h2>上传文档 / 文档列表</h2>
+        <div class="pol-actions" style="margin-bottom:12px">
+          <input type="file" id="tmkFile" style="display:none" />
+          <button class="btn primary" id="tmkPick">选择文件上传</button>
+          <span class="hint">支持 PDF / Word / Excel / Markdown / txt（单文件 ≤ 24MB）</span>
+          <span class="status" id="tmkUpStatus" role="status"></span>
+        </div>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th style="width:40%">文档</th><th style="width:16%">大小</th><th style="width:16%">解析状态</th><th style="width:16%">上传时间</th><th style="width:12%">操作</th></tr></thead>
+          <tbody id="tmkDocs"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ── 团队成员（owner/admin 可邀请、改角色、移除）── -->
+    <section class="tab" data-tab="teamMembers" hidden>
+      <div class="card">
+        <h2>邀请成员</h2>
+        <p class="hint" style="margin:0 0 12px">生成一次性邀请码（7 天有效）；对方在「团队概览 → 用邀请码加入」粘贴即可。席位满时需先升级团队套餐。</p>
+        <div class="pol-actions">
+          <button class="btn primary" id="tmuInvite">生成邀请码</button>
+          <span class="status" id="tmuStatus" role="status"></span>
+        </div>
+        <div class="pol-grid" style="margin-top:12px">
+          <div class="pol-field" style="grid-column:span 2"><label>邀请链接（复制发给对方）</label><input class="field" id="tmuLink" readonly /></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>成员列表</h2>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th style="width:28%">成员</th><th style="width:16%">角色</th><th style="width:24%">加入时间</th><th style="width:32%">操作</th></tr></thead>
+          <tbody id="tmuRows"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ── 团队设置：名称/邀请策略/上传策略 + 团队套餐 + 解散 ── -->
+    <section class="tab" data-tab="teamSettings" hidden>
+      <div class="card">
+        <h2>基本设置</h2>
+        <div class="pol-grid">
+          <div class="pol-field" style="grid-column:span 2"><label>团队名称</label><input class="field" id="tmsName" maxlength="40" /></div>
+          <div class="pol-field"><label>成员可邀请</label><label class="mb-check" style="margin-top:8px"><input type="checkbox" id="tmsAllowInvite" /> <span>允许普通成员生成邀请码</span></label></div>
+          <div class="pol-field"><label>团队知识库上传</label><label class="mb-check" style="margin-top:8px"><input type="checkbox" id="tmsUploadAdmin" /> <span>仅 owner/admin 可上传</span></label></div>
+          <div class="pol-field"><label>团队记忆写入</label><label class="mb-check" style="margin-top:8px"><input type="checkbox" id="tmsContributor" /> <span>仅 owner/admin 可写（contributor-only）</span></label></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="tmsSave">保存设置</button>
+          <span class="status" id="tmsStatus" role="status"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>团队套餐</h2>
+        <p class="hint" style="margin:0 0 12px">团队套餐按<b>席位 + 容量</b>定价，购买后赠送积分进入<b>团队积分池</b>（与个人积分互不相通）。仅 owner 可购买。</p>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th style="width:22%">套餐</th><th style="width:14%">价格</th><th style="width:10%">席位</th><th style="width:22%">容量</th><th style="width:12%">时长</th><th style="width:20%">操作</th></tr></thead>
+          <tbody id="tmsPlans"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+        <div class="hint" id="tmsPlanState" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <h2>危险操作</h2>
+        <p class="hint" style="margin:0 0 12px">解散后团队标记为已解散（数据保留，成员无法再访问共享空间）。此操作不可逆。</p>
+        <div class="pol-actions">
+          <button class="btn" id="tmsDissolve" style="color:#c0392b;border-color:#c0392b">解散团队</button>
+          <span class="status" id="tmsDissolveStatus" role="status"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 管理员：团队管理（开通条件 + 全站团队 + 团队套餐）── -->
+    <section class="tab" data-tab="adminTeams" hidden>
+      <div class="card">
+        <h2>团队开通条件</h2>
+        <p class="hint" style="margin:0 0 12px">三层闸门：平台开关 → 能力开关（记忆 / 知识库）→ 团队级开通（建空间）。关闭能力后，成员调用对应接口会直接 403。</p>
+        <div class="pol-grid">
+          <div class="pol-field"><label>团队功能总开关</label><label class="mb-check" style="margin-top:8px"><input type="checkbox" id="atEnabled" /> <span>允许用户创建团队</span></label></div>
+          <div class="pol-field"><label>免费档席位数</label><input class="field" id="atSeats" type="number" min="1" max="500" step="1" /></div>
+          <div class="pol-field"><label>团队记忆空间</label><label class="mb-check" style="margin-top:8px"><input type="checkbox" id="atMem" /> <span>允许开通/使用</span></label></div>
+          <div class="pol-field"><label>团队知识库</label><label class="mb-check" style="margin-top:8px"><input type="checkbox" id="atKb" /> <span>允许开通/使用</span></label></div>
+          <div class="pol-field"><label>单条记忆最大字数</label><input class="field" id="atMaxChars" type="number" min="200" max="20000" step="100" /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="atSavePolicy">保存开通条件</button>
+          <span class="status" id="atPolicyStatus" role="status"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>团队套餐设置</h2>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th style="width:20%">名称</th><th style="width:12%">价格</th><th style="width:8%">席位</th><th style="width:22%">容量</th><th style="width:10%">时长</th><th style="width:8%">状态</th><th style="width:20%">操作</th></tr></thead>
+          <tbody id="atPlanRows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+        <h3 style="margin:16px 0 8px;font-size:14px" id="atPlanFormTitle">新建团队套餐</h3>
+        <div class="pol-grid">
+          <div class="pol-field"><label>套餐 ID（留空自动）</label><input class="field" id="atpId" placeholder="team-basic" /></div>
+          <div class="pol-field"><label>名称</label><input class="field" id="atpName" placeholder="团队基础版" /></div>
+          <div class="pol-field"><label>金额（元）</label><input class="field" id="atpPrice" type="number" min="0" step="10" /></div>
+          <div class="pol-field"><label>席位数</label><input class="field" id="atpSeats" type="number" min="1" step="1" /></div>
+          <div class="pol-field"><label>时长（天）</label><input class="field" id="atpDays" type="number" min="0" step="30" /></div>
+          <div class="pol-field"><label>赠送团队积分</label><input class="field" id="atpPoints" type="number" min="0" step="1000" /></div>
+          <div class="pol-field"><label>知识库容量（MB）</label><input class="field" id="atpKb" type="number" min="0" step="1024" /></div>
+          <div class="pol-field"><label>记忆容量（MB）</label><input class="field" id="atpMem" type="number" min="0" step="512" /></div>
+          <div class="pol-field" style="grid-column:span 2"><label>描述</label><input class="field" id="atpDesc" placeholder="适合 5-10 人项目组" /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="atPlanSave">保存</button>
+          <button class="btn" id="atPlanReset">清空表单</button>
+          <span class="status" id="atPlanStatus" role="status"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>全站团队</h2>
+        <div class="hint" id="atTotals" style="margin-bottom:10px"></div>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th style="width:20%">团队</th><th style="width:14%">Owner</th><th style="width:10%">成员</th><th style="width:16%">套餐</th><th style="width:14%">共享空间</th><th style="width:12%">状态</th><th style="width:14%">操作</th></tr></thead>
+          <tbody id="atRows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -2126,6 +2365,9 @@
     setTimeout(function () { b.disabled = false; }, 1500);
   };
 
+  /* ⛔ 10-23：页面没有 hashchange 监听，团队页内「去团队记忆空间」这类跳转需要真正切 tab。
+     一行显式契约（团队块是自包含 IIFE，不能直接调本闭包的 show）。 */
+  window.__gotoTab = function (t) { show(t); };
   function show(tab) {
     var found = false;
     Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (s) {
@@ -2139,6 +2381,9 @@
     if (tab === "invite" && window.__subApi && typeof window.__subApi.loadInvite === "function") window.__subApi.loadInvite();
     if (tab === "adminInvite" && window.__subApi && typeof window.__subApi.loadAdminInvite === "function") window.__subApi.loadAdminInvite();
     if (tab === "adminBilling" && window.__subApi && typeof window.__subApi.loadAdminBilling === "function") window.__subApi.loadAdminBilling();
+    /* 团队块同样是自包含 IIFE，入口统一走 window.__teamApi.enter(tab) */
+    /* ⛔ adminTeams 的 "team" 不在开头（indexOf=6），只写 indexOf("team")===0 会漏掉管理端团队页 */
+    if ((tab.indexOf("team") === 0 || tab === "adminTeams") && window.__teamApi && typeof window.__teamApi.enter === "function") window.__teamApi.enter(tab);
     if (tab === "user") loadPoints();
     if (tab === "pair") refreshPairing();
     if (tab === "cloud") refreshCloud();
@@ -3087,7 +3332,11 @@
       if (location.hash.indexOf("#admin") === 0) show("user");   /* 旧书签 #admin* 一律回落到用户中心 */
     }
     var start = (location.hash || "#user").slice(1);
-    show(["product", "user", "subscribe", "invite", "pair", "cloud", "memory", "kb", "admin", "adminBilling", "adminInvite"].indexOf(start) >= 0 ? start : "user");
+    /* ⛔ 团队页（10-23）必须进这个白名单，否则 #teamOverview / #teamSettings 会被回落到用户中心
+       （支付回跳地址就是 #teamSettings，漏了会"付完钱回到首页"）。 */
+    show(["product", "user", "subscribe", "invite", "pair", "cloud", "memory", "kb",
+      "teamOverview", "teamMemory", "teamKB", "teamMembers", "teamSettings",
+      "admin", "adminBilling", "adminInvite", "adminTeams"].indexOf(start) >= 0 ? start : "user");
   }).catch(function () { window.location.replace("index.html"); });
 
   /* ── 用户管理（管理员，就地视图；10-15 从 admin.html 迁入并修正端点） ── */
@@ -6331,6 +6580,680 @@
     };
   }
 })();
+</script>
+<script>
+/* ── 团队协作（10-23 用户令：团队模式 / 团队记忆空间 / 团队知识库 / 团队管理 / 团队套餐）────
+   ⛔ 本块**完全自包含**（自带 $ / esc / api / showModal）—— 项目里有多个独立 IIFE，跨闭包取
+     变量会在运行时 ReferenceError（订阅块 10-23 踩过两次）。本块只通过 window.__teamApi 对外。
+   ⛔ 判定权全在服务端（成员关系 / 角色 / 开通状态），前端只做展示与发起。 */
+(function () {
+  var API = "/cloud-api";
+  var TEAM_KEY = "chc-current-team";
+  var token = "";
+  try { token = localStorage.getItem("chc-session") || ""; } catch (e) { token = ""; }
+
+  function $(id) { return document.getElementById(id); }
+  function esc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = "Bearer " + token;
+    return fetch(API + path, { method: opts.method || "GET", headers: headers, body: opts.body ? JSON.stringify(opts.body) : undefined })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, j: j || {} }; }); })
+      .catch(function (e) { return { ok: false, status: 0, j: { error: String(e && e.message || "网络错误") } }; });
+  }
+  /* ⛔ 属性位专用：本块的 esc 不转义引号 ⇒ 文档标题/文件名进 title="…"、id 进 data-* 时可被注入。
+     凡是在引号内的值一律用 escAttr。 */
+  function escAttr(t) {
+    return esc(t).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  function say(id, text, cls) { var el = $(id); if (el) { el.textContent = text || ""; el.className = "status" + (cls ? " " + cls : ""); } }
+  function showModal(title, bodyHtml) {
+    var old = $("tmModal"); if (old && old.parentNode) old.parentNode.removeChild(old);
+    var wrap = document.createElement("div");
+    wrap.id = "tmModal";
+    wrap.setAttribute("style", "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px");
+    wrap.innerHTML = '<div style="background:var(--card);border-radius:14px;max-width:760px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)">'
+      + '<b style="font-size:15px">' + esc(title) + '</b><button class="btn" id="tmModalClose">关闭</button></div>'
+      + '<div style="padding:16px 18px;overflow:auto;line-height:1.75;font-size:13.5px">' + bodyHtml + "</div></div>";
+    wrap.addEventListener("click", function (ev) { if (ev.target === wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap); });
+    document.body.appendChild(wrap);
+    if ($("tmModalClose")) $("tmModalClose").onclick = function () { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); };
+  }
+  function copyText(text, btn) {
+    var done = function () { var l = btn.textContent; btn.textContent = "已复制 ✓"; setTimeout(function () { btn.textContent = l; }, 1600); };
+    var fail = function () { var l = btn.textContent; btn.textContent = "复制失败"; setTimeout(function () { btn.textContent = l; }, 1600); };
+    if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(done, fail); return; }
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; ta.style.left = "-9999px";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy") ? done() : fail(); } catch (e) { fail(); }
+    document.body.removeChild(ta);
+  }
+  function fmtDT(ts) { return ts ? new Date(Number(ts)).toLocaleString("zh-CN", { hour12: false }) : "—"; }
+  function fmtSize(n) {
+    n = Number(n) || 0;
+    if (n <= 0) return "—";
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(1) + " MB";
+  }
+
+  /* ── 团队上下文 ── */
+  var TEAMS = [];
+  var CUR = "";
+  function getCur() { try { return localStorage.getItem(TEAM_KEY) || ""; } catch (e) { return ""; } }
+  function setCur(id) { CUR = id || ""; try { localStorage.setItem(TEAM_KEY, CUR); } catch (e) { /* 忽略 */ } }
+  function curTeam() { for (var i = 0; i < TEAMS.length; i += 1) if (TEAMS[i].id === CUR) return TEAMS[i]; return null; }
+  function roleOf(t) { return t ? String(t.role || "member") : ""; }
+  function isManager(t) { var r = roleOf(t); return r === "owner" || r === "admin"; }
+
+  /** 拉团队列表；校正当前团队（服务端已删/已退出 → 回退到第一个）。 */
+  function loadTeams() {
+    return api("/teams").then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) return { ok: false };
+      TEAMS = j.teams || [];
+      var saved = getCur();
+      var hit = TEAMS.filter(function (t) { return t.id === saved; })[0];
+      if (!hit) hit = TEAMS[0];
+      setCur(hit ? hit.id : "");
+      if ($("tmDisabledNote")) $("tmDisabledNote").hidden = !!(j.policy && j.policy.enabled !== false);
+      return { ok: true, policy: j.policy || {} };
+    });
+  }
+
+  /* ── 团队概览 ── */
+  var INVITE_TRIED = false;
+  function tryAutoJoin() {
+    if (!PENDING_TEAM || INVITE_TRIED) return;
+    INVITE_TRIED = true;
+    api("/teams/join", { method: "POST", body: { code: PENDING_TEAM } }).then(function (r) {
+      var j = r.j || {};
+      if (r.ok && j.ok) {
+        setCur(j.team.id);
+        showModal("已加入团队", '<div style="font-size:13.5px;line-height:1.9">你已加入「<b>' + esc(j.team.name) + "</b>」。<br><br>团队成员共享同一套团队记忆空间与团队知识库；个人积分 / 订阅不受影响。</div>");
+        loadOverview();
+      } else if (j.error === "already-member") {
+        loadOverview();
+      } else {
+        say("tmCreateStatus", j.message || j.error || "邀请码无效或已过期", "bad");
+      }
+    });
+  }
+  function loadOverview() {
+    loadTeams().then(function (res) {
+      if (!res.ok) { say("tmCreateStatus", "读取团队失败，请刷新重试", "bad"); return; }
+      if (!TEAMS.length) { tryAutoJoin(); }
+      var has = TEAMS.length > 0;
+      if ($("tmNoTeam")) $("tmNoTeam").hidden = has;
+      if ($("tmHasTeam")) $("tmHasTeam").hidden = !has;
+      if (!has) return;
+      var sel = $("tmSwitch");
+      if (sel) {
+        sel.innerHTML = TEAMS.map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === CUR ? " selected" : "") + ">" + esc(t.name) + "</option>"; }).join("");
+      }
+      loadOverviewDetail();
+    });
+  }
+
+  function loadOverviewDetail() {
+    var t = curTeam();
+    if (!t) return;
+    api("/teams/" + encodeURIComponent(t.id)).then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { say("tmProvStatus", "读取团队详情失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      var team = j.team || {};
+      var ent = j.entitlements || {};
+      var seats = j.seats || {};
+      if ($("tmRoleLine")) {
+        var roleName = { owner: "创建者（owner）", admin: "管理员", member: "成员" }[j.role] || j.role || "成员";
+        $("tmRoleLine").innerHTML = "我的角色：<b>" + esc(roleName) + "</b> · 成员 " + esc((j.members || []).length) + " 人 · 创建于 " + esc(fmtDT(team.createdAt));
+      }
+      if ($("tmSeats")) $("tmSeats").textContent = (seats.used != null ? seats.used : "—") + " / " + (seats.limit != null ? seats.limit : "—");
+      if ($("tmPlan")) $("tmPlan").textContent = ent.planName ? ent.planName + "（" + (ent.seats || 0) + " 席位）" : "免费档（3 席位）";
+      if ($("tmExpire")) $("tmExpire").textContent = Number(ent.expiresAt || 0) > 0 ? fmtDT(ent.expiresAt) + (ent.status === "expired" ? "（已过期）" : "") : "永久 / 免费档";
+      if ($("tmPool")) $("tmPool").textContent = (j.points && j.points.balance != null ? j.points.balance : 0) + " 积分";
+      var integ = j.integrations || {};
+      if ($("tmSpaceState")) {
+        $("tmSpaceState").innerHTML = "共享空间：" +
+          (integ.memoryReady ? '<b>团队记忆已开通</b>' : '<span class="hint">团队记忆未开通</span>') + " · " +
+          (integ.kbReady ? '<b>团队知识库已开通</b>' : '<span class="hint">团队知识库未开通</span>') +
+          (isManager(t) ? "（点上方「开通 / 修复团队空间」即可创建）" : "（只有 owner / admin 可以开通）");
+      }
+      if ($("tmProvision")) $("tmProvision").hidden = !isManager(t);
+    });
+  }
+
+  /* ── 团队记忆空间 ── */
+  function loadMemory() {
+    loadTeams().then(function () {
+      var t = curTeam();
+      if (!t) { say("tmmStatus", "请先加入或创建一个团队", "warn"); return; }
+      api("/teams/" + encodeURIComponent(t.id) + "/memory").then(function (r) {
+        var j = r.j || {};
+        var m = j.memory;
+        if (!r.ok || !j.ok || !m) {
+          say("tmmStatus", j.message || j.error || "团队记忆空间未开通（owner 可在「团队概览」点开通）", "warn");
+          if ($("tmmState")) $("tmmState").textContent = "";
+          if ($("tmmBase")) $("tmmBase").value = "";
+          if ($("tmmKey")) $("tmmKey").value = "";
+          if ($("tmmInstance")) $("tmmInstance").value = "";
+          if ($("tmmHeader")) $("tmmHeader").value = "";
+          return;
+        }
+        say("tmmStatus", "已开通", "ok");
+        if ($("tmmBase")) $("tmmBase").value = m.baseUrl || "";
+        if ($("tmmKey")) $("tmmKey").value = m.userKey || "";
+        if ($("tmmInstance")) $("tmmInstance").value = m.instanceId || "";
+        if ($("tmmHeader")) $("tmmHeader").value = m.apiKeyHeader || "";
+        if ($("tmmState")) {
+          var internal = /(^|\/\/)(127\.0\.0\.1|localhost|0\.0\.0\.0)/.test(m.baseUrl || "");
+          $("tmmState").innerHTML = esc(j.note || "") + (internal
+            ? '<br><span style="color:#c0392b">⚠ 该地址是本机地址，成员机器连不上 —— 请管理员在「云端管理 → 记忆服务 → 对外地址」填公网地址后刷新。</span>'
+            : "");
+        }
+        window.__teamMemCred = m;
+      });
+    });
+  }
+
+  /* ── 团队知识库 ── */
+  function loadKB() {
+    loadTeams().then(function () {
+      var t = curTeam();
+      if (!t) { say("tmkStatus", "请先加入或创建一个团队", "warn"); return; }
+      var base = "/teams/" + encodeURIComponent(t.id);
+      api(base + "/integrations").then(function (r) {
+        var j = r.j || {};
+        var k = j.knowledge || {};
+        if (!r.ok || !j.ok || !k.ready) {
+          say("tmkStatus", (j.message || j.error || "团队知识库未开通（owner 可在「团队概览」点开通）"), "warn");
+          if ($("tmkMcp")) $("tmkMcp").value = "";
+          if ($("tmkToken")) $("tmkToken").value = "";
+          if ($("tmkKbId")) $("tmkKbId").value = "";
+        } else {
+          say("tmkStatus", "已开通", "ok");
+          if ($("tmkMcp")) $("tmkMcp").value = k.mcpUrl || "";
+          if ($("tmkToken")) $("tmkToken").value = k.mcpToken || "";
+          if ($("tmkKbId")) $("tmkKbId").value = k.kbId || "";
+          window.__teamKbCred = k;
+        }
+      });
+      loadKBDocs();
+    });
+  }
+  function loadKBDocs() {
+    var t = curTeam();
+    if (!t || !$("tmkDocs")) return;
+    $("tmkDocs").innerHTML = '<tr><td colspan="5" class="empty">加载中…</td></tr>';
+    api("/teams/" + encodeURIComponent(t.id) + "/kb/docs").then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) {
+        $("tmkDocs").innerHTML = '<tr><td colspan="5" class="empty">' + esc(j.message || j.error || "读取失败") + "</td></tr>";
+        return;
+      }
+      var ent = j.entitlements || {};
+      if ($("tmkQuota")) $("tmkQuota").value = ent.kbQuotaMb > 0 ? (ent.kbUsedMb || 0) + " / " + ent.kbQuotaMb + " MB" : "不限（免费档）";
+      var docs = j.docs || [];
+      if (!docs.length) { $("tmkDocs").innerHTML = '<tr><td colspan="5" class="empty">还没有文档，点上方「选择文件上传」</td></tr>'; return; }
+      $("tmkDocs").innerHTML = docs.map(function (d) {
+        return "<tr><td title=\"" + escAttr(d.title) + "\">" + esc(d.title) + "</td><td>" + esc(fmtSize(d.size)) + "</td><td>" + esc(d.parseStatus || "—") + "</td><td>" + esc(fmtDT(d.createdAt)) + "</td>"
+          + '<td><button class="btn" data-kbdel="' + escAttr(d.id) + '">删除</button></td></tr>';
+      }).join("");
+      Array.prototype.forEach.call($("tmkDocs").querySelectorAll("[data-kbdel]"), function (b) {
+        b.onclick = function () {
+          if (!window.confirm("从团队知识库中删除这篇文档？")) return;
+          api("/teams/" + encodeURIComponent(t.id) + "/kb/delete", { method: "POST", body: { id: b.getAttribute("data-kbdel") } }).then(function (x) {
+            if (!x.ok || !x.j.ok) { say("tmkUpStatus", x.j.message || x.j.error || "删除失败", "bad"); return; }
+            say("tmkUpStatus", "已删除", "ok"); loadKBDocs();
+          });
+        };
+      });
+    });
+  }
+
+  /* ── 团队成员 ── */
+  function loadMembers() {
+    loadTeams().then(function () {
+      var t = curTeam();
+      if (!t) return;
+      var manager = isManager(t);
+      api("/teams/" + encodeURIComponent(t.id) + "/members").then(function (r) {
+        var j = r.j || {};
+        if (!r.ok || !j.ok) { say("tmuStatus", j.message || j.error || "读取成员失败", "bad"); return; }
+        var rows = j.members || [];
+        if (!rows.length) { $("tmuRows").innerHTML = '<tr><td colspan="4" class="empty">还没有成员</td></tr>'; return; }
+        $("tmuRows").innerHTML = rows.map(function (m) {
+          var isOwner = m.role === "owner";
+          var roleCell = isOwner ? "创建者" : esc(m.role === "admin" ? "管理员" : "成员");
+          var ops = [];
+          if (manager && !isOwner) {
+            ops.push('<button class="btn" data-role="' + escAttr(m.username) + '" data-next="' + (m.role === "admin" ? "member" : "admin") + '">' + (m.role === "admin" ? "设为成员" : "设为管理员") + "</button>");
+            ops.push('<button class="btn" data-remove="' + escAttr(m.username) + '">移除</button>');
+          }
+          if (roleOf(t) === "owner" && !isOwner) ops.push('<button class="btn" data-transfer="' + escAttr(m.username) + '">转让 owner</button>');
+          return "<tr><td>" + esc(m.username) + "</td><td>" + roleCell + "</td><td>" + esc(fmtDT(m.joinedAt)) + "</td><td>" + (ops.join(" ") || '<span class="hint">—</span>') + "</td></tr>";
+        }).join("");
+        var body = $("tmuRows");
+        Array.prototype.forEach.call(body.querySelectorAll("[data-remove]"), function (b) {
+          b.onclick = function () {
+            var u = b.getAttribute("data-remove");
+            if (!window.confirm("把 " + u + " 移出团队？其已贡献的内容会保留。")) return;
+            api("/teams/" + encodeURIComponent(t.id) + "/members/" + encodeURIComponent(u), { method: "PATCH", body: { action: "remove" } }).then(function (x) {
+              say("tmuStatus", x.ok && x.j.ok ? "已移除 " + u : (x.j.message || x.j.error || "移除失败"), x.ok && x.j.ok ? "ok" : "bad");
+              loadMembers(); loadOverview();
+            });
+          };
+        });
+        Array.prototype.forEach.call(body.querySelectorAll("[data-role]"), function (b) {
+          b.onclick = function () {
+            var u = b.getAttribute("data-role"), next = b.getAttribute("data-next");
+            api("/teams/" + encodeURIComponent(t.id) + "/members/" + encodeURIComponent(u), { method: "PATCH", body: { role: next } }).then(function (x) {
+              say("tmuStatus", x.ok && x.j.ok ? "已设为" + (next === "admin" ? "管理员" : "成员") : (x.j.message || x.j.error || "操作失败"), x.ok && x.j.ok ? "ok" : "bad");
+              loadMembers();
+            });
+          };
+        });
+        Array.prototype.forEach.call(body.querySelectorAll("[data-transfer]"), function (b) {
+          b.onclick = function () {
+            var u = b.getAttribute("data-transfer");
+            if (!window.confirm("把团队 owner 转让给 " + u + "？转让后你变成管理员，此操作不可撤销。")) return;
+            api("/teams/" + encodeURIComponent(t.id) + "/transfer", { method: "POST", body: { username: u } }).then(function (x) {
+              say("tmuStatus", x.ok && x.j.ok ? "已转让给 " + u : (x.j.message || x.j.error || "转让失败"), x.ok && x.j.ok ? "ok" : "bad");
+              loadMembers(); loadOverview();
+            });
+          };
+        });
+      });
+    });
+  }
+
+  /* ── 团队设置 + 团队套餐 ── */
+  function loadSettings() {
+    loadTeams().then(function () {
+      var t = curTeam();
+      if (!t) { say("tmsStatus", "请先加入或创建一个团队", "warn"); return; }
+      var manager = isManager(t);
+      api("/teams/" + encodeURIComponent(t.id)).then(function (r) {
+        var j = r.j || {};
+        if (!r.ok || !j.ok) { say("tmsStatus", j.message || j.error || "读取失败", "bad"); return; }
+        var team = j.team || {}, s = team.settings || {};
+        if ($("tmsName")) { $("tmsName").value = team.name || ""; $("tmsName").disabled = !manager; }
+        if ($("tmsAllowInvite")) { $("tmsAllowInvite").checked = !!s.allowMemberInvite; $("tmsAllowInvite").disabled = !manager; }
+        if ($("tmsUploadAdmin")) { $("tmsUploadAdmin").checked = s.uploadMode === "admin"; $("tmsUploadAdmin").disabled = !manager; }
+        if ($("tmsContributor")) { $("tmsContributor").checked = s.memoryWriteMode === "contributor-only"; $("tmsContributor").disabled = !manager; }
+        if ($("tmsSave")) $("tmsSave").hidden = !manager;
+        if ($("tmsDissolve")) $("tmsDissolve").hidden = roleOf(t) !== "owner";
+        var ent = j.entitlements || {};
+        if ($("tmsPlanState")) {
+          $("tmsPlanState").innerHTML = "当前：" + esc(ent.planName || "免费档") +
+            " · 席位 " + esc(ent.seats || 3) +
+            " · 知识库 " + esc(ent.kbQuotaMb || 0) + " MB / 记忆 " + esc(ent.memQuotaMb || 0) + " MB" +
+            " · " + (Number(ent.expiresAt || 0) > 0 ? "到期 " + esc(fmtDT(ent.expiresAt)) : "无到期日");
+        }
+      });
+      loadTeamPlans();
+    });
+  }
+
+  function loadTeamPlans() {
+    var t = curTeam();
+    if (!t || !$("tmsPlans")) return;
+    api("/team-plans").then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { $("tmsPlans").innerHTML = '<tr><td colspan="6" class="empty">' + esc(j.error || "读取套餐失败") + "</td></tr>"; return; }
+      var plans = j.plans || [];
+      if (!plans.length) { $("tmsPlans").innerHTML = '<tr><td colspan="6" class="empty">管理员还没有配置团队套餐</td></tr>'; return; }
+      var owner = roleOf(t) === "owner";
+      $("tmsPlans").innerHTML = plans.map(function (p) {
+        var cap = "知识库 " + (p.kbQuotaMb || 0) + " MB / 记忆 " + (p.memQuotaMb || 0) + " MB";
+        return "<tr><td>" + esc(p.name) + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "") + "</td>"
+          + "<td>¥" + esc(p.priceCny) + "</td><td>" + esc(p.seats) + " 人</td><td>" + esc(cap) + "</td>"
+          + "<td>" + (Number(p.days) > 0 ? esc(p.days) + " 天" : "永久") + "</td>"
+          + '<td><button class="btn primary" data-buy="' + escAttr(p.id) + '"' + (owner ? "" : " disabled") + ">购买 / 续费</button></td></tr>";
+      }).join("");
+      Array.prototype.forEach.call($("tmsPlans").querySelectorAll("[data-buy]"), function (b) {
+        b.onclick = function () {
+          var pid = b.getAttribute("data-buy");
+          b.disabled = true;
+          api("/team-plans/buy", { method: "POST", body: { teamId: t.id, planId: pid } }).then(function (x) {
+            b.disabled = false;
+            if (!x.ok || !x.j.ok) {
+              var msg = x.j.message || x.j.error || "下单失败";
+              say("tmsStatus", msg, "bad");
+              showModal("无法下单", '<div style="font-size:13.5px;line-height:1.9">' + esc(msg) +
+                "<br><br>支付渠道未配置时，可由管理员在「团队管理」里为这个团队<b>手动开通</b>团队套餐。</div>");
+              return;
+            }
+            say("tmsStatus", "已创建订单，正在跳转支付…", "ok");
+            window.open(x.j.payUrl, "_blank");
+          });
+        };
+      });
+    });
+  }
+
+  /* ── 管理员：团队管理 ── */
+  function loadAdminTeams() {
+    api("/admin/team-policy").then(function (r) {
+      var p = (r.j && r.j.policy) || {};
+      if ($("atEnabled")) $("atEnabled").checked = p.enabled !== false;
+      if ($("atSeats")) $("atSeats").value = p.freeSeats || 3;
+      if ($("atMem")) $("atMem").checked = p.memoryEnabled !== false;
+      if ($("atKb")) $("atKb").checked = p.kbEnabled !== false;
+      if ($("atMaxChars")) $("atMaxChars").value = p.maxEntryChars || 2000;
+    });
+    loadAdminTeamPlans();
+    loadAdminTeamList();
+  }
+
+  function loadAdminTeamList() {
+    if (!$("atRows")) return;
+    $("atRows").innerHTML = '<tr><td colspan="7" class="empty">加载中…</td></tr>';
+    api("/admin/teams").then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { $("atRows").innerHTML = '<tr><td colspan="7" class="empty">' + esc(j.error || "读取失败") + "</td></tr>"; return; }
+      var rows = j.teams || [];
+      if ($("atTotals")) {
+        var live = rows.filter(function (t) { return t.status !== "dissolved"; }).length;
+        var members = rows.reduce(function (n, t) { return n + Number((t.seats && t.seats.used) || 0); }, 0);
+        $("atTotals").innerHTML = "全站 <b>" + live + "</b> 个在用团队 · 共 <b>" + members + "</b> 个席位 · 免费档每团队 <b>" + esc((j.policy || {}).freeSeats || 3) + "</b> 席";
+      }
+      if (!rows.length) { $("atRows").innerHTML = '<tr><td colspan="7" class="empty">还没有团队</td></tr>'; return; }
+      $("atRows").innerHTML = rows.map(function (t) {
+        var ent = t.entitlements || {};
+        var space = (t.memoryReady ? "记忆✓" : "记忆✗") + " / " + (t.kbReady ? "知识库✓" : "知识库✗");
+        return "<tr><td>" + esc(t.name) + '<div class="hint">' + esc(t.id) + "</div></td><td>" + esc(t.owner) + "</td>"
+          + "<td>" + esc((t.seats && t.seats.used) || 0) + " / " + esc((t.seats && t.seats.limit) || 0) + "</td>"
+          + "<td>" + esc(ent.planName || "免费档") + "</td><td>" + esc(space) + "</td>"
+          + "<td>" + (t.status === "dissolved" ? '<span class="hint">已解散</span>' : "在用") + "</td>"
+          + '<td><button class="btn" data-grant="' + escAttr(t.id) + '">手动开通套餐</button>'
+          + (t.status === "dissolved" ? "" : ' <button class="btn" data-dissolve="' + escAttr(t.id) + '">强制解散</button>') + "</td></tr>";
+      }).join("");
+      Array.prototype.forEach.call($("atRows").querySelectorAll("[data-dissolve]"), function (b) {
+        b.onclick = function () {
+          var id = b.getAttribute("data-dissolve");
+          if (!window.confirm("强制解散团队 " + id + "？成员将无法再访问共享空间。")) return;
+          api("/admin/teams/dissolve", { method: "POST", body: { teamId: id } }).then(function (x) {
+            say("atPolicyStatus", x.ok && x.j.ok ? "已解散 " + id : (x.j.error || "解散失败"), x.ok && x.j.ok ? "ok" : "bad");
+            loadAdminTeamList();
+          });
+        };
+      });
+      Array.prototype.forEach.call($("atRows").querySelectorAll("[data-grant]"), function (b) {
+        b.onclick = function () {
+          var id = b.getAttribute("data-grant");
+          var pid = window.prompt("输入要开通的团队套餐 ID（在下方套餐表里）：", "");
+          if (!pid) return;
+          /* ⛔ 手动开通**每次都赠送积分**（幂等只针对席位/权益），误点一次就多发一份 ⇒ 二次确认 */
+          if (!window.confirm("为团队 " + id + " 开通套餐 " + pid + "？\n\n席位与容量立即生效，并**再发放一次**套餐赠送的团队积分（续费语义）。")) return;
+          api("/admin/team-plans/grant", { method: "POST", body: { teamId: id, planId: String(pid).trim() } }).then(function (x) {
+            say("atPolicyStatus", x.ok && x.j.ok ? "已为 " + id + " 开通套餐（席位 " + (x.j.entitlements || {}).seats + "，赠 " + x.j.bonus + " 积分）" : (x.j.message || x.j.error || "开通失败"), x.ok && x.j.ok ? "ok" : "bad");
+            loadAdminTeamList();
+          });
+        };
+      });
+    });
+  }
+
+  function loadAdminTeamPlans() {
+    if (!$("atPlanRows")) return;
+    api("/admin/team-plans").then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { $("atPlanRows").innerHTML = '<tr><td colspan="7" class="empty">' + esc(j.error || "读取失败") + "</td></tr>"; return; }
+      var plans = j.plans || [];
+      if (!plans.length) { $("atPlanRows").innerHTML = '<tr><td colspan="7" class="empty">还没有团队套餐，用下方表单新建</td></tr>'; return; }
+      $("atPlanRows").innerHTML = plans.map(function (p) {
+        return "<tr><td>" + esc(p.name) + '<div class="hint">' + esc(p.id) + "</div></td>"
+          + "<td>¥" + esc(p.priceCny) + "</td><td>" + esc(p.seats) + "</td>"
+          + "<td>" + esc("KB " + (p.kbQuotaMb || 0) + " / 记忆 " + (p.memQuotaMb || 0) + " MB") + "</td>"
+          + "<td>" + (Number(p.days) > 0 ? esc(p.days) + " 天" : "永久") + "</td>"
+          + "<td>" + (p.active === false ? "已下架" : "在售") + "</td>"
+          + '<td><button class="btn" data-edit="' + escAttr(p.id) + '">编辑</button> <button class="btn" data-toggle="' + escAttr(p.id) + '" data-active="' + (p.active === false ? "1" : "0") + '">' + (p.active === false ? "上架" : "下架") + "</button>"
+          + ' <button class="btn" data-del="' + escAttr(p.id) + '">删除</button></td></tr>';
+      }).join("");
+      var body = $("atPlanRows");
+      Array.prototype.forEach.call(body.querySelectorAll("[data-edit]"), function (b) {
+        b.onclick = function () {
+          var id = b.getAttribute("data-edit");
+          var p = plans.filter(function (x) { return x.id === id; })[0];
+          if (!p) return;
+          $("atPlanFormTitle").textContent = "编辑：" + p.name;
+          $("atpId").value = p.id; $("atpName").value = p.name || ""; $("atpPrice").value = p.priceCny || 0;
+          $("atpSeats").value = p.seats || 3; $("atpDays").value = p.days || 0; $("atpPoints").value = p.points || 0;
+          $("atpKb").value = p.kbQuotaMb || 0; $("atpMem").value = p.memQuotaMb || 0; $("atpDesc").value = p.desc || "";
+        };
+      });
+      Array.prototype.forEach.call(body.querySelectorAll("[data-toggle]"), function (b) {
+        b.onclick = function () {
+          api("/admin/team-plans", { method: "POST", body: { id: b.getAttribute("data-toggle"), active: b.getAttribute("data-active") === "1" } }).then(function () { loadAdminTeamPlans(); });
+        };
+      });
+      Array.prototype.forEach.call(body.querySelectorAll("[data-del]"), function (b) {
+        b.onclick = function () {
+          if (!window.confirm("删除这个团队套餐？（已开通的团队不受影响）")) return;
+          api("/admin/team-plans", { method: "POST", body: { delete: true, id: b.getAttribute("data-del") } }).then(function () { loadAdminTeamPlans(); });
+        };
+      });
+    });
+  }
+
+  /* ── 入口：show() 通过 window.__teamApi.enter(tab) 调 ── */
+  function enter(tab) {
+    if (tab === "teamOverview") loadOverview();
+    else if (tab === "teamMemory") loadMemory();
+    else if (tab === "teamKB") loadKB();
+    else if (tab === "teamMembers") loadMembers();
+    else if (tab === "teamSettings") loadSettings();
+    else if (tab === "adminTeams") loadAdminTeams();
+  }
+
+  window.__teamApi = window.__teamApi || {};
+  window.__teamApi.enter = enter;
+
+  /* ⛔ 10-23：团队邀请链接形如 /account.html?team=<8位码>（后端 /teams/:id/invite 生成）。
+     旧版没读这个参数 ⇒ 链接点了没反应。现在：预填 + 未加入任何团队时**自动加入**并提示。 */
+  var PENDING_TEAM = "";
+  try { PENDING_TEAM = (new URLSearchParams(location.search).get("team") || "").trim().toLowerCase(); } catch (e) { PENDING_TEAM = ""; }
+
+  /* ── 事件绑定（DOM 已就绪：本脚本在 body 末尾）── */
+  if ($("tmCreate")) $("tmCreate").onclick = function () {
+    var name = ($("tmNewName").value || "").trim();
+    if (!name) { say("tmCreateStatus", "请先填团队名称", "warn"); return; }
+    $("tmCreate").disabled = true;
+    api("/teams", { method: "POST", body: { name } }).then(function (r) {
+      $("tmCreate").disabled = false;
+      if (!r.ok || !r.j.ok) { say("tmCreateStatus", r.j.message || r.j.error || "创建失败", "bad"); return; }
+      say("tmCreateStatus", "已创建「" + r.j.team.name + "」", "ok");
+      setCur(r.j.team.id);
+      $("tmNewName").value = "";
+      loadOverview();
+      showModal("团队已创建", '<div style="font-size:13.5px;line-height:1.9">「' + esc(r.j.team.name) + "」已创建，你是 owner。<br><br>下一步：<br>1）到「团队成员」生成邀请码拉人；<br>2）点「开通 / 修复团队空间」建立团队记忆与团队知识库；<br>3）在「团队设置」里选团队套餐（席位不够时）。</div>");
+    });
+  };
+  if ($("tmJoin")) $("tmJoin").onclick = function () {
+    var code = ($("tmJoinCode").value || "").trim();
+    if (!code) { say("tmJoinStatus", "请填团队邀请码", "warn"); return; }
+    api("/teams/join", { method: "POST", body: { code } }).then(function (r) {
+      if (!r.ok || !r.j.ok) { say("tmJoinStatus", r.j.message || r.j.error || "加入失败", "bad"); return; }
+      say("tmJoinStatus", "已加入「" + r.j.team.name + "」", "ok");
+      setCur(r.j.team.id);
+      $("tmJoinCode").value = "";
+      loadOverview();
+    });
+  };
+  if ($("tmSwitch")) $("tmSwitch").onchange = function () { setCur($("tmSwitch").value); loadOverviewDetail(); };
+  if ($("tmProvision")) $("tmProvision").onclick = function () {
+    var t = curTeam(); if (!t) return;
+    $("tmProvision").disabled = true;
+    say("tmProvStatus", "正在开通（会真建团队库与团队记忆空间）…", "warn");
+    api("/teams/" + encodeURIComponent(t.id) + "/provision", { method: "POST" }).then(function (r) {
+      $("tmProvision").disabled = false;
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { say("tmProvStatus", j.message || j.error || "开通失败", "bad"); return; }
+      var errs = j.errors || [];
+      say("tmProvStatus", errs.length ? "部分完成：" + errs.join("；") : "共享空间已开通", errs.length ? "warn" : "ok");
+      loadOverviewDetail();
+    });
+  };
+  function goto(tab) {
+    if (window.__gotoTab) { window.__gotoTab(tab); return; }
+    var btn = document.querySelector('.nav-item[data-tab="' + tab + '"]');
+    if (btn) btn.click();
+  }
+  if ($("tmGotoMemory")) $("tmGotoMemory").onclick = function () { goto("teamMemory"); };
+  if ($("tmGotoKb")) $("tmGotoKb").onclick = function () { goto("teamKB"); };
+
+  if ($("tmmReload")) $("tmmReload").onclick = loadMemory;
+  if ($("tmmCopy")) $("tmmCopy").onclick = function () {
+    var m = window.__teamMemCred;
+    if (!m) { say("tmmStatus", "还没开通团队记忆空间", "warn"); return; }
+    copyText(JSON.stringify({ baseUrl: m.baseUrl, userKey: m.userKey, instanceId: m.instanceId, apiKeyHeader: m.apiKeyHeader, scope: "team" }, null, 2), $("tmmCopy"));
+  };
+
+  if ($("tmkReload")) $("tmkReload").onclick = loadKB;
+  if ($("tmkCopy")) $("tmkCopy").onclick = function () {
+    var k = window.__teamKbCred;
+    if (!k) { say("tmkStatus", "还没开通团队知识库", "warn"); return; }
+    copyText(JSON.stringify({ mcpUrl: k.mcpUrl, mcpToken: k.mcpToken, kbId: k.kbId, kbName: k.kbName, scope: "team" }, null, 2), $("tmkCopy"));
+  };
+  if ($("tmkSearch")) $("tmkSearch").onclick = function () {
+    var t = curTeam(); if (!t) return;
+    var q = ($("tmkQuery").value || "").trim();
+    if (!q) { say("tmkSearchStatus", "请输入关键词", "warn"); return; }
+    say("tmkSearchStatus", "检索中…", "warn");
+    api("/teams/" + encodeURIComponent(t.id) + "/kb/search", { method: "POST", body: { query: q } }).then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { say("tmkSearchStatus", j.message || j.error || "检索失败", "bad"); if ($("tmkHits")) $("tmkHits").innerHTML = ""; return; }
+      say("tmkSearchStatus", "命中 " + (j.hits || []).length + " 条（backend=" + (j.backend || "?") + "）", "ok");
+      if (!$("tmkHits")) return;
+      var hits = j.hits || [];
+      $("tmkHits").innerHTML = hits.length ? hits.map(function (h, i) {
+        return '<div style="padding:10px 0;border-bottom:1px solid var(--line-soft)"><b>' + (i + 1) + ". " + esc(h.title || "（无标题）") + "</b>"
+          + '<div style="margin-top:4px">' + esc(h.snippet || "") + "</div>"
+          + (h.score ? '<div class="hint" style="margin-top:2px">score ' + esc(h.score) + "</div>" : "") + "</div>";
+      }).join("") : "没有命中，换个说法试试。";
+    });
+  };
+  if ($("tmkPick")) $("tmkPick").onclick = function () { if ($("tmkFile")) $("tmkFile").click(); };
+  if ($("tmkFile")) $("tmkFile").onchange = function () {
+    var f = $("tmkFile").files && $("tmkFile").files[0];
+    if (!f) return;
+    var t = curTeam(); if (!t) return;
+    if (f.size > 24 * 1048576) { say("tmkUpStatus", "文件超过 24MB，请拆分后上传", "bad"); return; }
+    say("tmkUpStatus", "读取文件…", "warn");
+    var reader = new FileReader();
+    reader.onload = function () {
+      var s = String(reader.result || "");
+      var b64 = s.indexOf(",") >= 0 ? s.slice(s.indexOf(",") + 1) : s;
+      say("tmkUpStatus", "上传中…", "warn");
+      api("/teams/" + encodeURIComponent(t.id) + "/kb/upload", { method: "POST", body: { name: f.name, contentB64: b64 } }).then(function (r) {
+        var j = r.j || {};
+        if (!r.ok || !j.ok) { say("tmkUpStatus", j.message || j.error || "上传失败", "bad"); return; }
+        say("tmkUpStatus", "已上传「" + j.name + "」（" + fmtSize(j.size) + "）", "ok");
+        $("tmkFile").value = "";
+        loadKBDocs();
+      });
+    };
+    reader.onerror = function () { say("tmkUpStatus", "读文件失败", "bad"); };
+    reader.readAsDataURL(f);
+  };
+
+  if ($("tmuInvite")) $("tmuInvite").onclick = function () {
+    var t = curTeam(); if (!t) return;
+    api("/teams/" + encodeURIComponent(t.id) + "/invite", { method: "POST" }).then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { say("tmuStatus", j.message || j.error || "生成失败", "bad"); return; }
+      say("tmuStatus", "已生成邀请码（7 天有效，1 次）", "ok");
+      if ($("tmuLink")) $("tmuLink").value = j.link || j.code || "";
+      showModal("团队邀请码", '<div style="font-size:13.5px;line-height:2">邀请码：<b style="font-size:18px;letter-spacing:2px">' + esc(j.code) + "</b><br>"
+        + "链接：<code style=\"word-break:break-all\">" + esc(j.link || "") + "</code><br><br>"
+        + "对方登录后到「团队概览 → 用团队邀请码加入」粘贴即可（也可把链接直接发给他）。</div>");
+    });
+  };
+
+  if ($("tmsSave")) $("tmsSave").onclick = function () {
+    var t = curTeam(); if (!t) return;
+    api("/teams/" + encodeURIComponent(t.id), {
+      method: "PATCH",
+      body: {
+        name: $("tmsName").value,
+        settings: {
+          allowMemberInvite: $("tmsAllowInvite").checked,
+          uploadMode: $("tmsUploadAdmin").checked ? "admin" : "all",
+          memoryWriteMode: $("tmsContributor").checked ? "contributor-only" : "all"
+        }
+      }
+    }).then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { say("tmsStatus", j.message || j.error || "保存失败", "bad"); return; }
+      say("tmsStatus", "已保存", "ok");
+      showModal("已保存", '<div style="font-size:13.5px">团队设置已生效：<b>' + esc(j.team.name) + "</b></div>");
+      loadTeams();
+    });
+  };
+  if ($("tmsDissolve")) $("tmsDissolve").onclick = function () {
+    var t = curTeam(); if (!t) return;
+    var typed = window.prompt("解散「" + t.name + "」不可逆。请输入团队名称确认：", "");
+    if (typed !== t.name) { say("tmsDissolveStatus", "名称不匹配，已取消", "warn"); return; }
+    api("/teams/" + encodeURIComponent(t.id) + "/dissolve", { method: "POST", body: { confirm: true } }).then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { say("tmsDissolveStatus", j.message || j.error || "解散失败", "bad"); return; }
+      setCur("");
+      say("tmsDissolveStatus", "团队已解散", "ok");
+      loadOverview();
+    });
+  };
+
+  if ($("atSavePolicy")) $("atSavePolicy").onclick = function () {
+    api("/admin/team-policy", {
+      method: "POST",
+      body: {
+        enabled: $("atEnabled").checked, freeSeats: Number($("atSeats").value) || 3,
+        memoryEnabled: $("atMem").checked, kbEnabled: $("atKb").checked,
+        maxEntryChars: Number($("atMaxChars").value) || 2000
+      }
+    }).then(function (r) {
+      var j = r.j || {};
+      say("atPolicyStatus", r.ok && j.ok ? "已保存" : (j.error || "保存失败"), r.ok && j.ok ? "ok" : "bad");
+      if (r.ok && j.ok) showModal("已保存", '<div style="font-size:13.5px;line-height:1.9">团队开通条件已更新：总开关 <b>' + (j.policy.enabled ? "开" : "关") +
+        "</b> · 免费席位 <b>" + j.policy.freeSeats + "</b> · 记忆 <b>" + (j.policy.memoryEnabled ? "开" : "关") + "</b> · 知识库 <b>" + (j.policy.kbEnabled ? "开" : "关") + "</b></div>");
+    });
+  };
+  if ($("atPlanSave")) $("atPlanSave").onclick = function () {
+    var body = {
+      id: ($("atpId").value || "").trim(), name: ($("atpName").value || "").trim(),
+      priceCny: Number($("atpPrice").value) || 0, seats: Number($("atpSeats").value) || 3,
+      days: Number($("atpDays").value) || 0, points: Number($("atpPoints").value) || 0,
+      kbQuotaMb: Number($("atpKb").value) || 0, memQuotaMb: Number($("atpMem").value) || 0,
+      desc: ($("atpDesc").value || "").trim()
+    };
+    if (!body.name) { say("atPlanStatus", "请填套餐名称", "warn"); return; }
+    api("/admin/team-plans", { method: "POST", body: body }).then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { say("atPlanStatus", j.error || "保存失败", "bad"); return; }
+      say("atPlanStatus", "已保存", "ok");
+      showModal("已保存", '<div style="font-size:13.5px">团队套餐「' + esc(body.name) + "」已保存（¥" + body.priceCny + " · " + body.seats + " 席位）</div>");
+      loadAdminTeamPlans();
+      loadAdminTeamList();
+    });
+  };
+  /* ⛔ 首屏直达兜底：主闭包的初始化在 /me 返回后才调 show()，极端情况下（页面大 + 冷启动）
+     可能晚于用户可见。这里在 load 后按 hash 再触发一次（幂等 GET，不会重复写入）。 */
+  window.addEventListener("load", function () {
+    var t = String(location.hash || "").slice(1);
+    if (t && (t.indexOf("team") === 0 || t === "adminTeams")) enter(t);
+  });
+
+  if ($("atPlanReset")) $("atPlanReset").onclick = function () {
+    if ($("atPlanFormTitle")) $("atPlanFormTitle").textContent = "新建团队套餐";
+    ["atpId", "atpName", "atpPrice", "atpSeats", "atpDays", "atpPoints", "atpKb", "atpMem", "atpDesc"].forEach(function (id) { if ($(id)) $(id).value = ""; });
+    if ($("atpSeats")) $("atpSeats").value = "5";
+  };
+})();
+
 </script>
 
 </body>

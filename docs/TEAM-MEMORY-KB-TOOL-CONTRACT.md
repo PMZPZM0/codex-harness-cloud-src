@@ -234,3 +234,12 @@ knowledge_add({ scope, teamId?, title, text, tags })   // P1：team 走上传
 | 团队套餐 | 席位/容量/赠积分计价 → 复用易支付链路（`kind=team-plan`） |
 | 团队管理后台 | 管理端「团队管理」页：全站团队、席位、空间就绪状态、强制解散 |
 | 团队记忆审计 | MemHub 团队空间按成员统计贡献（需 MemHub 侧支持） |
+
+---
+
+## 9. 实现状态（2026-10-23 · v1.5.93）
+
+- 服务端契约**已实现并线上实测**：`/teams/:id/{provision,integrations,memory,kb/search,kb/upload,kb/docs,kb/delete,points}`、`/team-plans*`、`/admin/team-*`。
+- **实测结果**（客户机 38.145，真实 MemHub + WeKnora）：团队库 `t-TMVL1K8VTGMRQ` 建成 → 上传 markdown → `parse_status=completed` → 检索命中（score 0.995）→ 团队记忆 key 可取且**对外地址可访问** → 非成员 403 → 关能力后 403 降级。
+- 凭据一律下发**对外地址**（`kbUiBase` / `memory.publicBase`），不再出现 `127.0.0.1`（这是本节最重要的修正：早期实现下发内网地址，成员机器必然连不上）。
+- 桌面端 `scope` 参数仍为 **P1 未实施**；当前成员用「云端下发的团队凭据」在本机 Codex 侧配置即可工作。
