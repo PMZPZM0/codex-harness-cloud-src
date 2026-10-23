@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { PPTokenEndpoints } from "../../lib/pptoken-endpoints";
 import { AppSelect } from "../../components/AppSelect";
-import { Check, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, RefreshCw, Rocket, Store, Trash2, X, Zap } from "lucide-react";
+import { Check, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, RefreshCw, Rocket, Store, Trash2, Wand2, X, Zap } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { Spinner } from "../../components/CardShell";
@@ -16,8 +16,9 @@ import { UpstreamProtocol } from "../../hooks/useModelProviders";
 import { ModelIdInput } from "../../components/ModelIdInput";
 import { matchModelSpec } from "../../lib/model-specs";
 import { FreeGatewayRecommendCard } from "../free-gateway";
+import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
 
-export type ModelSettingsSectionProps = { autoCompactRatio: any; setAutoCompactRatio: any; setNotice: any; providersList: any; pptokenCardOff: any; editingProvider: any; setCustomDraft: any; setEditingProvider: any; uniqueModelCount: any; customModel: any; setPptokenCardOff: any; setProviderEnabled: any; currentProvider: any; probingProvider: any; probeActiveProvider: any; providerAutoOpenRef: any; customDraft: any; savingSettings: any; openAppConfirm: any; removeProvider: any; LOCAL_MODEL_PRESETS: any; showApiKey: any; setShowApiKey: any; probeProvider: any; saveCustomDraft: any; switchingModel: any; probeOneModel: any; openModelEditor: any; providerStatus: any; showToast: any; saveCustomModel: any; modelEditor: any; setModelEditor: any; targetProviderHint: any; applyModelIdInput: any; modelSuggestions: any; saveModelEditor: any };
+export type ModelSettingsSectionProps = { refreshActive?: () => void; autoCompactRatio: any; setAutoCompactRatio: any; setNotice: any; providersList: any; pptokenCardOff: any; editingProvider: any; setCustomDraft: any; setEditingProvider: any; uniqueModelCount: any; customModel: any; setPptokenCardOff: any; setProviderEnabled: any; currentProvider: any; probingProvider: any; probeActiveProvider: any; providerAutoOpenRef: any; customDraft: any; savingSettings: any; openAppConfirm: any; removeProvider: any; LOCAL_MODEL_PRESETS: any; showApiKey: any; setShowApiKey: any; probeProvider: any; saveCustomDraft: any; switchingModel: any; probeOneModel: any; openModelEditor: any; providerStatus: any; showToast: any; saveCustomModel: any; modelEditor: any; setModelEditor: any; targetProviderHint: any; applyModelIdInput: any; modelSuggestions: any; saveModelEditor: any };
 
 export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   /* 10-15 用户令：云端模型模式开启时，本地供应商开关必须锁定（模型配置里也打不开）。 */
@@ -28,7 +29,25 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
       .catch(() => setCloudLocked(false));
   }, []);
 
-  const { autoCompactRatio, setAutoCompactRatio, setNotice, providersList, pptokenCardOff, editingProvider, setCustomDraft, setEditingProvider, uniqueModelCount, customModel, setPptokenCardOff, setProviderEnabled, currentProvider, probingProvider, probeActiveProvider, providerAutoOpenRef, customDraft, savingSettings, openAppConfirm, removeProvider, LOCAL_MODEL_PRESETS, showApiKey, setShowApiKey, probeProvider, saveCustomDraft, switchingModel, probeOneModel, openModelEditor, providerStatus, showToast, saveCustomModel, modelEditor, setModelEditor, targetProviderHint, applyModelIdInput, modelSuggestions, saveModelEditor } = props;
+  const { refreshActive, autoCompactRatio, setAutoCompactRatio, setNotice, providersList, pptokenCardOff, editingProvider, setCustomDraft, setEditingProvider, uniqueModelCount, customModel, setPptokenCardOff, setProviderEnabled, currentProvider, probingProvider, probeActiveProvider, providerAutoOpenRef, customDraft, savingSettings, openAppConfirm, removeProvider, LOCAL_MODEL_PRESETS, showApiKey, setShowApiKey, probeProvider, saveCustomDraft, switchingModel, probeOneModel, openModelEditor, providerStatus, showToast, saveCustomModel, modelEditor, setModelEditor, targetProviderHint, applyModelIdInput, modelSuggestions, saveModelEditor } = props;
+  /* 10-24：自动配置弹窗（填地址+密钥 → 自动检测 → 勾选 → 保存启用 → 重启）。 */
+  const [setupIntent, setSetupIntent] = useState<ProviderSetupIntent | null>(null);
+  const openAutoSetup = () => {
+    let n = Date.now() % 1000;
+    while (providersList.some((p: any) => p.provider === `custom${n}`)) n = (n + 1) % 1000;
+    setSetupIntent({ provider: `custom${n}`, name: "", baseUrl: "", apiKey: "", source: "custom", editable: true, autoStart: false });
+  };
+  const finishAutoSetup = ({ result }: ProviderSetupCompleted, options: { restart: boolean }) => {
+    const saved = result.saved;
+    setSetupIntent(null);
+    void refreshActive?.();
+    if (saved) {
+      setEditingProvider(saved.provider);
+      setCustomDraft({ ...saved, contextWindow: String(saved.contextWindow ?? 128000), wireApi: saved.wireApi ?? "responses", apiKey: "", models: saved.models ?? [], enabled: saved.enabled ?? true, upstreamProtocol: saved.upstreamProtocol ?? "auto" });
+      showToast?.("已保存并启用", `${saved.name} · ${result.models.length} 个模型；旧供应商已自动停用`);
+    }
+    if (options.restart) window.setTimeout(() => { void window.codex.relaunchApp().catch(() => undefined); }, 900);
+  };
 
   /* ⛔ 10-14 联动（B）：云端管理面板的模型勾选同步（limited-benefit apply changed=true）
      会置 localStorage「limited-benefit-pending-restart」标记 —— 本机供应商档案已更新，
@@ -51,6 +70,14 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   }, []);
   return (
     <>
+      <div className="provider-setup-hero" data-testid="provider-setup-entry">
+        <div className="provider-setup-hero-copy">
+          <span className="provider-setup-hero-title"><Wand2 size={15} /><b>自动配置模型</b><em>推荐</em></span>
+          <p>填入 API 地址与密钥 → 自动检测并刷新模型 → 勾选要用的模型（默认全选）→ 保存并启用。旧供应商会自动停用，应用重启后完全生效。</p>
+          <div className="provider-setup-hero-steps"><span>检测</span><span>勾选</span><span>保存启用</span><span>重启</span></div>
+        </div>
+        <button className="primary-setting provider-setup-open" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
+      </div>
       <section className="settings-model-layout">
                     <div className="model-global-bar">
                       <div className="model-global-item">
@@ -427,6 +454,9 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                       </div>
                     </div>}
                   </section>
+      {setupIntent && (
+        <ProviderSetupDialog intent={setupIntent} onClose={() => setSetupIntent(null)} onCompleted={finishAutoSetup} />
+      )}
     </>
   );
 }

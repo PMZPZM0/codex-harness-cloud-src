@@ -8,8 +8,9 @@ import { PPTokenEndpoints } from "../../lib/pptoken-endpoints";
 import { Rocket, CircleGauge, Wallet, Settings2, ChevronDown, Check, KeyRound, WifiOff, ExternalLink } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { createPortal } from "react-dom";
-import { performRelayLogin } from "../../lib/relay";
+import { performRelayLogin, writeRelayActive } from "../../lib/relay";
 import { normalizeCredential } from "../../lib/relay-input.mjs";
+import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
 import { useRef, useState, useLayoutEffect, useEffect, KeyboardEvent } from "react";
 
 export function FieldHelp({ text }: { text: string }) {
@@ -89,7 +90,7 @@ export function FieldHelp({ text }: { text: string }) {
   );
 }
 
-export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }) => Promise<boolean> }) {
+export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string; saved?: any; models?: string[] }) => Promise<boolean> }) {
   const [mode, setMode] = useState<"custom" | "pptoken" | "relay" | "openai">("pptoken");
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
   const [apiBase, setApiBase] = useState(PPTokenEndpoints[0].url);
@@ -101,6 +102,8 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
   const apiKeyRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  /* 10-24：中转站 / OpenAI / 自定义 API 登录后统一进「自动配置」弹窗。 */
+  const [setupIntent, setSetupIntent] = useState<ProviderSetupIntent | null>(null);
   const [showPw, setShowPw] = useState(false);
   // 中转站账户登录（sub2api 兼容）
   const [relayDraft, setRelayDraft] = useState({ baseUrl: "https://api.pptoken.cc", email: "", password: "" });
@@ -119,14 +122,28 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
     return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [endpointOpen]);
 
+  const finishSetup = async ({ result, intent }: ProviderSetupCompleted, options: { restart: boolean }) => {
+    const saved = result.saved;
+    const models = result.models ?? [];
+    const ok = await onLogin({
+      provider: saved?.provider || intent.provider,
+      name: saved?.name || intent.name,
+      baseUrl: saved?.baseUrl || intent.baseUrl,
+      apiKey: "",
+      model: saved?.model || models[0] || "",
+      username: intent.account || username.trim() || undefined,
+      saved,
+      models,
+    });
+    if (ok && intent.relayActive) writeRelayActive({ ...intent.relayActive, switchedAt: Date.now() });
+    setSetupIntent(null);
+    if (!ok) { setStatus("供应商已保存，但进入主界面失败 —— 请重启应用后重试"); return; }
+    if (options.restart) window.setTimeout(() => { void window.codex.relaunchApp().catch(() => undefined); }, 900);
+  };
+
   const doLogin = async (provider: string, name: string, baseUrl: string, key: string) => {
-    setBusy(true); setStatus("");
-    try {
-      const ok = await onLogin({ provider, name, baseUrl, apiKey: key, model: "", username: username.trim() || undefined });
-      if (ok) return;
-      setStatus("探测未返回可用模型，请检查密钥与地址");
-    } catch (error: any) { setStatus("登录失败：" + error.message); }
-    finally { setBusy(false); }
+    setStatus("");
+    setSetupIntent({ provider, name, baseUrl, apiKey: key, source: "custom", sourceLabel: provider.startsWith("pptoken") ? "PPtoken" : "自定义 API", editable: true, autoStart: true, account: username.trim() || undefined });
   };
 
   // 中转站账户登录：登录 → 自动选计费方式（有套餐用套餐，否则余额）→ 生成供应商进主界面
@@ -148,9 +165,22 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
       password,
       username: username.trim() || undefined,
       onLogin,
+      deferActivation: true,
     });
-    if (!result.ok) setStatus(result.message ?? "中转站登录失败");
     setBusy(false);
+    if (!result.ok) { setStatus(result.message ?? "中转站登录失败"); return; }
+    if (!result.pending) { setStatus("中转站登录成功，但没有解析到可用供应商 —— 请稍后重试"); return; }
+    setSetupIntent({
+      provider: result.pending.provider,
+      name: result.pending.name,
+      baseUrl: result.pending.baseUrl,
+      apiKey: result.pending.apiKey,
+      source: "relay",
+      editable: false,
+      autoStart: true,
+      account: username.trim() || result.active?.email,
+      relayActive: result.active,
+    });
   };
 
   // OpenAI 官方订阅：设备码登录 → 收进账号库 → 写 auth.json + 重启引擎 → 自动配置进主界面
@@ -189,8 +219,16 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
           setOpenaiDevice(null);
           const saved = await window.codex.openaiCaptureLogin();
           await window.codex.openaiAccountSwitch(saved.id);
-          const ok = await onLogin({ provider: "openai-official", name: "OpenAI 官方订阅", baseUrl: "https://chatgpt.com/backend-api/codex", apiKey: "", model: "", username: username.trim() || undefined });
-          if (!ok) setStatus("订阅启用失败，请稍后在 设置 → 模型 重试");
+          setBusy(false);
+          setSetupIntent({
+            provider: "openai-official",
+            name: "OpenAI 官方订阅",
+            baseUrl: "https://chatgpt.com/backend-api/codex",
+            apiKey: "",
+            source: "openai",
+            autoStart: true,
+            account: username.trim() || saved.email || undefined,
+          });
         } else if (Date.now() - startedAt > 15 * 60_000) {
           if (openaiTimerRef.current) window.clearInterval(openaiTimerRef.current);
           openaiTimerRef.current = null;
@@ -298,8 +336,11 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
         <a className="login-sponsor-link" href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" onClick={(event) => { event.preventDefault(); void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S"); }}>
           <Rocket size={12} />没有 API Key？注册 PPtoken 领取体验额度<ExternalLink size={11} />
         </a>
-        <div className="login-foot">探测成功后会自动导入模型并完成配置</div>
+        <div className="login-foot">检测成功后会打开自动配置：勾选模型 → 保存启用 → 重启</div>
       </div>
+      {setupIntent && (
+        <ProviderSetupDialog intent={setupIntent} onClose={() => setSetupIntent(null)} onCompleted={finishSetup} />
+      )}
     </div>
   );
 }
