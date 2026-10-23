@@ -1234,6 +1234,7 @@
           <div class="pol-field"><label>每团队限购（0 = 不限）</label><input class="field" id="atpkLimit" type="number" min="0" step="1" /></div>
         </div>
         <div class="pol-actions">
+          <label class="mb-check" title="示例积分包只做展示，购买入口会提示不可购买"><input type="checkbox" id="atpkDemo" /> <span>示例（仅展示，不可购买）</span></label>
           <button class="btn primary" id="atPkgSave">保存积分包</button>
           <button class="btn" id="atPkgReset">清空表单</button>
           <span class="status" id="atPkgStatus" role="status"></span>
@@ -1258,6 +1259,7 @@
           <div class="pol-field" style="grid-column:span 2"><label>描述</label><input class="field" id="atpDesc" placeholder="适合 5-10 人项目组" /></div>
         </div>
         <div class="pol-actions">
+          <label class="mb-check" title="示例套餐只做展示，团队端显示「示例 · 不可购买」"><input type="checkbox" id="atpDemo" /> <span>示例（仅展示，不可购买）</span></label>
           <button class="btn primary" id="atPlanSave">保存</button>
           <button class="btn" id="atPlanReset">清空表单</button>
           <span class="status" id="atPlanStatus" role="status"></span>
@@ -1370,6 +1372,7 @@
           <label class="mb-check"><input type="checkbox" id="plKbOn" checked /> <span>含知识库</span></label>
           <label class="mb-check"><input type="checkbox" id="plMemOn" checked /> <span>含记忆</span></label>
           <label class="mb-check"><input type="checkbox" id="plActive" checked /> <span>上架</span></label>
+          <label class="mb-check" title="示例套餐只做展示，用户端显示「示例 · 不可购买」"><input type="checkbox" id="plDemo" /> <span>示例（仅展示，不可购买）</span></label>
           <button class="btn primary" id="plSave">保存套餐</button>
           <button class="btn" id="plReset">清空表单</button>
           <span class="status" id="plStatus" role="status"></span>
@@ -6227,6 +6230,8 @@
   try { subSession = localStorage.getItem("chc-session") || ""; } catch (e) { subSession = ""; }
   function $(id) { return document.getElementById(id); }
   function esc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  /* 属性位专用（上面的 esc 不转义引号）：套餐 id 虽由服务端白名单约束，仍按规矩走 escAttr */
+  function escAttr(t) { return esc(t).replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
   function api(path, opts) {
     opts = opts || {};
     var headers = { "Content-Type": "application/json" };
@@ -6375,18 +6380,29 @@
         feats.push("<div>" + (f === "knowledge" ? "📚 知识库" : "🧠 记忆") + "：<b>" + (bits.length ? bits.join(" · ") : "标准额度") + "</b></div>");
       });
       /* ⛔ 用户澄清：套餐用钱买，所以不再按积分余额禁用按钮 */
+      var demo = Boolean(pl.demo);
       return '<article class="plan-card">'
-        + "<h3>" + esc(pl.name) + "</h3>"
+        + "<h3>" + esc(pl.name) + (demo ? ' <span class="pill plain">示例</span>' : "") + "</h3>"
         + '<div class="plan-price">' + (Number(pl.priceCny) > 0 ? "¥" + esc(pl.priceCny) : '<span class="hint">未定价</span>')
         + ' <small>/ ' + (pl.days === 0 ? "永久" : pl.days + " 天") + "</small></div>"
         + (Number(pl.points) > 0 ? '<div class="hint">购买即赠 <b>' + esc(pl.points) + " 积分</b></div>" : "")
         + (pl.desc ? '<div class="hint">' + esc(pl.desc) + "</div>" : "")
         + '<div class="plan-feats">' + feats.join("") + "</div>"
-        + '<button class="btn primary sm" data-buy="' + esc(pl.id) + '">立即购买</button>' 
+        + (demo
+          ? '<button class="btn sm" data-demo-plan="' + escAttr(pl.id) + '">示例 · 不可购买</button>'
+          : '<button class="btn primary sm" data-buy="' + escAttr(pl.id) + '">立即购买</button>')
         + "</article>";
     }).join("");
     Array.prototype.forEach.call(box.querySelectorAll("[data-buy]"), function (b) {
       b.onclick = function () { buyPlan(b.getAttribute("data-buy")); };
+    });
+    /* ⛔ 示例套餐：只展示内容，不参与售卖（服务端同样拦截，这里只做解释） */
+    Array.prototype.forEach.call(box.querySelectorAll("[data-demo-plan]"), function (b) {
+      b.onclick = function () {
+        showModal("示例套餐（不可购买）", '<div style="font-size:13.5px;line-height:1.9">'
+          + "这个套餐是<b>示例</b>：列出它会包含的权益与额度，方便你了解套餐内容，<b>不参与售卖</b>。<br><br>"
+          + "如需开通，请联系管理员在「用户管理 → 手动开通」为你开通；正式套餐上架后这里会显示「立即购买」。</div>");
+      };
     });
   }
 
@@ -6529,7 +6545,7 @@
     box.innerHTML = ADMIN_PLANS.length ? ADMIN_PLANS.map(function (pl) {
       var priceText = (Number(pl.priceCny) > 0 ? "¥" + esc(pl.priceCny) : '<span class="hint">未定价</span>')
         + '<span class="hint"> · 赠 ' + esc(pl.points || 0) + " 积分</span>";
-      return "<tr><td>" + esc(pl.name) + ' <span class="hint">' + esc(pl.id) + "</span></td><td>" + priceText + "</td><td>" + esc(pl.days === 0 ? "永久" : pl.days + " 天") + "</td><td class=\"wrap\">" + esc(planFeatText(pl)) + "</td><td>" + (pl.active !== false ? '<span class="pill ok">上架</span>' : '<span class="pill plain">下架</span>') + "</td>"
+      return "<tr><td>" + esc(pl.name) + (pl.demo ? ' <span class="pill plain">示例</span>' : "") + ' <span class="hint">' + esc(pl.id) + "</span></td><td>" + priceText + "</td><td>" + esc(pl.days === 0 ? "永久" : pl.days + " 天") + "</td><td class=\"wrap\">" + esc(planFeatText(pl)) + "</td><td>" + (pl.active !== false ? '<span class="pill ok">上架</span>' : '<span class="pill plain">下架</span>') + "</td>"
         + '<td><div class="mb-ops"><button class="btn sm" data-pl-edit="' + esc(pl.id) + '">编辑</button><button class="btn sm" data-pl-grant="' + esc(pl.id) + '">手动开通</button>'
         + '<button class="btn sm" data-pl-toggle="' + esc(pl.id) + '">' + (pl.active !== false ? "下架" : "上架") + "</button>"
         + '<button class="btn sm danger" data-pl-del="' + esc(pl.id) + '">删除</button></div></td></tr>';
@@ -6577,6 +6593,7 @@
     $("plPrice").value = pl.points != null ? pl.points : (pl.price || "");
     $("plDays").value = pl.days; $("plSort").value = pl.sort || 0;
     $("plActive").checked = pl.active !== false;
+    if ($("plDemo")) $("plDemo").checked = Boolean(pl.demo);
     var f = pl.features || {};
     $("plKbOn").checked = Boolean(f.knowledge); $("plMemOn").checked = Boolean(f.memory);
     $("plKbMb").value = f.knowledge && f.knowledge.quotaMb != null ? f.knowledge.quotaMb : "";
@@ -6601,7 +6618,7 @@
       priceCny: Number($("plPriceCny").value || 0),
       points: Number($("plPrice").value || 0),
       days: Number($("plDays").value || 0), sort: Number($("plSort").value || 0),
-      active: $("plActive").checked, features: features,
+      active: $("plActive").checked, demo: Boolean($("plDemo") && $("plDemo").checked), features: features,
     };
   }
   function renderTopupAdmin() {
@@ -6703,8 +6720,9 @@
     $("plReset").dataset.bound = "1";
     $("plReset").onclick = function () {
       $("blPlanFormTitle").textContent = "新建套餐";
-      ["plId", "plName", "plDesc", "plPrice", "plDays", "plSort", "plKbMb", "plKbQuota", "plMemMb", "plMemQuota"].forEach(function (id) { if ($(id)) $(id).value = ""; });
+      ["plId", "plName", "plDesc", "plPriceCny", "plPrice", "plDays", "plSort", "plKbMb", "plKbQuota", "plMemMb", "plMemQuota"].forEach(function (id) { if ($(id)) $(id).value = ""; });
       $("plKbOn").checked = true; $("plMemOn").checked = true; $("plActive").checked = true;
+      if ($("plDemo")) $("plDemo").checked = false;
     };
   }
 })();
@@ -6903,7 +6921,8 @@
         return;
       }
       var html = '<div style="font-size:13.5px;line-height:1.9">';
-      html += '<div class="hint" style="margin-bottom:10px">选择要购买的积分包（到账直接进团队余额）：</div>';
+      html += '<div class="hint" style="margin-bottom:10px">选择要购买的积分包（到账直接进团队余额）：'
+        + (pkgs.some(function (x) { return x.demo; }) ? '<br>标「示例」的只做展示，<b>不可购买</b>。' : "") + "</div>";
       pkgs.forEach(function (p) {
         html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line-soft)">'
           + "<div><b>" + esc(p.name) + "</b>"
@@ -6911,7 +6930,10 @@
           + '<div class="hint">到账 ' + esc(p.points) + (Number(p.bonusPoints) > 0 ? " + 赠 " + esc(p.bonusPoints) : "") + " 积分"
           + (Number(p.validDays) > 0 ? " · " + esc(p.validDays) + " 天有效" : " · 长期有效") + "</div></div>"
           + '<div style="white-space:nowrap"><b>¥' + esc(p.priceCny) + "</b> "
-          + '<button class="btn primary" data-pkgbuy="' + escAttr(p.id) + '">购买</button></div></div>';
+          + (p.demo
+            ? '<span class="pill plain">示例</span>'
+            : '<button class="btn primary" data-pkgbuy="' + escAttr(p.id) + '">购买</button>')
+          + "</div></div>";
       });
       html += "</div>";
       showModal("购买团队积分包", html);
@@ -7117,14 +7139,24 @@
       var owner = roleOf(t) === "owner";
       $("tmsPkgs").innerHTML = pkgs.map(function (p) {
         var total = Number(p.points || 0) + Number(p.bonusPoints || 0);
-        return "<tr><td>" + esc(p.name) + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "") + "</td>"
+        return "<tr><td>" + esc(p.name) + (p.demo ? ' <span class="pill plain">示例</span>' : "") + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "") + "</td>"
           + "<td>¥" + esc(p.priceCny) + "</td>"
           + "<td>" + esc(p.points) + (Number(p.bonusPoints) > 0 ? " <span class='hint'>+赠 " + esc(p.bonusPoints) + "</span>" : "") + "</td>"
           + "<td>" + (Number(p.validDays) > 0 ? esc(p.validDays) + " 天" : "长期") + "</td>"
           + "<td>" + (Number(p.limitPerTeam) > 0 ? esc(p.limitPerTeam) + " 次" : "不限") + "</td>"
-          + '<td><button class="btn primary" data-pkgbuy2="' + escAttr(p.id) + '"' + (owner ? "" : " disabled") + ">购买</button></td></tr>";
+          + (p.demo
+            ? '<td><button class="btn" data-demo-pkg="' + escAttr(p.id) + '">示例 · 不可购买</button></td>'
+            : '<td><button class="btn primary" data-pkgbuy2="' + escAttr(p.id) + '"' + (owner ? "" : " disabled") + ">购买</button></td>")
+          + "</tr>";
       }).join("");
       if ($("tmsPkgState")) $("tmsPkgState").innerHTML = "到账直接进团队余额（余额与配额分开展示）。" + (j.topupEnabled === false ? ' <span style="color:#c0392b">支付渠道未配置，暂时只能由管理员分配。</span>' : "");
+      Array.prototype.forEach.call($("tmsPkgs").querySelectorAll("[data-demo-pkg]"), function (b) {
+        b.onclick = function () {
+          showModal("示例积分包（不可购买）", '<div style="font-size:13.5px;line-height:1.9">'
+            + "这个积分包是<b>示例</b>：展示面额与赠送规则，<b>不参与售卖</b>。<br><br>"
+            + "需要补充团队积分请联系管理员，在「团队管理 → 全站团队 → 发积分」直接发放。</div>");
+        };
+      });
       Array.prototype.forEach.call($("tmsPkgs").querySelectorAll("[data-pkgbuy2]"), function (b) {
         b.onclick = function () { openPkgBuy(); };
       });
@@ -7142,11 +7174,21 @@
       var owner = roleOf(t) === "owner";
       $("tmsPlans").innerHTML = plans.map(function (p) {
         var cap = "知识库 " + (p.kbQuotaMb || 0) + " MB / 记忆 " + (p.memQuotaMb || 0) + " MB";
-        return "<tr><td>" + esc(p.name) + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "") + "</td>"
+        return "<tr><td>" + esc(p.name) + (p.demo ? ' <span class="pill plain">示例</span>' : "") + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "") + "</td>"
           + "<td>¥" + esc(p.priceCny) + "</td><td>" + esc(p.seats) + " 人</td><td>" + esc(cap) + "</td>"
           + "<td>" + (Number(p.days) > 0 ? esc(p.days) + " 天" : "永久") + "</td>"
-          + '<td><button class="btn primary" data-buy="' + escAttr(p.id) + '"' + (owner ? "" : " disabled") + ">购买 / 续费</button></td></tr>";
+          + (p.demo
+            ? '<td><button class="btn" data-demo-tplan="' + escAttr(p.id) + '">示例 · 不可购买</button></td>'
+            : '<td><button class="btn primary" data-buy="' + escAttr(p.id) + '"' + (owner ? "" : " disabled") + ">购买 / 续费</button></td>")
+          + "</tr>";
       }).join("");
+      Array.prototype.forEach.call($("tmsPlans").querySelectorAll("[data-demo-tplan]"), function (b) {
+        b.onclick = function () {
+          showModal("示例团队套餐（不可购买）", '<div style="font-size:13.5px;line-height:1.9">'
+            + "这个团队套餐是<b>示例</b>：展示席位、容量与配额构成，<b>不参与售卖</b>。<br><br>"
+            + "需要开通请让管理员在「团队管理 → 团队套餐设置」用「手动开通」为该团队开通。</div>");
+        };
+      });
       Array.prototype.forEach.call($("tmsPlans").querySelectorAll("[data-buy]"), function (b) {
         b.onclick = function () {
           var pid = b.getAttribute("data-buy");
@@ -7363,7 +7405,7 @@
     if (!$("atPkgRows")) return;
     if (!pkgs.length) { $("atPkgRows").innerHTML = '<tr><td colspan="7" class="empty">还没有积分包，用下方表单新建</td></tr>'; return; }
     $("atPkgRows").innerHTML = pkgs.map(function (p) {
-      return "<tr><td>" + esc(p.name) + '<div class="hint">' + esc(p.id) + "</div></td>"
+      return "<tr><td>" + esc(p.name) + (p.demo ? ' <span class="pill plain">示例</span>' : "") + '<div class="hint">' + esc(p.id) + "</div></td>"
         + "<td>¥" + esc(p.priceCny) + "</td>"
         + "<td>" + esc(p.points) + (Number(p.bonusPoints) > 0 ? " <span class='hint'>+赠 " + esc(p.bonusPoints) + "</span>" : "") + "</td>"
         + "<td>" + (Number(p.validDays) > 0 ? esc(p.validDays) + " 天" : "永久") + "</td>"
@@ -7381,6 +7423,7 @@
         $("atpkId").value = p.id; $("atpkName").value = p.name || ""; $("atpkPrice").value = p.priceCny || 0;
         $("atpkPoints").value = p.points || 0; $("atpkBonus").value = p.bonusPoints || 0;
         $("atpkDays").value = p.validDays || 0; $("atpkLimit").value = p.limitPerTeam || 0;
+        if ($("atpkDemo")) $("atpkDemo").checked = Boolean(p.demo);
       };
     });
     Array.prototype.forEach.call($("atPkgRows").querySelectorAll("[data-pkg-toggle]"), function (b) {
@@ -7406,7 +7449,7 @@
       var plans = j.plans || [];
       if (!plans.length) { $("atPlanRows").innerHTML = '<tr><td colspan="7" class="empty">还没有团队套餐，用下方表单新建</td></tr>'; return; }
       $("atPlanRows").innerHTML = plans.map(function (p) {
-        return "<tr><td>" + esc(p.name) + '<div class="hint">' + esc(p.id) + "</div></td>"
+        return "<tr><td>" + esc(p.name) + (p.demo ? ' <span class="pill plain">示例</span>' : "") + '<div class="hint">' + esc(p.id) + "</div></td>"
           + "<td>¥" + esc(p.priceCny) + "</td><td>" + esc(p.seats) + "</td>"
           + "<td>" + esc("KB " + (p.kbQuotaMb || 0) + " / 记忆 " + (p.memQuotaMb || 0) + " MB") + "</td>"
           + "<td>" + (Number(p.days) > 0 ? esc(p.days) + " 天" : "永久") + "</td>"
@@ -7424,6 +7467,7 @@
           $("atpId").value = p.id; $("atpName").value = p.name || ""; $("atpPrice").value = p.priceCny || 0;
           $("atpSeats").value = p.seats || 3; $("atpDays").value = p.days || 0; $("atpPoints").value = p.points || 0;
           $("atpKb").value = p.kbQuotaMb || 0; $("atpMem").value = p.memQuotaMb || 0; $("atpDesc").value = p.desc || "";
+          if ($("atpDemo")) $("atpDemo").checked = Boolean(p.demo);
         };
       });
       Array.prototype.forEach.call(body.querySelectorAll("[data-toggle]"), function (b) {
@@ -7646,7 +7690,8 @@
       priceCny: Number($("atpPrice").value) || 0, seats: Number($("atpSeats").value) || 3,
       days: Number($("atpDays").value) || 0, points: Number($("atpPoints").value) || 0,
       kbQuotaMb: Number($("atpKb").value) || 0, memQuotaMb: Number($("atpMem").value) || 0,
-      desc: ($("atpDesc").value || "").trim()
+      desc: ($("atpDesc").value || "").trim(),
+      demo: Boolean($("atpDemo") && $("atpDemo").checked)
     };
     if (!body.name) { say("atPlanStatus", "请填套餐名称", "warn"); return; }
     api("/admin/team-plans", { method: "POST", body: body }).then(function (r) {
@@ -7724,7 +7769,8 @@
       id: (($("atpkId") || {}).value || "").trim(), name: (($("atpkName") || {}).value || "").trim(),
       priceCny: Number(($("atpkPrice") || {}).value) || 0, points: Number(($("atpkPoints") || {}).value) || 0,
       bonusPoints: Number(($("atpkBonus") || {}).value) || 0, validDays: Number(($("atpkDays") || {}).value) || 0,
-      limitPerTeam: Number(($("atpkLimit") || {}).value) || 0
+      limitPerTeam: Number(($("atpkLimit") || {}).value) || 0,
+      demo: Boolean($("atpkDemo") && $("atpkDemo").checked)
     };
     if (!body.name) { say("atPkgStatus", "请填名称", "warn"); return; }
     if (!body.points) { say("atPkgStatus", "到账积分不能为 0", "warn"); return; }
@@ -7738,6 +7784,7 @@
   };
   if ($("atPkgReset")) $("atPkgReset").onclick = function () {
     ["atpkId", "atpkName", "atpkPrice", "atpkPoints", "atpkBonus", "atpkDays", "atpkLimit"].forEach(function (id) { if ($(id)) $(id).value = ""; });
+    if ($("atpkDemo")) $("atpkDemo").checked = false;
   };
 
   /* ── 全站团队：勾选 / 批量发分 / 批量设套餐 / 导出 ── */
@@ -7823,6 +7870,7 @@
     if ($("atPlanFormTitle")) $("atPlanFormTitle").textContent = "新建团队套餐";
     ["atpId", "atpName", "atpPrice", "atpSeats", "atpDays", "atpPoints", "atpKb", "atpMem", "atpDesc"].forEach(function (id) { if ($(id)) $(id).value = ""; });
     if ($("atpSeats")) $("atpSeats").value = "5";
+    if ($("atpDemo")) $("atpDemo").checked = false;
   };
 })();
 
