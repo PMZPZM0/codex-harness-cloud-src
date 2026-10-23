@@ -1959,7 +1959,9 @@ const server = http.createServer(async (req, res) => {
       /* 下载加速：与镜像表同源，前端只拼前缀，不在页面里写死域名 */
       mirrors: UPDATE_MIRRORS.filter((m) => m.prefix).map((m) => ({ name: m.name, prefix: m.prefix })),
       latest,
-      releases: (data.releases || []).slice(0, 8),
+      /* ⛔ 10-23 用户定稿：产品首页更新日志只展示最新 2 个版本（先前给 8 条，日志区太长）。
+         上游 per_page=10 保持（取最高版本用的 latest 兜底不受影响），这里只裁展示面。 */
+      releases: (data.releases || []).slice(0, 2),
       features: PRODUCT_FEATURES,
       message: latest ? "" : (data.message || "暂无发布版本"),
     });
