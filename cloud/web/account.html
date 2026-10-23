@@ -591,6 +591,11 @@
   .mb-head h2 { margin: 0 0 6px; }
   .mb-sub { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.65; max-width: 78ch; }
   .mb-bar { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 12px 0; }
+  /* 到期自动清理开关（10-23 用户令「只提醒不自动删」）：两个中心共用同一份 policy，切任一个另一个跟着变 */
+  .mb-auto { display: flex; align-items: center; gap: 9px; flex: none; cursor: pointer; user-select: none; }
+  .mb-auto-txt { display: flex; flex-direction: column; line-height: 1.35; }
+  .mb-auto-txt b { font-size: 12.5px; font-weight: 600; }
+  .mb-auto-txt small { font-size: 11px; color: var(--muted); }
   .mb-grp { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .mb-grp + .mb-grp { padding-left: 14px; border-left: 1px solid var(--line); }
   .mb-grp .field { width: auto; min-width: 84px; min-height: 32px; padding: 5px 10px; border-radius: 8px; font-size: 12.5px; }
@@ -1383,6 +1388,10 @@
           <h2>已开通成员 <span class="pill plain" id="memMbPill">读取中…</span></h2>
           <p class="mb-sub">谁开通了记忆空间、记忆钥匙发下去没有、用了多少容量与检索次数，都在这张表里。勾选后可批量续期 / 改额度 / 停用 / 补发钥匙。</p>
         </div>
+        <label class="mb-auto" title="关闭后：到期只提醒，不删任何资源（手动清理仍可用）">
+          <input type="checkbox" class="switch" id="memMbAutoClean" aria-label="到期自动清理" />
+          <span class="mb-auto-txt"><b>到期自动清理</b><small id="memMbAutoCleanHint">开：宽限 3 天后自动删资源</small></span>
+        </label>
         <span class="hint" id="memMbSummary"></span>
       </div>
       <div class="mb-bar">
@@ -1588,6 +1597,10 @@
           <h2>已开通成员 <span class="pill plain" id="kbMbPill">读取中…</span></h2>
           <p class="mb-sub">谁开通了知识库、库建好没有、用了多少容量，都在这张表里。勾选后可批量续期 / 改容量 / 停用 / 补齐库 —— 不用再进知识库后台逐个点。</p>
         </div>
+        <label class="mb-auto" title="关闭后：到期只提醒，不删任何资源（手动清理仍可用）">
+          <input type="checkbox" class="switch" id="kbMbAutoClean" aria-label="到期自动清理" />
+          <span class="mb-auto-txt"><b>到期自动清理</b><small id="kbMbAutoCleanHint">开：宽限 3 天后自动删资源</small></span>
+        </label>
         <span class="hint" id="kbMbSummary"></span>
       </div>
       <div class="mb-bar">
@@ -1922,7 +1935,9 @@
     }).join("");
     var html = '<div style="font-size:13.5px;line-height:1.85">'
       + '<div style="margin-bottom:6px">你的以下资源即将到期或已过期：</div>' + rows
-      + '<div class="hint" style="margin-top:10px">过期后有 ' + (j.graceDays || 3) + ' 天宽限期，之后系统会自动清理对应空间（知识库文档 / 记忆内容），<b>数据将无法恢复</b>。续期后立即恢复使用。</div>'
+      + (j.autoClean === false
+        ? '<div class="hint" style="margin-top:10px">过期后有 ' + (j.graceDays || 3) + ' 天宽限期。<b>系统不会自动删除你的资源</b>，但期满后将无法使用；续期后立即恢复。</div>'
+        : '<div class="hint" style="margin-top:10px">过期后有 ' + (j.graceDays || 3) + ' 天宽限期，之后系统会自动清理对应空间（知识库文档 / 记忆内容），<b>数据将无法恢复</b>。续期后立即恢复使用。</div>')
       + '</div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">'
       + '<button class="btn sm" id="expLater">稍后</button>'
       + '<button class="btn primary" id="expRenew">去续费</button></div>';
@@ -3934,9 +3949,15 @@
       return '<span class="mb-tag on">已开通</span>';
     }
     if (r.expired) {
-      if (c.pastGrace) return '<span class="mb-tag warn">已到期</span> <span class="mb-tag off">可清理</span>';
+      /* 自动清理关掉时不许再写「N 天后自动清理」—— 那是假的（用户令：只提醒、不自动删） */
+      if (c.pastGrace) return AUTO_CLEAN
+        ? '<span class="mb-tag warn">已到期</span> <span class="mb-tag off">可清理</span>'
+        : '<span class="mb-tag warn">已到期</span> <span class="mb-tag off">保留中</span>';
       var g = c.graceLeftDays;
-      return '<span class="mb-tag warn">已到期</span>' + (g !== null && g !== undefined ? ' <span class="mb-tag off">' + g + ' 天后自动清理</span>' : "");
+      if (g === null || g === undefined) return '<span class="mb-tag warn">已到期</span>';
+      return AUTO_CLEAN
+        ? '<span class="mb-tag warn">已到期</span> <span class="mb-tag off">' + g + ' 天后自动清理</span>'
+        : '<span class="mb-tag warn">已到期</span> <span class="mb-tag off">宽限 ' + g + ' 天（不自动删）</span>';
     }
     return '<span class="mb-tag off">未开通</span>';
   }
@@ -4055,6 +4076,37 @@
   if ($("kbMbClean")) $("kbMbClean").onclick = function () { mbCleanBulk("knowledge", this); };
   if ($("memMbClean")) $("memMbClean").onclick = function () { mbCleanBulk("memory", this); };
 
+  /* 到期自动清理开关（10-23）：服务端 /admin/members 回的 autoClean 是唯一真相，两个中心各自渲染但共用一份。 */
+  var AUTO_CLEAN = true;
+  function autoCleanBoxes() { return ["kbMbAutoClean", "memMbAutoClean"]; }
+  function autoCleanHint() {
+    autoCleanBoxes().forEach(function (k) {
+      var box = $(k); if (!box) return;
+      box.checked = AUTO_CLEAN;
+      var hint = $(k + "Hint");
+      if (hint) hint.textContent = AUTO_CLEAN ? ("开：宽限 " + AUTO_CLEAN_GRACE + " 天后自动删资源") : "关着：只提醒，不删资源";
+    });
+  }
+  var AUTO_CLEAN_GRACE = 3;
+  autoCleanHint();   /* 首屏先按默认（服务端默认开）画一次，切 tab 时再用接口值校正 */
+  autoCleanBoxes().forEach(function (k) {
+    var box = $(k); if (!box) return;
+    box.onchange = function () {
+      var want = box.checked;
+      box.disabled = true;
+      api("/admin/policy", { method: "POST", body: { autoCleanEnabled: want } }).then(function (r) {
+        box.disabled = false;
+        var j = (r && r.j) || {};
+        if (!r.ok || !j.ok) { box.checked = !want; alert("保存失败：" + (j.error || ("HTTP " + r.status))); return; }
+        AUTO_CLEAN = j.autoCleanEnabled !== false;
+        if (typeof j.graceDays === "number") { AUTO_CLEAN_GRACE = j.graceDays; }
+        autoCleanHint();
+        /* 状态列文案（「N 天后自动清理」/「保留中」）依赖这个开关 ⇒ 立即重绘两张表 */
+        if ($("kbMbRows")) mbRender("knowledge");
+        if ($("memMbRows")) mbRender("memory");
+      })["catch"](function () { box.disabled = false; box.checked = !want; alert("保存失败：网络错误"); });
+    };
+  });
   function loadMembers(which) {
     var st = MB[which], ids = mbIds(which);
     mbSay(which, "读取中…");
@@ -4062,6 +4114,9 @@
       var j = (r && r.j) || {};
       if (!r.ok || !j.ok) { mbSay(which, "读取失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
       st.rows = j.users || [];
+      if (typeof j.autoClean === "boolean") { AUTO_CLEAN = j.autoClean; }
+      if (typeof j.graceDays === "number") { AUTO_CLEAN_GRACE = j.graceDays; }
+      autoCleanHint();
       /* 勾选只保留还存在的成员（删号后不留幽灵勾选） */
       var alive = {};
       st.rows.forEach(function (x) { alive[x.username] = true; });
