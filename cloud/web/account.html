@@ -425,6 +425,11 @@
   #kbModelBlocks .kb-model-head .pill { margin-left: auto; }
   #kbModelBlocks .kb-model-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
   #kbModelBlocks .kb-model-actions .hint { flex: 1 1 100%; font-size: 11.5px; line-height: 1.6; word-break: break-word; }
+  /* 新用户默认额度卡（10-23）：两列自适应，窄屏折行 */
+  #policyCard .pol-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 14px; }
+  #policyCard .pol-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  #policyCard .pol-field .field { min-height: 34px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; }
+  #policyCard .pol-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   /* Manager 三步说明：⛔ 列表里带长路径，不给 code 一点内边距会排成一团乱行 */
   #wbmGuideCard .wbm-steps { margin: 12px 0 0; padding-left: 22px; color: var(--muted); font-size: 12.5px; line-height: 1.85; }
   #wbmGuideCard .wbm-steps li { margin-bottom: 6px; }
@@ -844,6 +849,23 @@
         <table><tbody id="apRows"></tbody></table>
         <input id="apq" /><button id="apSearch"></button><button id="apAll"></button><span id="apSummary"></span>
         <p id="auStatus"></p><p id="auEntStatus"></p><p id="apStatus"></p>
+      </div>
+    </div>
+<div class="card" id="policyCard">
+      <!-- 10-23 用户令：注册送的积分 / 会话上传的内存（云存储）也要能在用户管理里调 -->
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">新用户默认额度 <span class="pill plain" id="polPill">读取中…</span></h2>
+      <p class="hint" style="margin:0 0 12px">这两项是<b>之后注册</b>的账号的默认值，保存后立刻生效（不用重启）。
+        已注册账号不受影响：个人云存储以表格里那一列为准（留空 = 跟这里的默认值走）。</p>
+      <div class="pol-grid">
+        <label class="pol-field"><span class="hint">注册赠送积分</span>
+          <input class="field" id="polSignup" type="number" min="0" step="100" placeholder="1000" /></label>
+        <label class="pol-field"><span class="hint">默认云存储（GB，会话上传用）</span>
+          <input class="field" id="polStorage" type="number" min="0.1" step="1" placeholder="1" /></label>
+      </div>
+      <div class="pol-actions">
+        <button class="btn primary" id="polSave">保存</button>
+        <button class="btn ghost" id="polReset">恢复环境默认</button>
+        <span class="hint" id="polMsg" role="status" aria-live="polite"></span>
       </div>
     </div>
 <div class="card" id="ivCard">
@@ -2596,14 +2618,62 @@
     });
   }
   /* 10-23 分中心加载：每个 tab 只拉自己用到的数据 */
-  function loadAdminUserTab() { loadVersion(); loadFeatures(); loadAdminPoints(""); loadInvites(); loadAdminAll(); }
+  /* ══ 10-23 新用户默认额度（注册赠分 / 默认云存储）══════════════════════════════
+     ⛔ 只写"之后注册"的默认值；单用户覆盖仍在表格那一列（留空 = 跟默认走）。 */
+  function polSay(t, bad) {
+    var el = $("polMsg"); if (!el) return;
+    el.textContent = t || "";
+    el.style.color = bad ? "var(--bad)" : (t ? "var(--ok)" : "");
+  }
+  function polPaint(j) {
+    if (!j || !j.ok) return;
+    if ($("polSignup")) $("polSignup").value = j.signupPoints;
+    if ($("polStorage")) $("polStorage").value = j.storageGb;
+    var pill = $("polPill");
+    if (pill) { pill.className = "pill ok"; pill.textContent = "生效中"; }
+  }
+  function loadPolicy() {
+    if (!$("policyCard")) return;
+    api("/admin/policy").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) {
+        var pill = $("polPill");
+        if (pill) { pill.className = "pill warn"; pill.textContent = "读不到"; }
+        return;
+      }
+      polPaint(j);
+    })["catch"](function () { /* 读不到就保持"读取中" */ });
+  }
+  function polSave(body, btn) {
+    btn.disabled = true;
+    polSay("保存中…");
+    api("/admin/policy", { method: "POST", body: body }).then(function (r) {
+      btn.disabled = false;
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { polSay("保存失败：" + (j.error || ("HTTP " + r.status)), true); return; }
+      polPaint(j);
+      polSay("已保存：注册赠分 " + j.signupPoints + " · 默认云存储 " + j.storageGb + " GB（新注册立即按这个来）");
+    })["catch"](function () { btn.disabled = false; polSay("保存失败：网络错误", true); });
+  }
+  if ($("polSave")) $("polSave").onclick = function () {
+    var pts = Number($("polSignup").value), gb = Number($("polStorage").value);
+    if (!Number.isFinite(pts) || pts < 0) { polSay("注册赠送积分要填非负整数", true); return; }
+    if (!Number.isFinite(gb) || gb <= 0) { polSay("默认云存储要大于 0（GB）", true); return; }
+    polSave({ signupPoints: pts, storageGb: gb }, this);
+  };
+  if ($("polReset")) $("polReset").onclick = function () {
+    if (!confirm("恢复成环境默认（部署时配的 HARNESS_SIGNUP_POINTS / HARNESS_STORAGE_LIMIT）？")) return;
+    polSave({ reset: true }, this);
+  };
+
+  function loadAdminUserTab() { loadVersion(); loadFeatures(); loadAdminPoints(""); loadInvites(); loadAdminAll(); loadPolicy(); }
   function loadAdminModelTab() { loadUpstreamCfg(); loadDiskInfo(); loadAdminModels(); loadOffPeak(); loadChatModels(); }
   function loadAdminMemTab() { loadServices(); loadMemHealth(); loadMembers("memory"); }
   function loadAdminKbTab() { loadServices(); loadMembers("knowledge"); loadKbModels(); }
   function loadAdminWbmTab() { loadServices(); loadWbmHealth(); }
 
   function loadAdminPanel() {
-    loadVersion(); loadFeatures(); loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites(); loadChatModels();
+    loadVersion(); loadFeatures(); loadUpstreamCfg(); loadDiskInfo(); loadServices(); loadAdminPoints(""); loadAdminModels(); loadOffPeak(); loadInvites(); loadChatModels(); loadPolicy();
     api("/admin/users").then(function (r) {
       if (!r.ok || !r.j || !r.j.ok) { auSay("用户列表读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
       renderAdmin(r.j.users || []);
