@@ -86,12 +86,17 @@
   /* ── 布局：桌面左导航 + 单列内容；移动端顶部标签 ─────────────────────── */
   .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
   .side { background: var(--card); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; height: 100vh; }
-  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; font-weight: 700; font-size: 15px; }
+  /* 10-23 版式校准（实拍）：侧栏只有 232px，15px/700 的 "Codex Harness" 会被截成 "Codex Har…"
+     ⇒ 字号收到 14px、左右内距与 gap 各省 2px，13 字符的品牌名正好放得下。 */
+  .brand { display: flex; align-items: center; gap: 8px; padding: 4px 6px 16px; font-weight: 700; font-size: 14px; }
   .mark { width: 28px; height: 28px; border-radius: 9px; background: linear-gradient(135deg, var(--brand2), var(--brand)); color: #fff;
     display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none; position: relative; overflow: hidden; }
   /* 10-23 用户令「logo 改成和应用一样的」：图片盖在渐变块上（复用 /api/favicon，管理员自定义也同步）；
-     ⛔ 不加 onerror —— 加载失败自然露出下面的 CA 与渐变，永远有兜底。 */
-  .mark > img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; }
+     ⛔ 不加 onerror —— 加载失败自然露出下面的 CA 与渐变，永远有兜底。
+     ⛔ 必须给图片铺侧栏底色：图标 PNG 的四角是**透明**的，不铺就会透出下面的「CA」笔画。 */
+  .mark > img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; background: var(--card); }
+  /* 品牌名**不换行**：侧栏 232px 里 "Codex Assistant" 会折成两行、把 logo 挤歪（实拍确认）；过长截断，不压右侧主题开关。 */
+  .brand > #brandName { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; color: var(--text); font-size: 13.5px; font-weight: 500; border: 0; background: transparent; width: 100%; text-align: left; }
   .nav-item:hover { background: var(--field); text-decoration: none; }
   .nav-item.on { background: var(--brand-soft); color: var(--brand-ink); font-weight: 600; }
@@ -531,7 +536,7 @@
   <aside class="side">
     <!-- 10-18 主题开关：嵌在侧栏品牌行内（用户令：不要悬浮，放进侧边栏） -->
     <div class="brand">
-      <span class="mark">CA<img src="/cloud-api/api/favicon?size=256" alt="" /></span><span>Codex Assistant</span>
+      <span class="mark">CA<img src="/cloud-api/api/favicon?size=256" alt="" /></span><span id="brandName">PPcode</span>
       <label for="themeSwitch" title="切换白天 / 夜间主题" class="brand-theme">
         <input type="checkbox" id="themeSwitch" aria-label="切换白天/夜间主题" />
       </label>
@@ -1610,6 +1615,15 @@
     window.location.href = "index.html";
   }
   $("logout").onclick = logout; $("logout2").onclick = logout;
+
+  /* ── 侧栏品牌（10-23）：名字跟部署走（客户机 PPcode / 主站 Codex Harness）。
+     ⛔ 只取公开的 /api/brand；取不到就保留页面里的默认文案，不弹错、不阻塞其它加载。 */
+  api("/brand").then(function (r) {
+    var j = (r && r.j) || {};
+    if (!r.ok || !j.ok || !j.name) return;
+    if ($("brandName")) $("brandName").textContent = j.name;
+    try { document.title = "控制台 · " + j.name; } catch (e) { /* 忽略 */ }
+  }).catch(function () { /* 忽略 */ });
 
   /* ── 标签切换（桌面左导航 / 移动端顶部标签；hash 记住位置） ─────────── */
   /* ── 产品首页（10-23）：/product/home 一次拿全（版本/资产/能力/更新日志）──────────

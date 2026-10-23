@@ -9,7 +9,7 @@
             这样前端不需要 onerror 兜底，也不会在换图标后还命中旧静态文件的强缓存。 -->
     <link rel="icon" href="/cloud-api/api/favicon" />
     <link rel="apple-touch-icon" href="favicon-256.png" />
-<title>Codex Assistant · 账号与设备</title>
+<title>PPcode · 账号与设备</title>
 <!--
   这个外壳**同一份文件在三个地方都能用**，靠运行时判断，不靠服务端替换占位符：
     ① 云端：https://ppz123.asia/cloud/          ← 用户直接敲网址进来的入口
@@ -102,10 +102,12 @@
   /* 品牌头：紫渐变方块 + 渐变字（与桌面版 --brand-ink 同源） */
   .brand-row { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
   .brand-mark {
-    width: 26px; height: 26px; border-radius: 8px; flex: none;
+    width: 26px; height: 26px; border-radius: 8px; flex: none; position: relative; overflow: hidden;
     background: linear-gradient(135deg, var(--g-brand-1), var(--g-brand-2) 55%, #3b1d8f);
     box-shadow: 0 2px 10px color-mix(in srgb, var(--g-brand-2) 45%, transparent);
   }
+  /* 10-23 用户令「logo 改成和应用一样的」：图标盖在渐变方块上；PNG 四角透明 ⇒ 铺卡片底色，否则透出渐变块。 */
+  .brand-mark > img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; background: var(--g-card); }
   .brand-name {
     font-size: 16px; font-weight: 600; letter-spacing: .01em;
     background: linear-gradient(100deg, var(--g-brand-1), var(--g-brand-ink), var(--g-brand-1));
@@ -244,7 +246,7 @@
 </head>
 <body>
 <div id="boot">
-  <div class="mark">Codex Assistant</div>
+  <div class="mark">PPcode</div>
   <div class="sub" id="boot-sub">正在连接本地伴生服务…</div>
 </div>
 
@@ -275,6 +277,22 @@
   var gate = document.getElementById("gate");
   var login = document.getElementById("login");
   var started = false;
+
+  /* ── 品牌（10-23 用户令「logo 改成和应用一样的」+ 两边品牌分开）──────────────────
+     名字与图标都取自服务端公开端点 /api/brand：客户机 PPcode / 主站 Codex Harness。
+     ⛔ 拿不到就保留页面里的默认文案，绝不阻塞启动流程；⛔ 页面不写死品牌名。 */
+  var BRAND = "PPcode";
+  function applyBrand(name) {
+    if (!name) return;
+    BRAND = name;
+    var b = document.querySelector("#boot .mark"); if (b) b.textContent = name;
+    var n = document.querySelector(".brand-name");
+    if (n && n.firstChild && n.firstChild.nodeType === 3) n.firstChild.nodeValue = name;
+    try { document.title = name + " · 账号与设备"; } catch (e) { /* 忽略 */ }
+  }
+  fetch("/cloud-api/api/brand").then(function (r) { return r.json(); })
+    .then(function (j) { if (j && j.ok) applyBrand(j.name); })
+    .catch(function () { /* 忽略 */ });
 
   /* ── 模式判定 ──────────────────────────────────────────────────────────────
      ⛔ 由服务端注入 __CHC_MODE__（本机下发 = "full"）。云端原样托管拿不到注入
@@ -431,8 +449,11 @@
     /* 品牌头（10-13 界面重构）：紫渐变方块 + 渐变字（与桌面版品牌同源） */
     var brandRow = document.createElement("div"); brandRow.className = "brand-row";
     var mark = document.createElement("div"); mark.className = "brand-mark";
+    /* 图标与应用同源（/api/favicon 决定发哪个品牌），标签页图标也是这张 */
+    var markImg = document.createElement("img"); markImg.alt = ""; markImg.src = "/cloud-api/api/favicon?size=256";
+    mark.appendChild(markImg);
     var brand = document.createElement("div"); brand.className = "brand-name";
-    brand.appendChild(document.createTextNode("Codex Assistant"));
+    brand.appendChild(document.createTextNode(BRAND));
     var em = document.createElement("em"); em.textContent = "Cloud"; brand.appendChild(em);
     brandRow.appendChild(mark); brandRow.appendChild(brand);
     login.appendChild(brandRow);
@@ -849,7 +870,7 @@
     showGate(
       "先启动这台电脑上的助手",
       "你的账号已就绪。干活的助手跑在这台电脑上 —— 现在没有检测到它。\n" +
-      "已安装过：双击桌面上的「Codex Assistant」图标启动，然后点下面的重新检测。\n" +
+      "已安装过：双击桌面上的「" + BRAND + "」图标启动，然后点下面的重新检测。\n" +
       "还没安装：点「去下载桌面助手」。",
       accountEscape
     );

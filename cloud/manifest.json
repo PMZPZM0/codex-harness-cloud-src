@@ -15,22 +15,22 @@
       "src": "cloud/server-account/server.js",
       "kind": "server",
       "as": "server.js",
-      "sha256": "79636ad788f805b57658a5af199bc479fff03b4351ab5d3ce34a8ec3038ebe50",
-      "bytes": 342130
+      "sha256": "699484db7a4185fb4e8d64d0cba31e5c3c7d3b24a34f5aca86d109c18781ff34",
+      "bytes": 342801
     },
     {
       "src": "cloud/web/account.html",
       "kind": "web",
       "as": "account.html",
-      "sha256": "6d3e9946e40bc665a6f9492c843967b7bb350d01beba5b136ead6cb5fc9a6ae9",
-      "bytes": 360108
+      "sha256": "676e48866d45aab9555eb834046774233fbedfdfa2712f5ceec6f1feb862d20d",
+      "bytes": 361277
     },
     {
       "src": "cloud/web/index.html",
       "kind": "web",
       "as": "index.html",
-      "sha256": "ba345accf3d23694b07396101de3ef5f4640a60c4c87836e81b413861089c71a",
-      "bytes": 51094
+      "sha256": "563acddebffe06f901a4aa5cb050846344001b04665eccd2f841b55f9962e93f",
+      "bytes": 52604
     },
     {
       "src": "cloud/web/app.js",
