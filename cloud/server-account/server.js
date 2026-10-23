@@ -290,6 +290,13 @@ async function weknoraModelList() {
 /** 知识库模型的三种类型（WeKnora 的 `type` 字段是大小写敏感的枚举）。 */
 const KB_MODEL_TYPES = ["KnowledgeQA", "Embedding", "VLLM"];
 
+/** WorkBuddy Manager（模型池网关）地址：默认本机 7864（官方镜像端口）。
+ *  ⛔ 本服务只做「面板入口 + 存活状态」，不代它做鉴权 —— 它的会话体系与云账号完全独立。 */
+function wbmBase() {
+  const cur = (db.services && db.services.wbm) || {};
+  return String(cur.base || "").trim().replace(/\/+$/, "") || "http://127.0.0.1:7864";
+}
+
 /** 成员行：把「权益状态」与「已下发的集成凭据」合成一行（⛔ 绝不下发明文密钥）。 */
 function memberRow(u, feature) {
   const st = featureState(u.username, feature);
@@ -3023,6 +3030,33 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    /* 管理端：WorkBuddy Manager 存活探测（10-23 用户令「单独加一个 Manager 选项」）。
+       ⛔ 只打它的公开探针 `/healthz`（无需鉴权，返回 service + upstream_ok），
+          **不代它登录**、不碰它的会话；`upstream_ok=false` 的含义是「面板还没纳管任何账号」，
+          这是新装后的正常状态，面板照实显示，别当成故障。 */
+    if (p === "/admin/wbm/health" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const base = wbmBase();
+      const started = Date.now();
+      try {
+        const res = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(5000) });
+        const text = await res.text();
+        let json = null;
+        try { json = text ? JSON.parse(text) : null; } catch { /* 非 JSON */ }
+        return send(200, {
+          ok: res.ok,
+          status: res.status,
+          ms: Date.now() - started,
+          base,
+          service: (json && json.service) || "",
+          upstreamOk: Boolean(json && json.upstream_ok),
+          note: json ? "" : sanitize(text.slice(0, 160)),
+        });
+      } catch (e) {
+        return send(200, { ok: false, status: 0, ms: Date.now() - started, base, note: sanitize(String((e && e.message) || e)) });
+      }
+    }
+
     /* 管理端：权益总览 / 开通·续期·停用 / 价格表 */
     if (p === "/admin/entitlements" && req.method === "GET") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
@@ -3405,6 +3439,16 @@ const server = http.createServer(async (req, res) => {
           effectiveBase: MEMHUB_BASE, effectiveProxyBase: MEMHUB_PROXY_BASE, effectiveHasKey: Boolean(MEMHUB_ADMIN_KEY),
           envBase: MEMHUB_ENV_BASE, envProxyBase: MEMHUB_ENV_PROXY_BASE, envHasKey: Boolean(MEMHUB_ENV_ADMIN_KEY),
         },
+        /* 10-23：WorkBuddy Manager（模型池网关）—— 只管「地址 + 面板入口」。
+           ⛔ 它与下面的 upstream（模型通道的上游）是两件事：
+              WBM 提供模型 → upstream 指向 WBM 的 /v1 → 客户端走本服务代理。 */
+        wbm: {
+          base: (db.services.wbm && db.services.wbm.base) || "",
+          publicBase: (db.services.wbm && db.services.wbm.publicBase) || "",
+          effectiveBase: wbmBase(),
+          upstreamBase: currentUpstreamBase(),
+          hasGatewayKey: Boolean(currentGatewayKey()),
+        },
         secrets: integrationSecretsOk(),
       });
     }
@@ -3415,7 +3459,8 @@ const server = http.createServer(async (req, res) => {
          否则保存知识库会把记忆的 base/key 一起写成空串（配置静默丢失）。 */
       const kbIn = body && body.kb ? body.kb : null;
       const memIn = body && body.memory ? body.memory : null;
-      if (!kbIn && !memIn) return send(400, { ok: false, error: "没有要保存的内容（kb / memory 至少给一个）" });
+      const wbmIn = body && body.wbm ? body.wbm : null;
+      if (!kbIn && !memIn && !wbmIn) return send(400, { ok: false, error: "没有要保存的内容（kb / memory / wbm 至少给一个）" });
       const normOne = (raw, label) => {
         const s = String(raw == null ? "" : raw).trim();
         if (!s) return { ok: true, value: "" };                    // 留空 ⇒ 回退环境变量
@@ -3467,13 +3512,29 @@ const server = http.createServer(async (req, res) => {
         if (memIn.instance !== undefined) next.instance = keep(memIn.instance);
         db.services.memory = next;
       }
+      if (wbmIn) {
+        const cur = db.services.wbm || {};
+        const next = Object.assign({}, cur);
+        if (wbmIn.base !== undefined) {
+          const b = normOne(wbmIn.base, "Manager 地址");
+          if (!b.ok) return send(400, { ok: false, error: b.error });
+          next.base = b.value;
+        }
+        if (wbmIn.publicBase !== undefined) {
+          const p2 = normOne(wbmIn.publicBase, "Manager 对外地址");
+          if (!p2.ok) return send(400, { ok: false, error: p2.error });
+          next.publicBase = p2.value;
+        }
+        db.services.wbm = next;
+      }
       persist();
       applyServiceOverrides();                                     // ⛔ 热生效（免重启）
-      console.log(`[services] ${me.username} 更新：知识库 → ${WEKNORA_BASE}（key ${WEKNORA_ADMIN_KEY ? "已配" : "未配"}）· 记忆 → ${MEMHUB_BASE}（代理 ${MEMHUB_PROXY_BASE}，key ${MEMHUB_ADMIN_KEY ? "已配" : "未配"}）`);
+      console.log(`[services] ${me.username} 更新：知识库 → ${WEKNORA_BASE}（key ${WEKNORA_ADMIN_KEY ? "已配" : "未配"}）· 记忆 → ${MEMHUB_BASE}（代理 ${MEMHUB_PROXY_BASE}，key ${MEMHUB_ADMIN_KEY ? "已配" : "未配"}）· Manager → ${wbmBase()}`);
       return send(200, {
         ok: true,
         kb: { effectiveBase: WEKNORA_BASE, effectiveHasKey: Boolean(WEKNORA_ADMIN_KEY) },
         memory: { effectiveBase: MEMHUB_BASE, effectiveProxyBase: MEMHUB_PROXY_BASE, effectiveHasKey: Boolean(MEMHUB_ADMIN_KEY) },
+        wbm: { effectiveBase: wbmBase() },
       });
     }
     /* 10-23：「对外访问地址」单独一个接口改 —— ⛔ 不复用 /admin/services POST：
