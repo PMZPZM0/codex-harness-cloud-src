@@ -268,8 +268,13 @@ async function weknoraAlive(pathname) {
 }
 
 /** 幂等备好该账号**自己的**知识库 + 只读 MCP 端点。 */
-async function ensureKnowledgeFor(username) {
+async function ensureKnowledgeForUnlocked(username) {
   if (!WEKNORA_ADMIN_KEY) return { ok: false, error: "knowledge-not-configured" };
+  /* ⛔ 10-23：只有**当前有效**的权益才允许自动建资源。
+     否则清理完（enabled=false）再点一次「补齐」就会把库重新建出来 —— 清理等于没清。 */
+  if (!featureState(username, "knowledge").enabled) {
+    return { ok: false, error: "not-activated", message: "未开通或已过期（或已清理），不自动建库；续期后再试" };
+  }
   const cur = integrationSlot(username);
   const kbName = `u-${String(username).replace(/[^\w.-]+/g, "_").slice(0, 40)}`;
   /* 缓存自愈：管理员在 WeKnora 里删了库/端点 ⇒ 缓存就成了死引用，必须重建（10-16 实测踩到）。 */
@@ -342,8 +347,12 @@ async function memhubAdminUser() {
 }
 
 /** 幂等备好该账号的记忆中枢 user_key（每人一支）。 */
-async function ensureMemoryFor(username) {
+async function ensureMemoryForUnlocked(username) {
   if (!MEMHUB_ADMIN_KEY) return { ok: false, error: "memory-not-configured" };
+  /* 同 ensureKnowledgeFor：没有有效权益就不建记忆账号 */
+  if (!featureState(username, "memory").enabled) {
+    return { ok: false, error: "not-activated", message: "未开通或已过期（或已清理），不新建记忆空间；续期后再试" };
+  }
   const cur = integrationSlot(username);
   if (!cur.memKey) {
     const res = await fetch(`${MEMHUB_BASE}/api/v1/meta/user/create`, {
@@ -414,6 +423,204 @@ function wbmBase() {
   return String(cur.base || "").trim().replace(/\/+$/, "") || "http://127.0.0.1:7864";
 }
 
+/* ── 过期清理（10-23 用户令）────────────────────────────────────────────────
+   规则：权益到期后**宽限 GRACE_DAYS 天**（默认 3），之后自动清理该账号的资源；
+        管理员也可以在面板上手动清理（未过期/未过宽限的必须显式 force）。
+   ⛔ 清理 = 删除远端资源（知识库 / 记忆用户）+ 清空本地凭据；幂等：已清理过的直接跳过。
+   ⛔ 只动「这个账号自己的」资源 id（integrations 里那份），不按用户名模糊删。 */
+const GRACE_DAYS = Math.max(0, Number(process.env.HARNESS_GRACE_DAYS || 3));
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function cleanupInfo(username, feature) {
+  const raw = entitlementsOf(username)[feature] || {};
+  const expiresAt = Number(raw.expiresAt || 0);
+  const cleanedAt = Number(raw.cleanedAt || 0);
+  if (!expiresAt) return { permanent: true, expiresAt: 0, cleanAt: 0, daysLeft: null, graceLeftDays: null, expired: false, pastGrace: false, cleanable: false, cleanedAt };
+  const now = Date.now();
+  const cleanAt = expiresAt + GRACE_DAYS * DAY_MS;
+  const expired = expiresAt <= now;
+  const pastGrace = now >= cleanAt;
+  return {
+    permanent: false, expiresAt, cleanAt, expired, pastGrace, cleanedAt,
+    /* daysLeft<0 = 已过期天数；graceLeftDays<=0 = 该清了 */
+    daysLeft: Math.ceil((expiresAt - now) / DAY_MS),
+    graceLeftDays: Math.ceil((cleanAt - now) / DAY_MS),
+    cleanable: !cleanedAt && pastGrace,
+  };
+}
+
+/** 记忆中枢里按 username 找 user_id（老数据没存 memUserId 时兜底）。⛔ 只读。 */
+async function memhubUserIdByUsername(username) {
+  try {
+    const res = await fetch(`${MEMHUB_BASE}/api/v1/meta/user/list`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tdai-Service-Id": MEMHUB_INSTANCE, "X-Tdai-User-Key": MEMHUB_ADMIN_KEY },
+      body: JSON.stringify({ page_size: 500 }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const j = await res.json().catch(() => null);
+    const items = (j && j.data && j.data.items) || [];
+    const want = `chc-${String(username).slice(0, 40)}`;
+    const hit = items.find((x) => x && x.username === want) || items.find((x) => x && x.username === username);
+    return hit ? String(hit.user_id || "") : "";
+  } catch { return ""; }
+}
+
+/* 同一账号同一资源的 ensure 串行化：并发调用共享同一个 Promise。
+   ⛔ 不加会重复建库/重复建记忆账号（grant 的预热 + 管理端补齐同时跑 = 两个都看不到 id）。 */
+const ensureInflight = new Map();
+function ensureOnce(kind, username, fn) {
+  const key = kind + ":" + username;
+  const cur = ensureInflight.get(key);
+  if (cur) return cur;
+  const job = Promise.resolve()
+    .then(fn)
+    .finally(() => { ensureInflight.delete(key); });
+  ensureInflight.set(key, job);
+  return job;
+}
+function ensureKnowledgeFor(username) { return ensureOnce("kb", username, () => ensureKnowledgeForUnlocked(username)); }
+function ensureMemoryFor(username) { return ensureOnce("mem", username, () => ensureMemoryForUnlocked(username)); }
+
+/** 按命名规则扫残留：知识库 `u-<安全名>`、记忆用户 `chc-<username>`。
+ *  ⛔ 为什么需要：历史上有过重复建库/重复建记忆账号（ensure 拿不到 id 时会再建一个），
+ *    只按 integrations 记的 id 删会留孤儿 —— 清理就必须"按名字扫干净"。
+ *  ⛔ 命名是**确定性**的（建的时候就按这个规则），不会误删别人的资源。 */
+function kbSafeName(username) { return `u-${String(username).replace(/[^\w.-]+/g, "_").slice(0, 40)}`; }
+
+async function purgeKnowledgeOrphans(username) {
+  const want = kbSafeName(username);
+  let n = 0;
+  try {
+    const res = await weknoraAdmin("/api/v1/knowledge-bases?page_size=200");
+    const rows = (res && (res.data || res.items)) || [];
+    for (const row of rows) {
+      if (!row || !row.id || String(row.name || "") !== want) continue;
+      try { await weknoraAdmin(`/api/v1/knowledge-bases/${row.id}`, { method: "DELETE" }); n++; }
+      catch (e) { if (!/→ 404/.test(String(e && e.message))) throw e; }
+    }
+  } catch (e) { console.log(`[cleanup] ⚠ 扫描知识库残留失败（${username}）：${sanitize(String((e && e.message) || e))}`); }
+  return n;
+}
+
+async function purgeMemoryOrphans(username) {
+  const want = `chc-${String(username).slice(0, 40)}`;
+  let n = 0;
+  try {
+    const res = await fetch(`${MEMHUB_BASE}/api/v1/meta/user/list`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tdai-Service-Id": MEMHUB_INSTANCE, "X-Tdai-User-Key": MEMHUB_ADMIN_KEY },
+      body: JSON.stringify({ page_size: 500 }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const j = await res.json().catch(() => null);
+    const items = (j && j.data && j.data.items) || [];
+    const ids = items.filter((x) => x && x.username === want && x.user_id).map((x) => String(x.user_id));
+    if (!ids.length) return 0;
+    const del = await fetch(`${MEMHUB_BASE}/api/v1/meta/user/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tdai-Service-Id": MEMHUB_INSTANCE, "X-Tdai-User-Key": MEMHUB_ADMIN_KEY },
+      body: JSON.stringify({ user_ids: ids }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const dj = await del.json().catch(() => null);
+    n = ((dj && dj.data && dj.data.deleted_ids) || []).length;
+  } catch (e) { console.log(`[cleanup] ⚠ 扫描记忆残留失败（${username}）：${sanitize(String((e && e.message) || e))}`); }
+  return n;
+}
+
+function auditLog(entry) {
+  if (!Array.isArray(db.audit)) db.audit = [];
+  db.audit.push(Object.assign({ at: Date.now() }, entry));
+  /* 只留最近 500 条，避免 data.json 无限膨胀 */
+  if (db.audit.length > 500) db.audit = db.audit.slice(-500);
+}
+
+/** 清一个账号的一个资源。opts.force 才允许清「未到期 / 未过宽限」的。 */
+async function cleanFeature(username, feature, opts) {
+  const force = Boolean(opts && opts.force);
+  const by = String((opts && opts.by) || "system");
+  const info = cleanupInfo(username, feature);
+  if (info.permanent) return { username, ok: false, error: "permanent", message: "永久权益，不需要清理" };
+  if (info.cleanedAt) {
+    /* 已清理过：仍按名字扫一遍残留（可能是历史重复建的资源，或上一次删到一半） */
+    const extra = feature === "knowledge" ? await purgeKnowledgeOrphans(username) : await purgeMemoryOrphans(username);
+    return { username, ok: true, skipped: "already-cleaned", cleanedAt: info.cleanedAt, orphansRemoved: extra };
+  }
+  if (!force && !info.expired) return { username, ok: false, error: "not-expired", message: "还在有效期内（剩 " + info.daysLeft + " 天）" };
+  if (!force && info.expired && !info.pastGrace) return { username, ok: false, error: "in-grace", message: "过期未满 " + GRACE_DAYS + " 天（还有 " + info.graceLeftDays + " 天宽限）" };
+  const it = integrationSlot(username);
+  const removed = [];
+  try {
+    if (feature === "knowledge") {
+      if (it.kbId) {
+        try { await weknoraAdmin(`/api/v1/knowledge-bases/${it.kbId}`, { method: "DELETE" }); removed.push("knowledge-base"); }
+        catch (e) { if (!/→ 404/.test(String(e && e.message))) throw e; removed.push("knowledge-base(已不存在)"); }
+      }
+      if (it.endpointId) {
+        try { await weknoraAdmin(`/api/v1/mcp-endpoints/${it.endpointId}`, { method: "DELETE" }); removed.push("mcp-endpoint"); }
+        catch { /* 端点删不掉不影响结论：库已删，凭据下面会清 */ }
+      }
+      /* 按名字再扫一遍残留（历史重复建库），把孤儿一起清掉 */
+      const extraKb = await purgeKnowledgeOrphans(username);
+      if (extraKb) removed.push(`orphan-kb×${extraKb}`);
+      it.kbId = ""; it.endpointId = ""; it.mcpToken = ""; it.mcpUrl = ""; it.kbName = "";
+    } else {
+      let uid = String(it.memUserId || "");
+      if (!uid && it.memKey) uid = await memhubUserIdByUsername(username);
+      if (uid) {
+        const res = await fetch(`${MEMHUB_BASE}/api/v1/meta/user/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Tdai-Service-Id": MEMHUB_INSTANCE, "X-Tdai-User-Key": MEMHUB_ADMIN_KEY },
+          body: JSON.stringify({ user_ids: [uid] }),
+          signal: AbortSignal.timeout(10000),
+        });
+        const j = await res.json().catch(() => null);
+        const deleted = (j && j.data && j.data.deleted_ids) || [];
+        if (deleted.length) removed.push("memory-user");
+        else if (j && j.data && Array.isArray(j.data.failed) && j.data.failed.length) removed.push("memory-user(已不存在)");
+        else throw new Error("记忆用户删除未确认：" + String((j && j.message) || res.status));
+      }
+      /* 同样按名字扫残留（历史重复建的用户） */
+      const extraMem = await purgeMemoryOrphans(username);
+      if (extraMem) removed.push(`orphan-mem×${extraMem}`);
+      it.memKey = ""; it.memUserId = "";
+    }
+    const raw = entitlementsOf(username)[feature] || {};
+    raw.enabled = false;
+    raw.cleanedAt = Date.now();
+    raw.cleanedBy = by;
+    entitlementsOf(username)[feature] = raw;
+    auditLog({ kind: "cleanup", username, feature, by, removed, expiresAt: info.expiresAt });
+    persist();
+    console.log(`[cleanup] ${by} 清理 ${username} 的${FEATURE_LABEL[feature]}（${removed.join("/") || "无远端资源"}，到期 ${new Date(info.expiresAt).toLocaleString("zh-CN")}）`);
+    return { username, ok: true, removed, cleanedAt: raw.cleanedAt };
+  } catch (e) {
+    console.log(`[cleanup] ⚠ 清理 ${username} 的${FEATURE_LABEL[feature]} 失败：${sanitize(String((e && e.message) || e))}`);
+    return { username, ok: false, error: "clean-failed", message: sanitize(String((e && e.message) || e)) };
+  }
+}
+
+/** 自动扫描：把「已过期且过宽限期」的都清掉。⛔ 串行 + 每步留痕，避免打爆上游。 */
+let cleanupRunning = false;
+async function autoCleanupScan() {
+  if (cleanupRunning) return;
+  cleanupRunning = true;
+  try {
+    for (const u of db.users) {
+      if (!u || u.disabled) continue;
+      for (const feature of FEATURES) {
+        const info = cleanupInfo(u.username, feature);
+        if (!info.cleanable) continue;
+        await cleanFeature(u.username, feature, { by: "auto" });
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+  } catch (e) {
+    console.log(`[cleanup] ⚠ 自动扫描异常：${sanitize(String((e && e.message) || e))}`);
+  } finally { cleanupRunning = false; }
+}
+
 /** 成员行：把「权益状态」与「已下发的集成凭据」合成一行（⛔ 绝不下发明文密钥）。 */
 function memberRow(u, feature) {
   const st = featureState(u.username, feature);
@@ -437,6 +644,8 @@ function memberRow(u, feature) {
     endpoint: isKb ? String(it.mcpUrl || "") : "",
     keyMask: mask(it.memKey),
     hasResource: isKb ? Boolean(it.kbId) : Boolean(it.memKey),
+    /* 过期清理（10-23）：面板据此显示「剩 N 天清理 / 已清理」并决定按钮显隐 */
+    cleanup: cleanupInfo(u.username, feature),
   };
 }
 
@@ -3173,7 +3382,16 @@ const server = http.createServer(async (req, res) => {
     if (p === "/entitlements" && req.method === "GET") {
       const who = accountWho();
       if (!who) return send(401, { ok: false, error: "unauthorized" });
-      return send(200, { ok: true, features: FEATURES, labels: FEATURE_LABEL, pricing: pricingOf(), entitlements: entitlementsSummary(who.username) });
+      const ent = entitlementsSummary(who.username);
+      /* ⛔ 到期提醒的数据源：daysLeft<0 已过期；graceLeftDays 是"还有几天被清"。
+         前端弹窗只读这里，别在页面里自己算日期。 */
+      const cleanup = {};
+      for (const f of FEATURES) cleanup[f] = cleanupInfo(who.username, f);
+      const expiring = FEATURES.filter((f) => {
+        const c = cleanup[f];
+        return !c.permanent && !c.cleanedAt && (c.expired || (c.daysLeft !== null && c.daysLeft <= 7));
+      });
+      return send(200, { ok: true, features: FEATURES, labels: FEATURE_LABEL, pricing: pricingOf(), entitlements: ent, cleanup, expiring, graceDays: GRACE_DAYS });
     }
 
     /* 自助开通：扣积分换「时长 + 额度」。积分不足返回 402，前端据此引导充值/找管理员。 */
@@ -3212,7 +3430,12 @@ const server = http.createServer(async (req, res) => {
         off: rows.filter((r) => !r.enabled && !r.expired).length,
         provisioned: rows.filter((r) => r.enabled && r.hasResource).length,
       };
-      return send(200, { ok: true, feature, label: FEATURE_LABEL[feature], summary, users: rows });
+      return send(200, {
+        ok: true, feature, label: FEATURE_LABEL[feature],
+        graceDays: GRACE_DAYS,
+        summary: { ...summary, cleanable: rows.filter((r) => r.cleanup && r.cleanup.cleanable).length },
+        users: rows,
+      });
     }
 
     /* 批量开通 / 续期 / 改额度 / 停用 —— 一次请求在服务端串行执行（前端不用发 N 个请求，
@@ -3267,6 +3490,32 @@ const server = http.createServer(async (req, res) => {
 
     /* 批量「补齐 / 重建」资源：开通了但库或钥匙没建出来的账号，一键重试。
        ⛔ 只补缺，不删旧 —— 删库是不可逆动作，放在清理接口里且要显式点名。 */
+    /* 手动清理（10-23）：默认只清「已过期且过宽限」的；force=true 才允许提前清。
+       ⛔ 逐个执行并逐条回报，不玩"全部成功"。 */
+    if (p === "/admin/members/clean" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const feature = String((body && body.feature) || "").trim();
+      if (!FEATURES.includes(feature)) return send(400, { ok: false, error: "feature 必须是 knowledge 或 memory" });
+      const names = Array.isArray(body && body.users) ? body.users.map(String).filter(Boolean) : [];
+      if (!names.length) return send(400, { ok: false, error: "请选择要清理的账号" });
+      const missing = names.filter((n) => !db.users.some((u) => u.username === n));
+      if (missing.length) return send(404, { ok: false, error: "账号不存在：" + missing.slice(0, 3).join(", ") });
+      const force = Boolean(body && body.force === true);
+      const results = [];
+      for (const name of names) {
+        results.push(await cleanFeature(name, feature, { force, by: me.username }));
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      const done = results.filter((r) => r.ok).length;
+      return send(200, {
+        ok: true, feature, force,
+        done, total: results.length,
+        failed: results.filter((r) => !r.ok),
+        results,
+      });
+    }
+
     if (p === "/admin/members/ensure" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const body = await readBody();
@@ -5016,7 +5265,12 @@ console.log(
     (WBM_BASE && WBM_TOKEN ? "已配置（地址与 token 均来自凭据/环境，不落日志）" : "未配置（缺 WBM_BASE 或 wbm-token 凭据）") +
     "｜网关密钥：" + (WBM_GATEWAY_KEY ? "已配置" : "未配置")
 );
-server.listen(PORT, "127.0.0.1", () => console.log(`[accounts] 账号服务就绪 127.0.0.1:${PORT}（users=${db.users.length}, file=${DATA_FILE}）`));
+server.listen(PORT, "127.0.0.1", () => console.log(`[accounts] 账号服务就绪 127.0.0.1:${PORT}（users=${db.users.length}, file=${DATA_FILE}，过期宽限 ${GRACE_DAYS} 天）`));
+
+/* ── 过期自动清理（10-23）：启动 60s 后扫一次，之后每小时。
+   ⛔ 只清「已过期且过宽限期」的；清理失败会留日志并在下一轮重试。 */
+setTimeout(() => { void autoCleanupScan(); }, 60_000);
+setInterval(() => { void autoCleanupScan(); }, 60 * 60_000);
 
 /* ── 自动更新（10-18）：每 6 小时检查，仅当 db.features.autoUpdate === true 时应用 ──
    ⛔ 默认关；开启后有新版才覆盖并重启（systemd Restart=always 拉起）。
