@@ -5876,7 +5876,7 @@
         : "当前未开启邀请奖励（仍可邀请，只记录关系）";
       var rows = j.invitees || [];
       if ($("invRows")) $("invRows").innerHTML = rows.length ? rows.map(function (x) {
-        return "<tr><td>" + esc(x.username) + "</td><td>" + esc(fmtDT(x.at)) + "</td><td>"
+        return "<tr><td>" + esc(x.username) + (x.via === "manual-code" ? ' <span class="hint">（管理员码）</span>' : "") + "</td><td>" + esc(fmtDT(x.at)) + "</td><td>"
           + (x.rewarded ? "+" + esc(x.points) + " 积分" : '<span class="hint">未发放</span>') + "</td></tr>";
       }).join("") : '<tr><td colspan="3" class="empty">还没有邀请记录 —— 把上面的链接发给朋友吧。</td></tr>';
     })["catch"](function () { invSay("invStatus", "读取失败：网络错误", "bad"); });
@@ -5910,7 +5910,7 @@
             '<div style="font-size:13px;line-height:1.9">邀请 <b>' + row.invitedCount + "</b> 人 · 累计奖励 <b>" + row.totalReward + "</b> 积分"
             + (list.length ? '<table class="mb-table" style="margin-top:10px"><thead><tr><th>被邀请人</th><th>时间</th><th>奖励</th></tr></thead><tbody>'
               + list.map(function (x) {
-                return "<tr><td>" + esc(x.username) + "</td><td>" + esc(fmtDT(x.at)) + "</td><td>" + (x.rewarded ? "+" + esc(x.points) : "未发放") + "</td></tr>";
+                return "<tr><td>" + esc(x.username) + (x.via === "manual-code" ? ' <span class="hint">（管理员码）</span>' : "") + "</td><td>" + esc(fmtDT(x.at)) + "</td><td>" + (x.rewarded ? "+" + esc(x.points) : "未发放") + "</td></tr>";
               }).join("") + "</tbody></table>" : '<div class="hint" style="margin-top:8px">还没有邀请记录。</div>') + "</div>");
         };
       });
