@@ -1987,6 +1987,8 @@
   /* 模型通道当前上游（Manager 卡片里显示 / 一键改写时要用） */
   var wbmUpstreamBase = "";
   var wbmEffectiveBase = "";
+  /* 最近一次探测结果：null = 还没探过。⛔ 切换上游前要看它 —— 面板没纳管账号时切过去 = 全体没模型。 */
+  var wbmUpstreamOk = null;
   function svcApplyState(j) {
     var mem = (j && j.memory) || {}, kb = (j && j.kb) || {};
     svcUrls.mem = adOpenUrl(mem.effectiveBase, mem.publicBase, 8125);
@@ -3031,6 +3033,7 @@
       }
       pill.className = "pill ok";
       pill.textContent = "可达 " + (j.ms != null ? j.ms + "ms" : "");
+      wbmUpstreamOk = Boolean(j.upstreamOk);
       if (j.upstreamOk) wbmSay("Manager 正常，且已纳管账号（upstream_ok）", "ok");
       else wbmSay("Manager 正常，但还没纳管任何账号 —— 去面板扫码/导入账号后模型才会出现（新装就是这样）", "");
     })["catch"](function () {
@@ -3079,7 +3082,11 @@
     var base = (wbmEffectiveBase || $("svcWbmBase").value.trim() || "").replace(/\/+$/, "");
     if (!base) { wbmSay("先保存 Manager 服务地址", "bad"); return; }
     var target = /\/v1$/.test(base) ? base : base + "/v1";
-    if (!confirm("把「模型通道」的上游指向 " + target + " ？\n\n之后用户/客户端的模型都从这台 Manager 出；网关密钥沿用现有的（没有就去模型管理中心填）。")) return;
+    /* ⛔ 没纳管账号就切过去 = 全体客户端立刻没模型（实测 healthz.upstream_ok=false 就是这种状态） */
+    var warn = wbmUpstreamOk === false
+      ? "\n\n⛔ 警告：这台 Manager 还没纳管任何账号（upstream_ok=false），切过去会**没有模型可用**。建议先在面板里纳管账号。"
+      : "";
+    if (!confirm("把「模型通道」的上游指向 " + target + " ？\n\n之后用户/客户端的模型都从这台 Manager 出；网关密钥沿用现有的（没有就去模型管理中心填）。" + warn)) return;
     btn.disabled = true;
     wbmSay("正在切换上游并同步目录（最多约 6 秒）…");
     api("/admin/upstream", { method: "POST", body: { base: target } }).then(function (r) {
