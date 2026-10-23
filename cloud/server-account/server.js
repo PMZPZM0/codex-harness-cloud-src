@@ -3453,6 +3453,258 @@ const server = http.createServer(async (req, res) => {
       return send(200, { ok: true, feature, state, balance: pointsOf(who.username).balance, entitlements: entitlementsSummary(who.username) });
     }
 
+  /* ── 订阅与充值（10-23 用户令「把 sub2api 那套付费订阅机制搬过来，我们是付费订阅积分」）────────
+     · 套餐 db.plans：把知识库 / 记忆权益**打包**成「月卡 / 季卡」，积分计价；单买入口保留不变。
+     · 订阅流水 db.orders：购买 = 扣积分 + grantFeature **叠加续期** + provisionFor 自动建库 / 发钥匙。
+     · 充值 db.topups：易支付协议（gate / pid / key 在管理端「订阅与充值」里配），1 元 = pointsPerCny 积分；
+       未配置 = 用户端充值入口置灰；管理员可**手动补单**（支付回调丢失时的对账兜底）。
+     · 到期处理沿用权益既有机制（宽限 + 提醒 + 手动续费），⛔ 不做自动扣费（用户定案「到期提醒手动续费」）。 */
+  const billingOf = () => {
+    const b = (db.billing && typeof db.billing === "object") ? db.billing : {};
+    return {
+      pointsPerCny: Math.max(1, Math.round(Number(b.pointsPerCny) || 100)),
+      minTopupCny: Math.max(1, Math.round(Number(b.minTopupCny) || 5)),
+      epay: {
+        gate: String((b.epay && b.epay.gate) || "").trim().replace(/\/+$/, ""),
+        pid: String((b.epay && b.epay.pid) || "").trim(),
+        key: String((b.epay && b.epay.key) || "").trim(),
+      },
+    };
+  };
+  const topupEnabled = () => { const b = billingOf(); return Boolean(b.epay.gate && b.epay.pid && b.epay.key); };
+  /* 易支付标准签名：参数（去掉 sign / sign_type / 空值）按 key ASCII 升序拼 k=v&…，**直接拼上商户密钥**，MD5 小写 */
+  const md5Sign = (params, key) => {
+    const line = Object.keys(params)
+      .filter((k) => k !== "sign" && k !== "sign_type" && String(params[k] ?? "") !== "")
+      .sort()
+      .map((k) => k + "=" + String(params[k]))
+      .join("&");
+    return crypto.createHash("md5").update(line + String(key || ""), "utf8").digest("hex");
+  };
+  const newBillingId = (prefix) => prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+
+  /* 用户端：套餐列表（登录即可） */
+  if (p === "/plans" && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const billing = billingOf();
+    const plans = Object.values(db.plans || {})
+      .filter((x) => x && x.active !== false)
+      .sort((a, b) => (Number(a.sort) || 0) - (Number(b.sort) || 0) || String(a.id).localeCompare(String(b.id)));
+    return send(200, {
+      ok: true, plans,
+      billing: { pointsPerCny: billing.pointsPerCny, topupEnabled: topupEnabled(), minTopupCny: billing.minTopupCny },
+      balance: Number(pointsOf(who.username).balance || 0),
+    });
+  }
+
+  /* 用户端：购买套餐（扣积分 → 各权益叠加续期 → 自动建库 / 发钥匙 → 落订阅流水） */
+  if (p === "/plans/buy" && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    if (!rateLimit("buy:" + who.username, 6, 60_000)) return send(429, { ok: false, error: "操作太频繁，请稍后再试" });
+    const body = await readBody();
+    const planId = String((body && body.planId) || "").trim();
+    const plan = (db.plans || {})[planId];
+    if (!plan || plan.active === false) return send(404, { ok: false, error: "套餐不存在或已下架" });
+    const price = Math.max(0, Math.round(Number(plan.price) || 0));
+    const balance = Number(pointsOf(who.username).balance || 0);
+    if (price > balance) return send(402, { ok: false, error: "insufficient-points", need: price, balance });
+    const features = (plan.features && typeof plan.features === "object") ? plan.features : {};
+    const picked = FEATURES.filter((f) => features[f]);
+    if (!picked.length) return send(400, { ok: false, error: "套餐未包含任何权益" });
+    const days = Math.max(0, Math.round(Number(plan.days) || 0));   /* 0 = 永久（管理员自己配，慎用） */
+    if (price > 0) addPoints(who.username, -price, "subscribe", "plan:" + planId + ":" + Date.now(), "订阅「" + plan.name + "」");
+    const orderId = newBillingId("SUB");
+    const states = {};
+    for (const f of picked) {
+      const cfg = features[f] || {};
+      states[f] = grantFeature(who.username, f, {
+        days,
+        quotaMb: cfg.quotaMb !== undefined ? Number(cfg.quotaMb) : undefined,
+        quota: cfg.quota !== undefined ? Number(cfg.quota) : undefined,
+        note: "订阅「" + plan.name + "」",
+      });
+      if (states[f].enabled) provisionFor(who.username, f);
+    }
+    (db.orders || (db.orders = {}))[orderId] = {
+      id: orderId, username: who.username, planId, planName: plan.name,
+      points: price, days, features: picked, at: Date.now(), note: "",
+    };
+    persist();
+    console.log("[billing] " + who.username + " 订阅「" + plan.name + "」，扣 " + price + " 积分，订单 " + orderId);
+    return send(200, { ok: true, orderId, planName: plan.name, states, balance: pointsOf(who.username).balance, entitlements: entitlementsSummary(who.username) });
+  }
+
+  /* 用户端：我的订阅流水 / 充值记录（最近 50 条，新的在前） */
+  if (p === "/my/orders" && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const rows = Object.values(db.orders || {}).filter((o) => o && o.username === who.username)
+      .sort((a, b) => Number(b.at) - Number(a.at)).slice(0, 50);
+    return send(200, { ok: true, orders: rows });
+  }
+  if (p === "/my/topups" && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const rows = Object.values(db.topups || {}).filter((o) => o && o.username === who.username)
+      .sort((a, b) => Number(b.at) - Number(a.at)).slice(0, 50);
+    return send(200, { ok: true, topups: rows, balance: Number(pointsOf(who.username).balance || 0) });
+  }
+
+  /* 用户端：创建充值订单（易支付跳转）。⛔ 金额校验 + 订单先落库，回调只认落过库的单。 */
+  if (p === "/topup/create" && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    if (!rateLimit("topup:" + who.username, 6, 60_000)) return send(429, { ok: false, error: "操作太频繁，请稍后再试" });
+    const billing = billingOf();
+    if (!topupEnabled()) return send(400, { ok: false, error: "topup-disabled", message: "支付渠道未配置，请联系管理员" });
+    const body = await readBody();
+    const cny = Math.round(Number(body && body.cny) * 100) / 100;
+    if (!Number.isFinite(cny) || cny < billing.minTopupCny || cny > 5000) {
+      return send(400, { ok: false, error: "充值金额需在 " + billing.minTopupCny + " ~ 5000 元之间" });
+    }
+    const points = Math.round(cny * billing.pointsPerCny);
+    const orderId = newBillingId("TP");
+    (db.topups || (db.topups = {}))[orderId] = { id: orderId, username: who.username, cny, points, at: Date.now(), status: "pending" };
+    persist();
+    const base = publicBaseOf(req).replace(/\/+$/, "");
+    const params = {
+      pid: billing.epay.pid,
+      type: "alipay",
+      out_trade_no: orderId,
+      notify_url: base + "/pay/notify",
+      return_url: base + "/cloud/app/#subscribe",
+      name: "PPcode 积分充值 " + points,
+      money: cny.toFixed(2),
+    };
+    params.sign = md5Sign(params, billing.epay.key);
+    params.sign_type = "MD5";
+    const payUrl = billing.epay.gate + "/submit.php?" + Object.keys(params).map((k) => k + "=" + encodeURIComponent(params[k])).join("&");
+    console.log("[billing] " + who.username + " 发起充值 " + cny + " 元（订单 " + orderId + "）");
+    return send(200, { ok: true, orderId, payUrl, points, cny });
+  }
+
+  /* 支付回调（易支付 notify，免鉴权 + 验签 + 金额校验 + 幂等）。⛔ 返回纯文本 success / fail。 */
+  if (p === "/pay/notify" && (req.method === "GET" || req.method === "POST")) {
+    const billing = billingOf();
+    const params = Object.fromEntries(url.searchParams.entries());
+    const key = String(billing.epay.key || "");
+    const sign = String(params.sign || "");
+    const mysign = md5Sign(params, key);
+    const plain = (text) => { res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" }); res.end(text); };
+    if (!key || !sign || sign.toLowerCase() !== mysign.toLowerCase()) return plain("fail");
+    const orderId = String(params.out_trade_no || "");
+    const order = (db.topups || {})[orderId];
+    if (!order) return plain("fail");
+    if (order.status === "paid" || order.status === "manual") return plain("success");   /* 幂等：已入账不重复加 */
+    if (String(params.trade_status || "") !== "TRADE_SUCCESS") return plain("fail");
+    const money = Number(params.money || 0);
+    if (Math.abs(money - Number(order.cny)) > 0.011) {
+      order.status = "failed"; order.note = "回调金额不符：" + params.money; persist();
+      console.log("[billing] ⚠ 订单 " + orderId + " 回调金额不符（" + params.money + " ≠ " + order.cny + "）");
+      return plain("fail");
+    }
+    order.status = "paid"; order.tradeNo = String(params.trade_no || ""); order.paidAt = Date.now();
+    addPoints(order.username, order.points, "topup", "topup:" + orderId, "充值 " + order.cny + " 元 → " + order.points + " 积分");
+    persist();
+    console.log("[billing] " + order.username + " 充值 " + order.cny + " 元（订单 " + orderId + "）→ +" + order.points + " 积分");
+    return plain("success");
+  }
+
+  /* 管理端：套餐 CRUD（upsert / 删除 / 上下架） */
+  if (p === "/admin/plans" && req.method === "GET") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    return send(200, { ok: true, plans: Object.values(db.plans || {}), billing: billingOf(), topupEnabled: topupEnabled() });
+  }
+  if (p === "/admin/plans" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBody();
+    if (body && body.delete) {
+      const id = String(body.id || "").trim();
+      if (!(db.plans || {})[id]) return send(404, { ok: false, error: "套餐不存在" });
+      delete db.plans[id]; persist();
+      return send(200, { ok: true, plans: Object.values(db.plans || {}) });
+    }
+    const id = String((body && body.id) || "").trim() || newBillingId("PLAN");
+    /* ⛔ 只带 id + active 的请求 = 上下架切换：**合并现有套餐**而不是整单覆盖 ——
+       否则 toggle 一次就会把 features / 价格清空再撞「至少勾选一项权益」的 400（10-23 实测）。 */
+    if ((db.plans || {})[id] && (body && body.name) === undefined && (body && body.features) === undefined) {
+      (db.plans || {})[id].active = body.active === undefined ? true : body.active !== false;
+      persist();
+      return send(200, { ok: true, plans: Object.values(db.plans || {}) });
+    }
+    const name = String((body && body.name) || "").trim();
+    if (!name) return send(400, { ok: false, error: "套餐名称必填" });
+    const features = (body && body.features && typeof body.features === "object") ? body.features : {};
+    const cleaned = {};
+    for (const f of FEATURES) {
+      if (!features[f]) continue;
+      cleaned[f] = {
+        quotaMb: features[f].quotaMb !== undefined && features[f].quotaMb !== "" ? Math.max(0, Number(features[f].quotaMb) || 0) : undefined,
+        quota: features[f].quota !== undefined && features[f].quota !== "" ? Math.max(0, Number(features[f].quota) || 0) : undefined,
+      };
+    }
+    if (!Object.keys(cleaned).length) return send(400, { ok: false, error: "至少勾选一项权益（知识库 / 记忆）" });
+    (db.plans || (db.plans = {}))[id] = {
+      id, name, desc: String((body && body.desc) || "").trim(),
+      price: Math.max(0, Math.round(Number(body && body.price) || 0)),
+      days: Math.max(0, Math.round(Number(body && body.days) || 0)),
+      features: cleaned, active: body.active === undefined ? true : body.active !== false,
+      sort: Math.round(Number(body && body.sort) || 0),
+    };
+    persist();
+    console.log("[billing] " + me.username + " 保存套餐「" + name + "」（" + id + "）");
+    return send(200, { ok: true, plans: Object.values(db.plans || {}) });
+  }
+
+  /* 管理端：充值对账（最近 100 笔）+ 手动补单（回调丢失的兜底，⛔ 补单同样幂等） */
+  if (p === "/admin/topups" && req.method === "GET") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const rows = Object.values(db.topups || {}).sort((a, b) => Number(b.at) - Number(a.at)).slice(0, 100);
+    return send(200, { ok: true, topups: rows, billing: billingOf(), topupEnabled: topupEnabled() });
+  }
+  if (p === "/admin/topups/manual" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBody();
+    const orderId = String((body && body.id) || "").trim();
+    const order = (db.topups || {})[orderId];
+    if (!order) return send(404, { ok: false, error: "订单不存在" });
+    if (order.status === "paid" || order.status === "manual") return send(200, { ok: true, order, already: true });
+    order.status = "manual"; order.paidAt = Date.now(); order.note = "管理员 " + me.username + " 手动补单";
+    addPoints(order.username, order.points, "topup", "topup:" + orderId, "充值 " + order.cny + " 元 → " + order.points + " 积分（手动补单）");
+    persist();
+    console.log("[billing] " + me.username + " 手动补单 " + orderId + "（" + order.username + " +" + order.points + " 积分）");
+    return send(200, { ok: true, order });
+  }
+
+  /* 管理端：充值 / 积分比例配置（易支付 gate / pid / key，留空 = 关闭自助充值） */
+  if (p === "/admin/billing" && req.method === "GET") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const b = billingOf();
+    return send(200, { ok: true, billing: { pointsPerCny: b.pointsPerCny, minTopupCny: b.minTopupCny, epay: { gate: b.epay.gate, pid: b.epay.pid, keyMask: b.epay.key ? String(b.epay.key).slice(0, 4) + "***" : "" }, hasKey: Boolean(b.epay.key) }, topupEnabled: topupEnabled() });
+  }
+  if (p === "/admin/billing" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBody();
+    const cur = billingOf();
+    const next = {
+      pointsPerCny: Math.max(1, Math.round(Number(body && body.pointsPerCny) || cur.pointsPerCny)),
+      minTopupCny: Math.max(1, Math.round(Number(body && body.minTopupCny) || cur.minTopupCny)),
+      epay: { gate: cur.epay.gate, pid: cur.epay.pid, key: cur.epay.key },
+    };
+    if (body && body.epay) {
+      if (body.epay.gate !== undefined) next.epay.gate = String(body.epay.gate || "").trim().replace(/\/+$/, "");
+      if (body.epay.pid !== undefined) next.epay.pid = String(body.epay.pid || "").trim();
+      /* ⛔ key 只写不改空：界面回显的是掩码，空值提交 = 保持原密钥（跟「上次配置值」同一套思路） */
+      if (body.epay.key) next.epay.key = String(body.epay.key).trim();
+    }
+    db.billing = next; persist();
+    console.log("[billing] " + me.username + " 更新充值配置（比例 " + next.pointsPerCny + " 积分/元，渠道 " + (topupEnabled() ? "开" : "关") + "）");
+    const b = billingOf();
+    return send(200, { ok: true, billing: { pointsPerCny: b.pointsPerCny, minTopupCny: b.minTopupCny, epay: { gate: b.epay.gate, pid: b.epay.pid, keyMask: b.epay.key ? String(b.epay.key).slice(0, 4) + "***" : "" }, hasKey: Boolean(b.epay.key) }, topupEnabled: topupEnabled() });
+  }
+
     /* ── 10-23 管理端「已开通成员」：在知识库 / 记忆中心里直接管人 ─────────────────
        ⛔ 用户令「不用去后台了」⇒ 成员列表 + 批量管理必须在本服务完成。
        ⛔ 本接口只读本地状态（权益 + 已下发凭据），**不逐个去问上游** —— 否则一屏用户
