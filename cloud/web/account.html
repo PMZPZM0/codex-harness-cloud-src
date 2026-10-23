@@ -676,7 +676,7 @@
       <button class="nav-item" data-tab="kb"><span class="dot"></span>知识库</button>
     </nav>
     <!-- 10-23 团队协作体系：独立的「团队」分组（设计文档 §4）。未加入团队时各组页面显示引导卡。 -->
-    <nav class="nav-group" id="navGroupTeam" aria-label="团队功能">
+    <nav class="nav-group" id="navGroupTeam" aria-label="团队功能" hidden>
       <h3 class="nav-group-title">团队</h3>
       <button class="nav-item" data-tab="teamOverview"><span class="dot"></span>团队概览</button>
       <button class="nav-item" data-tab="teamMemory"><span class="dot"></span>团队记忆空间</button>
@@ -989,15 +989,30 @@
             <b id="tmSeats">—</b>
           </div>
         </div>
-        <div class="pol-grid" style="margin-top:14px">
+        <!-- 团队积分（10-24 方案 §4）：主位显示「可用」，下面分项展开配额/余额，避免把配额当余额 -->
+        <div class="sub-hero-top" style="margin-top:14px;align-items:flex-end">
+          <div>
+            <span class="hint">团队可用积分</span>
+            <div style="margin-top:4px"><b id="tmPointsAvail" style="font-size:26px">—</b>
+              <span class="hint" id="tmPointsUnit">积分</span></div>
+            <div class="hint" id="tmPointsBreak" style="margin-top:6px">—</div>
+            <div class="hint" id="tmPointsWarn" style="margin-top:4px;color:#c0392b" hidden></div>
+          </div>
+          <div class="sub-balance">
+            <span>本月已用</span>
+            <b id="tmMonthUsed">—</b>
+          </div>
+        </div>
+        <div class="pol-grid" style="margin-top:12px">
           <div class="pol-field"><label>团队套餐</label><div id="tmPlan" class="hint">—</div></div>
           <div class="pol-field"><label>到期时间</label><div id="tmExpire" class="hint">—</div></div>
-          <div class="pol-field"><label>团队积分池</label><div id="tmPool" class="hint">—</div></div>
+          <div class="pol-field"><label>积分余额 / 本月配额</label><div id="tmPool" class="hint">—</div></div>
         </div>
         <div class="pol-actions" style="margin-top:12px">
           <button class="btn primary" id="tmProvision">开通 / 修复团队空间</button>
           <button class="btn" id="tmGotoMemory">团队记忆空间</button>
           <button class="btn" id="tmGotoKb">团队知识库</button>
+          <button class="btn" id="tmBuyPoints">充值 / 购买积分</button>
           <span class="status" id="tmProvStatus" role="status"></span>
         </div>
         <div class="hint" id="tmSpaceState" style="margin-top:10px"></div>
@@ -1060,6 +1075,7 @@
           <button class="btn primary" id="tmkSearch">检索</button>
           <span class="status" id="tmkSearchStatus" role="status"></span>
         </div>
+        <div class="hint" id="tmkCost" style="margin-top:10px"></div>
         <div id="tmkHits" class="hint" style="margin-top:12px"></div>
       </div>
       <div class="card">
@@ -1124,6 +1140,15 @@
         <div class="hint" id="tmsPlanState" style="margin-top:10px"></div>
       </div>
       <div class="card">
+        <h2>团队积分包</h2>
+        <p class="hint" style="margin:0 0 12px">积分用于团队能力消耗（知识库检索 / 上传等），与个人积分互不相通。仅 owner 可购买；管理员也可直接分配。</p>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th style="width:22%">积分包</th><th style="width:14%">价格</th><th style="width:18%">到账积分</th><th style="width:14%">有效期</th><th style="width:12%">限购</th><th style="width:20%">操作</th></tr></thead>
+          <tbody id="tmsPkgs"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+        <div class="hint" id="tmsPkgState" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
         <h2>危险操作</h2>
         <p class="hint" style="margin:0 0 12px">解散后团队标记为已解散（数据保留，成员无法再访问共享空间）。此操作不可逆。</p>
         <div class="pol-actions">
@@ -1148,6 +1173,67 @@
         <div class="pol-actions">
           <button class="btn primary" id="atSavePolicy">保存开通条件</button>
           <span class="status" id="atPolicyStatus" role="status"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>用户团队开通</h2>
+        <p class="hint" style="margin:0 0 10px">团队入口按人开通：<b>未开通的用户看不到「团队」分组，接口也 403</b>。可单个开关，也可勾选后批量开通/关闭。</p>
+        <div class="pol-grid">
+          <div class="pol-field"><label>搜索用户名</label><input class="field" id="ataQ" placeholder="留空列出全部" /></div>
+          <div class="pol-field"><label>状态</label>
+            <select class="field" id="ataStatus">
+              <option value="">全部</option><option value="granted">已开通</option><option value="none">未开通</option>
+              <option value="expired">已过期</option><option value="revoked">已回收</option>
+            </select>
+          </div>
+          <div class="pol-field"><label>有效期（天，0 = 长期）</label><input class="field" id="ataDays" type="number" min="0" step="30" value="0" /></div>
+          <div class="pol-field" style="grid-column:span 2"><label>备注（记在开通记录里）</label><input class="field" id="ataNote" placeholder="例如：首批试点 / 客户 A" /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn" id="ataSearch">查询</button>
+          <button class="btn primary" id="ataGrant">批量开通（选中）</button>
+          <button class="btn" id="ataRevoke">批量关闭（选中）</button>
+          <span class="status" id="ataStatusMsg" role="status"></span>
+        </div>
+        <div class="hint" id="ataTotals" style="margin-top:10px"></div>
+        <div class="table-wrap" style="margin-top:8px;max-height:420px;overflow:auto"><table class="mb-table">
+          <thead><tr><th style="width:6%"><input type="checkbox" id="ataAll" /></th><th style="width:20%">用户</th><th style="width:14%">开通状态</th><th style="width:16%">团队</th><th style="width:16%">有效期</th><th style="width:16%">备注</th><th style="width:12%">操作</th></tr></thead>
+          <tbody id="ataRows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h2>团队积分设置</h2>
+        <p class="hint" style="margin:0 0 12px">消耗单价（点/次、点/MB）+ 低余额提醒阈值。改完下一次调用即按新价扣。</p>
+        <div class="pol-grid">
+          <div class="pol-field"><label>知识库检索（点/次）</label><input class="field" id="atPriceSearch" type="number" min="0" step="1" /></div>
+          <div class="pol-field"><label>知识库上传（点/MB）</label><input class="field" id="atPriceUpload" type="number" min="0" step="1" /></div>
+          <div class="pol-field"><label>记忆写入（点/条）</label><input class="field" id="atPriceMemW" type="number" min="0" step="1" /></div>
+          <div class="pol-field"><label>记忆检索（点/次）</label><input class="field" id="atPriceMemS" type="number" min="0" step="1" /></div>
+          <div class="pol-field"><label>低余额提醒阈值</label><input class="field" id="atLowWarn" type="number" min="0" step="50" /></div>
+          <div class="pol-field"><label>积分体系</label><label class="mb-check" style="margin-top:8px"><input type="checkbox" id="atPointsOn" /> <span>启用扣减（关掉 = 团队能力免费）</span></label></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="atSavePrice">保存积分设置</button>
+          <span class="status" id="atPriceStatus" role="status"></span>
+        </div>
+        <h3 style="margin:18px 0 8px;font-size:14px">积分充值包</h3>
+        <div class="table-wrap"><table class="mb-table">
+          <thead><tr><th style="width:18%">名称</th><th style="width:12%">价格</th><th style="width:16%">到账 / 赠送</th><th style="width:12%">有效期</th><th style="width:10%">限购</th><th style="width:10%">状态</th><th style="width:22%">操作</th></tr></thead>
+          <tbody id="atPkgRows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+        </table></div>
+        <div class="pol-grid" style="margin-top:12px">
+          <div class="pol-field"><label>积分包 ID（留空自动）</label><input class="field" id="atpkId" placeholder="pkg-small" /></div>
+          <div class="pol-field"><label>名称</label><input class="field" id="atpkName" placeholder="小包" /></div>
+          <div class="pol-field"><label>价格（元）</label><input class="field" id="atpkPrice" type="number" min="0" step="10" /></div>
+          <div class="pol-field"><label>到账积分</label><input class="field" id="atpkPoints" type="number" min="0" step="1000" /></div>
+          <div class="pol-field"><label>赠送积分</label><input class="field" id="atpkBonus" type="number" min="0" step="100" /></div>
+          <div class="pol-field"><label>有效期（天，0 = 永久）</label><input class="field" id="atpkDays" type="number" min="0" step="30" /></div>
+          <div class="pol-field"><label>每团队限购（0 = 不限）</label><input class="field" id="atpkLimit" type="number" min="0" step="1" /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="atPkgSave">保存积分包</button>
+          <button class="btn" id="atPkgReset">清空表单</button>
+          <span class="status" id="atPkgStatus" role="status"></span>
         </div>
       </div>
       <div class="card">
@@ -1177,8 +1263,18 @@
       <div class="card">
         <h2>全站团队</h2>
         <div class="hint" id="atTotals" style="margin-bottom:10px"></div>
+        <div class="pol-actions" style="margin-bottom:10px">
+          <label class="mb-check" style="margin-right:8px"><input type="checkbox" id="atTeamAll" /> <span>全选</span></label>
+          <input class="field" id="atBatchPoints" type="number" min="0" step="1000" placeholder="积分数" style="max-width:130px" />
+          <input class="field" id="atBatchNote" placeholder="原因（必填）" style="max-width:180px" />
+          <button class="btn" id="atBatchGrant">批量分配积分</button>
+          <input class="field" id="atBatchPlan" placeholder="套餐 ID" style="max-width:130px" />
+          <button class="btn" id="atBatchPlanBtn">批量设套餐</button>
+          <button class="btn" id="atExport">导出 CSV</button>
+          <span class="status" id="atBatchStatus" role="status"></span>
+        </div>
         <div class="table-wrap"><table class="mb-table">
-          <thead><tr><th style="width:20%">团队</th><th style="width:14%">Owner</th><th style="width:10%">成员</th><th style="width:16%">套餐</th><th style="width:14%">共享空间</th><th style="width:12%">状态</th><th style="width:14%">操作</th></tr></thead>
+          <thead><tr><th style="width:5%"><input type="checkbox" id="atTeamAll2" /></th><th style="width:17%">团队</th><th style="width:11%">Owner</th><th style="width:8%">成员</th><th style="width:13%">套餐</th><th style="width:15%">积分（余额 / 本月已用）</th><th style="width:10%">共享空间</th><th style="width:8%">状态</th><th style="width:13%">操作</th></tr></thead>
           <tbody id="atRows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
         </table></div>
       </div>
@@ -3330,6 +3426,21 @@
       if (grp && grp.parentNode) grp.parentNode.removeChild(grp);
       ADMIN_TABS.forEach(function (t) { var b = $("navAdmin" + t.slice(5)); if (b && b.parentNode) b.parentNode.removeChild(b); });
       if (location.hash.indexOf("#admin") === 0) show("user");   /* 旧书签 #admin* 一律回落到用户中心 */
+    }
+    /* ⛔ 10-24 用户令：团队功能**管理员逐个开通后才展示入口**。
+       未开通 ⇒ 整组从 DOM 摘除（不是 hidden，避免"闪一下又消失"）；接口侧还有第二道闸。 */
+    var teamAccess = (r.j && r.j.teamAccess) || { enabled: false };
+    if (!teamAccess.enabled) {
+      var tgrp = $("navGroupTeam");
+      if (tgrp && tgrp.parentNode) tgrp.parentNode.removeChild(tgrp);
+      ["teamOverview", "teamMemory", "teamKB", "teamMembers", "teamSettings"].forEach(function (t) {
+        var sec = document.querySelector('.tab[data-tab="' + t + '"]');
+        if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
+      });
+      if (location.hash.indexOf("#team") === 0) location.hash = "#user";
+    } else {
+      var tgrp2 = $("navGroupTeam");
+      if (tgrp2) tgrp2.hidden = false;
     }
     var start = (location.hash || "#user").slice(1);
     /* ⛔ 团队页（10-23）必须进这个白名单，否则 #teamOverview / #teamSettings 会被回落到用户中心
@@ -6714,7 +6825,7 @@
       if ($("tmSeats")) $("tmSeats").textContent = (seats.used != null ? seats.used : "—") + " / " + (seats.limit != null ? seats.limit : "—");
       if ($("tmPlan")) $("tmPlan").textContent = ent.planName ? ent.planName + "（" + (ent.seats || 0) + " 席位）" : "免费档（3 席位）";
       if ($("tmExpire")) $("tmExpire").textContent = Number(ent.expiresAt || 0) > 0 ? fmtDT(ent.expiresAt) + (ent.status === "expired" ? "（已过期）" : "") : "永久 / 免费档";
-      if ($("tmPool")) $("tmPool").textContent = (j.points && j.points.balance != null ? j.points.balance : 0) + " 积分";
+      loadPointsSummary(t.id);
       var integ = j.integrations || {};
       if ($("tmSpaceState")) {
         $("tmSpaceState").innerHTML = "共享空间：" +
@@ -6723,6 +6834,83 @@
           (isManager(t) ? "（点上方「开通 / 修复团队空间」即可创建）" : "（只有 owner / admin 可以开通）");
       }
       if ($("tmProvision")) $("tmProvision").hidden = !isManager(t);
+    });
+  }
+
+  /* ── 团队积分（10-24 方案 §4）：可用 = 配额剩余 + 余额，必须分项展示 ── */
+  function fmtNum(n) {
+    var v = Number(n) || 0;
+    if (v >= 100000) return (v / 10000).toFixed(1) + " 万";
+    return v.toLocaleString("zh-CN");
+  }
+  function loadPointsSummary(teamId) {
+    api("/teams/" + encodeURIComponent(teamId) + "/points").then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { say("tmPointsWarn", (j.message || j.error || "积分读取失败"), "warn"); return; }
+      var q = j.quota || {};
+      if ($("tmPointsAvail")) $("tmPointsAvail").textContent = fmtNum(j.available);
+      if ($("tmMonthUsed")) $("tmMonthUsed").textContent = fmtNum(j.monthUsed);
+      if ($("tmPointsBreak")) {
+        $("tmPointsBreak").innerHTML = (j.pointsEnabled === false
+          ? "积分扣减已关闭（团队能力免费）"
+          : "本月配额剩 <b>" + fmtNum(q.left) + "</b> / " + fmtNum(q.total) + " · 余额 <b>" + fmtNum(j.balance) + "</b>");
+      }
+      if ($("tmPool")) $("tmPool").textContent = fmtNum(j.balance) + " / " + fmtNum(q.total) + "（" + (q.period || "") + "）";
+      var warnEl = $("tmPointsWarn");
+      if (warnEl) {
+        var low = Number(j.lowBalanceWarn || 0);
+        var isLow = low > 0 && (Number(j.available) || 0) <= low && j.pointsEnabled !== false;
+        warnEl.hidden = !isLow;
+        if (isLow) warnEl.textContent = "团队可用积分偏低（" + fmtNum(j.available) + " ≤ " + fmtNum(low) + "），余额耗尽后检索/上传会被拒绝，请及时充值或联系管理员分配。";
+      }
+      window.__teamPoints = j;
+    });
+  }
+
+  /* 购买积分包（owner）：拉在售包 → 弹窗选择 → 下单跳支付 */
+  function openPkgBuy() {
+    var t = curTeam();
+    if (!t) return;
+    if (roleOf(t) !== "owner") { showModal("只有 owner 能购买", '<div style="font-size:13.5px">团队积分包由团队 owner 购买；如需补充，可联系 owner 或让管理员直接分配。</div>'); return; }
+    api("/team-points/packages").then(function (r) {
+      var j = r.j || {};
+      var pkgs = j.packages || [];
+      if (!r.ok || !j.ok) { showModal("读取积分包失败", '<div style="font-size:13.5px">' + esc(j.error || ("HTTP " + r.status)) + "</div>"); return; }
+      if (!pkgs.length) {
+        showModal("暂无可购买的积分包", '<div style="font-size:13.5px;line-height:1.9">管理员还没有配置团队积分包。<br>可先让管理员在「团队管理 → 团队积分设置」里添加，或直接给你分配积分。</div>');
+        return;
+      }
+      if (j.topupEnabled === false) {
+        showModal("支付渠道未配置", '<div style="font-size:13.5px;line-height:1.9">自助购买暂不可用（管理员还没配支付渠道）。<br>当前补充积分的方式：联系管理员在「团队管理 → 全站团队 → 批量分配积分」发放。</div>');
+        return;
+      }
+      var html = '<div style="font-size:13.5px;line-height:1.9">';
+      html += '<div class="hint" style="margin-bottom:10px">选择要购买的积分包（到账直接进团队余额）：</div>';
+      pkgs.forEach(function (p) {
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line-soft)">'
+          + "<div><b>" + esc(p.name) + "</b>"
+          + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "")
+          + '<div class="hint">到账 ' + esc(p.points) + (Number(p.bonusPoints) > 0 ? " + 赠 " + esc(p.bonusPoints) : "") + " 积分"
+          + (Number(p.validDays) > 0 ? " · " + esc(p.validDays) + " 天有效" : " · 长期有效") + "</div></div>"
+          + '<div style="white-space:nowrap"><b>¥' + esc(p.priceCny) + "</b> "
+          + '<button class="btn primary" data-pkgbuy="' + escAttr(p.id) + '">购买</button></div></div>';
+      });
+      html += "</div>";
+      showModal("购买团队积分包", html);
+      Array.prototype.forEach.call(document.querySelectorAll("[data-pkgbuy]"), function (b) {
+        b.onclick = function () {
+          b.disabled = true;
+          api("/team-points/buy", { method: "POST", body: { teamId: t.id, pkgId: b.getAttribute("data-pkgbuy") } }).then(function (x) {
+            b.disabled = false;
+            if (!x.ok || !x.j.ok) {
+              showModal("下单失败", '<div style="font-size:13.5px;line-height:1.9">' + esc(x.j.message || x.j.error || "未知错误") + "</div>");
+              return;
+            }
+            window.open(x.j.payUrl, "_blank");
+            say("tmProvStatus", "已创建订单，正在新窗口打开支付…", "ok");
+          });
+        };
+      });
     });
   }
 
@@ -6895,6 +7083,33 @@
         }
       });
       loadTeamPlans();
+      loadTeamPkgs();
+    });
+  }
+
+  /* 团队积分包（owner 可买；成员只看价格） */
+  function loadTeamPkgs() {
+    var t = curTeam();
+    if (!t || !$("tmsPkgs")) return;
+    api("/team-points/packages").then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { $("tmsPkgs").innerHTML = '<tr><td colspan="6" class="empty">' + esc(j.error || "读取失败") + "</td></tr>"; return; }
+      var pkgs = j.packages || [];
+      if (!pkgs.length) { $("tmsPkgs").innerHTML = '<tr><td colspan="6" class="empty">管理员还没有配置积分包</td></tr>'; return; }
+      var owner = roleOf(t) === "owner";
+      $("tmsPkgs").innerHTML = pkgs.map(function (p) {
+        var total = Number(p.points || 0) + Number(p.bonusPoints || 0);
+        return "<tr><td>" + esc(p.name) + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "") + "</td>"
+          + "<td>¥" + esc(p.priceCny) + "</td>"
+          + "<td>" + esc(p.points) + (Number(p.bonusPoints) > 0 ? " <span class='hint'>+赠 " + esc(p.bonusPoints) + "</span>" : "") + "</td>"
+          + "<td>" + (Number(p.validDays) > 0 ? esc(p.validDays) + " 天" : "长期") + "</td>"
+          + "<td>" + (Number(p.limitPerTeam) > 0 ? esc(p.limitPerTeam) + " 次" : "不限") + "</td>"
+          + '<td><button class="btn primary" data-pkgbuy2="' + escAttr(p.id) + '"' + (owner ? "" : " disabled") + ">购买</button></td></tr>";
+      }).join("");
+      if ($("tmsPkgState")) $("tmsPkgState").innerHTML = "到账直接进团队余额（余额与配额分开展示）。" + (j.topupEnabled === false ? ' <span style="color:#c0392b">支付渠道未配置，暂时只能由管理员分配。</span>' : "");
+      Array.prototype.forEach.call($("tmsPkgs").querySelectorAll("[data-pkgbuy2]"), function (b) {
+        b.onclick = function () { openPkgBuy(); };
+      });
     });
   }
 
@@ -6947,30 +7162,42 @@
     });
     loadAdminTeamPlans();
     loadAdminTeamList();
+    loadAdminAccess();
+    loadAdminPricing();
   }
 
+  var AT_TEAMS = [];
   function loadAdminTeamList() {
     if (!$("atRows")) return;
-    $("atRows").innerHTML = '<tr><td colspan="7" class="empty">加载中…</td></tr>';
+    $("atRows").innerHTML = '<tr><td colspan="9" class="empty">加载中…</td></tr>';
     api("/admin/teams").then(function (r) {
       var j = r.j || {};
-      if (!r.ok || !j.ok) { $("atRows").innerHTML = '<tr><td colspan="7" class="empty">' + esc(j.error || "读取失败") + "</td></tr>"; return; }
-      var rows = j.teams || [];
+      if (!r.ok || !j.ok) { $("atRows").innerHTML = '<tr><td colspan="9" class="empty">' + esc(j.error || "读取失败") + "</td></tr>"; return; }
+      AT_TEAMS = j.teams || [];
       if ($("atTotals")) {
-        var live = rows.filter(function (t) { return t.status !== "dissolved"; }).length;
-        var members = rows.reduce(function (n, t) { return n + Number((t.seats && t.seats.used) || 0); }, 0);
-        $("atTotals").innerHTML = "全站 <b>" + live + "</b> 个在用团队 · 共 <b>" + members + "</b> 个席位 · 免费档每团队 <b>" + esc((j.policy || {}).freeSeats || 3) + "</b> 席";
+        var live = AT_TEAMS.filter(function (t) { return t.status !== "dissolved"; }).length;
+        var members = AT_TEAMS.reduce(function (n, t) { return n + Number((t.seats && t.seats.used) || 0); }, 0);
+        var pts = AT_TEAMS.reduce(function (n, t) { return n + Number(t.pointsAvailable || 0); }, 0);
+        $("atTotals").innerHTML = "全站 <b>" + live + "</b> 个在用团队 · 共 <b>" + members + "</b> 个席位 · 团队积分合计 <b>"
+          + fmtNum(pts) + "</b> · 免费档每团队 <b>" + esc((j.policy || {}).freeSeats || 3) + "</b> 席";
       }
-      if (!rows.length) { $("atRows").innerHTML = '<tr><td colspan="7" class="empty">还没有团队</td></tr>'; return; }
-      $("atRows").innerHTML = rows.map(function (t) {
+      if (!AT_TEAMS.length) { $("atRows").innerHTML = '<tr><td colspan="9" class="empty">还没有团队</td></tr>'; return; }
+      $("atRows").innerHTML = AT_TEAMS.map(function (t) {
         var ent = t.entitlements || {};
         var space = (t.memoryReady ? "记忆✓" : "记忆✗") + " / " + (t.kbReady ? "知识库✓" : "知识库✗");
-        return "<tr><td>" + esc(t.name) + '<div class="hint">' + esc(t.id) + "</div></td><td>" + esc(t.owner) + "</td>"
+        var pts = (t.pointsAvailable != null ? fmtNum(t.pointsAvailable) : "—") + ' <span class="hint">/ ' + (t.monthUsed != null ? fmtNum(t.monthUsed) : "—") + "</span>";
+        return "<tr>"
+          + '<td><input type="checkbox" data-tid="' + escAttr(t.id) + '"' + (t.status === "dissolved" ? " disabled" : "") + " /></td>"
+          + "<td>" + esc(t.name) + '<div class="hint">' + esc(t.id) + "</div></td>"
+          + "<td>" + esc(t.owner) + "</td>"
           + "<td>" + esc((t.seats && t.seats.used) || 0) + " / " + esc((t.seats && t.seats.limit) || 0) + "</td>"
-          + "<td>" + esc(ent.planName || "免费档") + "</td><td>" + esc(space) + "</td>"
+          + "<td>" + esc(ent.planName || "免费档") + "</td>"
+          + "<td>" + pts + "</td>"
+          + "<td>" + esc(space) + "</td>"
           + "<td>" + (t.status === "dissolved" ? '<span class="hint">已解散</span>' : "在用") + "</td>"
-          + '<td><button class="btn" data-grant="' + escAttr(t.id) + '">手动开通套餐</button>'
-          + (t.status === "dissolved" ? "" : ' <button class="btn" data-dissolve="' + escAttr(t.id) + '">强制解散</button>') + "</td></tr>";
+          + '<td><button class="btn" data-grant="' + escAttr(t.id) + '">开套餐</button>'
+          + ' <button class="btn" data-ptsgrant="' + escAttr(t.id) + '">发积分</button>'
+          + (t.status === "dissolved" ? "" : ' <button class="btn" data-dissolve="' + escAttr(t.id) + '">解散</button>') + "</td></tr>";
       }).join("");
       Array.prototype.forEach.call($("atRows").querySelectorAll("[data-dissolve]"), function (b) {
         b.onclick = function () {
@@ -6995,6 +7222,129 @@
           });
         };
       });
+      Array.prototype.forEach.call($("atRows").querySelectorAll("[data-ptsgrant]"), function (b) {
+        b.onclick = function () {
+          var id = b.getAttribute("data-ptsgrant");
+          var n = window.prompt("给团队 " + id + " 发放多少积分？（可填负数扣减）", "10000");
+          if (n === null || String(n).trim() === "") return;
+          var note = window.prompt("原因（必填，会写进审计与流水）：", "");
+          if (!note) { say("atBatchStatus", "原因必填，已取消", "warn"); return; }
+          api("/teams/" + encodeURIComponent(id) + "/points/grant", { method: "POST", body: { points: Number(n), note: note } }).then(function (x) {
+            say("atBatchStatus", x.ok && x.j.ok ? "已发放（可用 " + fmtNum((x.j.summary || {}).available) + "）" : (x.j.message || x.j.error || "发放失败"), x.ok && x.j.ok ? "ok" : "bad");
+            loadAdminTeamList();
+          });
+        };
+      });
+    });
+  }
+
+  /* ── 用户团队开通（第 5 节）：表格 + 勾选批量 ── */
+  var AT_USERS = [];
+  function loadAdminAccess() {
+    if (!$("ataRows")) return;
+    var q = ($("ataQ") || {}).value || "";
+    var st = ($("ataStatus") || {}).value || "";
+    $("ataRows").innerHTML = '<tr><td colspan="7" class="empty">加载中…</td></tr>';
+    api("/admin/team-access?q=" + encodeURIComponent(q) + "&status=" + encodeURIComponent(st)).then(function (r) {
+      var j = r.j || {};
+      if (!r.ok || !j.ok) { $("ataRows").innerHTML = '<tr><td colspan="7" class="empty">' + esc(j.error || "读取失败") + "</td></tr>"; return; }
+      AT_USERS = j.rows || [];
+      var t = j.totals || {};
+      if ($("ataTotals")) $("ataTotals").innerHTML = "共 <b>" + esc(t.users || 0) + "</b> 个用户 · 已开通 <b>" + esc(t.granted || 0) + "</b> · 已过期 <b>" + esc(t.expired || 0) + "</b> · 在用团队 <b>" + esc(t.teams || 0) + "</b> 个";
+      if (!AT_USERS.length) { $("ataRows").innerHTML = '<tr><td colspan="7" class="empty">没有匹配的用户</td></tr>'; return; }
+      $("ataRows").innerHTML = AT_USERS.map(function (u) {
+        var badge = u.enabled ? '<b style="color:#1a7f37">已开通</b>' : (u.expired ? '<span style="color:#c0392b">已过期</span>' : '<span class="hint">未开通</span>');
+        var exp = Number(u.expiresAt) > 0 ? new Date(Number(u.expiresAt)).toLocaleDateString("zh-CN") : "长期";
+        return "<tr>"
+          + '<td><input type="checkbox" data-uid="' + escAttr(u.username) + '" /></td>'
+          + "<td>" + esc(u.username) + (u.role === "admin" ? ' <span class="hint">(管理员)</span>' : "") + "</td>"
+          + "<td>" + badge + "</td>"
+          + "<td>" + esc(u.teamCount || 0) + (u.teams && u.teams.length ? '<div class="hint">' + esc(u.teams.join("、")) + "</div>" : "") + "</td>"
+          + "<td>" + esc(exp) + "</td>"
+          + "<td>" + (u.note ? esc(u.note) : '<span class="hint">—</span>') + "</td>"
+          + '<td><button class="btn" data-toggle-acc="' + escAttr(u.username) + '" data-next="' + (u.rawEnabled ? "0" : "1") + '">'
+          + (u.rawEnabled ? "关闭" : "开通") + "</button></td></tr>";
+      }).join("");
+      Array.prototype.forEach.call($("ataRows").querySelectorAll("[data-toggle-acc]"), function (b) {
+        b.onclick = function () {
+          var name = b.getAttribute("data-toggle-acc");
+          var grant = b.getAttribute("data-next") === "1";
+          if (!grant && !window.confirm("关闭 " + name + " 的团队功能？\n\nTA 将立刻失去团队入口与接口权限；已建的团队与数据保留，重新开通即恢复。")) return;
+          api("/admin/team-access", {
+            method: "POST",
+            body: grant
+              ? { username: name, action: "grant", note: ($("ataNote") || {}).value || "", expiresAt: daysToTs(($("ataDays") || {}).value) }
+              : { username: name, action: "revoke", note: "单个关闭" }
+          }).then(function (x) {
+            say("ataStatusMsg", x.ok && x.j.ok ? (grant ? "已开通 " + name : "已关闭 " + name) : (x.j.error || "操作失败"), x.ok && x.j.ok ? "ok" : "bad");
+            loadAdminAccess();
+          });
+        };
+      });
+    });
+  }
+  function daysToTs(d) {
+    var n = Number(d) || 0;
+    return n > 0 ? Date.now() + n * 86400000 : 0;
+  }
+  function checkedUsers() {
+    return Array.prototype.map.call(document.querySelectorAll("[data-uid]:checked"), function (b) { return b.getAttribute("data-uid"); });
+  }
+  function checkedTeams() {
+    return Array.prototype.map.call(document.querySelectorAll("[data-tid]:checked"), function (b) { return b.getAttribute("data-tid"); });
+  }
+
+  /* ── 团队积分设置（单价 + 积分包）── */
+  function loadAdminPricing() {
+    api("/admin/team-points/packages").then(function (r) {
+      var j = r.j || {};
+      var p = j.policy || {};
+      var pr = p.prices || {};
+      if ($("atPriceSearch")) $("atPriceSearch").value = pr.kb_search != null ? pr.kb_search : 1;
+      if ($("atPriceUpload")) $("atPriceUpload").value = pr.kb_upload != null ? pr.kb_upload : 2;
+      if ($("atPriceMemW")) $("atPriceMemW").value = pr.memory_write != null ? pr.memory_write : 1;
+      if ($("atPriceMemS")) $("atPriceMemS").value = pr.memory_search != null ? pr.memory_search : 1;
+      if ($("atLowWarn")) $("atLowWarn").value = p.lowBalanceWarn != null ? p.lowBalanceWarn : 200;
+      if ($("atPointsOn")) $("atPointsOn").checked = p.pointsEnabled !== false;
+      renderAdminPkgs(j.packages || []);
+    });
+  }
+  function renderAdminPkgs(pkgs) {
+    if (!$("atPkgRows")) return;
+    if (!pkgs.length) { $("atPkgRows").innerHTML = '<tr><td colspan="7" class="empty">还没有积分包，用下方表单新建</td></tr>'; return; }
+    $("atPkgRows").innerHTML = pkgs.map(function (p) {
+      return "<tr><td>" + esc(p.name) + '<div class="hint">' + esc(p.id) + "</div></td>"
+        + "<td>¥" + esc(p.priceCny) + "</td>"
+        + "<td>" + esc(p.points) + (Number(p.bonusPoints) > 0 ? " <span class='hint'>+赠 " + esc(p.bonusPoints) + "</span>" : "") + "</td>"
+        + "<td>" + (Number(p.validDays) > 0 ? esc(p.validDays) + " 天" : "永久") + "</td>"
+        + "<td>" + (Number(p.limitPerTeam) > 0 ? esc(p.limitPerTeam) + " 次" : "不限") + "</td>"
+        + "<td>" + (p.active === false ? "已下架" : "在售") + "</td>"
+        + '<td><button class="btn" data-pkg-edit="' + escAttr(p.id) + '">编辑</button>'
+        + ' <button class="btn" data-pkg-toggle="' + escAttr(p.id) + '" data-active="' + (p.active === false ? "1" : "0") + '">' + (p.active === false ? "上架" : "下架") + "</button>"
+        + ' <button class="btn" data-pkg-del="' + escAttr(p.id) + '">删除</button></td></tr>';
+    }).join("");
+    Array.prototype.forEach.call($("atPkgRows").querySelectorAll("[data-pkg-edit]"), function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute("data-pkg-edit");
+        var p = pkgs.filter(function (x) { return x.id === id; })[0];
+        if (!p) return;
+        $("atpkId").value = p.id; $("atpkName").value = p.name || ""; $("atpkPrice").value = p.priceCny || 0;
+        $("atpkPoints").value = p.points || 0; $("atpkBonus").value = p.bonusPoints || 0;
+        $("atpkDays").value = p.validDays || 0; $("atpkLimit").value = p.limitPerTeam || 0;
+      };
+    });
+    Array.prototype.forEach.call($("atPkgRows").querySelectorAll("[data-pkg-toggle]"), function (b) {
+      b.onclick = function () {
+        api("/admin/team-points/packages", { method: "POST", body: { id: b.getAttribute("data-pkg-toggle"), active: b.getAttribute("data-active") === "1" } })
+          .then(function () { loadAdminPricing(); });
+      };
+    });
+    Array.prototype.forEach.call($("atPkgRows").querySelectorAll("[data-pkg-del]"), function (b) {
+      b.onclick = function () {
+        if (!window.confirm("删除这个积分包？（已购买的订单不受影响）")) return;
+        api("/admin/team-points/packages", { method: "POST", body: { delete: true, id: b.getAttribute("data-pkg-del") } })
+          .then(function () { loadAdminPricing(); });
+      };
     });
   }
 
@@ -7103,6 +7453,7 @@
     var btn = document.querySelector('.nav-item[data-tab="' + tab + '"]');
     if (btn) btn.click();
   }
+  if ($("tmBuyPoints")) $("tmBuyPoints").onclick = openPkgBuy;
   if ($("tmGotoMemory")) $("tmGotoMemory").onclick = function () { goto("teamMemory"); };
   if ($("tmGotoKb")) $("tmGotoKb").onclick = function () { goto("teamKB"); };
 
@@ -7124,9 +7475,20 @@
     var q = ($("tmkQuery").value || "").trim();
     if (!q) { say("tmkSearchStatus", "请输入关键词", "warn"); return; }
     say("tmkSearchStatus", "检索中…", "warn");
-    api("/teams/" + encodeURIComponent(t.id) + "/kb/search", { method: "POST", body: { query: q } }).then(function (r) {
+    /* ⛔ 带 reqId：服务端按它做扣费幂等（网络重试不会重复扣分） */
+    var reqId = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    api("/teams/" + encodeURIComponent(t.id) + "/kb/search", { method: "POST", body: { query: q, reqId: reqId } }).then(function (r) {
       var j = r.j || {};
-      if (!r.ok || !j.ok) { say("tmkSearchStatus", j.message || j.error || "检索失败", "bad"); if ($("tmkHits")) $("tmkHits").innerHTML = ""; return; }
+      if (!r.ok || !j.ok) {
+        say("tmkSearchStatus", j.message || j.error || "检索失败", "bad");
+        if ($("tmkHits")) $("tmkHits").innerHTML = "";
+        if (j.error === "points-insufficient" && $("tmkCost")) $("tmkCost").innerHTML = '<span style="color:#c0392b">积分不足（还差 ' + esc(j.need) + ' 点）</span>';
+        return;
+      }
+      if ($("tmkCost") && j.points) {
+        $("tmkCost").innerHTML = "本次消耗 <b>" + esc(j.cost) + "</b> 点 · 团队可用 <b>" + esc(fmtNum(j.points.available)) + "</b>"
+          + (j.cost ? "" : "（当前免费）");
+      }
       say("tmkSearchStatus", "命中 " + (j.hits || []).length + " 条（backend=" + (j.backend || "?") + "）", "ok");
       if (!$("tmkHits")) return;
       var hits = j.hits || [];
@@ -7149,10 +7511,16 @@
       var s = String(reader.result || "");
       var b64 = s.indexOf(",") >= 0 ? s.slice(s.indexOf(",") + 1) : s;
       say("tmkUpStatus", "上传中…", "warn");
-      api("/teams/" + encodeURIComponent(t.id) + "/kb/upload", { method: "POST", body: { name: f.name, contentB64: b64 } }).then(function (r) {
+      var upReq = "u" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      api("/teams/" + encodeURIComponent(t.id) + "/kb/upload", { method: "POST", body: { name: f.name, contentB64: b64, reqId: upReq } }).then(function (r) {
         var j = r.j || {};
-        if (!r.ok || !j.ok) { say("tmkUpStatus", j.message || j.error || "上传失败", "bad"); return; }
-        say("tmkUpStatus", "已上传「" + j.name + "」（" + fmtSize(j.size) + "）", "ok");
+        if (!r.ok || !j.ok) {
+          say("tmkUpStatus", j.message || j.error || "上传失败", "bad");
+          if (j.error === "points-insufficient" && $("tmkCost")) $("tmkCost").innerHTML = '<span style="color:#c0392b">积分不足（还差 ' + esc(j.need) + ' 点），上传已取消</span>';
+          return;
+        }
+        say("tmkUpStatus", "已上传「" + j.name + "」（" + fmtSize(j.size) + "）" + (j.cost ? " · 消耗 " + j.cost + " 点" : ""), "ok");
+        if ($("tmkCost") && j.points) $("tmkCost").innerHTML = "本次消耗 <b>" + esc(j.cost) + "</b> 点 · 团队可用 <b>" + esc(fmtNum(j.points.available)) + "</b>";
         $("tmkFile").value = "";
         loadKBDocs();
       });
@@ -7246,6 +7614,143 @@
     var t = String(location.hash || "").slice(1);
     if (t && (t.indexOf("team") === 0 || t === "adminTeams")) enter(t);
   });
+
+  /* ── 开通表：查询 / 批量开通 / 批量关闭 ── */
+  if ($("ataSearch")) $("ataSearch").onclick = loadAdminAccess;
+  if ($("ataStatus")) $("ataStatus").onchange = loadAdminAccess;
+  if ($("ataAll")) $("ataAll").onclick = function () {
+    var on = $("ataAll").checked;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-uid]"), function (b) { b.checked = on; });
+  };
+  if ($("ataGrant")) $("ataGrant").onclick = function () {
+    var names = checkedUsers();
+    if (!names.length) { say("ataStatusMsg", "先勾选用户", "warn"); return; }
+    var days = Number(($("ataDays") || {}).value) || 0;
+    if (!window.confirm("将为 " + names.length + " 个用户开通团队功能" + (days > 0 ? "（" + days + " 天后到期）" : "（长期）") + "。确认？")) return;
+    say("ataStatusMsg", "提交中…", "warn");
+    api("/admin/team-access", { method: "POST", body: { usernames: names, action: "grant", note: ($("ataNote") || {}).value || "", expiresAt: daysToTs(days) } }).then(function (x) {
+      var j = x.j || {};
+      if (!x.ok || !j.ok) { say("ataStatusMsg", j.message || j.error || "失败", "bad"); return; }
+      say("ataStatusMsg", "成功 " + j.okCount + " / 失败 " + j.failCount, j.failCount ? "warn" : "ok");
+      if (j.failCount) showModal("部分未开通", '<div style="font-size:13.5px;line-height:1.9">失败清单：<br>' + (j.results || []).filter(function (r) { return !r.ok; }).map(function (r) { return esc(r.username) + "：" + esc(r.reason); }).join("<br>") + "</div>");
+      loadAdminAccess();
+    });
+  };
+  if ($("ataRevoke")) $("ataRevoke").onclick = function () {
+    var names = checkedUsers();
+    if (!names.length) { say("ataStatusMsg", "先勾选用户", "warn"); return; }
+    if (!window.confirm("关闭 " + names.length + " 个用户的团队功能？\n\n他们会立刻失去入口与接口权限（团队与数据保留）。")) return;
+    api("/admin/team-access", { method: "POST", body: { usernames: names, action: "revoke", note: "批量关闭" } }).then(function (x) {
+      say("ataStatusMsg", x.ok && x.j.ok ? "已关闭 " + x.j.okCount + " 个" : (x.j.error || "失败"), x.ok && x.j.ok ? "ok" : "bad");
+      loadAdminAccess();
+    });
+  };
+
+  /* ── 积分设置：保存单价 / 积分包 CRUD ── */
+  if ($("atSavePrice")) $("atSavePrice").onclick = function () {
+    api("/admin/team-points/price", {
+      method: "POST",
+      body: {
+        prices: {
+          kb_search: Number(($("atPriceSearch") || {}).value) || 0,
+          kb_upload: Number(($("atPriceUpload") || {}).value) || 0,
+          memory_write: Number(($("atPriceMemW") || {}).value) || 0,
+          memory_search: Number(($("atPriceMemS") || {}).value) || 0
+        },
+        lowBalanceWarn: Number(($("atLowWarn") || {}).value) || 0,
+        pointsEnabled: !!($("atPointsOn") || {}).checked
+      }
+    }).then(function (x) {
+      var j = x.j || {};
+      if (!x.ok || !j.ok) { say("atPriceStatus", j.error || "保存失败", "bad"); return; }
+      say("atPriceStatus", "已保存（检索 " + j.policy.prices.kb_search + " 点/次 · 上传 " + j.policy.prices.kb_upload + " 点/MB）", "ok");
+      showModal("已保存", '<div style="font-size:13.5px;line-height:1.9">团队积分设置已生效：<br>检索 <b>' + j.policy.prices.kb_search + "</b> 点/次 · 上传 <b>" + j.policy.prices.kb_upload
+        + "</b> 点/MB · 记忆写入 <b>" + j.policy.prices.memory_write + "</b> · 记忆检索 <b>" + j.policy.prices.memory_search
+        + "</b><br>低余额阈值 <b>" + j.policy.lowBalanceWarn + "</b> · 积分扣减 <b>" + (j.policy.pointsEnabled ? "开" : "关") + "</b></div>");
+    });
+  };
+  if ($("atPkgSave")) $("atPkgSave").onclick = function () {
+    var body = {
+      id: (($("atpkId") || {}).value || "").trim(), name: (($("atpkName") || {}).value || "").trim(),
+      priceCny: Number(($("atpkPrice") || {}).value) || 0, points: Number(($("atpkPoints") || {}).value) || 0,
+      bonusPoints: Number(($("atpkBonus") || {}).value) || 0, validDays: Number(($("atpkDays") || {}).value) || 0,
+      limitPerTeam: Number(($("atpkLimit") || {}).value) || 0
+    };
+    if (!body.name) { say("atPkgStatus", "请填名称", "warn"); return; }
+    if (!body.points) { say("atPkgStatus", "到账积分不能为 0", "warn"); return; }
+    api("/admin/team-points/packages", { method: "POST", body: body }).then(function (x) {
+      var j = x.j || {};
+      if (!x.ok || !j.ok) { say("atPkgStatus", j.error || "保存失败", "bad"); return; }
+      say("atPkgStatus", "已保存", "ok");
+      showModal("已保存", '<div style="font-size:13.5px">积分包「' + esc(body.name) + "」¥" + body.priceCny + " → " + body.points + (body.bonusPoints ? " + 赠 " + body.bonusPoints : "") + " 积分</div>");
+      loadAdminPricing();
+    });
+  };
+  if ($("atPkgReset")) $("atPkgReset").onclick = function () {
+    ["atpkId", "atpkName", "atpkPrice", "atpkPoints", "atpkBonus", "atpkDays", "atpkLimit"].forEach(function (id) { if ($(id)) $(id).value = ""; });
+  };
+
+  /* ── 全站团队：勾选 / 批量发分 / 批量设套餐 / 导出 ── */
+  function syncTeamAll(on) {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-tid]"), function (b) { if (!b.disabled) b.checked = on; });
+    if ($("atTeamAll")) $("atTeamAll").checked = on;
+    if ($("atTeamAll2")) $("atTeamAll2").checked = on;
+  }
+  if ($("atTeamAll")) $("atTeamAll").onclick = function () { syncTeamAll($("atTeamAll").checked); };
+  if ($("atTeamAll2")) $("atTeamAll2").onclick = function () { syncTeamAll($("atTeamAll2").checked); };
+  if ($("atBatchGrant")) $("atBatchGrant").onclick = function () {
+    var ids = checkedTeams();
+    if (!ids.length) { say("atBatchStatus", "先勾选团队", "warn"); return; }
+    var pts = Number(($("atBatchPoints") || {}).value) || 0;
+    var note = (($("atBatchNote") || {}).value || "").trim();
+    if (!pts) { say("atBatchStatus", "填积分数", "warn"); return; }
+    if (!note) { say("atBatchStatus", "原因必填（审计）", "warn"); return; }
+    if (!window.confirm("将为 " + ids.length + " 个团队各发放 " + pts + " 积分（合计 " + (pts * ids.length) + "）。确认？")) return;
+    api("/admin/teams/batch", { method: "POST", body: { teamIds: ids, action: "grant-points", points: pts, note: note } }).then(function (x) {
+      var j = x.j || {};
+      if (!x.ok || !j.ok) { say("atBatchStatus", j.message || j.error || "失败", "bad"); return; }
+      var t = j.task || {};
+      say("atBatchStatus", "成功 " + t.ok + " / 失败 " + (t.failed || []).length, (t.failed || []).length ? "warn" : "ok");
+      if ((t.failed || []).length) showModal("部分失败", '<div style="font-size:13.5px;line-height:1.9">' + t.failed.map(function (f) { return esc(f.key) + "：" + esc(f.reason); }).join("<br>") + "</div>");
+      loadAdminTeamList();
+    });
+  };
+  if ($("atBatchPlanBtn")) $("atBatchPlanBtn").onclick = function () {
+    var ids = checkedTeams();
+    if (!ids.length) { say("atBatchStatus", "先勾选团队", "warn"); return; }
+    var pid = (($("atBatchPlan") || {}).value || "").trim();
+    if (!pid) { say("atBatchStatus", "填套餐 ID", "warn"); return; }
+    if (!window.confirm("将为 " + ids.length + " 个团队开通套餐 " + pid + "？\n\n每个团队都会**再发放一次**该套餐的赠送积分（续费语义）。")) return;
+    api("/admin/teams/batch", { method: "POST", body: { teamIds: ids, action: "grant-plan", planId: pid } }).then(function (x) {
+      var j = x.j || {};
+      if (!x.ok || !j.ok) { say("atBatchStatus", j.message || j.error || "失败", "bad"); return; }
+      say("atBatchStatus", "成功 " + (j.task || {}).ok + " / 失败 " + ((j.task || {}).failed || []).length, "ok");
+      loadAdminTeamList();
+    });
+  };
+  if ($("atExport")) $("atExport").onclick = function () {
+    if (!AT_TEAMS.length) { say("atBatchStatus", "没有可导出的团队", "warn"); return; }
+    var head = ["团队ID", "名称", "Owner", "席位", "套餐", "到期", "可用积分", "本月已用", "记忆", "知识库", "状态"];
+    var lines = [head.join(",")];
+    AT_TEAMS.forEach(function (t) {
+      var ent = t.entitlements || {};
+      lines.push([
+        t.id, '"' + String(t.name || "").replace(/"/g, '""') + '"', t.owner,
+        ((t.seats && t.seats.used) || 0) + "/" + ((t.seats && t.seats.limit) || 0),
+        '"' + String(ent.planName || "免费档").replace(/"/g, '""') + '"',
+        Number(ent.expiresAt) > 0 ? new Date(Number(ent.expiresAt)).toLocaleDateString("zh-CN") : "无",
+        t.pointsAvailable || 0, t.monthUsed || 0,
+        t.memoryReady ? "已开通" : "未开通", t.kbReady ? "已开通" : "未开通",
+        t.status === "dissolved" ? "已解散" : "在用"
+      ].join(","));
+    });
+    var blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "teams-" + new Date().toISOString().slice(0, 10) + ".csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    say("atBatchStatus", "已导出 " + AT_TEAMS.length + " 个团队", "ok");
+  };
 
   if ($("atPlanReset")) $("atPlanReset").onclick = function () {
     if ($("atPlanFormTitle")) $("atPlanFormTitle").textContent = "新建团队套餐";
