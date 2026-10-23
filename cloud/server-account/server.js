@@ -3678,6 +3678,9 @@ const server = http.createServer(async (req, res) => {
     (db.plans || (db.plans = {}))[id] = {
       id, name, desc: String((body && body.desc) || "").trim(),
       price: Math.max(0, Math.round(Number(body && body.price) || 0)),
+      /* 10-23 用户定稿：**人民币标价与积分分开** —— priceCny 只是展示（¥ 标价），实扣永远是 price 积分 */
+      priceCny: body && body.priceCny !== undefined && body.priceCny !== "" && body.priceCny !== null
+        ? Math.max(0, Math.round(Number(body.priceCny) * 100) / 100) : undefined,
       days: Math.max(0, Math.round(Number(body && body.days) || 0)),
       features: cleaned, active: body.active === undefined ? true : body.active !== false,
       sort: Math.round(Number(body && body.sort) || 0),

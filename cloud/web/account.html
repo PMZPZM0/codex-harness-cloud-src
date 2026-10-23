@@ -2058,11 +2058,10 @@
     });
     Array.prototype.forEach.call(document.querySelectorAll(".nav-item"), function (b) { b.classList.toggle("on", b.getAttribute("data-tab") === tab); });
     if (tab === "product") loadProductHome(false);
-    /* ⛔ 10-23 修复：loadSubscribe / loadAdminBilling 定义在订阅块（独立 IIFE）里，
-       这里的 typeof 检查恒 false ⇒ 两个 tab 从未被加载过（永远「加载中」）。
-       改走 __subBridge（订阅块把自己挂上去）。 */
-    if (tab === "subscribe" && window.__subBridge && typeof window.__subBridge.loadSubscribe === "function") window.__subBridge.loadSubscribe();
-    if (tab === "adminBilling" && window.__subBridge && typeof window.__subBridge.loadAdminBilling === "function") window.__subBridge.loadAdminBilling();
+    /* ⛔ 10-23 修复（第二次）：订阅块是**自包含**独立 IIFE，自己把加载函数挂到 window.__subApi。
+       上一版挂 __subBridge 时，桥那行因插错作用域恒抛错 ⇒ 桥从未创建 ⇒ 两个 tab 从不加载。 */
+    if (tab === "subscribe" && window.__subApi && typeof window.__subApi.loadSubscribe === "function") window.__subApi.loadSubscribe();
+    if (tab === "adminBilling" && window.__subApi && typeof window.__subApi.loadAdminBilling === "function") window.__subApi.loadAdminBilling();
     if (tab === "user") loadPoints();
     if (tab === "pair") refreshPairing();
     if (tab === "cloud") refreshCloud();
@@ -5582,6 +5581,19 @@
   /* ── 10-18 自动更新开关（**必须在主 IIFE 内**：api() 与 session 都是这里的局部变量，
      放到外部 <script> 里会永远读不到 —— 实测表现是"读取中…"或点了没反应）── */
   (function () {
+    /* ⛔ 10-23：本块是主闭包**之后**的独立 IIFE，主闭包里的 api 在这里不存在（实测
+       PAGEERROR: api is not defined ⇒ 自动更新开关永远读不到状态、控制台常驻一条红）。
+       自包含一个最小 api（只读写 /admin/features 用）。 */
+    var API2 = "/cloud-api";
+    var tok2 = "";
+    try { tok2 = localStorage.getItem("chc-session") || ""; } catch (e) { tok2 = ""; }
+    function api(path, opts) {
+      opts = opts || {};
+      var headers = { "Content-Type": "application/json" };
+      if (tok2) headers.Authorization = "Bearer " + tok2;
+      return fetch(API2 + path, { method: opts.method || "GET", headers: headers, body: opts.body ? JSON.stringify(opts.body) : undefined })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); });
+    }
     var box = document.getElementById("featAutoUpdate");
     if (!box) return;
     api("/admin/features").then(function (x) {
@@ -5596,8 +5608,9 @@
       }).catch(function () { box.checked = !box.checked; alert("保存失败：网络错误"); });
     });
   
-  /* 10-23：订阅中心是独立 <script>（body 尾），主 IIFE 里的工具不外露 ⇒ 挂一个最小桥。 */
-  window.__subBridge = { $: $, esc: esc, api: api, showModal: showModal };
+  /* ⛔ 10-23：这里原本插了 window.__subBridge —— **插错作用域**（本 IIFE 里没有 $ / api，
+     每次执行都抛 ReferenceError，桥从未创建 ⇒ 订阅中心整块崩、接口从未被请求）。
+     订阅块已改为完全自包含（见 body 尾那块 script），不再需要桥。 */
 })();
 </script>
 <script>
@@ -5728,12 +5741,46 @@
    ⛔ 判定权在服务端（/plans、/plans/buy、/topup/create、/pay/notify）；这里只做展示与发起。
    ⛔ 充值轮询只读 /my/topups 的状态，不自判「成功」。 */
 (function () {
-  /* ⛔ 主逻辑在大 IIFE 里，$ / esc / api / showModal 经 window.__subBridge 桥进来（见主块收尾）。 */
-  var $ = window.__subBridge.$, esc = window.__subBridge.esc, api = window.__subBridge.api, showModal = window.__subBridge.showModal;
+  /* ⛔ 10-23（第三次修）：**完全自包含** —— 本块不依赖页面主闭包的任何变量。
+     主闭包之后的「自动更新开关」等独立 IIFE 里没有 $ / api，桥方案在那里必然抛错（实测
+     ReferenceError ⇒ 桥不存在 ⇒ 本块顶部取值就崩 ⇒ 订阅中心三个接口从未被请求）。
+     现在 $ / esc / api / showModal 都在本地实现，改动只与本块有关。 */
+  var API = "/cloud-api";
+  var subSession = "";
+  try { subSession = localStorage.getItem("chc-session") || ""; } catch (e) { subSession = ""; }
+  function $(id) { return document.getElementById(id); }
+  function esc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = { "Content-Type": "application/json" };
+    if (subSession) headers.Authorization = "Bearer " + subSession;
+    return fetch(API + path, { method: opts.method || "GET", headers: headers, body: opts.body ? JSON.stringify(opts.body) : undefined })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); });
+  }
+  function showModal(title, bodyHtml) {
+    var old = $("mbModal"); if (old && old.parentNode) old.parentNode.removeChild(old);
+    var wrap = document.createElement("div");
+    wrap.id = "mbModal";
+    wrap.setAttribute("style", "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px");
+    wrap.innerHTML = '<div style="background:var(--card);border-radius:14px;max-width:820px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)">'
+      + '<b style="font-size:15px">' + esc(title) + '</b><button class="btn sm" id="mbClose2">关闭</button></div>'
+      + '<div style="padding:16px 18px;overflow:auto;line-height:1.75;font-size:13.5px">' + bodyHtml + "</div></div>";
+    wrap.addEventListener("click", function (ev) { if (ev.target === wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap); });
+    document.body.appendChild(wrap);
+    if ($("mbClose2")) $("mbClose2").onclick = function () { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); };
+  }
 
   var SUB_POLL = null;
 
   function fmtDT(ts) { return ts ? new Date(Number(ts)).toLocaleString("zh-CN", { hour12: false }) : "—"; }
+
+  /* ⛔ 10-23：立刻挂到 window（函数声明已提升，IIFE 顶层第一句就能挂）——
+     即使本块后面的接线代码抛错，show() 也能调到。 */
+  window.__subApi = window.__subApi || {};
+  window.__subApi.loadSubscribe = loadSubscribe;
+  window.__subApi.loadAdminBilling = loadAdminBilling;
+
   function billSay(id, text, cls) { var el = $(id); if (el) { el.textContent = text || ""; el.className = "status" + (cls ? " " + cls : ""); } }
 
   /* ── 用户端 ── */
@@ -5782,7 +5829,7 @@
       var afford = balance >= Number(pl.price || 0);
       return '<article class="plan-card">'
         + "<h3>" + esc(pl.name) + "</h3>"
-        + '<div class="plan-price">' + esc(pl.price) + ' <small>积分 / ' + (pl.days === 0 ? "永久" : pl.days + " 天") + "</small></div>"
+        + '<div class="plan-price">' + (pl.priceCny ? "¥" + esc(pl.priceCny) + ' <small>·</small> ' : "") + esc(pl.price) + ' <small>积分 / ' + (pl.days === 0 ? "永久" : pl.days + " 天") + "</small></div>"
         + (pl.desc ? '<div class="hint">' + esc(pl.desc) + "</div>" : "")
         + '<div class="plan-feats">' + feats.join("") + "</div>"
         + '<button class="btn primary sm" data-buy="' + esc(pl.id) + '"' + (afford ? "" : " disabled title=\"积分不足，请先充值\"") + ">" + (afford ? "立即订阅" : "积分不足") + "</button>"
@@ -5997,8 +6044,13 @@
       var b = j.billing || {};
       if (part === "pay") {
         billSay(statusId, "已保存（渠道 " + (j.topupEnabled ? "已开通" : "未开通：网关 / 商户 / 密钥要填全）") + "）", j.topupEnabled ? "ok" : "warn");
+        showModal(j.topupEnabled ? "支付渠道已开通" : "已保存（渠道未开通）",
+          "<div style=\"font-size:13.5px;line-height:1.9\">" + (j.topupEnabled
+            ? "支付设置已生效，用户端订阅中心的「充值」入口已亮起。"
+            : "网关 / 商户 ID / 密钥三项要填全，渠道才会开通。") + "</div>");
       } else {
         billSay(statusId, "已保存（1 元 = " + b.pointsPerCny + " 积分）", "ok");
+        showModal("已保存", "<div style=\"font-size:13.5px\">充值配置已生效：1 元 = <b>" + b.pointsPerCny + " 积分</b>，最低充值 " + b.minTopupCny + " 元。</div>");
       }
       loadAdminBilling();
     })["catch"](function () { billSay(statusId, "保存失败：网络错误", "bad"); });
@@ -6023,10 +6075,6 @@
       savePlan(payload, "已保存「" + payload.name + "」");
     };
   }
-  /* ⛔ 10-23：把两个 tab 的加载函数暴露给主 IIFE 的 show()（跨 IIFE 只能走桥）。 */
-  window.__subBridge.loadSubscribe = loadSubscribe;
-  window.__subBridge.loadAdminBilling = loadAdminBilling;
-
   if ($("plReset") && !$("plReset").dataset.bound) {
     $("plReset").dataset.bound = "1";
     $("plReset").onclick = function () {
