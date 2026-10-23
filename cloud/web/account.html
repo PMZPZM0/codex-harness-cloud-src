@@ -88,7 +88,10 @@
   .side { background: var(--card); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; height: 100vh; }
   .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; font-weight: 700; font-size: 15px; }
   .mark { width: 28px; height: 28px; border-radius: 9px; background: linear-gradient(135deg, var(--brand2), var(--brand)); color: #fff;
-    display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none; }
+    display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none; position: relative; overflow: hidden; }
+  /* 10-23 用户令「logo 改成和应用一样的」：图片盖在渐变块上（复用 /api/favicon，管理员自定义也同步）；
+     ⛔ 不加 onerror —— 加载失败自然露出下面的 CA 与渐变，永远有兜底。 */
+  .mark > img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; }
   .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; color: var(--text); font-size: 13.5px; font-weight: 500; border: 0; background: transparent; width: 100%; text-align: left; }
   .nav-item:hover { background: var(--field); text-decoration: none; }
   .nav-item.on { background: var(--brand-soft); color: var(--brand-ink); font-weight: 600; }
@@ -528,7 +531,7 @@
   <aside class="side">
     <!-- 10-18 主题开关：嵌在侧栏品牌行内（用户令：不要悬浮，放进侧边栏） -->
     <div class="brand">
-      <span class="mark">CA</span><span>Codex Assistant</span>
+      <span class="mark">CA<img src="/cloud-api/api/favicon?size=256" alt="" /></span><span>Codex Assistant</span>
       <label for="themeSwitch" title="切换白天 / 夜间主题" class="brand-theme">
         <input type="checkbox" id="themeSwitch" aria-label="切换白天/夜间主题" />
       </label>

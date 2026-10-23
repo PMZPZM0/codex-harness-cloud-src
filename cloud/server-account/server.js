@@ -1643,7 +1643,21 @@ const server = http.createServer(async (req, res) => {
   if (p === "/api/favicon" && req.method === "GET") {
     const dir = path.join(path.dirname(DATA_FILE), "branding");
     const custom = ["png", "jpeg", "svg"].map((e) => path.join(dir, "favicon." + e)).find((f) => { try { return fs.existsSync(f); } catch { return false; } });
-    const builtin = path.join(String(process.env.HARNESS_WEB_DIR || "/var/www/codex-harness-cloud"), "favicon-32.png");
+    /* 10-23 用户令「网页云管理 logo 改成和应用一样的」⇒ 侧栏直接复用这张图。
+       ⛔ 32px 的图放到 28px 的 mark 里，高 DPI 会糊 ⇒ 支持 `?size=`，但**白名单**只有
+       64 / 256（其余一律回 32）—— 不接受任意数字去拼路径。自定义图标优先且不分尺寸
+       （管理员上传的就是原图，再挑尺寸只会找不到）。 */
+    const want = Number(url.searchParams.get("size") || 0);
+    const px = want === 256 || want === 64 ? want : 32;
+    /* **品牌图标两套随包发**：本机 Codex Harness（favicon-*）、客户机 PPCode（pp-favicon-*），
+       用 `HARNESS_FAVICON_PREFIX` 选前缀。⛔ 不做「客户机直接覆盖 favicon-*.png」——
+       这几个文件在 selfupdate 清单里，下次更新会被冲回默认品牌（坑记在 deploy/README）。
+       **web 目录按候选列表逐个试**（两种部署布局都实测过，写死任何一个都会让另一台 404）：
+         HARNESS_WEB_DIR > `<server.js>/../web`（分发包 /opt/codex-cloud-admin）> `/var/www/codex-harness-cloud`（tx 手装）。 */
+    const prefix = String(process.env.HARNESS_FAVICON_PREFIX || "favicon").replace(/[^A-Za-z0-9_-]/g, "") || "favicon";
+    const webDirs = [process.env.HARNESS_WEB_DIR, path.join(__dirname, "..", "web"), "/var/www/codex-harness-cloud"].filter(Boolean);
+    const hit = (rel) => webDirs.map((d) => path.join(d, rel)).find((f) => { try { return fs.existsSync(f); } catch { return false; } });
+    const builtin = hit(prefix + "-" + px + ".png") || hit("favicon-" + px + ".png") || path.join(webDirs[0], "favicon-" + px + ".png");
     const file = custom || builtin;
     try {
       const buf = fs.readFileSync(file);

@@ -1,5 +1,5 @@
 {
-  "version": "1.5.61",
+  "version": "1.5.62",
   "releasedAt": "2026-10-23",
   "repo": "PMZPZM0/codex-harness-cloud-src",
   "notes": "发版清单：改这里就够，脚本与服务端都读它（不再硬编码文件列表）。",
@@ -8,22 +8,22 @@
       "src": "cloud/VERSION",
       "kind": "server",
       "as": "VERSION",
-      "sha256": "eef598b78fffd97db4bdc1979888ba4bbbff80caf832841f0bffd658f0ac6d71",
+      "sha256": "2ebaa25db95645cc6c675a667d29f7e4c38ad51d5c768a4cf20af6ab0f3decd3",
       "bytes": 7
     },
     {
       "src": "cloud/server-account/server.js",
       "kind": "server",
       "as": "server.js",
-      "sha256": "b9b9d690cb7e6fe97aadd3854afb94e2b9b85bea62698e450751f359c49df4da",
-      "bytes": 340581
+      "sha256": "79636ad788f805b57658a5af199bc479fff03b4351ab5d3ce34a8ec3038ebe50",
+      "bytes": 342130
     },
     {
       "src": "cloud/web/account.html",
       "kind": "web",
       "as": "account.html",
-      "sha256": "c3d3954cec315c5d7ab04d7922a49bb06097b5b8f0c922475256825bdc755411",
-      "bytes": 359663
+      "sha256": "6d3e9946e40bc665a6f9492c843967b7bb350d01beba5b136ead6cb5fc9a6ae9",
+      "bytes": 360108
     },
     {
       "src": "cloud/web/index.html",
@@ -80,6 +80,27 @@
       "as": "favicon-256.png",
       "sha256": "3b7023e4858a6dd9ba8559b901f83f546f6316140af62ced20ed67dc7440ab7f",
       "bytes": 40684
+    },
+    {
+      "src": "cloud/web/pp-favicon-32.png",
+      "kind": "web",
+      "as": "pp-favicon-32.png",
+      "sha256": "391bcc6d0407efa63b12e3adcc39767a3c7724699d0a18ae44421b75892197b6",
+      "bytes": 2295
+    },
+    {
+      "src": "cloud/web/pp-favicon-64.png",
+      "kind": "web",
+      "as": "pp-favicon-64.png",
+      "sha256": "1adcd35110dec6a8ba1c0d23c6ce1996e1dfe562d05c1b28fce4d33b11b9d7c0",
+      "bytes": 6916
+    },
+    {
+      "src": "cloud/web/pp-favicon-256.png",
+      "kind": "web",
+      "as": "pp-favicon-256.png",
+      "sha256": "2fd3c904c16d479e324c440aacdd2f82782b0611feb72f31dba376b61aca9d33",
+      "bytes": 60202
     }
   ]
 }
