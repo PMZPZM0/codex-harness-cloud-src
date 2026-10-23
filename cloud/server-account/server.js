@@ -227,6 +227,41 @@ async function ensureKnowledgeFor(username) {
   return { ok: true, kbId: cur.kbId, kbName: cur.kbName || kbName, mcpUrl: cur.mcpUrl, mcpToken: cur.mcpToken };
 }
 
+/** 记忆中枢里管理员**默认团队 id**（面板要靠它直接落在看板上；取不到就让它自己选）。 */
+async function memhubPrimaryTeam(userId) {
+  try {
+    const res = await fetch(`${MEMHUB_BASE}/api/v1/meta/team/list`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tdai-Service-Id": MEMHUB_INSTANCE, "X-Tdai-User-Key": MEMHUB_ADMIN_KEY },
+      body: JSON.stringify({ user_key: MEMHUB_ADMIN_KEY, user_id: userId || "" }),
+    });
+    const j = await res.json().catch(() => null);
+    const d = (j && j.data) || {};
+    const items = d.items || d.teams || (Array.isArray(d) ? d : []);
+    const hit = items[0];
+    return hit && hit.id ? String(hit.id) : "";
+  } catch { return ""; }
+}
+
+/** 记忆中枢里**管理员那把 key 对应的用户信息**（面板会话要 user_id / user_type）。
+ *  ⛔ 只读；拿不到就返回 null（面板会停在登录页，但不会给错身份）。 */
+async function memhubAdminUser() {
+  try {
+    const res = await fetch(`${MEMHUB_BASE}/api/v1/meta/user/list`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tdai-Service-Id": MEMHUB_INSTANCE, "X-Tdai-User-Key": MEMHUB_ADMIN_KEY },
+      body: "{}",
+    });
+    const j = await res.json().catch(() => null);
+    const items = (j && j.data && j.data.items) || [];
+    const hit = items.find((u) => u && u.username === "admin")
+      || items.find((u) => u && u.user_type === "system_admin")
+      || null;
+    if (!hit || !hit.user_id) return null;
+    return { user_id: String(hit.user_id), user_type: String(hit.user_type || "system_admin"), username: String(hit.username || "admin"), created_at: String(hit.created_at || "") };
+  } catch { return null; }
+}
+
 /** 幂等备好该账号的记忆中枢 user_key（每人一支）。 */
 async function ensureMemoryFor(username) {
   if (!MEMHUB_ADMIN_KEY) return { ok: false, error: "memory-not-configured" };
@@ -289,6 +324,9 @@ async function weknoraModelList() {
 
 /** 知识库模型的三种类型（WeKnora 的 `type` 字段是大小写敏感的枚举）。 */
 const KB_MODEL_TYPES = ["KnowledgeQA", "Embedding", "VLLM"];
+
+/** 面板免密的一次性票据（10-23）：ticket → { panel, exp, by }，90 秒、一次性。 */
+const SSO_TICKETS = new Map();
 
 /** WorkBuddy Manager（模型池网关）地址：默认本机 7864（官方镜像端口）。
  *  ⛔ 本服务只做「面板入口 + 存活状态」，不代它做鉴权 —— 它的会话体系与云账号完全独立。 */
@@ -3055,6 +3093,144 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         return send(200, { ok: false, status: 0, ms: Date.now() - started, base, note: sanitize(String((e && e.message) || e)) });
       }
+    }
+
+    /* ── 10-23 面板免密（用户令「这三个都自动登录」）──────────────────────────────
+       机制：本服务签发**一次性票据** → 浏览器打开 `<面板源>/__sso?t=…`（由该源上的反代
+       转到这里的 /panel-sso/<panel>）→ 本服务在**服务端**完成登录，把会话塞回去：
+         · WBM      → 302 + Set-Cookie（它就是 cookie 会话，wb_session）
+         · 记忆空间 → HTML 里设 localStorage["tdai-panel.session"]（面板是 localStorage 会话）
+         · 知识库   → HTML 里设 localStorage["weknora_token"] / refresh（JWT）
+       ⛔ 凭据只在本服务里（data.json 0600 / 系统凭据），**永不进 URL、不回前端**；
+          票据 90 秒、一次性、绑定面板名。
+       ⛔ 没有配置账号的面板一律**如实拒绝**（前端回落成普通打开），不假装登录成功。 */
+    if (p === "/admin/panel-sso" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const panel = String((body && body.panel) || "").trim();
+      if (!["kb", "memory", "wbm"].includes(panel)) return send(400, { ok: false, error: "panel 必须是 kb / memory / wbm" });
+      /* ⛔ 面板源址由**服务端配置**决定，不采信前端传的（否则等于开了个任意跳转口）：
+           kb → 后台界面地址；memory → 记忆面板对外地址；wbm → Manager 对外地址。 */
+      const kbSvc = (db.services && db.services.kb) || {};
+      const memSvc = (db.services && db.services.memory) || {};
+      const wbmSvc = (db.services && db.services.wbm) || {};
+      const originRaw = panel === "kb"
+        ? (kbSvc.uiBase || kbUiBase())
+        : panel === "memory"
+          ? (memSvc.publicBase || MEMHUB_BASE)
+          : (wbmSvc.publicBase || wbmBase());
+      const normOrigin = normalizeUpstreamBase(String(originRaw || "").trim());
+      if (!normOrigin.ok) return send(400, { ok: false, error: "面板地址未配置或不合法：" + normOrigin.error });
+      const auth = (db.panelAuth && db.panelAuth[panel]) || {};
+      const ready = panel === "memory" ? Boolean(MEMHUB_ADMIN_KEY) : Boolean(auth.username && auth.password);
+      if (!ready) {
+        return send(200, {
+          ok: false,
+          error: "panel-credentials-missing",
+          message: panel === "kb" ? "还没配知识库后台账号（在「知识库管理中心」里填一次）" : "还没配 Manager 管理员账号（在卡片里填一次）",
+        });
+      }
+      const ticket = crypto.randomBytes(24).toString("base64url");
+      SSO_TICKETS.set(ticket, { panel, exp: Date.now() + 90_000, by: me.username });
+      /* 顺手清掉过期票据，别让 Map 长草 */
+      for (const [k, v] of SSO_TICKETS) if (v.exp < Date.now()) SSO_TICKETS.delete(k);
+      const origin = normOrigin.base.replace(/\/+$/, "");
+      return send(200, { ok: true, url: `${origin}/__sso?t=${encodeURIComponent(ticket)}` });
+    }
+    /* 票据核销（**公开**路由：由反代转发过来，票据本身就是凭证）。
+       ⛔ 只能用在对应面板的源上 —— 票据绑定 panel，换面板会被拒。 */
+    if (p.startsWith("/panel-sso/") && req.method === "GET") {
+      const panel = p.slice("/panel-sso/".length).trim();
+      const ticket = String(url.searchParams.get("t") || "");
+      const hit = SSO_TICKETS.get(ticket);
+      SSO_TICKETS.delete(ticket);                                  // 一次性：先删再判
+      const html = (title, text) => {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        res.end(`<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font:14px/1.7 system-ui;padding:40px;color:#333">${text}</body>`);
+      };
+      if (!hit || hit.panel !== panel || hit.exp < Date.now()) return html("链接已失效", "这个自动登录链接已过期或已用过 —— 回云端管理点一次「打开面板」即可。");
+      try {
+        if (panel === "wbm") {
+          const auth = db.panelAuth.wbm || {};
+          const r = await fetch(`${wbmBase()}/api/login`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: auth.username, password: auth.password }),
+          });
+          if (!r.ok) return html("登录失败", `Manager 拒绝了这组账号密码（HTTP ${r.status}）。请回云端管理核对「Manager 管理员账号」。`);
+          const raw = r.headers.getSetCookie ? r.headers.getSetCookie() : [r.headers.get("set-cookie") || ""];
+          const cookie = raw.filter(Boolean).map((c) => c.split(";")[0]).join("; ");
+          if (!cookie) return html("登录失败", "Manager 没有回会话 cookie（版本可能变了）。");
+          res.writeHead(302, { Location: "/", "Set-Cookie": `${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`, "Cache-Control": "no-store" });
+          return res.end();
+        }
+        if (panel === "memory") {
+          /* ⛔ 面板的会话里**必须有 user 对象**（user_id / user_type / username），
+             只塞 userKey 会让它停在登录页（浏览器实测：注入后又被要求输 key）。 */
+          const meInfo = await memhubAdminUser();
+          const session = JSON.stringify({
+            authMethod: "user_key",
+            instanceId: MEMHUB_INSTANCE,
+            instanceName: MEMHUB_INSTANCE,
+            userKey: MEMHUB_ADMIN_KEY,
+            user: meInfo || undefined,
+          });
+          const team = await memhubPrimaryTeam(meInfo && meInfo.user_id);
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+          return res.end(`<!doctype html><meta charset="utf-8"><title>正在进入记忆空间…</title><body style="font:14px system-ui;padding:40px">正在进入…<script>
+try {
+  localStorage.setItem("tdai-panel.session", ${JSON.stringify(session)});
+  ${team ? `localStorage.setItem("tdai-memory.activeTeam.v1", ${JSON.stringify(team)});` : ""}
+} catch (e) {}
+location.replace("/");
+</script></body>`);
+        }
+        /* kb */
+        const auth = db.panelAuth.kb || {};
+        const r = await fetch(`${WEKNORA_BASE}/api/v1/auth/login`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: auth.username, password: auth.password }),
+        });
+        const text = await r.text();
+        let j = null; try { j = text ? JSON.parse(text) : null; } catch { /* 非 JSON */ }
+        if (!r.ok || !j || !(j.data && (j.data.token || j.data.access_token))) {
+          return html("登录失败", `知识库拒绝了这组账号密码（HTTP ${r.status}）${j && j.message ? "：" + String(j.message).slice(0, 120) : ""}`);
+        }
+        const d = j.data || {};
+        const token = String(d.token || d.access_token || "");
+        const refresh = String(d.refresh_token || "");
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        return res.end(`<!doctype html><meta charset="utf-8"><title>正在进入知识库…</title><body style="font:14px system-ui;padding:40px">正在进入…<script>
+try { localStorage.setItem("weknora_token", ${JSON.stringify(token)}); localStorage.setItem("weknora_refresh_token", ${JSON.stringify(refresh)}); } catch (e) {}
+location.replace("/");
+</script></body>`);
+      } catch (e) {
+        return html("自动登录出错", sanitize(String((e && e.message) || e)));
+      }
+    }
+
+    /* 面板账号（给「打开面板 = 免密」用）：只回用户名与「有没有密码」，⛔ 不回密码。
+       `memory` 不需要账号 —— 它用本服务持有的记忆中枢 admin key。 */
+    if (p === "/admin/panel-auth" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const a = db.panelAuth || {};
+      const view = (x) => ({ username: (x && x.username) || "", hasPassword: Boolean(x && x.password) });
+      return send(200, { ok: true, kb: view(a.kb), wbm: view(a.wbm), memory: { ready: Boolean(MEMHUB_ADMIN_KEY) } });
+    }
+    if (p === "/admin/panel-auth" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const panel = String((body && body.panel) || "").trim();
+      if (!["kb", "wbm"].includes(panel)) return send(400, { ok: false, error: "panel 必须是 kb 或 wbm" });
+      const username = String((body && body.username) || "").trim();
+      const password = String((body && body.password) || "");
+      if (!username) return send(400, { ok: false, error: "账号不能为空" });
+      if (typeof db.panelAuth !== "object" || !db.panelAuth) db.panelAuth = {};
+      const cur = db.panelAuth[panel] || {};
+      /* 密码留空 = 不改（与知识库密钥同一条纪律） */
+      db.panelAuth[panel] = { username, password: password || cur.password || "" };
+      persist();
+      console.log(`[panel-auth] ${me.username} 设置 ${panel} 面板账号 ${username}（密码${password ? "已更新" : "沿用"}）`);
+      return send(200, { ok: true, panel, username, hasPassword: Boolean(db.panelAuth[panel].password) });
     }
 
     /* 管理端：权益总览 / 开通·续期·停用 / 价格表 */

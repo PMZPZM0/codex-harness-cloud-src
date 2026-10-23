@@ -1210,6 +1210,20 @@
       <div id="svcKbTestResult" style="display:none;margin-top:10px"></div>
     </div>
 
+    <!-- 10-23 免密登录：填一次后台账号，之后「打开后台」直接进 -->
+    <div class="card" id="kbLoginCard" style="margin-top:14px">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">后台免密登录 <span class="pill plain" id="kbLoginState">未配置</span></h2>
+      <p class="hint" style="margin:0 0 10px">填一次知识库后台的账号密码：以后点「打开后台」由服务端换好会话再打开，<b>密码不下发浏览器、不回显</b>。
+        ⛔ 知识库关闭了公开注册，只能用已有账号（没有的话在它的后台加一个）。</p>
+      <div class="svc-grid" style="margin:0">
+        <label class="svc-field"><span class="hint">后台账号（邮箱）</span>
+          <input class="field" id="kbLoginUser" spellcheck="false" placeholder="you@example.com" /></label>
+        <label class="svc-field"><span class="hint">密码（留空 = 不改）</span>
+          <input class="field" id="kbLoginPass" type="password" spellcheck="false" placeholder="只写不读" /></label>
+      </div>
+      <div class="svc-actions"><button class="btn primary" id="kbLoginSave">保存账号</button><span class="hint" id="kbLoginMsg" role="status" aria-live="polite"></span></div>
+    </div>
+
     <!-- 10-23 用户令「知识库要配 LLM 密钥的吧」：模型接入（API 地址 + 密钥）也放这里 -->
     <div class="card" id="kbModelCard" style="margin-top:14px">
       <div class="mb-head">
@@ -1332,6 +1346,16 @@
       <button class="btn sm" id="svcWbmPoint">把模型通道指到这台 Manager</button>
     </div>
     <p class="status" id="svcWbmStatus" role="status" aria-live="polite"></p>
+  </div>
+
+  <div class="card" id="wbmLoginCard" style="margin-top:14px">
+    <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">面板免密登录 <span class="pill plain" id="wbmLoginState">未配置</span></h2>
+    <p class="hint" style="margin:0 0 10px">填一次 Manager 的管理员账号密码：以后点「打开面板」直接进（密码只存服务端，不下发浏览器）。</p>
+    <div class="svc-grid" style="margin:0">
+      <label class="svc-field"><span class="hint">管理员账号</span><input class="field" id="wbmLoginUser" spellcheck="false" placeholder="admin" /></label>
+      <label class="svc-field"><span class="hint">密码（留空 = 不改）</span><input class="field" id="wbmLoginPass" type="password" spellcheck="false" placeholder="只写不读" /></label>
+    </div>
+    <div class="svc-actions"><button class="btn primary" id="wbmLoginSave">保存账号</button><span class="hint" id="wbmLoginMsg" role="status" aria-live="polite"></span></div>
   </div>
 
   <div class="card" id="wbmGuideCard" style="margin-top:14px">
@@ -2026,7 +2050,25 @@
     if ($("svcMemOpen")) $("svcMemOpen").disabled = !svcUrls.mem;
     if ($("svcKbOpen")) $("svcKbOpen").disabled = !svcUrls.kb;
   }
-  function svcOpen(which) { var u = svcUrls[which]; if (u) window.open(u, "_blank", "noopener"); }
+  /* ⛔ 10-23 用户令「这三个都自动登录」：先向服务端要一次性票据，由面板源上的 /__sso 换会话；
+     拿不到（没配账号 / 面板没挂反代）就**照常打开**，并在卡片上说明为什么还要手动登录 —— 不假装成功。 */
+  function panelSay(panel, text, cls) {
+    if (panel === "wbm") return wbmSay(text, cls);
+    return svcSay(panel === "memory" ? "memory" : "kb", text, cls);
+  }
+  function openPanelSSO(panel, plainUrl) {
+    api("/admin/panel-sso", { method: "POST", body: { panel: panel } }).then(function (r) {
+      var j = (r && r.j) || {};
+      if (r.ok && j.ok && j.url) { panelSay(panel, "已在后台完成登录，正在打开…", "ok"); window.open(j.url, "_blank", "noopener"); return; }
+      if (plainUrl) window.open(plainUrl, "_blank", "noopener");
+      if (j.error === "panel-credentials-missing") panelSay(panel, (j.message || "还没配面板账号") + " —— 已按普通方式打开，需手动登录一次", "");
+      else panelSay(panel, j.message || j.error || "免密未生效，已按普通方式打开", "");
+    })["catch"](function () { if (plainUrl) window.open(plainUrl, "_blank", "noopener"); });
+  }
+  function svcOpen(which) {
+    var u = svcUrls[which];
+    openPanelSSO(which === "kb" ? "kb" : "memory", u || "");
+  }
   function svcCopy(which) { adCopy(svcUrls[which] || "", $(which === "kb" ? "svcKbStatus" : "svcMemStatus")); }
   /* 对外地址单独一个接口：⛔ 不走 /admin/services POST（那条会带着掩码密钥一起提交） */
   function svcPubSave(which) {
@@ -2797,6 +2839,7 @@
       if ($("svcWbmKey")) { $("svcWbmKey").value = ""; $("svcWbmKey").placeholder = wbm.hasGatewayKey ? "已配（留空不改）" : "在 Manager 面板里签发后粘过来"; }
       /* ⛔ 这行是管理员排查「到底在用哪个地址」的唯一入口 —— 生效值必须摊开 */
       svcApplyState(r.j);
+      loadPanelAuth();
     }).catch(function () { svcSay("kb", "读取失败：网络错误", "bad"); });
   }
   function svcRenderTest(which, j) {
@@ -3013,6 +3056,41 @@
     }).catch(function () { msg.className = "status bad"; msg.textContent = "保存失败：网络错误"; });
   };
 
+  /* ══ 10-23 面板免密账号（知识库 / Manager）：填一次，密码只写不读 ════════════ */
+  function loadPanelAuth() {
+    if (!$("kbLoginState") && !$("wbmLoginState")) return;
+    api("/admin/panel-auth").then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) return;
+      function paint(stateEl, userEl, x) {
+        if (stateEl) {
+          var okAuth = Boolean(x && x.username && x.hasPassword);
+          stateEl.className = "pill " + (okAuth ? "ok" : "plain");
+          stateEl.textContent = okAuth ? ("已配置：" + x.username) : "未配置";
+        }
+        if (userEl && x && x.username && !userEl.value) userEl.value = x.username;
+      }
+      paint($("kbLoginState"), $("kbLoginUser"), j.kb);
+      paint($("wbmLoginState"), $("wbmLoginUser"), j.wbm);
+    })["catch"](function () { /* 读不到就保持"未配置" */ });
+  }
+  function savePanelAuth(panel, userEl, passEl, msgEl, stateEl) {
+    var u = ($(userEl) && $(userEl).value || "").trim();
+    var pw = ($(passEl) && $(passEl).value) || "";
+    var msg = $(msgEl);
+    if (!u) { if (msg) { msg.textContent = "先填账号"; msg.style.color = "var(--bad)"; } return; }
+    if (msg) { msg.textContent = "保存中…"; msg.style.color = ""; }
+    api("/admin/panel-auth", { method: "POST", body: { panel: panel, username: u, password: pw } }).then(function (r) {
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { if (msg) { msg.textContent = "保存失败：" + (j.error || ("HTTP " + r.status)); msg.style.color = "var(--bad)"; } return; }
+      if ($(passEl)) $(passEl).value = "";
+      if (msg) { msg.textContent = "已保存，下次「打开面板」直接进"; msg.style.color = "var(--ok)"; }
+      loadPanelAuth();
+    })["catch"](function () { if (msg) { msg.textContent = "保存失败：网络错误"; msg.style.color = "var(--bad)"; } });
+  }
+  if ($("kbLoginSave")) $("kbLoginSave").onclick = function () { savePanelAuth("kb", "kbLoginUser", "kbLoginPass", "kbLoginMsg", "kbLoginState"); };
+  if ($("wbmLoginSave")) $("wbmLoginSave").onclick = function () { savePanelAuth("wbm", "wbmLoginUser", "wbmLoginPass", "wbmLoginMsg", "wbmLoginState"); };
+
   /* ══ 10-23 WorkBuddy Manager（模型池网关）：状态 / 地址 / 指向上游 ══════════════
      ⛔ 它的会话体系与云账号完全独立：本页只做「地址 + 存活探测 + 打开面板」，
         **不代它登录**、不存它的管理员密码（那在服务器的 0600 文件里）。 */
@@ -3041,7 +3119,7 @@
       wbmSay("读不到 Manager：网络错误", "bad");
     });
   }
-  function wbmOpen() { var u = svcUrls.wbm; if (u) window.open(u, "_blank", "noopener"); }
+  function wbmOpen() { openPanelSSO("wbm", svcUrls.wbm || ""); }
   if ($("svcWbmOpen")) $("svcWbmOpen").onclick = wbmOpen;
   if ($("svcWbmCopy")) $("svcWbmCopy").onclick = function () { adCopy(svcUrls.wbm || "", $("svcWbmStatus")); };
   if ($("svcWbmTest")) $("svcWbmTest").onclick = function () { wbmSay("检测中…"); loadWbmHealth(); };
