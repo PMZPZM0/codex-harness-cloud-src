@@ -430,6 +430,19 @@ function wbmBase() {
    ⛔ 只动「这个账号自己的」资源 id（integrations 里那份），不按用户名模糊删。 */
 const GRACE_DAYS = Math.max(0, Number(process.env.HARNESS_GRACE_DAYS || 3));
 const DAY_MS = 24 * 60 * 60 * 1000;
+/* 自动清理总开关（10-23 用户令「希望到期只提醒、不自动删」）：
+     · 部署级默认 `HARNESS_AUTO_CLEAN=0`（也认 false/no/off）
+     · 面板开关写 `db.policy.autoCleanEnabled`，**显式设置后优先于 env**（不用重启）
+   ⛔ 关掉只关「自动」：管理员手动清理 / 批量清理照旧可用 —— 那是人主动点的，不是系统替你删。 */
+const AUTO_CLEAN_ENV = !/^(0|false|no|off)$/i.test(String(process.env.HARNESS_AUTO_CLEAN ?? "1").trim());
+function autoCleanEnabled() {
+  const v = (db.policy || {}).autoCleanEnabled;
+  return (v === undefined || v === null) ? AUTO_CLEAN_ENV : Boolean(v);
+}
+function autoCleanSource() {
+  const v = (db.policy || {}).autoCleanEnabled;
+  return (v === undefined || v === null) ? "env" : "panel";
+}
 
 function cleanupInfo(username, feature) {
   const raw = entitlementsOf(username)[feature] || {};
@@ -604,6 +617,8 @@ async function cleanFeature(username, feature, opts) {
 /** 自动扫描：把「已过期且过宽限期」的都清掉。⛔ 串行 + 每步留痕，避免打爆上游。 */
 let cleanupRunning = false;
 async function autoCleanupScan() {
+  /* ⛔ 闸门放在**扫描入口**而不是每处调用点：以后再加定时器也不会绕过这个开关 */
+  if (!autoCleanEnabled()) return;
   if (cleanupRunning) return;
   cleanupRunning = true;
   try {
@@ -3414,7 +3429,7 @@ const server = http.createServer(async (req, res) => {
         const c = cleanup[f];
         return !c.permanent && !c.cleanedAt && (c.expired || (c.daysLeft !== null && c.daysLeft <= 7));
       });
-      return send(200, { ok: true, features: FEATURES, labels: FEATURE_LABEL, pricing: pricingOf(), entitlements: ent, cleanup, expiring, graceDays: GRACE_DAYS });
+      return send(200, { ok: true, features: FEATURES, labels: FEATURE_LABEL, pricing: pricingOf(), entitlements: ent, cleanup, expiring, graceDays: GRACE_DAYS, autoClean: autoCleanEnabled() });
     }
 
     /* 自助开通：扣积分换「时长 + 额度」。积分不足返回 402，前端据此引导充值/找管理员。 */
@@ -3456,6 +3471,7 @@ const server = http.createServer(async (req, res) => {
       return send(200, {
         ok: true, feature, label: FEATURE_LABEL[feature],
         graceDays: GRACE_DAYS,
+        autoClean: autoCleanEnabled(),
         summary: { ...summary, cleanable: rows.filter((r) => r.cleanup && r.cleanup.cleanable).length },
         users: rows,
       });
@@ -4120,16 +4136,22 @@ location.replace("/");
           configuredStorageGb: gb(configuredBytes),
           signupPointsEnabled: pol.signupPointsEnabled !== false,
           storageEnabled: pol.storageEnabled !== false,
-          env: { signupPoints: SIGNUP_GRANT, storageBytes: STORAGE_LIMIT_BYTES },
+          /* 到期自动清理（10-23）：autoCleanSource = panel（面板已设过）/ env（跟随部署变量） */
+          autoCleanEnabled: autoCleanEnabled(),
+          autoCleanSource: autoCleanSource(),
+          autoCleanEnv: AUTO_CLEAN_ENV,
+          graceDays: GRACE_DAYS,
+          env: { signupPoints: SIGNUP_GRANT, storageBytes: STORAGE_LIMIT_BYTES, autoClean: AUTO_CLEAN_ENV },
         };
       };
       if (req.method === "GET") return send(200, view());
       if (req.method !== "POST") return send(405, { ok: false, error: "只支持 GET / POST" });
       const body = await readBody();
       const next = Object.assign({}, db.policy || {});
-      if (body && body.reset) { delete next.signupPoints; delete next.storageBytes; delete next.signupPointsEnabled; delete next.storageEnabled; }
+      if (body && body.reset) { delete next.signupPoints; delete next.storageBytes; delete next.signupPointsEnabled; delete next.storageEnabled; delete next.autoCleanEnabled; }
       if (body && body.signupPointsEnabled !== undefined) next.signupPointsEnabled = body.signupPointsEnabled !== false;
       if (body && body.storageEnabled !== undefined) next.storageEnabled = body.storageEnabled !== false;
+      if (body && body.autoCleanEnabled !== undefined) next.autoCleanEnabled = body.autoCleanEnabled !== false;
       if (body && body.signupPoints !== undefined && body.signupPoints !== null && body.signupPoints !== "") {
         const n = Number(body.signupPoints);
         if (!Number.isFinite(n) || n < 0 || n > 1e7) return send(400, { ok: false, error: "注册赠送积分要填 0 ~ 10000000 的整数" });
@@ -4143,7 +4165,8 @@ location.replace("/");
       db.policy = next;
       persist();
       console.log("[policy] " + me.username + " 设置：注册赠分 " + ((db.policy || {}).signupPointsEnabled === false ? "关闭" : signupPoints())
-        + " · 默认云存储 " + ((db.policy || {}).storageEnabled === false ? "关闭" : gb(storageDefaultBytes()) + " GB"));
+        + " · 默认云存储 " + ((db.policy || {}).storageEnabled === false ? "关闭" : gb(storageDefaultBytes()) + " GB")
+        + " · 到期自动清理 " + (autoCleanEnabled() ? "开（宽限 " + GRACE_DAYS + " 天）" : "关（只提醒）"));
       return send(200, view());
     }
 
@@ -5288,7 +5311,7 @@ console.log(
     (WBM_BASE && WBM_TOKEN ? "已配置（地址与 token 均来自凭据/环境，不落日志）" : "未配置（缺 WBM_BASE 或 wbm-token 凭据）") +
     "｜网关密钥：" + (WBM_GATEWAY_KEY ? "已配置" : "未配置")
 );
-server.listen(PORT, "127.0.0.1", () => console.log(`[accounts] 账号服务就绪 127.0.0.1:${PORT}（users=${db.users.length}, file=${DATA_FILE}，过期宽限 ${GRACE_DAYS} 天）`));
+server.listen(PORT, "127.0.0.1", () => console.log(`[accounts] 账号服务就绪 127.0.0.1:${PORT}（users=${db.users.length}, file=${DATA_FILE}，过期宽限 ${GRACE_DAYS} 天，自动清理 ${autoCleanEnabled() ? "开" : "关（只提醒）"}）`));
 
 /* ── 过期自动清理（10-23）：启动 60s 后扫一次，之后每小时。
    ⛔ 只清「已过期且过宽限期」的；清理失败会留日志并在下一轮重试。 */
