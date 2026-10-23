@@ -1009,7 +1009,7 @@
         <div class="pol-grid" style="margin-top:12px">
           <div class="pol-field"><label>团队套餐</label><div id="tmPlan" class="hint">—</div></div>
           <div class="pol-field"><label>到期时间</label><div id="tmExpire" class="hint">—</div></div>
-          <div class="pol-field"><label>积分余额 / 本月配额</label><div id="tmPool" class="hint">—</div></div>
+          <div class="pol-field"><label>积分余额 / 本期配额</label><div id="tmPool" class="hint">—</div></div>
         </div>
         <div class="pol-actions" style="margin-top:12px">
           <button class="btn primary" id="tmProvision">开通 / 修复团队空间</button>
@@ -6871,7 +6871,7 @@
       if ($("tmPointsBreak")) {
         $("tmPointsBreak").innerHTML = (j.pointsEnabled === false
           ? "积分扣减已关闭（团队能力免费）"
-          : "本月配额剩 <b>" + fmtNum(q.left) + "</b> / " + fmtNum(q.total) + " · 余额 <b>" + fmtNum(j.balance) + "</b>");
+          : "本期配额剩 <b>" + fmtNum(q.left) + "</b> / " + fmtNum(q.total) + " · 余额 <b>" + fmtNum(j.balance) + "</b>");
       }
       if ($("tmPool")) $("tmPool").textContent = fmtNum(j.balance) + " / " + fmtNum(q.total) + "（" + (q.period || "") + "）";
       var warnEl = $("tmPointsWarn");
