@@ -616,12 +616,20 @@
   .mb-grp-end { margin-left: auto; padding-left: 0; border-left: 0; }
   .mb-label { font-size: 11.5px; font-weight: 600; color: var(--faint); white-space: nowrap; }
   .mb-check { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12.5px; }
-  .mb-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  /* ⛔ 10-23 用户反馈「表格歪了」：auto 布局下第一列被长内容（时间串）顶宽、后续列被挤，
+     表头与内容视觉错位。统一改 fixed：列宽均分（可用 col/th width 微调），文本超长省略。 */
+  .mb-table { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: fixed; }
   .mb-table th {
     text-align: left; font-weight: 600; color: var(--faint); font-size: 11.5px;
     padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
   }
-  .mb-table td { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; vertical-align: middle; }
+  .mb-table td {
+    padding: 8px 10px; border-bottom: 1px solid var(--line-soft); white-space: nowrap;
+    vertical-align: middle; text-align: left; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* 长内容列允许换行（如套餐「包含」的 知识库+记忆 描述） */
+  .mb-table td.wrap { white-space: normal; }
   .mb-table tbody tr:hover { background: var(--field); }
   .mb-user { font-weight: 600; }
   .mb-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--muted); }
@@ -884,14 +892,14 @@
       <div class="card">
         <h2>我的订阅记录</h2>
         <div class="table-wrap"><table class="mb-table">
-          <thead><tr><th>时间</th><th>套餐</th><th>金额</th><th>赠积分</th><th>时长</th></tr></thead>
+          <thead><tr><th style="width:24%">时间</th><th style="width:22%">套餐</th><th style="width:16%">金额</th><th style="width:16%">赠积分</th><th style="width:22%">时长</th></tr></thead>
           <tbody id="subOrders"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
         </table></div>
       </div>
       <div class="card">
         <h2>充值记录</h2>
         <div class="table-wrap"><table class="mb-table">
-          <thead><tr><th>时间</th><th>金额</th><th>积分</th><th>状态</th></tr></thead>
+          <thead><tr><th style="width:30%">时间</th><th style="width:20%">金额</th><th style="width:20%">积分</th><th style="width:30%">状态</th></tr></thead>
           <tbody id="subTopups"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody>
         </table></div>
       </div>
@@ -921,7 +929,7 @@
           <div><span class="hint">累计获得</span> <b id="invReward" style="font-size:20px">—</b> <span class="hint">积分</span></div>
         </div>
         <div class="table-wrap"><table class="mb-table">
-          <thead><tr><th>被邀请人</th><th>注册时间</th><th>奖励</th></tr></thead>
+          <thead><tr><th style="width:34%">被邀请人</th><th style="width:36%">注册时间</th><th style="width:30%">奖励</th></tr></thead>
           <tbody id="invRows"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody>
         </table></div>
       </div>
@@ -946,7 +954,7 @@
       <div class="card">
         <h2>邀请统计（按邀请人数排序）</h2>
         <div class="table-wrap"><table class="mb-table">
-          <thead><tr><th>用户</th><th>邀请码</th><th>邀请人数</th><th>累计奖励</th><th>最近邀请</th><th>操作</th></tr></thead>
+          <thead><tr><th style="width:18%">用户</th><th style="width:14%">邀请码</th><th style="width:10%">邀请人数</th><th style="width:12%">累计奖励</th><th style="width:20%">最近邀请</th><th style="width:26%">操作</th></tr></thead>
           <tbody id="aiRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
         </table></div>
       </div>
@@ -977,7 +985,7 @@
       <div class="card">
         <h2>订阅套餐设置</h2>
         <div class="table-wrap"><table class="mb-table">
-          <thead><tr><th>名称</th><th>价格（积分）</th><th>时长（天）</th><th>包含</th><th>状态</th><th>操作</th></tr></thead>
+          <thead><tr><th style="width:18%">名称</th><th style="width:16%">价格（积分）</th><th style="width:9%">时长（天）</th><th style="width:22%">包含</th><th style="width:9%">状态</th><th style="width:26%">操作</th></tr></thead>
           <tbody id="blPlanRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
         </table></div>
         <h3 style="margin:16px 0 8px;font-size:14px" id="blPlanFormTitle">新建套餐</h3>
@@ -1022,7 +1030,7 @@
         <h2>充值对账（最近 100 笔）</h2>
         <p class="hint" style="margin:0 0 12px">支付回调丢失时用「补单」兜底：标记已支付并给用户加积分（幂等，重复点不会重复加）。</p>
         <div class="table-wrap"><table class="mb-table">
-          <thead><tr><th>时间</th><th>用户</th><th>金额</th><th>积分</th><th>状态</th><th>操作</th></tr></thead>
+          <thead><tr><th style="width:22%">时间</th><th style="width:18%">用户</th><th style="width:12%">金额</th><th style="width:12%">积分</th><th style="width:18%">状态</th><th style="width:18%">操作</th></tr></thead>
           <tbody id="blTopupRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
         </table></div>
       </div>
@@ -6111,7 +6119,7 @@
     box.innerHTML = ADMIN_PLANS.length ? ADMIN_PLANS.map(function (pl) {
       var priceText = (Number(pl.priceCny) > 0 ? "¥" + esc(pl.priceCny) : '<span class="hint">未定价</span>')
         + '<span class="hint"> · 赠 ' + esc(pl.points || 0) + " 积分</span>";
-      return "<tr><td>" + esc(pl.name) + ' <span class="hint">' + esc(pl.id) + "</span></td><td>" + priceText + "</td><td>" + esc(pl.days === 0 ? "永久" : pl.days + " 天") + "</td><td>" + esc(planFeatText(pl)) + "</td><td>" + (pl.active !== false ? '<span class="pill ok">上架</span>' : '<span class="pill plain">下架</span>') + "</td>"
+      return "<tr><td>" + esc(pl.name) + ' <span class="hint">' + esc(pl.id) + "</span></td><td>" + priceText + "</td><td>" + esc(pl.days === 0 ? "永久" : pl.days + " 天") + "</td><td class=\"wrap\">" + esc(planFeatText(pl)) + "</td><td>" + (pl.active !== false ? '<span class="pill ok">上架</span>' : '<span class="pill plain">下架</span>') + "</td>"
         + '<td><div class="mb-ops"><button class="btn sm" data-pl-edit="' + esc(pl.id) + '">编辑</button><button class="btn sm" data-pl-grant="' + esc(pl.id) + '">手动开通</button>'
         + '<button class="btn sm" data-pl-toggle="' + esc(pl.id) + '">' + (pl.active !== false ? "下架" : "上架") + "</button>"
         + '<button class="btn sm danger" data-pl-del="' + esc(pl.id) + '">删除</button></div></td></tr>';
