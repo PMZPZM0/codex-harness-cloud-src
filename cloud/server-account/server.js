@@ -247,6 +247,66 @@ async function ensureMemoryFor(username) {
   return { ok: true, baseUrl: `${MEMHUB_PROXY_BASE}/claude-code/default/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key" };
 }
 
+/* ── 10-23 管理端「成员 / 模型」支撑函数 ─────────────────────────────────────── */
+
+/** 知识库**后台界面**地址（与 API 地址分离）。
+    ⛔ 为什么必须分开：WeKnora 的 API 在 8080、前端界面在 8081（官方 compose 默认）。
+       只配了 API 地址时「打开后台」会打开 `:8080/`，浏览器里只有一句
+       `{"error":"Unauthorized: missing authentication"}`（10-23 用户实拍）。
+    ⛔ 只在端口恰好是 8080 时推导成 8081；其它情况（如 https://kb.域名 由反代分发到前端）
+       仍用 API 地址 —— 反代通常同源，猜端口反而会打空。 */
+function kbUiBase() {
+  const cur = (db.services && db.services.kb) || {};
+  const own = String(cur.uiBase || "").trim().replace(/\/+$/, "");
+  if (own) return own;
+  try {
+    const u = new URL(WEKNORA_BASE);
+    if (u.port === "8080") { u.port = "8081"; return u.toString().replace(/\/+$/, ""); }
+  } catch { /* 地址不合法 ⇒ 原样返回，前端会显示"未配置" */ }
+  return WEKNORA_BASE;
+}
+
+/** WeKnora 里**已注册的模型**（管理端下拉数据源）。
+    ⛔ 只读，不改任何东西；拉不到就让前端回落手填（不能因为上游抽风就把配置框变成死框）。 */
+async function weknoraModelList() {
+  const j = await weknoraAdmin("/api/v1/models");
+  const rows = (j && (j.data || j.models)) || [];
+  return rows.map((m) => ({
+    id: String(m.id || ""),
+    name: String(m.name || ""),
+    title: String(m.display_name || m.name || ""),
+    type: String(m.type || ""),
+    source: String(m.source || ""),
+    note: String(m.description || ""),
+  })).filter((m) => m.id);
+}
+
+/** 成员行：把「权益状态」与「已下发的集成凭据」合成一行（⛔ 绝不下发明文密钥）。 */
+function memberRow(u, feature) {
+  const st = featureState(u.username, feature);
+  const it = (db.integrations && db.integrations[u.username]) || {};
+  const mask = (v) => (v ? String(v).slice(0, 6) + "***" + String(v).slice(-4) : "");
+  const isKb = feature === "knowledge";
+  return {
+    username: u.username,
+    role: u.role,
+    accountDisabled: Boolean(u.disabled),
+    enabled: st.enabled,
+    expired: st.expired,
+    expiresAt: st.expiresAt,
+    grantedAt: st.grantedAt,
+    quotaMb: st.quotaMb,
+    usedMb: st.usedMb,
+    quota: st.quota,
+    usedCount: st.usedCount,
+    resourceId: isKb ? String(it.kbId || "") : String(it.memUserId || ""),
+    resourceName: isKb ? String(it.kbName || "") : "",
+    endpoint: isKb ? String(it.mcpUrl || "") : "",
+    keyMask: mask(it.memKey),
+    hasResource: isKb ? Boolean(it.kbId) : Boolean(it.memKey),
+  };
+}
+
 /* ── 10-16 权益：知识库 / 记忆「按时长 + 额度」激活（用户定案）──────────────────────
    · 默认**全关**：新账号只有普通聊天；要激活才下发凭据。
    · 闸门放在 /integrations：未开通 ⇒ **不建库、不发钥匙**（省资源 + 防白嫖），直接 not-activated。
@@ -2696,6 +2756,169 @@ const server = http.createServer(async (req, res) => {
       return send(200, { ok: true, feature, state, balance: pointsOf(who.username).balance, entitlements: entitlementsSummary(who.username) });
     }
 
+    /* ── 10-23 管理端「已开通成员」：在知识库 / 记忆中心里直接管人 ─────────────────
+       ⛔ 用户令「不用去后台了」⇒ 成员列表 + 批量管理必须在本服务完成。
+       ⛔ 本接口只读本地状态（权益 + 已下发凭据），**不逐个去问上游** —— 否则一屏用户
+          会把 WeKnora / MemHub 打成串行队列（实测建库 1~3s/个）。 */
+    if (p === "/admin/members" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const feature = String(url.searchParams.get("feature") || "knowledge") === "memory" ? "memory" : "knowledge";
+      const rows = db.users.map((u) => memberRow(u, feature));
+      const summary = {
+        total: rows.length,
+        active: rows.filter((r) => r.enabled).length,
+        expired: rows.filter((r) => r.expired).length,
+        off: rows.filter((r) => !r.enabled && !r.expired).length,
+        provisioned: rows.filter((r) => r.enabled && r.hasResource).length,
+      };
+      return send(200, { ok: true, feature, label: FEATURE_LABEL[feature], summary, users: rows });
+    }
+
+    /* 批量开通 / 续期 / 改额度 / 停用 —— 一次请求在服务端串行执行（前端不用发 N 个请求，
+       中途关页面也不会做一半）。⛔ 逐条返回失败原因，不许"显示成功但其实没做"。 */
+    if (p === "/admin/entitlements/batch" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const feature = String((body && body.feature) || "") === "memory" ? "memory" : "knowledge";
+      const action = String((body && body.action) || "grant").trim();
+      if (!["grant", "quota", "off"].includes(action)) return send(400, { ok: false, error: "action 必须是 grant / quota / off" });
+      const names = Array.from(new Set((Array.isArray(body && body.users) ? body.users : []).map((x) => String(x || "").trim()).filter(Boolean)));
+      if (!names.length) return send(400, { ok: false, error: "没有选择账号" });
+      const missing = names.filter((n) => !db.users.some((u) => u.username === n));
+      if (missing.length) return send(404, { ok: false, error: "用户不存在：" + missing.slice(0, 5).join(", ") });
+      const days = Number(body && body.days);
+      const quotaMb = body && body.quotaMb !== undefined ? Math.max(0, Number(body.quotaMb) || 0) : undefined;
+      const quota = body && body.quota !== undefined ? Math.max(0, Number(body.quota) || 0) : undefined;
+      const done = [], failed = [];
+      for (const username of names) {
+        try {
+          const payload = { username, feature };
+          if (action === "grant") {
+            payload.enabled = true;
+            /* ⛔ days 必须显式给：不传 = 只改额度（grantFeature 的「留空不动」语义） */
+            payload.days = Number.isFinite(days) && days >= 0 ? days : 30;
+            if (quotaMb !== undefined) payload.quotaMb = quotaMb;
+            if (quota !== undefined) payload.quota = quota;
+          } else if (action === "quota") {
+            if (quotaMb !== undefined) payload.quotaMb = quotaMb;
+            if (quota !== undefined) payload.quota = quota;
+            if (quotaMb === undefined && quota === undefined) throw new Error("没有要改的额度");
+          } else {
+            payload.enabled = false;
+          }
+          const state = grantFeature(username, feature, {
+            disable: payload.enabled === false,
+            days: payload.days === undefined ? null : payload.days,
+            quotaMb: payload.quotaMb,
+            quota: payload.quota,
+            note: `管理员 ${me.username} 批量操作`,
+          });
+          if (state.enabled) provisionFor(username, feature);
+          done.push(username);
+        } catch (e) {
+          failed.push({ username, error: sanitize(String((e && e.message) || e)) });
+        }
+      }
+      persist();
+      console.log(`[admin] ${me.username} 批量${action} ${FEATURE_LABEL[feature]}：成功 ${done.length} / 失败 ${failed.length}`);
+      return send(200, { ok: true, feature, action, done: done.length, failed, users: names });
+    }
+
+    /* 批量「补齐 / 重建」资源：开通了但库或钥匙没建出来的账号，一键重试。
+       ⛔ 只补缺，不删旧 —— 删库是不可逆动作，放在清理接口里且要显式点名。 */
+    if (p === "/admin/members/ensure" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const body = await readBody();
+      const feature = String((body && body.feature) || "") === "memory" ? "memory" : "knowledge";
+      const wanted = Array.isArray(body && body.users) ? body.users.map((x) => String(x || "").trim()).filter(Boolean) : [];
+      const targets = wanted.length
+        ? db.users.filter((u) => wanted.includes(u.username))
+        : db.users.filter((u) => featureState(u.username, feature).enabled);
+      if (!targets.length) return send(400, { ok: false, error: "没有可处理的账号" });
+      const done = [], failed = [];
+      for (const u of targets) {
+        try {
+          const r = feature === "knowledge" ? await ensureKnowledgeFor(u.username) : await ensureMemoryFor(u.username);
+          if (r && r.ok === false) failed.push({ username: u.username, error: sanitize(String(r.error || "未就绪")) });
+          else done.push(u.username);
+        } catch (e) {
+          failed.push({ username: u.username, error: sanitize(String((e && e.message) || e)) });
+        }
+        await new Promise((r2) => setTimeout(r2, 300));   // ⛔ 串行 + 间隔：WeKnora 建库要 1~3s
+      }
+      console.log(`[admin] ${me.username} 补齐${FEATURE_LABEL[feature]}资源：成功 ${done.length} / 失败 ${failed.length}`);
+      return send(200, { ok: true, feature, done: done.length, failed, total: targets.length });
+    }
+
+    /* 管理端：知识库已注册模型（下拉数据源）。⛔ 只读探测，失败回 ok:false 让前端回落手填 */
+    if (p === "/admin/service-models" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      if (!WEKNORA_ADMIN_KEY) return send(200, { ok: false, error: "知识库密钥未配置，无法读取模型列表", llm: [], embed: [], vlm: [] });
+      try {
+        const all = await weknoraModelList();
+        const pick = (pred) => all.filter(pred);
+        return send(200, {
+          ok: true,
+          count: all.length,
+          base: WEKNORA_BASE,
+          llm: pick((m) => /knowledgeqa|llm|chat/i.test(m.type)),
+          embed: pick((m) => /embedding/i.test(m.type)),
+          vlm: pick((m) => /vllm|vision/i.test(m.type)),
+          all,
+          current: { llm: WEKNORA_LLM_MODEL_ID, embed: WEKNORA_EMBED_MODEL_ID, vlm: WEKNORA_VLM_MODEL_ID },
+        });
+      } catch (e) {
+        return send(200, { ok: false, error: sanitize(String((e && e.message) || e)), llm: [], embed: [], vlm: [] });
+      }
+    }
+
+    /* 把当前模型配置**应用到所有已建好的用户库**（只改配置，不动文档）。
+       ⛔ 这是「模型映射到前端」真正生效的那一步：只写 db 只会影响"之后新建"的库。 */
+    if (p === "/admin/kb/apply-models" && req.method === "POST") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      if (!WEKNORA_ADMIN_KEY) return send(400, { ok: false, error: "知识库密钥未配置" });
+      if (!WEKNORA_LLM_MODEL_ID && !WEKNORA_EMBED_MODEL_ID) return send(400, { ok: false, error: "先在上面选好问答 / 嵌入模型再应用" });
+      const body = await readBody().catch(() => ({}));
+      const wanted = Array.isArray(body && body.users) ? body.users.map((x) => String(x || "").trim()).filter(Boolean) : [];
+      const rows = Object.entries(db.integrations || {})
+        .filter(([username, it]) => it && it.kbId && (!wanted.length || wanted.includes(username)))
+        .map(([username, it]) => ({ username, kbId: String(it.kbId) }));
+      if (!rows.length) return send(200, { ok: true, total: 0, done: 0, failed: [], note: "还没有已建好的用户库" });
+      const done = [], failed = [];
+      for (const r of rows) {
+        try {
+          await weknoraAdmin(`/api/v1/initialization/config/${r.kbId}`, { method: "PUT", body: kbModelConfigBody() });
+          const slot = integrationSlot(r.username);
+          slot.vlmModelId = WEKNORA_VLM_MODEL_ID || "";
+          done.push(r.username);
+        } catch (e) {
+          failed.push({ username: r.username, error: sanitize(String((e && e.message) || e)) });
+        }
+        await new Promise((r2) => setTimeout(r2, 250));
+      }
+      persist();
+      console.log(`[admin] ${me.username} 应用知识库模型到 ${done.length}/${rows.length} 个库，失败 ${failed.length}`);
+      return send(200, { ok: true, total: rows.length, done: done.length, failed });
+    }
+
+    /* 管理端：记忆网关的实际状态（版本 / 上游 / 限流 / 存储）。
+       ⛔ 记忆网关**没有运行期配置接口**（模型与上游都在容器 env 里）⇒ 这里只读，
+          把"到底在用哪个上游"摊开给管理员看，别做成一个点了没反应的假开关。 */
+    if (p === "/admin/service-health" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const which = String(url.searchParams.get("which") || "memory") === "kb" ? "kb" : "memory";
+      const base = which === "kb" ? WEKNORA_BASE : MEMHUB_PROXY_BASE;
+      try {
+        const res = await fetch(`${base}/health`, { headers: which === "kb" ? { "X-API-Key": WEKNORA_ADMIN_KEY } : {} });
+        const text = await res.text();
+        let json = null;
+        try { json = text ? JSON.parse(text) : null; } catch { /* 非 JSON */ }
+        return send(200, { ok: res.ok, status: res.status, base, health: json, note: json ? "" : sanitize(text.slice(0, 200)) });
+      } catch (e) {
+        return send(200, { ok: false, status: 0, base, health: null, note: sanitize(String((e && e.message) || e)) });
+      }
+    }
+
     /* 管理员：权益总览 / 开通·续期·停用 / 价格表 */
     if (p === "/admin/entitlements" && req.method === "GET") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
@@ -3064,6 +3287,7 @@ const server = http.createServer(async (req, res) => {
         kb: {
           base: kb.base || "", publicBase: kb.publicBase || "", key: mask(kb.key), hasKey: Boolean(kb.key),
           llmModelId: kb.llmModelId || "", embedModelId: kb.embedModelId || "", vlmModelId: kb.vlmModelId || "",
+          uiBase: kb.uiBase || "", effectiveUiBase: kbUiBase(),
           effectiveBase: WEKNORA_BASE, effectiveHasKey: Boolean(WEKNORA_ADMIN_KEY),
           envBase: WEKNORA_ENV_BASE, envHasKey: Boolean(WEKNORA_ENV_ADMIN_KEY),
         },
@@ -3099,14 +3323,18 @@ const server = http.createServer(async (req, res) => {
         const kbBase = normOne(kbIn.base, "知识库地址");
         if (!kbBase.ok) return send(400, { ok: false, error: kbBase.error });
         const cur = db.services.kb || {};
-        db.services.kb = {
-          base: kbBase.value,
-          publicBase: kbBase.value ? normOne(kbIn.publicBase, "知识库对外地址").value || "" : "",
-          key: keepKey(kbIn.key, cur.key),
-          llmModelId: keep(kbIn.llmModelId),
-          embedModelId: keep(kbIn.embedModelId),
-          vlmModelId: keep(kbIn.vlmModelId),
-        };
+        /* ⛔ 用「{...cur} 再覆盖」而不是整对象重建：publicBase / uiBase 这类
+           前端不一定每次都提交的字段，重建会把它们静默清空（10-23 拆中心时踩过一次）。 */
+        const next = Object.assign({}, cur);
+        next.base = kbBase.value;
+        if (kbIn.publicBase !== undefined) next.publicBase = kbBase.value ? (normOne(kbIn.publicBase, "知识库对外地址").value || "") : "";
+        if (kbIn.uiBase !== undefined) next.uiBase = kbBase.value ? (normOne(kbIn.uiBase, "知识库后台地址").value || "") : "";
+        next.key = keepKey(kbIn.key, cur.key);
+        /* ⛔ 模型 id 只在**提交了**这个字段时才改：只保存地址时不能把模型配置清空 */
+        if (kbIn.llmModelId !== undefined) next.llmModelId = keep(kbIn.llmModelId);
+        if (kbIn.embedModelId !== undefined) next.embedModelId = keep(kbIn.embedModelId);
+        if (kbIn.vlmModelId !== undefined) next.vlmModelId = keep(kbIn.vlmModelId);
+        db.services.kb = next;
       }
       if (memIn) {
         const memBase = normOne(memIn.base, "记忆地址");
@@ -3143,15 +3371,32 @@ const server = http.createServer(async (req, res) => {
         const n = normalizeUpstreamBase(v);
         return n.ok ? { ok: true, value: n.base } : { ok: false, error: label + "：" + n.error };
       };
-      const memPub = normOne(body && body.memory, "记忆空间对外地址");
-      if (!memPub.ok) return send(400, { ok: false, error: memPub.error });
-      const kbPub = normOne(body && body.kb, "知识库对外地址");
-      if (!kbPub.ok) return send(400, { ok: false, error: kbPub.error });
-      db.services.memory = Object.assign({}, db.services.memory || {}, { publicBase: memPub.value });
-      db.services.kb = Object.assign({}, db.services.kb || {}, { publicBase: kbPub.value });
+      /* ⛔ 三个地址各自独立：前端每次只提交其中一项 ⇒ **没提交的不能动**
+         （旧实现把另一侧写成空串 —— 保存知识库对外地址会把记忆的对外地址抹掉）。 */
+      const out = {};
+      if (body && body.memory !== undefined) {
+        const memPub = normOne(body.memory, "记忆空间对外地址");
+        if (!memPub.ok) return send(400, { ok: false, error: memPub.error });
+        db.services.memory = Object.assign({}, db.services.memory || {}, { publicBase: memPub.value });
+        out.memory = memPub.value;
+      }
+      if (body && body.kb !== undefined) {
+        const kbPub = normOne(body.kb, "知识库对外地址");
+        if (!kbPub.ok) return send(400, { ok: false, error: kbPub.error });
+        db.services.kb = Object.assign({}, db.services.kb || {}, { publicBase: kbPub.value });
+        out.kb = kbPub.value;
+      }
+      /* 10-23：知识库**后台界面**地址（与 API 对外地址分开）—— 填 8080 是 API，
+         点「打开后台」只会看到一句 401 JSON。这里单列一个字段，留空 = 按端口约定推导。 */
+      if (body && body.kbUi !== undefined) {
+        const kbUi = normOne(body.kbUi, "知识库后台地址");
+        if (!kbUi.ok) return send(400, { ok: false, error: kbUi.error });
+        db.services.kb = Object.assign({}, db.services.kb || {}, { uiBase: kbUi.value });
+        out.kbUi = kbUi.value;
+      }
       persist();
-      console.log("[services] " + me.username + " 对外地址：记忆 " + (memPub.value || "（自动推导）") + " · 知识库 " + (kbPub.value || "（自动推导）"));
-      return send(200, { ok: true, memory: memPub.value, kb: kbPub.value });
+      console.log("[services] " + me.username + " 地址更新：" + JSON.stringify(out) + " ⇒ 后台入口 " + kbUiBase());
+      return send(200, { ok: true, ...out, effectiveUiBase: kbUiBase() });
     }
 
     if (p === "/admin/services/test" && req.method === "POST") {
