@@ -1538,6 +1538,144 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* ── 产品首页（10-23 用户令「用户分类加一个产品首页：下载 PPcode / 功能介绍 / 更新日志，全部自动更新」）──
+     ⛔ 不让浏览器直连 api.github.com：匿名 60 次/小时/IP（一个办公室共用出口立刻打满）、国内常不通、
+        还会把访客 IP 暴露给 GitHub。⇒ 服务端取 + TTL 缓存 + 落盘兜底。
+     ⛔ 国内镜像与直连**并行**问、取版本最高的那份：镜像缓存滞后会给旧版本（与 /api/updates 同一条纪律）。 */
+  const PRODUCT_REPO = process.env.HARNESS_PRODUCT_REPO || "PMZPZM0/PPcode";
+  const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=10`;
+  const PRODUCT_TTL_MS = Math.max(60_000, Number(process.env.HARNESS_PRODUCT_TTL_MS || 10 * 60_000));
+  const PRODUCT_CACHE_FILE = path.join(path.dirname(DATA_FILE), "product-cache.json");
+  /* 功能介绍：唯一真相源在这里（发版时跟着改这一处即可，不用碰页面） */
+  const PRODUCT_FEATURES = [
+    { icon: "🔀", title: "多模型任意切换", desc: "云端下发模型目录，勾选即生效；OpenAI / Anthropic 两种协议都能接。" },
+    { icon: "🔑", title: "云端账号开箱即用", desc: "注册即得代理令牌，上游密钥只在服务端注入，客户端永远拿不到明文。" },
+    { icon: "🧠", title: "记忆空间", desc: "每个账号一把 user_key = 一个独立命名空间，跨会话记得你说过的偏好。" },
+    { icon: "📚", title: "知识库接入", desc: "MCP 端点直连自己的文档库，检索、引用、追问都不用离开对话。" },
+    { icon: "👥", title: "专家团与子智能体", desc: "多角色协作、任务分派与并发执行，长任务可以拆开跑。" },
+    { icon: "☁️", title: "会话云同步", desc: "按账号隔离地备份会话，换台机器登录接着聊；不需要时一键关掉。" },
+    { icon: "💻", title: "本地优先", desc: "会话与文件都在本机，云存储只是可选备份 —— 关掉也能正常用。" },
+    { icon: "⚡", title: "一键更新", desc: "内置更新检查，国内镜像优先；后端热更新，不打断你正在跑的会话。" },
+  ];
+  /** 资产归类：客户端按这个选主下载按钮（只用文件名，不猜仓库结构）。 */
+  function productAssetKind(name) {
+    const n = String(name || "").toLowerCase();
+    if (n.startsWith("sha256") || n.endsWith(".sha256") || n.endsWith(".txt")) return "sha256";
+    if (n.endsWith(".exe") || n.endsWith(".msi")) return "win";
+    if (n.endsWith(".dmg") || n.endsWith(".zip")) {
+      if (n.includes("arm64") || n.includes("aarch64")) return "mac-arm";
+      if (n.includes("x64") || n.includes("intel") || n.includes("x86")) return "mac-x64";
+      if (n.includes("mac") || n.includes("osx")) return "mac-x64";
+      return "other";
+    }
+    return "other";
+  }
+  function shapeRelease(row) {
+    const assets = (Array.isArray(row && row.assets) ? row.assets : []).map((a) => ({
+      name: String(a.name || ""),
+      size: Number(a.size || 0),
+      url: String(a.browser_download_url || ""),
+      kind: productAssetKind(a.name),
+      downloads: Number(a.download_count || 0),
+    }));
+    const pick = (kind) => assets.find((a) => a.kind === kind) || null;
+    return {
+      tag: String(row.tag_name || ""),
+      version: String(row.tag_name || row.name || "").replace(/^v/, ""),
+      name: String(row.name || row.tag_name || ""),
+      url: String(row.html_url || ""),
+      publishedAt: row.published_at || row.created_at || "",
+      prerelease: Boolean(row.prerelease),
+      notes: String(row.body || "").slice(0, 20000),
+      assets,
+      downloads: { win: pick("win"), macArm: pick("mac-arm"), macX64: pick("mac-x64") },
+      sha256: assets.filter((a) => a.kind === "sha256"),
+    };
+  }
+  function readProductCache() {
+    try {
+      const j = JSON.parse(fs.readFileSync(PRODUCT_CACHE_FILE, "utf8"));
+      if (j && Array.isArray(j.releases) && j.releases.length) return j;
+    } catch { /* 没缓存过 / 坏了都当没有 */ }
+    return null;
+  }
+  function writeProductCache(payload) {
+    try { fs.writeFileSync(PRODUCT_CACHE_FILE, JSON.stringify(payload), { mode: 0o600 }); } catch { /* 写不了不影响返回 */ }
+  }
+  let productInflight = null;
+  async function pullProductFromMirrors() {
+    const probe = async (m) => {
+      const t0 = Date.now();
+      try {
+        const r = await fetch(m.prefix + "https://api.github.com" + PRODUCT_RELEASES_PATH, {
+          headers: { "User-Agent": "codex-cloud-admin", Accept: "application/vnd.github+json" },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!r.ok) return { name: m.name, ok: false, status: r.status, ms: Date.now() - t0, rows: [] };
+        const rows = await r.json();
+        return { name: m.name, ok: Array.isArray(rows) && rows.length > 0, status: r.status, ms: Date.now() - t0, rows: Array.isArray(rows) ? rows : [] };
+      } catch (error) {
+        return { name: m.name, ok: false, status: 0, ms: Date.now() - t0, rows: [], error: classifyFetchError(error) };
+      }
+    };
+    const tried = await Promise.all(UPDATE_MIRRORS.map(probe));
+    const good = tried.filter((t) => t.ok).map((t) => ({ ...t, shaped: t.rows.filter((r) => r && !r.draft).map(shapeRelease) }));
+    if (!good.length) return { ok: false, tried };
+    /* 取版本最高的一份（不是"第一个成功"）：镜像滞后会返回旧版本 */
+    const best = good.reduce((a, b) => {
+      const av = (a.shaped[0] && a.shaped[0].version) || "0";
+      const bv = (b.shaped[0] && b.shaped[0].version) || "0";
+      return cmpVersion(bv, av) > 0 ? b : a;
+    });
+    return { ok: true, source: best.name, releases: best.shaped, tried: tried.map((t) => ({ name: t.name, ok: t.ok, status: t.status, ms: t.ms, error: t.error || "" })) };
+  }
+  async function productHome(force) {
+    const disk = readProductCache();
+    const fresh = disk && Date.now() - Number(disk.fetchedAt || 0) < PRODUCT_TTL_MS;
+    if (disk && fresh && !force) return { cached: true, stale: false, ...disk };
+    if (!productInflight) {
+      productInflight = pullProductFromMirrors()
+        .then((res) => {
+          if (!res.ok) return null;
+          const payload = {
+            fetchedAt: Date.now(),
+            source: res.source,
+            releases: res.releases,
+            tried: res.tried,
+          };
+          writeProductCache(payload);
+          return payload;
+        })
+        .catch(() => null)
+        .finally(() => { productInflight = null; });
+    }
+    const pulled = await productInflight;
+    const data = pulled || disk;
+    if (!data) return { ok: false, error: "product-unreachable", message: "取不到版本信息（国内镜像与直连都不通）—— 直接打开 Releases 页", releases: [] };
+    return { cached: false, stale: !pulled, ...data };
+  }
+  if (p === "/product/home" && req.method === "GET") {
+    const force = /(?:^|&)refresh=1(?:&|$)/.test(String(req.url || "").split("?")[1] || "");
+    const data = await productHome(force);
+    const latest = (data.releases && data.releases[0]) || null;
+    const repoUrl = "https://github.com/" + PRODUCT_REPO;
+    return send(200, {
+      ok: Boolean(latest),
+      repo: { slug: PRODUCT_REPO, url: repoUrl, releasesUrl: repoUrl + "/releases", latestUrl: repoUrl + "/releases/latest" },
+      fetchedAt: data.fetchedAt || 0,
+      cached: Boolean(data.cached),
+      stale: Boolean(data.stale),
+      source: data.source || "",
+      tried: data.tried || [],
+      /* 下载加速：与镜像表同源，前端只拼前缀，不在页面里写死域名 */
+      mirrors: UPDATE_MIRRORS.filter((m) => m.prefix).map((m) => ({ name: m.name, prefix: m.prefix })),
+      latest,
+      releases: (data.releases || []).slice(0, 8),
+      features: PRODUCT_FEATURES,
+      message: latest ? "" : (data.message || "暂无发布版本"),
+    });
+  }
+
   if (p === "/api/updates" && req.method === "GET") {
     const rawUrl = UPDATE_REPO_URL.replace("https://github.com/", "https://raw.githubusercontent.com/") + "/main/" + UPDATE_VERSION_PATH;
     const probeOne = async (m) => {
