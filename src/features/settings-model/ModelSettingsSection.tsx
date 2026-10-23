@@ -5,6 +5,7 @@
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
 import { useEffect, useState } from "react";
+import { PPTokenEndpoints } from "../../lib/pptoken-endpoints";
 import { AppSelect } from "../../components/AppSelect";
 import { Check, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, RefreshCw, Rocket, Store, Trash2, X, Zap } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
@@ -72,7 +73,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         const visibleProviders = providersList.filter((p: any) => p.provider !== "limited-benefit");
                         const display = realPptoken
                           ? [...visibleProviders].sort((a, b) => (a.provider === "pptoken" ? 0 : 1) - (b.provider === "pptoken" ? 0 : 1))
-                          : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...visibleProviders];
+                          : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...visibleProviders];
                         return display.map((p) => {
                           const isPseudoPptoken = p.provider === "pptoken" && !realPptoken;
                           const pseudoOff = isPseudoPptoken && pptokenCardOff;
@@ -83,7 +84,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                               onClick={() => {
                                 if (isPseudoPptoken) {
                                   // 未配置的常驻赞助商卡：进表单预填 PPtoken 端点，填密钥保存即可用；启用态与卡片开关联动
-                                  setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
+                                  setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
                                   setEditingProvider(null);
                                   return;
                                 }
@@ -119,7 +120,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                   // 行点击被拦住 → 用户点了开关（开启某个供应商）右侧还停在上一个的界面
                                   // （用户 09-14 实测截图）。逻辑与行点击保持一致。
                                   if (isPseudoPptoken) {
-                                    setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: "https://api.pptoken.cc/v1", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
+                                    setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
                                     setEditingProvider(null);
                                   } else {
                                     setEditingProvider(p.provider);
