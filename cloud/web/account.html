@@ -444,44 +444,138 @@
   #policyCard .pol-field .field:disabled { opacity: .5; cursor: default; }
   #policyCard .pol-field .field { min-height: 34px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; }
   #policyCard .pol-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  /* ── 产品首页（10-23）：版式对齐 dl.ppz123.asia ── */
-  .prod-hero { text-align: center; padding: 28px 24px 24px; }
-  .prod-badge { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px; }
-  .prod-h1 { margin: 0 0 12px; font-size: 32px; line-height: 1.28; font-weight: 700; letter-spacing: -.015em; }
-  .prod-h1 em { font-style: normal; color: var(--brand-ink); }
-  .prod-sub { margin: 0 auto 20px; max-width: 52em; color: var(--muted); font-size: 13.5px; line-height: 1.85; }
-  .prod-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; max-width: 760px; margin: 0 auto; }
-  .prod-fact { border: 1px solid var(--line); border-radius: 10px; background: var(--field); padding: 12px 10px; display: flex; flex-direction: column; gap: 3px; }
-  .prod-fact b { font-size: 16px; font-weight: 700; }
-  .prod-fact span { font-size: 11.5px; color: var(--muted); }
-  .prod-card { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; background: var(--field); }
-  .prod-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .prod-card-head strong { font-size: 16px; }
-  .prod-card-ver { font-size: 13px; color: var(--brand-ink); font-weight: 600; }
-  .prod-card-desc { margin: 6px 0 12px; font-size: 12.5px; color: var(--muted); }
-  .prod-dl-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 9px 0; border-top: 1px solid var(--line-soft); }
-  .prod-os { font-size: 13px; font-weight: 600; display: inline-flex; align-items: baseline; gap: 6px; }
-  .prod-os small { font-weight: 500; color: var(--muted); font-size: 11.5px; }
-  .prod-dl-actions { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .prod-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 12px; }
-  .prod-features { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 4px; }
-  .prod-feat { border: 1px solid var(--line); border-radius: 10px; padding: 13px 14px; background: var(--field); }
-  .prod-feat-icon { font-size: 18px; line-height: 1; }
-  .prod-feat h3 { margin: 8px 0 4px; font-size: 13.5px; font-weight: 600; }
-  .prod-feat p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.7; }
-  .prod-log { display: flex; flex-direction: column; gap: 10px; }
-  .prod-rel { border: 1px solid var(--line); border-radius: 10px; background: var(--field); overflow: hidden; }
-  .prod-rel > summary { cursor: pointer; padding: 11px 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; list-style: none; }
-  .prod-rel > summary::-webkit-details-marker { display: none; }
-  .prod-rel[open] > summary { border-bottom: 1px solid var(--line-soft); }
-  .prod-rel-tag { font-weight: 600; }
-  .prod-rel-date { color: var(--muted); font-size: 12px; }
-  .prod-rel-body { padding: 12px 15px 14px; font-size: 12.5px; line-height: 1.85; }
-  .prod-rel-body .md-h { font-weight: 600; margin: 8px 0 2px; }
-  .prod-rel-body ul { margin: 4px 0 8px; padding-left: 20px; }
-  .prod-rel-body li { margin: 2px 0; }
-  .prod-rel-body code { padding: 1px 5px; border-radius: 5px; background: rgba(0,0,0,.05); font-size: 11.5px; }
-  @media (max-width: 760px) { .prod-h1 { font-size: 24px; } .prod-dl-row { align-items: flex-start; flex-direction: column; } }
+  /* ── 产品首页（10-23 定做版）────────────────────────────────────────────────
+     hero 深色渐变横幅 + 三平台下载卡 + 特色网格 + 日志时间线，全部 .pf-* 独立命名空间。
+     ⛔ 只换皮不动契约：id 一个都不能丢 —— JS 用 prodLink/prodBindCopy 按 id 赋值与显隐，
+        结构随便改、id 换掉就是「按钮点了没反应 / 一直显示不出来」。
+     ⛔ hero 刻意**固定深色**（不跟随主题）：浅色主题下白卡片堆叠没有视觉重心，
+        这是下载页的惯例做法；文字全部浅色，两套主题下对比度都够。 */
+  .pf { display: flex; flex-direction: column; gap: 16px; }
+
+  /* ── hero ───────────────────────────────────────────────────────────── */
+  .pf-hero { position: relative; overflow: hidden; border-radius: 18px; border: 1px solid #2d2444;
+    background:
+      radial-gradient(900px 380px at 8% -12%, #4c1d95 0%, transparent 62%),
+      radial-gradient(720px 340px at 92% 4%, #7c3aed 0%, transparent 58%),
+      linear-gradient(158deg, #17121f 0%, #0e0b16 58%, #0a0813 100%);
+    color: #f5f2ff; box-shadow: 0 20px 50px rgba(28, 8, 66, .3); }
+  .pf-hero::after { content: ""; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px);
+    background-size: 36px 36px;
+    -webkit-mask-image: radial-gradient(760px 360px at 22% 14%, #000 0%, transparent 76%);
+    mask-image: radial-gradient(760px 360px at 22% 14%, #000 0%, transparent 76%); }
+  .pf-hero-in { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 26px; align-items: center; padding: 32px 34px 28px; }
+  .pf-eyebrow { display: inline-flex; align-items: center; gap: 8px; height: 26px; padding: 0 11px;
+    border-radius: 999px; border: 1px solid rgba(167,139,250,.34); background: rgba(167,139,250,.13);
+    color: #d9cfff; font-size: 11.5px; font-weight: 600; letter-spacing: .04em; }
+  /* ⛔ JS 会重写这个元素的 className（成功/失败两态）⇒ 两态都必须带上 .pf-eyebrow，否则样式全丢 */
+  .pf-eyebrow.ok { border-color: rgba(80,220,160,.34); background: rgba(80,220,160,.12); color: #a8f0cd; }
+  .pf-eyebrow.warn { border-color: rgba(245,166,35,.34); background: rgba(245,166,35,.12); color: #f7c977; }
+  .pf-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; flex: none; }
+  .pf-title { margin: 14px 0 12px; font-size: 34px; line-height: 1.22; font-weight: 700; letter-spacing: -.02em; }
+  .pf-title em { font-style: normal;
+    background: linear-gradient(96deg, #ffffff 8%, #cbb9ff 52%, #a78bfa 94%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .pf-sub { margin: 0 0 20px; max-width: 44em; color: #b7b1d2; font-size: 13.5px; line-height: 1.85; }
+  .pf-cta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pf-btn-main { display: inline-flex; align-items: center; gap: 9px; height: 42px; padding: 0 20px; border-radius: 11px;
+    background: linear-gradient(135deg, #a78bfa, #7c3aed); color: #fff; font-size: 13.5px; font-weight: 600;
+    border: 1px solid rgba(255,255,255,.18); box-shadow: 0 10px 24px rgba(124,58,237,.44); }
+  .pf-btn-main:hover { filter: brightness(1.08); text-decoration: none; color: #fff; }
+  .pf-btn-ghost { display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px; border-radius: 11px;
+    border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: #ece8ff; font-size: 13px; font-weight: 500; }
+  .pf-btn-ghost:hover { background: rgba(255,255,255,.12); text-decoration: none; color: #fff; }
+  .pf-hero-meta { margin: 16px 0 0; display: flex; gap: 16px; flex-wrap: wrap; color: #8d87a9; font-size: 11.5px; }
+  .pf-hero-meta b { color: #d7d1ee; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pf-hero-art { position: relative; display: grid; place-items: center; width: 176px; height: 176px; flex: none; }
+  .pf-hero-art::before { content: ""; position: absolute; width: 168px; height: 168px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(167,139,250,.6), transparent 68%); filter: blur(14px); }
+  .pf-hero-art img { position: relative; width: 104px; height: 104px; border-radius: 25px;
+    box-shadow: 0 18px 40px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.09); }
+
+  /* ── 通用面板（下载 / 特色 / 日志共用）─────────────────────────────── */
+  .pf-panel { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 20px 22px; box-shadow: var(--shadow); }
+  .pf-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .pf-head h2 { margin: 0; font-size: 16px; }
+  .pf-head .sp { margin-left: auto; }
+  .pf-ver { font-size: 12px; font-weight: 600; color: var(--brand-ink); background: var(--brand-soft);
+    border-radius: 999px; padding: 2px 9px; font-variant-numeric: tabular-nums; }
+  .pf-note { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+  .pf-note b { color: var(--text); font-weight: 600; }
+
+  /* ── 三平台下载卡 ──────────────────────────────────────────────────── */
+  .pf-os-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(238px, 1fr)); gap: 12px; }
+  .pf-os { display: flex; flex-direction: column; gap: 12px; padding: 15px 16px 16px; border-radius: 13px;
+    border: 1px solid var(--line); background: var(--field);
+    transition: border-color var(--dur), transform var(--dur), box-shadow var(--dur); }
+  .pf-os:hover { border-color: var(--brand2); transform: translateY(-1px); box-shadow: var(--shadow); }
+  .pf-os.rec { border-color: color-mix(in srgb, var(--brand) 42%, var(--line));
+    background: linear-gradient(180deg, var(--brand-soft), var(--field) 74%); }
+  .pf-os-top { display: flex; align-items: flex-start; gap: 10px; }
+  .pf-os-ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: none;
+    background: var(--card); border: 1px solid var(--line); color: var(--brand-ink); }
+  .pf-os-ico svg { width: 17px; height: 17px; display: block; }
+  .pf-os-name { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .pf-os-sub { margin-top: 3px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pf-os-tag { margin-left: auto; flex: none; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+    background: var(--brand); color: #fff; }
+  .pf-os-actions { display: grid; grid-template-columns: 1fr auto auto; gap: 7px; }
+  .pf-os-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 35px; padding: 0 12px;
+    border-radius: 9px; font-size: 12.5px; font-weight: 500; border: 1px solid transparent; white-space: nowrap; }
+  .pf-os-btn.primary { background: linear-gradient(135deg, var(--brand2), var(--brand)); color: #fff; font-weight: 600;
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--brand) 32%, transparent); }
+  .pf-os-btn.primary:hover { filter: brightness(1.07); text-decoration: none; color: #fff; }
+  .pf-os-btn.quiet { background: transparent; color: var(--text); border-color: var(--line); }
+  .pf-os-btn.quiet:hover { border-color: var(--brand2); color: var(--brand-ink); text-decoration: none; }
+  .pf-foot { display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+    padding-top: 12px; margin-top: 14px; border-top: 1px solid var(--line-soft); font-size: 12px; }
+
+  /* ── 特色网格 ──────────────────────────────────────────────────────── */
+  .pf-feats { display: grid; grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); gap: 12px; }
+  .pf-feat { padding: 15px 16px; border-radius: 13px; border: 1px solid var(--line); background: var(--card);
+    transition: border-color var(--dur), transform var(--dur), box-shadow var(--dur); }
+  .pf-feat:hover { border-color: var(--brand2); transform: translateY(-2px); box-shadow: var(--shadow); }
+  .pf-feat-ico { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; font-size: 16px; line-height: 1;
+    background: linear-gradient(140deg, var(--brand-soft), transparent 78%); border: 1px solid var(--line-soft); }
+  .pf-feat h3 { margin: 10px 0 5px; font-size: 13.5px; font-weight: 600; }
+  .pf-feat p { margin: 0; font-size: 12px; line-height: 1.7; color: var(--muted); }
+
+  /* ── 更新日志：时间线 ──────────────────────────────────────────────── */
+  .pf-log { position: relative; display: flex; flex-direction: column; padding-left: 17px; }
+  .pf-log::before { content: ""; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px;
+    background: linear-gradient(180deg, var(--brand2), var(--line) 62%); }
+  .pf-rel { position: relative; }
+  .pf-rel::before { content: ""; position: absolute; left: -17px; top: 16px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--card); border: 2px solid var(--line); }
+  .pf-rel.latest::before { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+  .pf-rel > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 9px 12px; border-radius: 10px; transition: background var(--dur); }
+  .pf-rel > summary::-webkit-details-marker { display: none; }
+  .pf-rel > summary:hover { background: var(--field); }
+  .pf-rel[open] > summary { background: var(--field); }
+  /* 展开/收起文案用伪元素跟着 open 状态切，省一个 JS 监听 */
+  .pf-rel > summary::after { content: "展开"; margin-left: auto; color: var(--faint); font-size: 11.5px; }
+  .pf-rel[open] > summary::after { content: "收起"; }
+  .pf-rel-tag { font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .pf-rel-date { color: var(--muted); font-size: 12px; }
+  /* ⛔ 首个版本说明常常几百行：正文限高滚动，否则整页被撑到 3000px+（实测 3242px） */
+  .pf-rel-body { padding: 2px 12px 14px; font-size: 12.5px; line-height: 1.85;
+    max-height: 320px; overflow: auto; overscroll-behavior: contain;
+    scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  .pf-rel-body .md-h { font-weight: 600; margin: 10px 0 2px; }
+  .pf-rel-body ul { margin: 4px 0 8px; padding-left: 20px; }
+  .pf-rel-body li { margin: 2px 0; }
+  .pf-rel-body code { padding: 1px 5px; border-radius: 5px; background: var(--field); border: 1px solid var(--line-soft); font-size: 11.5px; }
+
+  @media (max-width: 860px) {
+    .pf-hero-in { grid-template-columns: 1fr; padding: 26px 22px 22px; }
+    .pf-hero-art { display: none; }             /* 窄屏把图标让位给文案，不然首屏全是图 */
+    .pf-title { font-size: 25px; }
+    .pf-os-actions { grid-template-columns: 1fr auto auto; }
+  }
 
   /* Manager 三步说明：⛔ 列表里带长路径，不给 code 一点内边距会排成一团乱行 */
   #wbmGuideCard .wbm-steps { margin: 12px 0 0; padding-left: 22px; color: var(--muted); font-size: 12.5px; line-height: 1.85; }
@@ -571,70 +665,96 @@
   <main class="main">
     <!-- ── 用户中心 ─────────────────────────────────────────────── -->
     <!-- 产品首页（10-23 用户令）：下载 PPcode / 功能介绍 / 更新日志 —— 版式对齐 dl.ppz123.asia，内容自动维护 -->
+    <!-- 产品首页（10-23 用户令「定做一个」）：hero 横幅 + 三平台下载 + 特色 + 时间线日志。
+         内容全部来自 /product/home（版本、资产、镜像、特色、说明），页面不写死任何版本号。 -->
     <section class="tab" data-tab="product" hidden>
-      <div class="card prod-hero">
-        <span class="pill plain prod-badge" id="prodBadge">正在检查最新版本…</span>
-        <h1 class="prod-h1">为深度使用而生的<br /><em>AI 编码工作台</em></h1>
-        <p class="prod-sub" id="prodSub">把 Codex 引擎、多会话、专家团、技能与记忆整合成一个本地优先的桌面环境 ——
-          你的代码与会话始终留在自己机器上。</p>
-        <div class="prod-facts">
-          <div class="prod-fact"><b id="prodFactVer">—</b><span>当前版本</span></div>
-          <div class="prod-fact"><b id="prodFactDate">—</b><span>发布时间</span></div>
-          <div class="prod-fact"><b>3 平台</b><span>Windows · macOS Intel · Apple 芯片</span></div>
-          <div class="prod-fact"><b>国内镜像</b><span>无需科学上网</span></div>
-        </div>
-      </div>
+      <div class="pf">
 
-      <div class="card" style="margin-top:14px">
-        <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">选择你的版本
-          <span class="pill plain" id="prodSrcPill">—</span>
-          <button class="btn sm ghost" id="prodRefresh" style="margin-left:auto">刷新</button></h2>
-        <p class="hint" style="margin:0 0 12px">三个平台共用同一套内核与更新通道。镜像与官方包内容一致，可用 SHA256 校验。</p>
-        <article class="prod-card">
-          <div class="prod-card-head"><strong id="prodName">客户端</strong><span class="prod-card-ver" id="prodVersion">—</span>
-            <span class="pill ok">桌面客户端</span></div>
-          <p class="prod-card-desc" id="prodDesc">完整内核与全部能力；云端账号开箱即用，本地优先存储。</p>
-          <div class="prod-dl-row">
-            <span class="prod-os">Windows <small>x64</small> <small class="prod-size" id="prodSizeWin"></small></span>
-            <span class="prod-dl-actions">
-              <a class="btn primary sm" id="prodDlWinMirror" target="_blank" rel="noopener" href="#">镜像下载</a>
-              <a class="btn sm ghost" id="prodDlWin" target="_blank" rel="noopener" href="#">GitHub</a>
-              <button class="btn sm ghost" id="prodCopyWin">复制链接</button>
-            </span>
+        <section class="pf-hero">
+          <div class="pf-hero-in">
+            <div>
+              <span class="pf-eyebrow" id="prodBadge"><i class="dot"></i>正在检查最新版本…</span>
+              <h1 class="pf-title">为深度使用而生的<br /><em>AI 编码工作台</em></h1>
+              <p class="pf-sub" id="prodSub">把 Codex 引擎、多会话、专家团、技能与记忆整合成一个本地优先的桌面环境 ——
+                你的代码与会话始终留在自己机器上。</p>
+              <div class="pf-cta">
+                <a class="pf-btn-main" id="prodHeroWin" target="_blank" rel="noopener" href="#">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M3 5.5l7.5-1v6.9H3V5.5zm8.7-1.2L21 3v8.4h-9.3V4.3zM3 12.6h7.5v6.9L3 18.5v-5.9zm8.7 0H21V21l-9.3-1.3v-7.1z"/></svg>
+                  下载 Windows 版
+                </a>
+                <a class="pf-btn-ghost" id="prodAll" target="_blank" rel="noopener" href="#">全部版本</a>
+              </div>
+              <p class="pf-hero-meta">
+                <span>最新版 <b id="prodFactVer">—</b></span>
+                <span>发布于 <b id="prodFactDate">—</b></span>
+                <span>3 平台 · 国内镜像加速</span>
+              </p>
+            </div>
+            <div class="pf-hero-art"><img src="/cloud-api/api/favicon?size=256" alt="" /></div>
           </div>
-          <div class="prod-dl-row">
-            <span class="prod-os">macOS <small>Intel</small> <small class="prod-size" id="prodSizeMacX64"></small></span>
-            <span class="prod-dl-actions">
-              <a class="btn primary sm" id="prodDlMacX64Mirror" target="_blank" rel="noopener" href="#">镜像下载</a>
-              <a class="btn sm ghost" id="prodDlMacX64" target="_blank" rel="noopener" href="#">GitHub</a>
-              <button class="btn sm ghost" id="prodCopyMacX64">复制链接</button>
-            </span>
+        </section>
+
+        <section class="pf-panel">
+          <div class="pf-head">
+            <h2>选择你的版本</h2>
+            <span class="pf-ver" id="prodVersion">—</span>
+            <span class="pill plain" id="prodSrcPill">—</span>
+            <button class="btn sm ghost sp" id="prodRefresh">刷新</button>
           </div>
-          <div class="prod-dl-row">
-            <span class="prod-os">macOS <small>Apple 芯片</small> <small class="prod-size" id="prodSizeMacArm"></small></span>
-            <span class="prod-dl-actions">
-              <a class="btn primary sm" id="prodDlMacArmMirror" target="_blank" rel="noopener" href="#">镜像下载</a>
-              <a class="btn sm ghost" id="prodDlMacArm" target="_blank" rel="noopener" href="#">GitHub</a>
-              <button class="btn sm ghost" id="prodCopyMacArm">复制链接</button>
-            </span>
+          <p class="pf-note"><b id="prodName">客户端</b> · <span id="prodDesc">完整内核与全部能力；云端账号开箱即用，本地优先存储。</span></p>
+          <div class="pf-os-grid">
+            <article class="pf-os rec">
+              <div class="pf-os-top">
+                <span class="pf-os-ico"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5l7.5-1v6.9H3V5.5zm8.7-1.2L21 3v8.4h-9.3V4.3zM3 12.6h7.5v6.9L3 18.5v-5.9zm8.7 0H21V21l-9.3-1.3v-7.1z"/></svg></span>
+                <div><div class="pf-os-name">Windows</div><div class="pf-os-sub">x64 · <span id="prodSizeWin">—</span></div></div>
+                <span class="pf-os-tag">推荐</span>
+              </div>
+              <div class="pf-os-actions">
+                <a class="pf-os-btn primary" id="prodDlWinMirror" target="_blank" rel="noopener" href="#">镜像下载</a>
+                <a class="pf-os-btn quiet" id="prodDlWin" target="_blank" rel="noopener" href="#">GitHub</a>
+                <button class="pf-os-btn quiet" id="prodCopyWin">复制</button>
+              </div>
+            </article>
+            <article class="pf-os">
+              <div class="pf-os-top">
+                <span class="pf-os-ico"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1 12.9c0-2.2 1.8-3.3 1.9-3.4-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.4.8-.7 0-1.8-.8-3-.8-1.5 0-2.9.9-3.7 2.3-1.6 2.7-.4 6.8 1.1 9 .8 1.1 1.7 2.3 2.9 2.2 1.2 0 1.6-.7 3-.7s1.8.7 3 .7c1.2 0 2-1.1 2.8-2.2.9-1.3 1.3-2.5 1.3-2.6-.1 0-2.7-1-2.7-3.6zM14 6.3c.6-.8 1-1.8.9-2.9-.9.1-2 .6-2.6 1.4-.6.7-1.1 1.8-.9 2.8 1 .1 2-.5 2.6-1.3z"/></svg></span>
+                <div><div class="pf-os-name">macOS</div><div class="pf-os-sub">Intel · <span id="prodSizeMacX64">—</span></div></div>
+              </div>
+              <div class="pf-os-actions">
+                <a class="pf-os-btn primary" id="prodDlMacX64Mirror" target="_blank" rel="noopener" href="#">镜像下载</a>
+                <a class="pf-os-btn quiet" id="prodDlMacX64" target="_blank" rel="noopener" href="#">GitHub</a>
+                <button class="pf-os-btn quiet" id="prodCopyMacX64">复制</button>
+              </div>
+            </article>
+            <article class="pf-os">
+              <div class="pf-os-top">
+                <span class="pf-os-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.2"/><path d="M10 3v2M14 3v2M10 19v2M14 19v2M3 10h2M3 14h2M19 10h2M19 14h2" stroke-linecap="round"/></svg></span>
+                <div><div class="pf-os-name">macOS</div><div class="pf-os-sub">Apple 芯片 · <span id="prodSizeMacArm">—</span></div></div>
+              </div>
+              <div class="pf-os-actions">
+                <a class="pf-os-btn primary" id="prodDlMacArmMirror" target="_blank" rel="noopener" href="#">镜像下载</a>
+                <a class="pf-os-btn quiet" id="prodDlMacArm" target="_blank" rel="noopener" href="#">GitHub</a>
+                <button class="pf-os-btn quiet" id="prodCopyMacArm">复制</button>
+              </div>
+            </article>
           </div>
-          <div class="prod-card-foot">
+          <div class="pf-foot">
             <a id="prodSha" href="#" target="_blank" rel="noopener">SHA256 校验文件</a>
             <span class="hint" id="prodMeta" role="status" aria-live="polite">正在获取最新版本…</span>
           </div>
-        </article>
-      </div>
+        </section>
 
-      <div class="card" style="margin-top:14px">
-        <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">功能特色 <span class="pill plain" id="prodFeatPill">—</span></h2>
-        <div class="prod-features" id="prodFeatures"></div>
-      </div>
+        <section class="pf-panel">
+          <div class="pf-head"><h2>功能特色</h2><span class="pill plain" id="prodFeatPill">—</span></div>
+          <div class="pf-feats" id="prodFeatures"></div>
+        </section>
 
-      <div class="card" style="margin-top:14px">
-        <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">更新日志 <span class="pill plain" id="prodLogPill">—</span>
-          <a class="btn sm ghost" id="prodAll" style="margin-left:auto" target="_blank" rel="noopener">全部版本</a></h2>
-        <p class="hint" style="margin:0 0 10px">自动从发布仓库读取（国内镜像与直连并行，取最新那份；服务端缓存 10 分钟）。</p>
-        <div class="prod-log" id="prodLog"><div class="empty">加载中…</div></div>
+        <section class="pf-panel">
+          <div class="pf-head"><h2>更新日志</h2><span class="pill plain" id="prodLogPill">—</span></div>
+          <p class="pf-note">自动从发布仓库读取（国内镜像与直连并行取最新那份，服务端缓存 10 分钟）。</p>
+          <div class="pf-log" id="prodLog"><div class="empty">加载中…</div></div>
+        </section>
+
       </div>
     </section>
 
@@ -1686,7 +1806,7 @@
       if (!r.ok || !j.ok) {
         if (logBox) logBox.innerHTML = '<div class="empty">' + esc(j.message || j.error || ("读取失败 HTTP " + r.status)) + "</div>";
         if ($("prodMeta")) $("prodMeta").textContent = j.message || "取不到版本信息";
-        if ($("prodBadge")) { $("prodBadge").className = "pill warn prod-badge"; $("prodBadge").textContent = "版本信息暂不可用"; }
+        if ($("prodBadge")) { $("prodBadge").className = "pf-eyebrow warn"; $("prodBadge").innerHTML = '<i class="dot"></i>版本信息暂不可用'; }
         return;
       }
       PRODUCT = j;
@@ -1698,7 +1818,7 @@
       var rel = j.latest || {}, d = rel.downloads || {};
       var m0 = (j.mirrors || [])[0] || { prefix: "", name: "国内镜像" };
       var win = d.win, macArm = d.macArm, macX64 = d.macX64;
-      if ($("prodBadge")) { $("prodBadge").className = "pill ok prod-badge"; $("prodBadge").textContent = "最新版本 " + (rel.tag || "—") + " · " + prodDate(rel.publishedAt); }
+      if ($("prodBadge")) { $("prodBadge").className = "pf-eyebrow ok"; $("prodBadge").innerHTML = '<i class="dot"></i>最新版本 ' + esc(rel.tag || "—") + " · " + esc(prodDate(rel.publishedAt)); }
       if ($("prodFactVer")) $("prodFactVer").textContent = rel.tag || "—";
       if ($("prodFactDate")) $("prodFactDate").textContent = prodDate(rel.publishedAt);
       if ($("prodVersion")) $("prodVersion").textContent = rel.tag || "—";
@@ -1714,6 +1834,12 @@
       prodLink($("prodDlMacArm"), macArm && macArm.url, "GitHub");
       prodLink($("prodSha"), (rel.sha256 && rel.sha256[0] && rel.sha256[0].url) || "", "SHA256 校验文件");
       prodLink($("prodAll"), (j.repo && j.repo.releasesUrl) || "", "全部版本");
+      /* hero 主 CTA：优先国内镜像（用户令「默认走国内镜像」）；没有资产就整颗按钮不显示 */
+      var heroWin = $("prodHeroWin");
+      if (heroWin) {
+        var heroUrl = prodMirrorUrl(m0.prefix, win && win.url) || (win && win.url) || "";
+        if (heroUrl) { heroWin.style.display = ""; heroWin.href = heroUrl; } else { heroWin.style.display = "none"; }
+      }
       prodBindCopy("prodCopyWin", function () { return prodMirrorUrl(m0.prefix, win && win.url) || (win && win.url) || ""; });
       prodBindCopy("prodCopyMacX64", function () { return prodMirrorUrl(m0.prefix, macX64 && macX64.url) || (macX64 && macX64.url) || ""; });
       prodBindCopy("prodCopyMacArm", function () { return prodMirrorUrl(m0.prefix, macArm && macArm.url) || (macArm && macArm.url) || ""; });
@@ -1726,20 +1852,21 @@
       var fbox = $("prodFeatures");
       if (fbox) {
         fbox.innerHTML = (j.features || []).map(function (f) {
-          return '<div class="prod-feat"><div class="prod-feat-icon">' + esc(f.icon || "•") + "</div>"
-            + "<h3>" + esc(f.title) + "</h3><p>" + esc(f.desc) + "</p></div>";
+          return '<article class="pf-feat"><div class="pf-feat-ico">' + esc(f.icon || "•") + "</div>"
+            + "<h3>" + esc(f.title) + "</h3><p>" + esc(f.desc) + "</p></article>";
         }).join("");
         if ($("prodFeatPill")) $("prodFeatPill").textContent = (j.features || []).length + " 项";
       }
       var rels = j.releases || [];
       if (logBox) {
         logBox.innerHTML = rels.length ? rels.map(function (x, i) {
-          return '<details class="prod-rel"' + (i === 0 ? " open" : "") + ">"
-            + "<summary><span class='prod-rel-tag'>" + esc(x.tag || "") + "</span>"
-            + "<span class='prod-rel-date'>" + prodDate(x.publishedAt) + "</span>"
+          return '<details class="pf-rel' + (i === 0 ? " latest" : "") + '"' + (i === 0 ? " open" : "") + ">"
+            + "<summary><span class='pf-rel-tag'>" + esc(x.tag || "") + "</span>"
+            + "<span class='pf-rel-date'>" + esc(prodDate(x.publishedAt)) + "</span>"
             + (x.prerelease ? '<span class="pill warn">预发布</span>' : "")
-            + '<a class="hint" style="margin-left:auto" href="' + esc(x.url || "#") + '" target="_blank" rel="noopener">查看</a></summary>'
-            + '<div class="prod-rel-body">' + (prodMd(x.notes) || '<span class="hint">这个版本没有写说明</span>') + "</div></details>";
+            + (i === 0 ? '<span class="pill ok">最新</span>' : "")
+            + '<a class="hint" href="' + esc(x.url || "#") + '" target="_blank" rel="noopener">查看</a></summary>'
+            + '<div class="pf-rel-body">' + (prodMd(x.notes) || '<span class="hint">这个版本没有写说明</span>') + "</div></details>";
         }).join("") : '<div class="empty">还没有发布版本</div>';
         if ($("prodLogPill")) $("prodLogPill").textContent = "最新 " + rels.length + " 个版本";
       }
