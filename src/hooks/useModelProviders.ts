@@ -204,6 +204,26 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     void window.codex.getCustomModel().then((result) => { setCustomModel(result); }).catch(() => undefined);
   }, []);
 
+  /* 云端模型列表来自账号服务端目录；列表刷新后把当前编辑的云端行同步进草稿。 */
+  useEffect(() => {
+    if (editingProvider !== "cloud" || savingSettings) return;
+    const row = providersList.find((entry) => entry.provider === "cloud");
+    const models = row?.models ?? [];
+    if (!models.length) return;
+    setCustomDraft((cur) => {
+      if (cur.provider !== "cloud") return cur;
+      const prev = new Map((cur.models ?? []).map((m) => [m.id, m]));
+      const merged = models.map((m) => ({ ...m, enabled: prev.get(m.id)?.enabled ?? m.enabled }));
+      const same = merged.length === (cur.models ?? []).length && merged.every((m, i) => {
+        const old = (cur.models ?? [])[i];
+        return Boolean(old) && old.id === m.id && old.enabled === m.enabled;
+      });
+      if (same) return cur;
+      const model = merged.some((m) => m.id === cur.model) ? cur.model : (merged.find((m) => m.enabled !== false)?.id ?? merged[0]?.id ?? "");
+      return { ...cur, models: merged, model };
+    });
+  }, [providersList, editingProvider, savingSettings]);
+
   // （原「useEffect([]) 里读一次 getCustomModel」已并入上方 loadProviders 的重试链：
   //   启动竞态下它第一次会读到 null/旧值，读两次不如按"供应商就绪"的时机读一次准。）
 
@@ -234,6 +254,7 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
         upstreamProtocol: dedupedDraft.upstreamProtocol ?? "auto",
       });
       adoptSavedProvider(saved);
+      void refreshActive();
       onEngineApplied?.();
       onNotice(saved.enabled === false ? "供应商已保存（保持禁用）" : "自定义模型已保存，Codex 服务已重新加载");
       return saved;
@@ -246,6 +267,34 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
   }
 
   async function probeProvider(mode: "list" | "test") {
+    /* 云端模型目录在账号服务端，代理网关不提供 /models；列表刷新走 cloud-models:sync。 */
+    if (mode === "list" && customDraft.provider === "cloud") {
+      setProbingProvider("list");
+      setProviderStatus("");
+      try {
+        const sync = await (window.codex as any).cloudModelsSync?.({ force: true });
+        if (!sync) throw new Error("当前构建不支持云端模型刷新");
+        if (!sync.ok) throw new Error(sync.error || "云端模型同步失败");
+        const { providers, current } = await window.codex.listCustomModels();
+        setProvidersList(providers);
+        setCurrentProvider(current);
+        const row = providers.find((entry) => entry.provider === "cloud");
+        const models = row?.models ?? [];
+        if (models.length) {
+          setCustomDraft((cur) => cur.provider === "cloud" ? { ...cur, models, model: cur.model || row?.model || models[0]?.id || "" } : cur);
+        }
+        const detail = `已刷新云端模型 · ${models.length || sync.models} 个模型（来自云账号目录）`;
+        setProviderStatus(detail);
+        onProbeSuccess?.("云端模型已刷新", detail);
+      } catch (error: any) {
+        const failure = classifyProviderProbeFailure(String(error?.message ?? error));
+        setProviderStatus(`刷新云端模型失败：${failure}`);
+        onNotice(`刷新云端模型失败：${failure}`);
+      } finally {
+        setProbingProvider(null);
+      }
+      return;
+    }
     setProbingProvider(mode);
     setProviderStatus("");
     try {
@@ -366,6 +415,7 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
       setCustomModel(selected);
       onSelect(`custom:${selected.provider}:${selected.model}`);
       onNotice("已切换到 " + selected.name);
+      void refreshActive();
     } catch (error: any) {
       onNotice(error.message);
     }
@@ -466,6 +516,7 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
         setCustomDraft((current) => current.provider === providerId ? { ...current, enabled: updated.enabled ?? true } : current);
       }
       onNotice(enabled ? `已启用 ${updated.name}` : `已禁用 ${updated.name}`);
+      void refreshActive();
     } catch (error: any) {
       onNotice(error.message);
     }
