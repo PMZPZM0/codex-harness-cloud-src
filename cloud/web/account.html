@@ -841,8 +841,18 @@
     <section class="tab" data-tab="pair" hidden>
       <div class="page-head"><h1>配对中心</h1><p>把这台电脑绑到账号，或解除不再使用的设备。</p></div>
 
+      <!-- ⛔ 10-23 用户需求：两种模式。**默认本机模式**（不检测云助手）；只有云模式才探测本机助手。 -->
       <div class="card">
-        <h2>本机助手 <span class="tag" id="agentPill">探测中…</span></h2>
+        <h2>运行模式</h2>
+        <div class="btn-row" id="pairModeRow">
+          <button class="btn primary" id="pairModeLocal" data-mode="local">本机模式</button>
+          <button class="btn" id="pairModeCloud" data-mode="cloud">云模式</button>
+        </div>
+        <div class="hint" id="pairModeHint" style="margin-top:8px"></div>
+      </div>
+
+      <div class="card" id="agentCard" hidden>
+        <h2>本机助手（云助手） <span class="tag" id="agentPill">未检测</span></h2>
         <div class="kv" id="agentInfo"><div class="k">状态</div><div>正在探测本机助手…</div></div>
         <div class="btn-row">
           <button class="btn" id="agentRetry">重新检测</button>
@@ -5643,7 +5653,30 @@
     }).catch(function () { });
   }
 
-  function refreshPairing() { probeAgent(); loadDevices(); }
+  /* ⛔ 10-23 用户需求：配对中心两种模式 —— 默认**本机模式**（不检测云助手），
+     云模式才探测本机助手（127.0.0.1:8917）。模式选择记在 localStorage，跨刷新保留。 */
+  var PAIR_MODE_KEY = "chc-pair-mode";
+  function getPairMode() {
+    try { return localStorage.getItem(PAIR_MODE_KEY) === "cloud" ? "cloud" : "local"; } catch (e) { return "local"; }
+  }
+  function applyPairMode(mode) {
+    var cloud = mode === "cloud";
+    var card = $("agentCard");
+    if (card) card.hidden = !cloud;
+    var bLocal = $("pairModeLocal"), bCloud = $("pairModeCloud");
+    if (bLocal) { bLocal.className = "btn" + (cloud ? "" : " primary"); }
+    if (bCloud) { bCloud.className = "btn" + (cloud ? " primary" : ""); }
+    if ($("pairModeHint")) {
+      $("pairModeHint").innerHTML = cloud
+        ? "云模式：会检测本机 127.0.0.1 上的 <b>云助手</b>，用于把本机绑到云端账号。"
+        : "本机模式（默认）：不检测云助手，只做本机配对与设备管理。";
+    }
+    if (cloud) probeAgent();   /* ⛔ 只有云模式才发起探测 */
+    else if ($("agentPill")) { $("agentPill").className = "tag"; $("agentPill").textContent = "未检测"; $("agentPill").style.cssText = ""; }
+  }
+  function refreshPairing() { applyPairMode(getPairMode()); loadDevices(); }
+  if ($("pairModeLocal")) $("pairModeLocal").onclick = function () { try { localStorage.setItem(PAIR_MODE_KEY, "local"); } catch (e) {} applyPairMode("local"); };
+  if ($("pairModeCloud")) $("pairModeCloud").onclick = function () { try { localStorage.setItem(PAIR_MODE_KEY, "cloud"); } catch (e) {} applyPairMode("cloud"); };
 })();
   /* ── 10-18 自动更新开关（**必须在主 IIFE 内**：api() 与 session 都是这里的局部变量，
      放到外部 <script> 里会永远读不到 —— 实测表现是"读取中…"或点了没反应）── */
