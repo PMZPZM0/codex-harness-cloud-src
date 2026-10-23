@@ -1597,7 +1597,12 @@ function inviteView(row) {
   };
 }
 function inviteList() {
-  return Object.values(db.invites).map(inviteView).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  /* ⛔ 审查修复（10-23）：只列**管理员手发码**（owner 为空）。用户个人码是自动生成的，
+     混进来会把「我发的码」列表冲成几百条（每用户一个）。个人码看 /admin/invite 的统计表。 */
+  return Object.values(db.invites)
+    .filter((row) => !row.owner)
+    .map(inviteView)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 /** 是否强制要邀请码：**表非空 ∥ 配了主码**。
  *  ⛔ 两者都空 ⇒ 回归开放注册 —— 否则全新部署一个码都没有，谁也注册不了（把自己锁在门外）。 */
@@ -2122,6 +2127,15 @@ const server = http.createServer(async (req, res) => {
          ⛔ 所有消费入口（/integrations、/kb/*）仍会再调 ensure*，这里只是提前预热。 */
       /* 邀请关系与奖励（10-23）：仅**个人码**（有 owner）计数发奖；管理员手发码只记 usedBy 不记关系。 */
       let inviteReward = 0;
+      /* ⛔ 审查修复（10-23）：管理员**手发码**（owner 空）注册的用户也要落关系 ——
+         否则这些人在邀请树里没有根（管理端看不到「谁是通过我的码进来的」）。
+         ⛔ 不发奖励：手发码不是个人邀请，奖励只发给「个人邀请码」的持有人。 */
+      if (invite && !invite.owner) {
+        db.inviteRelations[username] = {
+          inviter: String(invite.createdBy || "管理员"), code: invite.code, at: Date.now(),
+          rewarded: false, points: 0, via: "manual-code",
+        };
+      }
       if (invite && invite.owner) {
         const policy = invitePolicyOf();
         const invitedBy = String(invite.owner);
@@ -2134,7 +2148,7 @@ const server = http.createServer(async (req, res) => {
           rewarded = true;
         }
         db.inviteRelations[username] = {
-          inviter: invitedBy, code: invite.code, at: Date.now(), rewarded, points: inviteReward,
+          inviter: invitedBy, code: invite.code, at: Date.now(), rewarded, points: inviteReward, via: "personal",
         };
         console.log("[invite] " + username + " 通过 " + invitedBy + " 的邀请码注册" + (rewarded ? "，奖励 " + inviteReward + " 积分" : "（奖励未发放）"));
       }
@@ -3639,7 +3653,7 @@ const server = http.createServer(async (req, res) => {
       policy: invitePolicyOf(),
       count: list.length,
       totalReward,
-      invitees: list.slice(0, 100).map((x) => ({ username: x.username, at: Number(x.at || 0), rewarded: Boolean(x.rewarded), points: Number(x.points || 0) })),
+      invitees: list.slice(0, 100).map((x) => ({ username: x.username, at: Number(x.at || 0), rewarded: Boolean(x.rewarded), points: Number(x.points || 0), via: x.via || "" })),
     });
   }
 
@@ -3814,7 +3828,7 @@ const server = http.createServer(async (req, res) => {
         invitedCount: list.length,
         totalReward: list.reduce((n, x) => n + Number(x.points || 0), 0),
         lastAt: list.length ? Number(list[0].at || 0) : 0,
-        invitees: list.slice(0, 200).map((x) => ({ username: x.username, at: Number(x.at || 0), rewarded: Boolean(x.rewarded), points: Number(x.points || 0) })),
+        invitees: list.slice(0, 200).map((x) => ({ username: x.username, at: Number(x.at || 0), rewarded: Boolean(x.rewarded), points: Number(x.points || 0), via: x.via || "" })),
       };
     }).sort((a, b) => b.invitedCount - a.invitedCount || a.username.localeCompare(b.username));
     return send(200, {
