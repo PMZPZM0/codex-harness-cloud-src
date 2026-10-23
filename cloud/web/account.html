@@ -2026,8 +2026,11 @@
     });
     Array.prototype.forEach.call(document.querySelectorAll(".nav-item"), function (b) { b.classList.toggle("on", b.getAttribute("data-tab") === tab); });
     if (tab === "product") loadProductHome(false);
-    if (tab === "subscribe" && typeof loadSubscribe === "function") loadSubscribe();
-    if (tab === "adminBilling" && typeof loadAdminBilling === "function") loadAdminBilling();
+    /* ⛔ 10-23 修复：loadSubscribe / loadAdminBilling 定义在订阅块（独立 IIFE）里，
+       这里的 typeof 检查恒 false ⇒ 两个 tab 从未被加载过（永远「加载中」）。
+       改走 __subBridge（订阅块把自己挂上去）。 */
+    if (tab === "subscribe" && window.__subBridge && typeof window.__subBridge.loadSubscribe === "function") window.__subBridge.loadSubscribe();
+    if (tab === "adminBilling" && window.__subBridge && typeof window.__subBridge.loadAdminBilling === "function") window.__subBridge.loadAdminBilling();
     if (tab === "user") loadPoints();
     if (tab === "pair") refreshPairing();
     if (tab === "cloud") refreshCloud();
@@ -5988,6 +5991,10 @@
       savePlan(payload, "已保存「" + payload.name + "」");
     };
   }
+  /* ⛔ 10-23：把两个 tab 的加载函数暴露给主 IIFE 的 show()（跨 IIFE 只能走桥）。 */
+  window.__subBridge.loadSubscribe = loadSubscribe;
+  window.__subBridge.loadAdminBilling = loadAdminBilling;
+
   if ($("plReset") && !$("plReset").dataset.bound) {
     $("plReset").dataset.bound = "1";
     $("plReset").onclick = function () {
