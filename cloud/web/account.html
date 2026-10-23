@@ -887,24 +887,30 @@
     </section>
 
     <!-- ── 管理端「订阅与充值」（10-23）：套餐 CRUD / 支付渠道配置 / 充值对账与手动补单 ── -->
+    <!-- ── 订阅与充值（10-23 用户定稿三板块）：余额充值配置 / 订阅套餐设置 / 支付设置 ── -->
     <section class="tab" data-tab="adminBilling" hidden>
       <div class="card">
-        <h2>支付与积分比例</h2>
-        <p class="hint" style="margin:0 0 12px">走易支付协议（彩虹易支付 / sub2api 同款参数）：填网关、商户 ID、商户密钥；留空密钥 = 保持原密钥。比例 = 1 元人民币兑换多少积分。</p>
+        <h2>余额充值配置</h2>
+        <div class="sub-hero-top" style="margin-bottom:12px">
+          <p class="hint" style="margin:0">充值比例与最低充值金额在这里定；给单个用户发积分走「用户管理中心」。</p>
+          <div class="sub-balance">
+            <span id="blWho">当前账户</span>
+            <span>当前积分</span>
+            <b id="blBalance">—</b>
+          </div>
+        </div>
         <div class="pol-grid">
           <div class="pol-field"><label>1 元 = 多少积分</label><input class="field" id="blPointsPerCny" type="number" min="1" step="1" /></div>
           <div class="pol-field"><label>最低充值（元）</label><input class="field" id="blMinCny" type="number" min="1" step="1" /></div>
-          <div class="pol-field"><label>支付网关地址</label><input class="field" id="blGate" placeholder="https://pay.example.com" /></div>
-          <div class="pol-field"><label>商户 ID（pid）</label><input class="field" id="blPid" /></div>
-          <div class="pol-field"><label>商户密钥（key，留空保持）</label><input class="field" id="blKey" type="password" autocomplete="new-password" /></div>
         </div>
         <div class="pol-actions">
-          <button class="btn primary" id="blSave">保存配置</button>
+          <button class="btn primary" id="blSaveTopup">保存充值配置</button>
           <span class="status" id="blStatus" role="status"></span>
         </div>
+        <div class="hint" id="blChannel" style="margin-top:10px"></div>
       </div>
       <div class="card">
-        <h2>套餐管理</h2>
+        <h2>订阅套餐设置</h2>
         <div class="table-wrap"><table class="mb-table">
           <thead><tr><th>名称</th><th>价格（积分）</th><th>时长（天）</th><th>包含</th><th>状态</th><th>操作</th></tr></thead>
           <tbody id="blPlanRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
@@ -931,6 +937,19 @@
           <button class="btn primary" id="plSave">保存套餐</button>
           <button class="btn" id="plReset">清空表单</button>
           <span class="status" id="plStatus" role="status"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>支付设置</h2>
+        <p class="hint" style="margin:0 0 12px">走易支付协议（彩虹易支付 / sub2api 同款参数）。三项都填好并保存后，用户端充值入口才会亮起；商户密钥留空 = 保持原密钥。回调地址 = 服务对外基址 + /pay/notify（自动拼，不用手填）。</p>
+        <div class="pol-grid">
+          <div class="pol-field"><label>支付网关地址</label><input class="field" id="blGate" placeholder="https://pay.example.com" /></div>
+          <div class="pol-field"><label>商户 ID（pid）</label><input class="field" id="blPid" /></div>
+          <div class="pol-field"><label>商户密钥（key，留空保持）</label><input class="field" id="blKey" type="password" autocomplete="new-password" /></div>
+        </div>
+        <div class="pol-actions">
+          <button class="btn primary" id="blSavePay">保存支付设置</button>
+          <span class="status" id="blPayStatus" role="status"></span>
         </div>
       </div>
       <div class="card">
@@ -5822,6 +5841,13 @@
       if ($("blGate")) $("blGate").value = (b.epay && b.epay.gate) || "";
       if ($("blPid")) $("blPid").value = (b.epay && b.epay.pid) || "";
       if ($("blKey")) $("blKey").value = "";
+      api("/my/topups").then(function (r2) {
+        var j2 = (r2 && r2.j) || {};
+        if (j2.balance != null) $("blBalance").textContent = j2.balance;
+      })["catch"](function () {});
+      if ($("blChannel")) $("blChannel").textContent = j.topupEnabled
+        ? "支付渠道：已开通（1 元 = " + b.pointsPerCny + " 积分，最低 " + b.minTopupCny + " 元；回调地址 = 服务对外基址 + /pay/notify）"
+        : "支付渠道：未开通 —— 下面填好网关 / 商户 ID / 密钥并保存后，用户端才能自助充值（当前发积分请走用户管理中心）";
       renderAdminPlans();
       renderTopupAdmin();
     })["catch"](function () { billSay("blStatus", "读取失败：网络错误", "bad"); });
@@ -5918,16 +5944,23 @@
       });
     })["catch"](function () {});
   }
-  function saveBillingConfig() {
-    api("/admin/billing", { method: "POST", body: {
-      pointsPerCny: Number($("blPointsPerCny").value || 0), minTopupCny: Number($("blMinCny").value || 0),
-      epay: { gate: $("blGate").value, pid: $("blPid").value, key: $("blKey").value },
-    } }).then(function (r) {
+  /* 10-23 三板块拆分：充值配置与支付设置各自保存（服务端对缺省字段用现值合并，互不覆盖）。 */
+  function saveBillingConfig(part) {
+    var body = part === "pay"
+      ? { epay: { gate: $("blGate").value, pid: $("blPid").value, key: $("blKey").value } }
+      : { pointsPerCny: Number($("blPointsPerCny").value || 0), minTopupCny: Number($("blMinCny").value || 0) };
+    var statusId = part === "pay" ? "blPayStatus" : "blStatus";
+    api("/admin/billing", { method: "POST", body: body }).then(function (r) {
       var j = (r && r.j) || {};
-      if (!r.ok || !j.ok) { billSay("blStatus", "保存失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
-      billSay("blStatus", "已保存（渠道 " + (j.topupEnabled ? "已开通" : "未开通：网关 / 商户 / 密钥要填全）") + "）", j.topupEnabled ? "ok" : "warn");
+      if (!r.ok || !j.ok) { billSay(statusId, "保存失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      var b = j.billing || {};
+      if (part === "pay") {
+        billSay(statusId, "已保存（渠道 " + (j.topupEnabled ? "已开通" : "未开通：网关 / 商户 / 密钥要填全）") + "）", j.topupEnabled ? "ok" : "warn");
+      } else {
+        billSay(statusId, "已保存（1 元 = " + b.pointsPerCny + " 积分）", "ok");
+      }
       loadAdminBilling();
-    })["catch"](function () { billSay("blStatus", "保存失败：网络错误", "bad"); });
+    })["catch"](function () { billSay(statusId, "保存失败：网络错误", "bad"); });
   }
 
   /* ── 接线（幂等：重复执行不会重复绑） ── */
@@ -5935,8 +5968,11 @@
     $("subTopupBtn").dataset.bound = "1";
     $("subTopupBtn").onclick = topupOpen;
   }
-  if ($("blSave") && !$("blSave").dataset.bound) {
-    $("blSave").dataset.bound = "1"; $("blSave").onclick = saveBillingConfig;
+  if ($("blSaveTopup") && !$("blSaveTopup").dataset.bound) {
+    $("blSaveTopup").dataset.bound = "1"; $("blSaveTopup").onclick = function () { saveBillingConfig("topup"); };
+  }
+  if ($("blSavePay") && !$("blSavePay").dataset.bound) {
+    $("blSavePay").dataset.bound = "1"; $("blSavePay").onclick = function () { saveBillingConfig("pay"); };
   }
   if ($("plSave") && !$("plSave").dataset.bound) {
     $("plSave").dataset.bound = "1";
