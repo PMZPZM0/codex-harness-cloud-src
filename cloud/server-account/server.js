@@ -171,6 +171,51 @@ async function weknoraAdmin(pathname, options = {}) {
   return json;
 }
 
+/* ── 10-23 知识库「后台免密」的账号从哪来 ────────────────────────────────────
+   用户令「这三个都自动登录」。WBM 有部署时生成的管理员密码、记忆空间有 admin key，
+   只有知识库是**账号密码**制（登录 = POST /auth/login {email,password}，租户 API Key
+   不能当 Bearer、也不能换 JWT）。所以要么人工给一组账号，要么用 API Key 自助开一个：
+     API Key（full_access）→ POST /tenants/{id}/invite-links {role:"admin"}
+       → POST /auth/register-by-invite {token,email,username,password}
+   实测（客户机 0.8.3）：这条路能建出「落在原租户里、role=admin」的账号，
+   于是面板看到的还是原来那些库，不是一片空白的新空间。
+   ⛔ 只在「没配账号 / 配了但登不上」时才走；⛔ 不改动任何既有账号。 */
+
+/** 面板密码：满足常见策略（大写+小写+数字+符号）。⛔ 只进 data.json，不进日志。 */
+function panelPassword() {
+  return `Wk${crypto.randomBytes(5).toString("hex")}#${crypto.randomBytes(2).toString("hex")}9A`;
+}
+
+/** 用一组账号登录知识库，只为验活/取 JWT（不落盘）。 */
+async function weknoraPanelLogin(email, password) {
+  const res = await fetch(`${WEKNORA_BASE}/api/v1/auth/login`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const text = await res.text();
+  let j = null;
+  try { j = text ? JSON.parse(text) : null; } catch { /* 非 JSON（网关页等） */ }
+  /* ⛔ 实测：/auth/login 把 token / refresh_token 放在**响应顶层**，
+     不在 data 里（放 data 里会让"登录成功却被判失败"，客户机踩过）。 */
+  const d = (j && (j.data || j)) || {};
+  const token = String(d.token || d.access_token || "");
+  return {
+    ok: res.ok && Boolean(token),
+    status: res.status,
+    token,
+    message: sanitize(String((j && (j.message || (j.error && j.error.message))) || "")),
+  };
+}
+
+/** 知识库是否**允许**走邀请链接注册。`invite_only` 连 register-by-invite 都拒（实测）。 */
+async function weknoraRegistrationMode() {
+  try {
+    const res = await fetch(`${WEKNORA_BASE}/api/v1/auth/config`);
+    const j = await res.json();
+    return String((j && j.registration_mode) || "");
+  } catch { return ""; }
+}
+
 function integrationSlot(username) {
   if (typeof db.integrations !== "object" || !db.integrations) db.integrations = {};
   const cur = db.integrations[username];
@@ -3192,10 +3237,11 @@ location.replace("/");
         });
         const text = await r.text();
         let j = null; try { j = text ? JSON.parse(text) : null; } catch { /* 非 JSON */ }
-        if (!r.ok || !j || !(j.data && (j.data.token || j.data.access_token))) {
+        const body = (j && (j.data || j)) || {};
+        if (!r.ok || !body.token && !body.access_token) {
           return html("登录失败", `知识库拒绝了这组账号密码（HTTP ${r.status}）${j && j.message ? "：" + String(j.message).slice(0, 120) : ""}`);
         }
-        const d = j.data || {};
+        const d = body;
         const token = String(d.token || d.access_token || "");
         const refresh = String(d.refresh_token || "");
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
@@ -3231,6 +3277,134 @@ location.replace("/");
       persist();
       console.log(`[panel-auth] ${me.username} 设置 ${panel} 面板账号 ${username}（密码${password ? "已更新" : "沿用"}）`);
       return send(200, { ok: true, panel, username, hasPassword: Boolean(db.panelAuth[panel].password) });
+    }
+
+    /* 知识库面板账号：状态 / 一键开通 / 忘掉（仅管理员）。
+       ⛔ 永远不回密码；只回「谁」和「现在能不能登进去」。 */
+    if (p === "/admin/kb/panel-account") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const cur = (db.panelAuth && db.panelAuth.kb) || {};
+
+      if (req.method === "GET") {
+        let live = null;
+        if (cur.username && cur.password) {
+          try { live = await weknoraPanelLogin(cur.username, cur.password); } catch { live = { ok: false, status: 0, message: "网络错误" }; }
+        }
+        return send(200, {
+          ok: true,
+          configured: Boolean(cur.username && cur.password),
+          username: cur.username || "",
+          loginOk: Boolean(live && live.ok),
+          loginStatus: live ? live.status : 0,
+          loginMessage: live ? live.message : "",
+          registrationMode: await weknoraRegistrationMode(),
+        });
+      }
+
+      if (req.method !== "POST") return send(405, { ok: false, error: "只支持 GET / POST" });
+      const body = await readBody();
+      const action = String((body && body.action) || "provision");
+
+      if (action === "forget") {
+        if (db.panelAuth) delete db.panelAuth.kb;
+        persist();
+        console.log(`[kb-panel] ${me.username} 清空了知识库面板账号`);
+        return send(200, { ok: true, configured: false });
+      }
+
+      if (action === "verify") {
+        if (!cur.username || !cur.password) return send(400, { ok: false, error: "还没有面板账号" });
+        const live = await weknoraPanelLogin(cur.username, cur.password);
+        return send(200, { ok: live.ok, username: cur.username, loginOk: live.ok, loginStatus: live.status, loginMessage: live.message, error: live.ok ? "" : "登录失败：" + (live.message || ("HTTP " + live.status)) });
+      }
+
+      if (action !== "provision") return send(400, { ok: false, error: "action 只能是 provision / verify / forget" });
+      if (!WEKNORA_ADMIN_KEY) return send(400, { ok: false, error: "还没有知识库 API Key（先在卡片里填「租户 API Key」）" });
+
+      /* 已经能用就别再建一个（避免每次点都长出一个账号）。 */
+      if (cur.username && cur.password) {
+        const live = await weknoraPanelLogin(cur.username, cur.password).catch(() => null);
+        if (live && live.ok) return send(200, { ok: true, created: false, username: cur.username, loginOk: true, message: "已有可用账号，无需重建" });
+      }
+
+      const mode = await weknoraRegistrationMode();
+      if (mode === "invite_only") {
+        return send(400, {
+          ok: false,
+          error: "kb-registration-closed",
+          message: "这台知识库的注册方式是「仅邀请」（invite_only），连邀请链接都注册不了。"
+            + "在知识库后台把「注册方式」改成「仅邀请链接」或「开放注册」再点一次；或直接在下面手填一组已有账号。",
+        });
+      }
+
+      let tenantId = 0;
+      try {
+        const info = await weknoraAdmin("/api/v1/auth/me");
+        const d = (info && info.data) || {};
+        tenantId = Number((d.tenant && d.tenant.id) || 0) || 0;
+      } catch (e) {
+        return send(400, { ok: false, error: "kb-unreachable", message: "读不到知识库（" + sanitize(String((e && e.message) || e)) + "）" });
+      }
+      if (!tenantId) return send(400, { ok: false, error: "kb-tenant-unknown", message: "读不到租户 id —— 这把 API Key 可能不是 full_access" });
+
+      let inviteToken = "";
+      try {
+        const inv = await weknoraAdmin(`/api/v1/tenants/${tenantId}/invite-links`, { method: "POST", body: { role: "admin" } });
+        const link = String((inv && inv.data && inv.data.invite_url) || "");
+        if (link) inviteToken = String(new URL(link, "http://placeholder").searchParams.get("token") || "");
+      } catch (e) {
+        return send(400, { ok: false, error: "kb-invite-failed", message: "建邀请链接失败：" + sanitize(String((e && e.message) || e)) });
+      }
+      if (!inviteToken) return send(400, { ok: false, error: "kb-invite-failed", message: "邀请链接里没有 token（版本可能变了）" });
+
+      const password = panelPassword();
+      let created = null;
+      let lastErr = "";
+      for (let i = 0; i < 3 && !created; i++) {
+        /* ⛔ 用户名/邮箱都带随机尾巴：重名时**两个一起换**（只看邮箱会撞用户名，
+           实测客户机就先在 `user with this username already exists` 上失败）。 */
+        const tag = `cloud-panel-${crypto.randomBytes(3).toString("hex")}`;
+        const res = await fetch(`${WEKNORA_BASE}/api/v1/auth/register-by-invite`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: inviteToken, email: `${tag}@panel.local`, username: tag, password }),
+        });
+        const text = await res.text();
+        let j = null;
+        try { j = text ? JSON.parse(text) : null; } catch { /* 非 JSON */ }
+        if (res.ok && j && j.success !== false) { created = { email: `${tag}@panel.local`, username: tag }; break; }
+        lastErr = sanitize(String((j && (j.message || (j.error && j.error.message))) || ("HTTP " + res.status)));
+        if (!/exist|already|duplicate/i.test(lastErr) && res.status !== 409) break;
+      }
+      if (!created) {
+        return send(400, { ok: false, error: "kb-provision-failed", message: "开通面板账号失败：" + lastErr });
+      }
+
+      const live = await weknoraPanelLogin(created.email, password);
+      if (typeof db.panelAuth !== "object" || !db.panelAuth) db.panelAuth = {};
+      db.panelAuth.kb = { username: created.email, password };
+      persist();
+      console.log(`[kb-panel] ${me.username} 开通知识库面板账号 ${created.email}（租户 ${tenantId}，登录${live.ok ? "成功" : "待验证"}）`);
+      return send(200, {
+        ok: live.ok,
+        created: true,
+        username: created.email,
+        tenantId,
+        loginOk: live.ok,
+        loginMessage: live.message,
+        message: live.ok ? "已创建并验证登录，点「打开后台」直接进" : "账号已建但登录失败：" + (live.message || ("HTTP " + live.status)),
+      });
+    }
+
+    /* 管理员密钥（只给管理员，且**唯一**用途是复制到自己电脑里配客户端）。
+       ⛔ 掩码只在页面上；这里回原文是为了「复制」按钮真能复制到东西。 */
+    if (p === "/admin/service-key" && req.method === "GET") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const which = String(url.searchParams.get("which") || "").trim();
+      if (!["kb", "memory"].includes(which)) return send(400, { ok: false, error: "which 必须是 kb 或 memory" });
+      const key = which === "kb" ? WEKNORA_ADMIN_KEY : MEMHUB_ADMIN_KEY;
+      if (!key) return send(404, { ok: false, error: which === "kb" ? "还没有知识库 API Key" : "还没有记忆管理员密钥" });
+      console.log(`[service-key] ${me.username} 读取了${which === "kb" ? "知识库" : "记忆"}管理员密钥（复制）`);
+      return send(200, { ok: true, which, key, masked: String(key).slice(0, 6) + "***" + String(key).slice(-4) });
     }
 
     /* 管理端：权益总览 / 开通·续期·停用 / 价格表 */
