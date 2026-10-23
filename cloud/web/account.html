@@ -1073,6 +1073,7 @@
         <button class="btn" id="svcTestMem">测试连通</button>
         <button class="btn" id="svcMemOpen">打开面板</button>
         <button class="btn ghost" id="svcMemCopy">复制地址</button>
+        <button class="btn ghost" id="svcMemKeyCopy" title="把记忆中枢的管理员密钥（X-Tdai-User-Key）复制到剪贴板">复制管理员密钥</button>
       </div>
       <p class="status" id="svcMemStatus" role="status" aria-live="polite"></p>
       <div id="svcMemTestResult" style="display:none;margin-top:10px"></div>
@@ -1213,15 +1214,15 @@
     <!-- 10-23 免密登录：填一次后台账号，之后「打开后台」直接进 -->
     <div class="card" id="kbLoginCard" style="margin-top:14px">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">后台免密登录 <span class="pill plain" id="kbLoginState">未配置</span></h2>
-      <p class="hint" style="margin:0 0 10px">填一次知识库后台的账号密码：以后点「打开后台」由服务端换好会话再打开，<b>密码不下发浏览器、不回显</b>。
-        ⛔ 知识库关闭了公开注册，只能用已有账号（没有的话在它的后台加一个）。</p>
+      <p class="hint" style="margin:0 0 10px">点「一键生成后台账号」用知识库 API Key 自助开一个<b>落在原空间、角色 admin</b> 的面板账号：
+        以后点「打开后台」由服务端换好会话再打开，<b>密码不下发浏览器、不回显</b>。也可以手填一组已有账号。</p>
       <div class="svc-grid" style="margin:0">
         <label class="svc-field"><span class="hint">后台账号（邮箱）</span>
           <input class="field" id="kbLoginUser" spellcheck="false" placeholder="you@example.com" /></label>
         <label class="svc-field"><span class="hint">密码（留空 = 不改）</span>
           <input class="field" id="kbLoginPass" type="password" spellcheck="false" placeholder="只写不读" /></label>
       </div>
-      <div class="svc-actions"><button class="btn primary" id="kbLoginSave">保存账号</button><span class="hint" id="kbLoginMsg" role="status" aria-live="polite"></span></div>
+      <div class="svc-actions"><button class="btn primary" id="kbPanelAuto">一键生成后台账号</button><button class="btn" id="kbLoginSave">保存手填账号</button><span class="hint" id="kbLoginMsg" role="status" aria-live="polite"></span></div>
     </div>
 
     <!-- 10-23 用户令「知识库要配 LLM 密钥的吧」：模型接入（API 地址 + 密钥）也放这里 -->
@@ -2085,6 +2086,25 @@
   if ($("svcMemOpen")) $("svcMemOpen").onclick = function () { svcOpen("mem"); };
   if ($("svcKbOpen")) $("svcKbOpen").onclick = function () { svcOpen("kb"); };
   if ($("svcMemCopy")) $("svcMemCopy").onclick = function () { svcCopy("mem"); };
+  /* 10-23 用户令：记忆中心加「复制管理员密钥」——页面只显示掩码，原文在这里现取现复制 */
+  if ($("svcMemKeyCopy")) $("svcMemKeyCopy").onclick = function () {
+    var btn = this;
+    btn.disabled = true;
+    svcSay("memory", "读取管理员密钥中…");
+    api("/admin/service-key?which=memory").then(function (r) {
+      btn.disabled = false;
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) { svcSay("memory", "读取失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
+      var done = function () { svcSay("memory", "已复制管理员密钥（" + j.masked + "）", "ok"); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(j.key).then(done)["catch"](function () {
+          svcSay("memory", "浏览器拒绝写剪贴板，请手动复制：" + j.key, "bad");
+        });
+      } else {
+        svcSay("memory", "当前环境不支持自动复制，请手动复制：" + j.key, "");
+      }
+    })["catch"](function () { btn.disabled = false; svcSay("memory", "读取失败：网络错误", "bad"); });
+  };
   if ($("svcKbCopy")) $("svcKbCopy").onclick = function () { svcCopy("kb"); };
   if ($("svcMemPubSave")) $("svcMemPubSave").onclick = function () { svcPubSave("mem"); };
   if ($("svcKbPubSave")) $("svcKbPubSave").onclick = function () { svcPubSave("kb"); };
@@ -3089,6 +3109,27 @@
     })["catch"](function () { if (msg) { msg.textContent = "保存失败：网络错误"; msg.style.color = "var(--bad)"; } });
   }
   if ($("kbLoginSave")) $("kbLoginSave").onclick = function () { savePanelAuth("kb", "kbLoginUser", "kbLoginPass", "kbLoginMsg", "kbLoginState"); };
+  /* 10-23：知识库没有现成账号时，用 API Key 自助开一个（落原空间、role=admin）再直接进 */
+  if ($("kbPanelAuto")) $("kbPanelAuto").onclick = function () {
+    var btn = this, msg = $("kbLoginMsg");
+    btn.disabled = true;
+    if (msg) { msg.textContent = "正在用 API Key 开通面板账号…"; msg.style.color = ""; }
+    api("/admin/kb/panel-account", { method: "POST", body: { action: "provision" } }).then(function (r) {
+      btn.disabled = false;
+      var j = (r && r.j) || {};
+      if (!r.ok || !j.ok) {
+        if (msg) { msg.textContent = j.message || j.error || ("HTTP " + r.status); msg.style.color = "var(--bad)"; }
+        return;
+      }
+      if ($("kbLoginUser")) $("kbLoginUser").value = j.username || "";
+      if (msg) { msg.textContent = (j.message || "已开通") + "：" + (j.username || "") + "（正在打开…）"; msg.style.color = "var(--ok)"; }
+      loadPanelAuth();
+      setTimeout(function () { openPanelSSO("kb", svcUrls.kb || ""); }, 400);
+    })["catch"](function () {
+      btn.disabled = false;
+      if (msg) { msg.textContent = "开通失败：网络错误"; msg.style.color = "var(--bad)"; }
+    });
+  };
   if ($("wbmLoginSave")) $("wbmLoginSave").onclick = function () { savePanelAuth("wbm", "wbmLoginUser", "wbmLoginPass", "wbmLoginMsg", "wbmLoginState"); };
 
   /* ══ 10-23 WorkBuddy Manager（模型池网关）：状态 / 地址 / 指向上游 ══════════════
