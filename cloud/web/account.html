@@ -677,10 +677,10 @@
     </nav>
     <nav class="nav-group nav-group-admin" id="navGroupAdmin" aria-label="管理员功能" hidden>
       <h3 class="nav-group-title">管理员</h3>
-      <button class="nav-item" data-tab="adminUser" id="navAdminUser"><span class="dot"></span>用户管理中心</button>
-      <button class="nav-item" data-tab="adminModel" id="navAdminModel"><span class="dot"></span>模型管理中心</button>
-      <button class="nav-item" data-tab="adminMem" id="navAdminMem"><span class="dot"></span>记忆空间管理中心</button>
-      <button class="nav-item" data-tab="adminKb" id="navAdminKb"><span class="dot"></span>知识库管理中心</button>
+      <button class="nav-item" data-tab="adminUser" id="navAdminUser"><span class="dot"></span>用户管理</button>
+      <button class="nav-item" data-tab="adminModel" id="navAdminModel"><span class="dot"></span>模型管理</button>
+      <button class="nav-item" data-tab="adminMem" id="navAdminMem"><span class="dot"></span>记忆空间管理</button>
+      <button class="nav-item" data-tab="adminKb" id="navAdminKb"><span class="dot"></span>知识库管理</button>
       <button class="nav-item" data-tab="adminWbm" id="navAdminWbm"><span class="dot"></span>WorkBuddy Manager</button>
       <button class="nav-item" data-tab="adminBilling" id="navAdminBilling"><span class="dot"></span>订阅与充值</button>
       <button class="nav-item" data-tab="adminInvite" id="navAdminInvite"><span class="dot"></span>邀请管理</button>
@@ -975,7 +975,7 @@
       <div class="card">
         <h2>余额充值配置</h2>
         <div class="sub-hero-top" style="margin-bottom:12px">
-          <p class="hint" style="margin:0">充值比例与最低充值金额在这里定；给单个用户发积分走「用户管理中心」。</p>
+          <p class="hint" style="margin:0">充值比例与最低充值金额在这里定；给单个用户发积分走「用户管理」。</p>
           <div class="sub-balance">
             <span id="blWho">当前账户</span>
             <span>当前积分</span>
@@ -1158,11 +1158,11 @@
     <div id="kbTab"><div class="empty">读取中…</div></div>
   </section>
 
-<!-- 10-23 用户令：「用户管理分类一下，拆出模型管理中心，改名用户管理中心（含服务器基础设置）」⇒
+<!-- 10-23 用户令：「用户管理分类一下，拆出模型管理，改名用户管理（含服务器基础设置）」⇒
        原一长条 admin tab 拆成 4 个中心，导航项全部只对管理员显示（isAdmin 时才去掉 hidden）。 -->
 <div class="tab" data-tab="adminUser" id="adminUserTab" hidden>
   <div class="admin-head">
-    <h1>用户管理中心</h1>
+    <h1>用户管理</h1>
     <p>服务器基础设置、站点外观、用户与权益、邀请码 —— 这里的改动会影响所有用户。</p>
   </div>
 <div class="card" id="updCard">
@@ -1389,7 +1389,7 @@
 
 <div class="tab" data-tab="adminModel" id="adminModelTab" hidden>
   <div class="admin-head">
-    <h1>模型管理中心</h1>
+    <h1>模型管理</h1>
     <p>上游网关地址与密钥、模型目录与倍率、闲时时段，以及对用户开放的模型。</p>
   </div>
 <div class="card" id="upstreamCard">
@@ -1534,7 +1534,7 @@
 
 <div class="tab" data-tab="adminMem" id="adminMemTab" hidden>
   <div class="admin-head">
-    <h1>记忆空间管理中心</h1>
+    <h1>记忆空间管理</h1>
     <p>本机部署的腾讯记忆空间（Memory Hub）：面板入口、记忆服务地址与模型代理。</p>
   </div>
     <div class="card" id="svcMemCard">
@@ -1581,7 +1581,7 @@
           <h2>记忆网关 <span class="pill plain" id="memHealthPill">读取中…</span></h2>
           <p class="mb-sub">记忆请求实际经过的那层网关（版本 / 上游 / 限流 / 存储）。
             它把请求转发给<b>模型通道</b>，所以记忆用哪个模型 = 模型管理里那条上游的模型；
-            要换模型请到「模型管理中心」改上游，别在这里找开关。</p>
+            要换模型请到「模型管理」改上游，别在这里找开关。</p>
         </div>
         <div class="mb-grp mb-grp-end">
           <button class="btn sm" id="memHealthRefresh">刷新</button>
@@ -1652,7 +1652,7 @@
 
 <div class="tab" data-tab="adminKb" id="adminKbTab" hidden>
   <div class="admin-head">
-    <h1>知识库管理中心</h1>
+    <h1>知识库管理</h1>
     <p>本机部署的腾讯知识库（WeKnora）：后台入口、知识库 API 与问答 / 向量模型。</p>
   </div>
     <div class="card" id="svcKbCard">
@@ -1902,7 +1902,7 @@
       <li><b>登录面板</b>：点上面「打开面板」，用初始管理员密码登录（密码在服务器
         <code>/opt/workbuddy-manager/admin-password.txt</code>，只有 root 可读 —— ⛔ 别贴到聊天里）。</li>
       <li><b>纳管账号</b>：面板里扫码 / 导入账号，它会自动同步可用模型列表。</li>
-      <li><b>指向本机</b>：回本页点「把模型通道指到这台 Manager」，再去「模型管理中心」补网关密钥并同步目录，
+      <li><b>指向本机</b>：回本页点「把模型通道指到这台 Manager」，再去「模型管理」补网关密钥并同步目录，
         之后客户端（PPcode / 桌面版）就能拉到模型。</li>
     </ol>
     <!-- 10-23：这条提示按"配没配对外地址"说真话，别写死成已反代或没反代 -->
@@ -4126,7 +4126,7 @@
     var warn = wbmUpstreamOk === false
       ? "\n\n⛔ 警告：这台 Manager 还没纳管任何账号（upstream_ok=false），切过去会**没有模型可用**。建议先在面板里纳管账号。"
       : "";
-    if (!confirm("把「模型通道」的上游指向 " + target + " ？\n\n之后用户/客户端的模型都从这台 Manager 出；网关密钥沿用现有的（没有就去模型管理中心填）。" + warn)) return;
+    if (!confirm("把「模型通道」的上游指向 " + target + " ？\n\n之后用户/客户端的模型都从这台 Manager 出；网关密钥沿用现有的（没有就去模型管理填）。" + warn)) return;
     btn.disabled = true;
     wbmSay("正在向面板签发密钥并切换上游（最多约 8 秒）…");
     /* ⛔ 只切地址不换密钥 = 全体客户端 401（云侧存的是旧网关密钥，面板上并不存在）。
@@ -4207,7 +4207,7 @@
     var isKb = which === "knowledge";
     if (!rows.length) {
       box.innerHTML = '<tr><td colspan="' + (isKb ? 7 : 8) + '" class="mb-empty">'
-        + (st.showAll ? "还没有账号" : ("还没有人开通" + (isKb ? "知识库" : "记忆空间") + " —— 勾「显示全部账号」或去用户管理中心开通"))
+        + (st.showAll ? "还没有账号" : ("还没有人开通" + (isKb ? "知识库" : "记忆空间") + " —— 勾「显示全部账号」或去用户管理开通"))
         + '</td></tr>';
       mbSyncPicked(which);
       return;
@@ -6063,7 +6063,7 @@
       if (!bl.topupEnabled) {
         showModal("自助充值暂未开通", '<div style="font-size:13.5px;line-height:1.9">'
           + "自助充值通道还没有接好（管理员在「订阅与充值 → 支付设置」填入易支付网关 / 商户 ID / 密钥后即会亮起）。<br><br>"
-          + "当前获取积分的方式：联系管理员，在 <b>用户管理中心 → 发积分</b> 里为你充值积分，"
+          + "当前获取积分的方式：联系管理员，在 <b>用户管理 → 发积分</b> 里为你充值积分，"
           + "拿到积分就能在下面的套餐卡上直接订阅。</div>");
         return;
       }
@@ -6132,7 +6132,7 @@
       })["catch"](function () {});
       if ($("blChannel")) $("blChannel").textContent = j.topupEnabled
         ? "支付渠道：已开通（1 元 = " + b.pointsPerCny + " 积分，最低 " + b.minTopupCny + " 元；回调地址 = 服务对外基址 + /pay/notify）"
-        : "支付渠道：未开通 —— 下面填好网关 / 商户 ID / 密钥并保存后，用户端才能自助充值（当前发积分请走用户管理中心）";
+        : "支付渠道：未开通 —— 下面填好网关 / 商户 ID / 密钥并保存后，用户端才能自助充值（当前发积分请走用户管理）";
       renderAdminPlans();
       renderTopupAdmin();
     })["catch"](function () { billSay("blStatus", "读取失败：网络错误", "bad"); });
