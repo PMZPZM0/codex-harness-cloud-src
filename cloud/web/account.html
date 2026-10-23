@@ -2057,14 +2057,36 @@
     if (panel === "wbm") return wbmSay(text, cls);
     return svcSay(panel === "memory" ? "memory" : "kb", text, cls);
   }
-  function openPanelSSO(panel, plainUrl) {
+  /* ⛔ 先同步开一个空白窗口、拿到票据再导航：api() 是异步的，等回调里才 window.open
+     会被浏览器当弹窗直接拦掉 —— 表现就是「说正在打开，但窗口一直没出来」。
+     文案也只留**终态**（已登录 / 需手动登录），不再挂一句「正在打开…」。 */
+  function openPanelSSO(panel, plainUrl, preWin) {
+    var win = preWin || null;
+    if (!win) { try { win = window.open("about:blank", "_blank"); } catch (e) { win = null; } }
+    function go(target) {
+      if (!target) return false;
+      if (win && !win.closed) {
+        try { win.location.replace(target); return true; } catch (e) { /* about:blank 不会跨源，兜底走下一行 */ }
+      }
+      return Boolean(window.open(target, "_blank", "noopener"));
+    }
+    panelSay(panel, "正在后台登录…", "");
     api("/admin/panel-sso", { method: "POST", body: { panel: panel } }).then(function (r) {
       var j = (r && r.j) || {};
-      if (r.ok && j.ok && j.url) { panelSay(panel, "已在后台完成登录，正在打开…", "ok"); window.open(j.url, "_blank", "noopener"); return; }
-      if (plainUrl) window.open(plainUrl, "_blank", "noopener");
+      if (r.ok && j.ok && j.url) {
+        var opened = go(j.url);
+        panelSay(panel, opened
+          ? "已登录，已在新窗口打开（不用再输密码）"
+          : "已登录，但浏览器拦了新窗口 —— 手动开：" + j.url, opened ? "ok" : "bad");
+        return;
+      }
+      go(plainUrl || "");
       if (j.error === "panel-credentials-missing") panelSay(panel, (j.message || "还没配面板账号") + " —— 已按普通方式打开，需手动登录一次", "");
       else panelSay(panel, j.message || j.error || "免密未生效，已按普通方式打开", "");
-    })["catch"](function () { if (plainUrl) window.open(plainUrl, "_blank", "noopener"); });
+    })["catch"](function () {
+      go(plainUrl || "");
+      panelSay(panel, "打开失败：网络错误（已按普通方式重试打开）", "bad");
+    });
   }
   function svcOpen(which) {
     var u = svcUrls[which];
@@ -3112,6 +3134,9 @@
   /* 10-23：知识库没有现成账号时，用 API Key 自助开一个（落原空间、role=admin）再直接进 */
   if ($("kbPanelAuto")) $("kbPanelAuto").onclick = function () {
     var btn = this, msg = $("kbLoginMsg");
+    /* ⛔ 先同步占位一个窗口：下面要等接口回来才跳转，那时已经不在用户手势里了 */
+    var preWin = null;
+    try { preWin = window.open("about:blank", "_blank"); } catch (e) { preWin = null; }
     btn.disabled = true;
     if (msg) { msg.textContent = "正在用 API Key 开通面板账号…"; msg.style.color = ""; }
     api("/admin/kb/panel-account", { method: "POST", body: { action: "provision" } }).then(function (r) {
@@ -3124,7 +3149,7 @@
       if ($("kbLoginUser")) $("kbLoginUser").value = j.username || "";
       if (msg) { msg.textContent = (j.message || "已开通") + "：" + (j.username || "") + "（正在打开…）"; msg.style.color = "var(--ok)"; }
       loadPanelAuth();
-      setTimeout(function () { openPanelSSO("kb", svcUrls.kb || ""); }, 400);
+      setTimeout(function () { openPanelSSO("kb", svcUrls.kb || "", preWin); }, 400);
     })["catch"](function () {
       btn.disabled = false;
       if (msg) { msg.textContent = "开通失败：网络错误"; msg.style.color = "var(--bad)"; }
