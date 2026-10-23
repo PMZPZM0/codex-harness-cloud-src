@@ -2861,7 +2861,8 @@ const server = http.createServer(async (req, res) => {
           ok: true,
           count: all.length,
           base: WEKNORA_BASE,
-          llm: pick((m) => /knowledgeqa|llm|chat/i.test(m.type)),
+          /* ⛔ VLLM 里也含 "LLM" 三个字母：不排除它的话，视觉模型会混进「问答模型」下拉。 */
+          llm: pick((m) => /knowledgeqa/i.test(m.type) || (/llm|chat|qa/i.test(m.type) && !/vllm|vision/i.test(m.type))),
           embed: pick((m) => /embedding/i.test(m.type)),
           vlm: pick((m) => /vllm|vision/i.test(m.type)),
           all,
@@ -3287,6 +3288,9 @@ const server = http.createServer(async (req, res) => {
         kb: {
           base: kb.base || "", publicBase: kb.publicBase || "", key: mask(kb.key), hasKey: Boolean(kb.key),
           llmModelId: kb.llmModelId || "", embedModelId: kb.embedModelId || "", vlmModelId: kb.vlmModelId || "",
+          /* ⛔ 面板要显示"实际在用的模型"：只回 db 里那份时，靠环境变量配好的部署会显示空框，
+             管理员以为没配（线上实测）。三个 effective* 就是真正生效的值。 */
+          effectiveLlmModelId: WEKNORA_LLM_MODEL_ID, effectiveEmbedModelId: WEKNORA_EMBED_MODEL_ID, effectiveVlmModelId: WEKNORA_VLM_MODEL_ID,
           uiBase: kb.uiBase || "", effectiveUiBase: kbUiBase(),
           effectiveBase: WEKNORA_BASE, effectiveHasKey: Boolean(WEKNORA_ADMIN_KEY),
           envBase: WEKNORA_ENV_BASE, envHasKey: Boolean(WEKNORA_ENV_ADMIN_KEY),

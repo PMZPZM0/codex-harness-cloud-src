@@ -1861,7 +1861,10 @@
     if (!effective) return "";
     try {
       var u = new URL(effective);
-      var port = u.port || String(dflt);
+      /* ⛔ 不要给"本来没有端口"的地址补端口：`https://mem.域名` + 硬加 :8125 会直接打不开
+         （线上实测：面板链接变成 https://mem.ppz123.asia:8125）。端口只照抄 URL 里写了的那个；
+         KB 的 8080→8081 由服务端 effectiveUiBase 推导，不在这里猜。 */
+      var port = u.port;
       var host = /^(127\.0\.0\.1|localhost|0\.0\.0\.0|::1)$/.test(u.hostname) ? location.hostname : u.hostname;
       var scheme = /^https?:$/.test(u.protocol) ? u.protocol.replace(":", "") : "http";
       if (host !== u.hostname) scheme = /^https:$/.test(location.protocol) && u.protocol === "https:" ? "https" : "http";
@@ -2644,15 +2647,22 @@
       if (!r.ok || !r.j || !r.j.ok) { svcSay("kb", "读取失败：" + ((r.j && r.j.error) || r.status), "bad"); return; }
       var kb = r.j.kb || {}, mem = r.j.memory || {};
       $("svcKbBase").value = kb.base || "";
+      /* ⛔ 地址不预填（预填=把环境变量的值固化进 db），但**必须**把生效值放在 placeholder 里，
+         否则管理员看到一个空框，以为没配。 */
+      $("svcKbBase").placeholder = "生效中：" + (kb.effectiveBase || "（未配置）");
       $("svcKbKey").value = "";
       $("svcKbKey").placeholder = kb.hasKey ? "已保存（" + (kb.key || "") + "），留空不改" : "租户 API Key";
-      $("svcKbLlm").value = kb.llmModelId || "";
-      $("svcKbEmbed").value = kb.embedModelId || "";
-      $("svcKbVlm").value = kb.vlmModelId || "";
+      /* ⛔ db 里没写（靠环境变量/凭据配的）就回落到**生效值** —— 否则线上明明配好了却显示空框 */
+      $("svcKbLlm").value = kb.llmModelId || kb.effectiveLlmModelId || "";
+      $("svcKbEmbed").value = kb.embedModelId || kb.effectiveEmbedModelId || "";
+      $("svcKbVlm").value = kb.vlmModelId || kb.effectiveVlmModelId || "";
       if ($("svcKbUi")) $("svcKbUi").value = kb.uiBase || "";
       $("svcMemBase").value = mem.base || "";
       $("svcMemProxy").value = mem.proxyBase || "";
       $("svcMemInstance").value = mem.instance || "";
+      $("svcMemBase").placeholder = "生效中：" + (mem.effectiveBase || "（未配置）");
+      $("svcMemProxy").placeholder = "生效中：" + (mem.effectiveProxyBase || "（未配置）");
+      $("svcMemInstance").placeholder = "生效中：" + (mem.instance || "default");
       $("svcMemKey").value = "";
       $("svcMemKey").placeholder = mem.hasKey ? "已保存，留空不改" : "API Key";
       if ($("svcKbPublic")) $("svcKbPublic").value = kb.publicBase || "";
