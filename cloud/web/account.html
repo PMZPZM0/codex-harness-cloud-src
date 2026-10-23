@@ -427,7 +427,9 @@
   #kbModelBlocks .kb-model-actions .hint { flex: 1 1 100%; font-size: 11.5px; line-height: 1.6; word-break: break-word; }
   /* 新用户默认额度卡（10-23）：两列自适应，窄屏折行 */
   #policyCard .pol-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 14px; }
-  #policyCard .pol-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  #policyCard .pol-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  #policyCard .pol-switch { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; user-select: none; }
+  #policyCard .pol-field .field:disabled { opacity: .5; cursor: default; }
   #policyCard .pol-field .field { min-height: 34px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; }
   #policyCard .pol-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   /* Manager 三步说明：⛔ 列表里带长路径，不给 code 一点内边距会排成一团乱行 */
@@ -857,10 +859,16 @@
       <p class="hint" style="margin:0 0 12px">这两项是<b>之后注册</b>的账号的默认值，保存后立刻生效（不用重启）。
         已注册账号不受影响：个人云存储以表格里那一列为准（留空 = 跟这里的默认值走）。</p>
       <div class="pol-grid">
-        <label class="pol-field"><span class="hint">注册赠送积分</span>
-          <input class="field" id="polSignup" type="number" min="0" step="100" placeholder="1000" /></label>
-        <label class="pol-field"><span class="hint">默认云存储（GB，会话上传用）</span>
-          <input class="field" id="polStorage" type="number" min="0.1" step="1" placeholder="1" /></label>
+        <div class="pol-field">
+          <label class="pol-switch"><input type="checkbox" class="switch" id="polSignupOn" /><span>注册赠送积分</span></label>
+          <input class="field" id="polSignup" type="number" min="0" step="100" placeholder="1000" />
+          <span class="hint">关掉后新账号注册<b>不送积分</b>（余额 0，也不发流水）。</span>
+        </div>
+        <div class="pol-field">
+          <label class="pol-switch"><input type="checkbox" class="switch" id="polStorageOn" /><span>默认云存储（GB，会话上传用）</span></label>
+          <input class="field" id="polStorage" type="number" min="0.1" step="1" placeholder="1" />
+          <span class="hint">关掉后新账号<b>没有云端存储配额</b>，上传会话会被明确拒绝。</span>
+        </div>
       </div>
       <div class="pol-actions">
         <button class="btn primary" id="polSave">保存</button>
@@ -2638,10 +2646,16 @@
   }
   function polPaint(j) {
     if (!j || !j.ok) return;
-    if ($("polSignup")) $("polSignup").value = j.signupPoints;
-    if ($("polStorage")) $("polStorage").value = j.storageGb;
+    var onPts = j.signupPointsEnabled !== false, onSt = j.storageEnabled !== false;
+    if ($("polSignupOn")) $("polSignupOn").checked = onPts;
+    if ($("polStorageOn")) $("polStorageOn").checked = onSt;
+    if ($("polSignup")) { $("polSignup").value = j.signupPoints; $("polSignup").disabled = !onPts; }
+    if ($("polStorage")) { $("polStorage").value = j.storageGb; $("polStorage").disabled = !onSt; }
     var pill = $("polPill");
-    if (pill) { pill.className = "pill ok"; pill.textContent = "生效中"; }
+    if (pill) {
+      pill.className = "pill " + (onPts || onSt ? "ok" : "warn");
+      pill.textContent = (!onPts && !onSt) ? "两项都关闭" : (onPts && onSt ? "生效中" : "部分关闭");
+    }
   }
   function loadPolicy() {
     if (!$("policyCard")) return;
@@ -2666,12 +2680,38 @@
       polSay("已保存：注册赠分 " + j.signupPoints + " · 默认云存储 " + j.storageGb + " GB（新注册立即按这个来）");
     })["catch"](function () { btn.disabled = false; polSay("保存失败：网络错误", true); });
   }
-  if ($("polSave")) $("polSave").onclick = function () {
+  function polBody() {
+    var onPts = $("polSignupOn").checked, onSt = $("polStorageOn").checked;
     var pts = Number($("polSignup").value), gb = Number($("polStorage").value);
-    if (!Number.isFinite(pts) || pts < 0) { polSay("注册赠送积分要填非负整数", true); return; }
-    if (!Number.isFinite(gb) || gb <= 0) { polSay("默认云存储要大于 0（GB）", true); return; }
-    polSave({ signupPoints: pts, storageGb: gb }, this);
+    var body = { signupPointsEnabled: onPts, storageEnabled: onSt };
+    if (onPts) {
+      if (!Number.isFinite(pts) || pts < 0) return { error: "注册赠送积分要填非负整数（想送 0 分就把它关掉）" };
+      body.signupPoints = pts;
+    }
+    if (onSt) {
+      if (!Number.isFinite(gb) || gb <= 0) return { error: "默认云存储要大于 0（GB）；不想给就把它关掉" };
+      body.storageGb = gb;
+    }
+    return { body: body };
+  }
+  if ($("polSave")) $("polSave").onclick = function () {
+    var r = polBody();
+    if (r.error) { polSay(r.error, true); return; }
+    polSave(r.body, this);
   };
+  /* 开关：改完立刻写服务端（不用再点保存），失败就弹回原位 */
+  ["polSignupOn", "polStorageOn"].forEach(function (id) {
+    var el = $(id);
+    if (!el) return;
+    el.addEventListener("change", function () {
+      var on = el.checked;
+      var r = polBody();
+      if (r.error) { el.checked = !on; polSay(r.error, true); return; }
+      if ($("polSignup")) $("polSignup").disabled = !$("polSignupOn").checked;
+      if ($("polStorage")) $("polStorage").disabled = !$("polStorageOn").checked;
+      polSave(r.body, el);
+    });
+  });
   if ($("polReset")) $("polReset").onclick = function () {
     if (!confirm("恢复成环境默认（部署时配的 HARNESS_SIGNUP_POINTS / HARNESS_STORAGE_LIMIT）？")) return;
     polSave({ reset: true }, this);

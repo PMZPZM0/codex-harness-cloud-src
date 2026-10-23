@@ -97,11 +97,15 @@ function storageLimitFor(username) {
    ⛔ 单一真相源：注册、发放、配额判断、管理端回显全部走下面两个函数，
       别再直接读 STORAGE_LIMIT_BYTES / SIGNUP_GRANT（那两个只当"没配置时的兜底"）。 */
 function signupPoints() {
-  const v = Number(db.policy && db.policy.signupPoints);
+  const pol = db.policy || {};
+  if (pol.signupPointsEnabled === false) return 0;                 // 10-23：开关关掉 = 不送
+  const v = Number(pol.signupPoints);
   return Number.isFinite(v) && v >= 0 ? Math.round(v) : SIGNUP_GRANT;
 }
 function storageDefaultBytes() {
-  const v = Number(db.policy && db.policy.storageBytes);
+  const pol = db.policy || {};
+  if (pol.storageEnabled === false) return 0;                      // 10-23：开关关掉 = 不给配额（≠回落 env）
+  const v = Number(pol.storageBytes);
   return Number.isFinite(v) && v > 0 ? Math.round(v) : STORAGE_LIMIT_BYTES;
 }
 /** 云端数据落盘根：与账号文件同目录，便于一起备份/迁移。 */
@@ -1589,7 +1593,8 @@ const server = http.createServer(async (req, res) => {
       db.users.push(user);
       /* 新用户注册即赠积分（ref 幂等 ⇒ 同一账号绝不会重复送） */
       const grant = signupPoints();
-      addPoints(username, grant, "signup", `signup:${username}`, `注册赠送 ${grant} 积分`);
+      if (grant > 0) addPoints(username, grant, "signup", `signup:${username}`, `注册赠送 ${grant} 积分`);
+      else console.log("[points] 管理员已关闭注册赠分，跳过发放");
       if (!db.registerIps) db.registerIps = {};
       db.registerIps[ip] = regCount + 1;
       /* 码上记账：⛔ usedCount 只增不减（否则"注册→删号→再注册"可无限刷额度）；
@@ -2090,6 +2095,11 @@ const server = http.createServer(async (req, res) => {
       const index = readSyncIndex(who.username);
       let used = syncUsageBytes(who.username);
       const results = [];
+      /* 10-23：管理员可整块关掉云存储 ⇒ 配额 0 时直接说清楚，别让客户端以为是"超限" */
+      const quota = storageLimitFor(who.username);
+      if (quota <= 0) {
+        return send(403, { ok: false, error: "storage-disabled", message: "管理员没有给这个账号开通云存储（需要的话请让管理员在「用户管理中心」打开默认云存储，或给这个账号单独设一个容量）。" });
+      }
       for (const item of incoming) {
         const id = syncId(item && item.id);
         if (!id) continue;
@@ -2101,8 +2111,8 @@ const server = http.createServer(async (req, res) => {
         const prevBytes = Number(prev.sizeBytes || 0);
         const addBytes = lines.reduce((n, l) => n + Buffer.byteLength(l, "utf8") + 1, 0);
         /* ⛔ 配额：超限就**不写这一条**并如实回报 —— 绝不留半截数据（客户端据此提示"已达上限"）。 */
-        if (used + addBytes > storageLimitFor(who.username)) {
-          results.push({ id, ok: false, error: "quota-exceeded", needBytes: addBytes, usedBytes: used, limitBytes: storageLimitFor(who.username) });
+        if (used + addBytes > quota) {
+          results.push({ id, ok: false, error: "quota-exceeded", needBytes: addBytes, usedBytes: used, limitBytes: quota });
           continue;
         }
         try {
@@ -3523,19 +3533,25 @@ location.replace("/");
     if (p === "/admin/policy") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
       const gb = (bytes) => Math.round((Number(bytes) / 1073741824) * 100) / 100;
-      if (req.method === "GET") {
-        return send(200, {
+      const view = () => {
+        const pol = db.policy || {};
+        return {
           ok: true,
           signupPoints: signupPoints(),
           storageBytes: storageDefaultBytes(),
           storageGb: gb(storageDefaultBytes()),
+          signupPointsEnabled: pol.signupPointsEnabled !== false,
+          storageEnabled: pol.storageEnabled !== false,
           env: { signupPoints: SIGNUP_GRANT, storageBytes: STORAGE_LIMIT_BYTES },
-        });
-      }
+        };
+      };
+      if (req.method === "GET") return send(200, view());
       if (req.method !== "POST") return send(405, { ok: false, error: "只支持 GET / POST" });
       const body = await readBody();
       const next = Object.assign({}, db.policy || {});
-      if (body && body.reset) { delete next.signupPoints; delete next.storageBytes; }
+      if (body && body.reset) { delete next.signupPoints; delete next.storageBytes; delete next.signupPointsEnabled; delete next.storageEnabled; }
+      if (body && body.signupPointsEnabled !== undefined) next.signupPointsEnabled = body.signupPointsEnabled !== false;
+      if (body && body.storageEnabled !== undefined) next.storageEnabled = body.storageEnabled !== false;
       if (body && body.signupPoints !== undefined && body.signupPoints !== null && body.signupPoints !== "") {
         const n = Number(body.signupPoints);
         if (!Number.isFinite(n) || n < 0 || n > 1e7) return send(400, { ok: false, error: "注册赠送积分要填 0 ~ 10000000 的整数" });
@@ -3548,8 +3564,9 @@ location.replace("/");
       }
       db.policy = next;
       persist();
-      console.log("[policy] " + me.username + " 设置：注册赠分 " + signupPoints() + " · 默认云存储 " + gb(storageDefaultBytes()) + " GB");
-      return send(200, { ok: true, signupPoints: signupPoints(), storageBytes: storageDefaultBytes(), storageGb: gb(storageDefaultBytes()) });
+      console.log("[policy] " + me.username + " 设置：注册赠分 " + ((db.policy || {}).signupPointsEnabled === false ? "关闭" : signupPoints())
+        + " · 默认云存储 " + ((db.policy || {}).storageEnabled === false ? "关闭" : gb(storageDefaultBytes()) + " GB"));
+      return send(200, view());
     }
 
     /* 管理端：权益总览 / 开通·续期·停用 / 价格表 */
@@ -3643,7 +3660,8 @@ location.replace("/");
         })
         .filter((r) => !q || r.username.toLowerCase().includes(q))
         .sort((a, b) => b.balance - a.balance);
-      return send(200, { ok: true, total: rows.length, signupGrant: signupPoints(), storageBytes: storageDefaultBytes(), users: rows });
+      return send(200, { ok: true, total: rows.length, signupGrant: signupPoints(), storageBytes: storageDefaultBytes(),
+          signupPointsEnabled: (db.policy || {}).signupPointsEnabled !== false, storageEnabled: (db.policy || {}).storageEnabled !== false, users: rows });
     }
     if (p === "/admin/points/grant" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
