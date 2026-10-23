@@ -1631,6 +1631,15 @@ const server = http.createServer(async (req, res) => {
       node: process.version,
     });
   }
+  /* 10-23 用户令「网页云管理 logo 改成和应用一样的」+「两边品牌分开」⇒ 侧栏品牌行
+     （名字 + 图标地址）统一由这里给：客户机 PPcode / 主站 Codex Harness。
+     ⛔ 公开端点，只回品牌名与图标地址，不含任何账号信息；⛔ 名字一律读 env，页面不写死。 */
+  if (p === "/api/brand" && req.method === "GET") {
+    const name = String(process.env.HARNESS_PRODUCT_NAME || "PPcode");
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(JSON.stringify({ ok: true, name, logo: "/api/favicon?size=256" }));
+    return;
+  }
   /* ── 站点图标（10-18 用户令「做成自定义图标，管理员可以上传改这个图标，默认现在的可以」）──
      ⛔ 设计取舍：
         · 存储放 `<data 目录>/branding/favicon.<ext>` —— 与 data.json 同级，
