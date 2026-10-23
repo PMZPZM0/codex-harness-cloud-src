@@ -723,6 +723,8 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         });
       }
       if (event.type === "provider-activated") {
+        /* 供应商互斥在主进程执行；渲染层必须重拉整张列表，旧供应商开关才会同步变灰。 */
+        bag.refreshActive?.();
         // 供应商→中转站反向联动：生效供应商变成非 relay 时，清掉中转站「当前生效」标记，
         // 余额徽标/置顶订阅卡即时退场（此前只靠 activeProvider 逐处比对，relay-active 会残留）。
         // relayActivate 自身最后一步才写 relay-active，本分支先清后写也会收敛到正确终态。
