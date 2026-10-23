@@ -3817,6 +3817,315 @@ const server = http.createServer(async (req, res) => {
     return send(200, { ok: true, plans: Object.values(db.plans || {}) });
   }
 
+  /* ══ 团队协作（10-23 用户令「团队模式 / 团队记忆空间 / 团队知识库 / 团队管理 / 团队套餐」）════
+     本轮落地 P0 的可闭环部分：团队主体 + 成员/邀请 + **团队记忆** + **团队知识库** + 开通条件。
+     ⛔ 存储设计：团队记忆与团队知识库走**云侧自带存储**（db.teamStore），不依赖 WeKnora ——
+        客户机没配 WeKnora 时个人 KB 用不了，团队能力也必须能独立工作；WeKnora 大库接入 = P1。
+     ⛔ 个人 / 团队完全隔离：个人积分·订阅·记忆·知识库永不进入团队检索结果。 */
+  if (!db.teamPolicy || typeof db.teamPolicy !== "object") {
+    db.teamPolicy = { enabled: true, freeSeats: 3, memoryEnabled: true, kbEnabled: true, maxEntryChars: 2000 };
+  }
+  if (!db.teams || typeof db.teams !== "object") db.teams = {};
+  if (!db.teamMembers || typeof db.teamMembers !== "object") db.teamMembers = {};
+  if (!db.teamInvites || typeof db.teamInvites !== "object") db.teamInvites = {};
+  if (!db.teamStore || typeof db.teamStore !== "object") db.teamStore = {};
+
+  const teamPolicyOf = () => {
+    const p = (db.teamPolicy && typeof db.teamPolicy === "object") ? db.teamPolicy : {};
+    return {
+      enabled: p.enabled !== false,
+      freeSeats: Math.max(1, Math.round(Number(p.freeSeats) || 3)),
+      memoryEnabled: p.memoryEnabled !== false,
+      kbEnabled: p.kbEnabled !== false,
+      maxEntryChars: Math.max(200, Math.min(20000, Math.round(Number(p.maxEntryChars) || 2000))),
+    };
+  };
+  /** 当前用户在团队里的角色（含 owner 覆盖）；非成员返回空串。 */
+  const teamRoleOf = (teamId, username) => {
+    const team = db.teams[teamId];
+    if (!team || team.status !== "active") return "";
+    if (team.owner === username) return "owner";
+    const m = (db.teamMembers[teamId] || {})[username];
+    return m && m.status === "active" ? String(m.role || "member") : "";
+  };
+  const teamSeatUsage = (teamId) => {
+    const team = db.teams[teamId];
+    const members = db.teamMembers[teamId] || {};
+    const active = Object.values(members).filter((m) => m && m.status === "active").length;
+    return { used: active + (team && team.owner ? 1 : 0), limit: Number((team && team.seatLimit) || teamPolicyOf().freeSeats) };
+  };
+  /* 团队：创建 / 列表 / 详情 */
+  if (p === "/teams" && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const policy = teamPolicyOf();
+    if (!policy.enabled) return send(403, { ok: false, error: "team-disabled", message: "团队功能未开通，请联系管理员" });
+    const body = await readBody();
+    const name = String((body && body.name) || "").trim().slice(0, 40);
+    if (!name) return send(400, { ok: false, error: "团队名称必填（≤40 字）" });
+    const id = "T" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+    db.teams[id] = {
+      id, name, owner: who.username, createdAt: Date.now(), status: "active",
+      seatLimit: policy.freeSeats, pointsPool: 0,
+      settings: { allowMemberInvite: false, defaultRole: "member", memoryWriteMode: "all" },
+    };
+    db.teamMembers[id] = {};
+    persist();
+    console.log("[team] " + who.username + " 创建团队「" + name + "」（" + id + "）");
+    return send(200, { ok: true, team: { id, name, owner: who.username, seatLimit: policy.freeSeats } });
+  }
+  if (p === "/teams" && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const list = Object.values(db.teams)
+      .map((t) => ({ team: t, role: teamRoleOf(t.id, who.username) }))
+      .filter((x) => x.role)
+      .map((x) => ({ id: x.team.id, name: x.team.name, role: x.role, seats: teamSeatUsage(x.team.id), createdAt: x.team.createdAt, memoryEnabled: teamPolicyOf().memoryEnabled, kbEnabled: teamPolicyOf().kbEnabled }));
+    return send(200, { ok: true, teams: list, policy: teamPolicyOf() });
+  }
+  /* ⛔ 详情路由必须排除所有「子资源」路径，否则 /teams/:id/integrations 会被它先吞掉
+     （p.slice 得到 "ID/integrations" ⇒ 判成非成员，实测 10-23 踩到）。 */
+  if (p.startsWith("/teams/") && req.method === "GET" && !p.includes("/memory") && !p.includes("/kb")
+      && !p.includes("/members") && !p.includes("/invite") && !p.includes("/integrations")) {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length);
+    const role = teamRoleOf(teamId, who.username);
+    if (!role) return send(403, { ok: false, error: "not-a-member" });
+    const team = db.teams[teamId];
+    const integrations = db.teamIntegrations[teamId] || {};
+    const members = Object.entries(db.teamMembers[teamId] || {}).filter(([, m]) => m && m.status === "active")
+      .map(([u, m]) => ({ username: u, role: m.role, joinedAt: m.joinedAt }));
+    return send(200, {
+      ok: true,
+      team: { id: team.id, name: team.name, owner: team.owner, createdAt: team.createdAt, status: team.status, seatLimit: team.seatLimit, settings: team.settings },
+      role, seats: teamSeatUsage(teamId),
+      members: [{ username: team.owner, role: "owner", joinedAt: team.createdAt }].concat(members.filter((m) => m.username !== team.owner)),
+      integrations: { kbReady: Boolean(integrations.kbId), memoryReady: Boolean(integrations.memKey) },
+      policy: teamPolicyOf(),
+    });
+  }
+
+  /* 团队邀请：生成码 / 加入 */
+  if (p.startsWith("/teams/") && p.endsWith("/invite") && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/invite".length);
+    const role = teamRoleOf(teamId, who.username);
+    const team = db.teams[teamId];
+    if (!role) return send(403, { ok: false, error: "not-a-member" });
+    const settings = (team && team.settings) || {};
+    if (role === "member" && !settings.allowMemberInvite) return send(403, { ok: false, error: "no-permission", message: "成员不能邀请（管理员可在团队设置里开启）" });
+    const seats = teamSeatUsage(teamId);
+    if (seats.used >= seats.limit) return send(400, { ok: false, error: "seats-full", message: "席位已满（" + seats.used + "/" + seats.limit + "），升级套餐后可继续邀请" });
+    const body = await readBody();
+    const code = crypto.randomBytes(4).toString("hex");
+    db.teamInvites[code] = {
+      code, teamId, role: "member", createdBy: who.username, createdAt: Date.now(),
+      maxUses: 1, usedCount: 0, expiresAt: Date.now() + 7 * 86400000,
+    };
+    persist();
+    console.log("[team] " + who.username + " 为团队 " + teamId + " 生成邀请码 " + code);
+    return send(200, { ok: true, code, link: publicBaseOf(req).replace(/\/cloud-api\/*$/, "").replace(/\/+$/, "") + "/account.html?team=" + code });
+  }
+  if (p === "/teams/join" && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const body = await readBody();
+    const code = String((body && body.code) || "").trim().toLowerCase();
+    const inv = db.teamInvites[code];
+    if (!inv) return send(404, { ok: false, error: "invite-not-found", message: "团队邀请码不存在" });
+    if (Number(inv.expiresAt || 0) && Date.now() >= Number(inv.expiresAt)) return send(403, { ok: false, error: "invite-expired", message: "邀请码已过期" });
+    if (Number(inv.maxUses || 0) && Number(inv.usedCount || 0) >= Number(inv.maxUses)) return send(403, { ok: false, error: "invite-exhausted", message: "邀请码已用完" });
+    const team = db.teams[inv.teamId];
+    if (!team || team.status !== "active") return send(404, { ok: false, error: "team-not-found" });
+    if (teamRoleOf(inv.teamId, who.username)) return send(409, { ok: false, error: "already-member", message: "你已在该团队中" });
+    const seats = teamSeatUsage(inv.teamId);
+    if (seats.used >= seats.limit) return send(400, { ok: false, error: "seats-full", message: "团队席位已满" });
+    db.teamMembers[inv.teamId] = db.teamMembers[inv.teamId] || {};
+    db.teamMembers[inv.teamId][who.username] = { role: "member", status: "active", joinedAt: Date.now(), invitedBy: inv.createdBy };
+    inv.usedCount = Number(inv.usedCount || 0) + 1;
+    persist();
+    console.log("[team] " + who.username + " 加入团队 " + inv.teamId + "（邀请码 " + code + "）");
+    return send(200, { ok: true, team: { id: team.id, name: team.name }, role: "member" });
+  }
+  if (p.startsWith("/teams/") && p.endsWith("/members") && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/members".length);
+    if (!teamRoleOf(teamId, who.username)) return send(403, { ok: false, error: "not-a-member" });
+    const team = db.teams[teamId];
+    const members = Object.entries(db.teamMembers[teamId] || {}).filter(([, m]) => m && m.status === "active")
+      .map(([u, m]) => ({ username: u, role: m.role, joinedAt: m.joinedAt, invitedBy: m.invitedBy || "" }));
+    return send(200, { ok: true, members: [{ username: team.owner, role: "owner", joinedAt: team.createdAt, invitedBy: "" }].concat(members), seats: teamSeatUsage(teamId) });
+  }
+
+  /* ── 团队记忆空间 / 团队知识库：**真对接客户机已部署的服务** ─────────────────────
+     ⛔ 10-23 用户澄清：「客户机上都已经部署了腾讯的记忆空间和腾讯的知识库」⇒ 团队能力**不自建存储**，
+        云端的职责只有三件：**建空间（MemHub 团队用户 / WeKnora 团队库 + MCP 端点）、发凭据、验成员权限**。
+        内容读写由成员的 Codex 工具直连（MemHub key / WeKnora MCP），云端只提供检索代理兜底。 */
+  if (!db.teamIntegrations || typeof db.teamIntegrations !== "object") db.teamIntegrations = {};
+
+  /** 团队知识库：建/取自 WeKnora 团队库（`t-<teamId>`），并下发只读检索端点。 */
+  async function ensureTeamKnowledge(teamId) {
+    if (!WEKNORA_ADMIN_KEY) return { ok: false, error: "knowledge-not-configured", message: "知识库服务未配置（管理员先配 WeKnora）" };
+    const cur = (db.teamIntegrations[teamId] = db.teamIntegrations[teamId] || {});
+    const kbName = "t-" + String(teamId).replace(/[^\w.-]+/g, "_").slice(0, 40);
+    if (cur.kbId && (await weknoraAlive(`/api/v1/knowledge-bases/${cur.kbId}`)) === false) {
+      cur.kbId = ""; cur.endpointId = ""; cur.mcpToken = ""; cur.mcpUrl = "";
+    }
+    if (!cur.kbId) {
+      const created = await weknoraAdmin("/api/v1/knowledge-bases", { method: "POST", body: { name: kbName, description: `团队 ${teamId} 的共享知识库（云端自动创建）`, type: "document" } });
+      cur.kbId = String((created && created.data && created.data.id) || "");
+      if (!cur.kbId) throw new Error("建团队库未返回 id");
+      if (WEKNORA_LLM_MODEL_ID) await weknoraAdmin(`/api/v1/initialization/config/${cur.kbId}`, { method: "PUT", body: kbModelConfigBody() });
+      cur.kbName = kbName;
+    }
+    if (!cur.endpointId || !cur.mcpToken) {
+      const ep = await weknoraAdmin("/api/v1/mcp-endpoints", { method: "POST", body: { name: `codex-${kbName}`, description: "团队共享知识库的只读检索端点", enabled: true, knowledge_base_ids: [cur.kbId], tools: ["list_knowledge_bases", "search_knowledge", "grep_chunks", "list_documents", "read_document", "ask"], rate_limit_per_minute: 120 } });
+      const data = (ep && ep.data) || {};
+      cur.endpointId = String(data.id || "");
+      cur.mcpToken = String(data.token || "");
+      cur.mcpUrl = cur.endpointId ? `${WEKNORA_BASE}/mcp/${cur.endpointId}` : "";
+    }
+    persist();
+    return { ok: true, kbId: cur.kbId, kbName: cur.kbName || kbName, mcpUrl: cur.mcpUrl, mcpToken: cur.mcpToken };
+  }
+
+  /** 团队记忆空间：建/取自 MemHub 的**团队用户**（同一把 key = 同一空间 ⇒ 天然共享）。 */
+  async function ensureTeamMemory(teamId) {
+    if (!MEMHUB_ADMIN_KEY) return { ok: false, error: "memory-not-configured", message: "记忆空间服务未配置（管理员先配 MemHub）" };
+    const cur = (db.teamIntegrations[teamId] = db.teamIntegrations[teamId] || {});
+    if (!cur.memKey) {
+      const res = await fetch(`${MEMHUB_BASE}/api/v1/meta/user/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Tdai-Service-Id": MEMHUB_INSTANCE, "X-Tdai-User-Key": MEMHUB_ADMIN_KEY },
+        body: JSON.stringify({ username: `team-${String(teamId).slice(0, 36)}` }),
+      });
+      const json = await res.json().catch(() => null);
+      const key = json && json.data && json.data.default_user_key;
+      if (!key) throw new Error(`建团队记忆空间未返回 key（${res.status}）`);
+      cur.memKey = String(key);
+      cur.memUserId = String((json.data && json.data.user_id) || "");
+      cur.memBaseUrl = `${MEMHUB_PROXY_BASE}/claude-code/default/v1`;
+      persist();
+      console.log("[team] 团队 " + teamId + " 记忆空间已建（memUserId=" + cur.memUserId + "）");
+    }
+    return { ok: true, baseUrl: cur.memBaseUrl || `${MEMHUB_PROXY_BASE}/claude-code/default/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key", memUserId: cur.memUserId || "" };
+  }
+
+  /* 开通团队的两套空间（owner/admin；幂等，已建则只补缺） */
+  if (p.startsWith("/teams/") && p.endsWith("/provision") && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/provision".length);
+    const role = teamRoleOf(teamId, who.username);
+    if (!role) return send(403, { ok: false, error: "not-a-member" });
+    if (role === "member") return send(403, { ok: false, error: "no-permission", message: "只有 owner / admin 可以开通团队空间" });
+    const policy = teamPolicyOf();
+    const out = { ok: true, kb: null, memory: null, errors: [] };
+    if (policy.kbEnabled) {
+      try { out.kb = await ensureTeamKnowledge(teamId); } catch (e) { out.errors.push("kb: " + (e && e.message)); }
+    }
+    if (policy.memoryEnabled) {
+      try { out.memory = await ensureTeamMemory(teamId); } catch (e) { out.errors.push("memory: " + (e && e.message)); }
+    }
+    console.log("[team] " + who.username + " 开通团队 " + teamId + " 空间：" + JSON.stringify({ kb: Boolean(out.kb && out.kb.kbId), memory: Boolean(out.memory && out.memory.userKey), errors: out.errors }));
+    return send(200, out);
+  }
+
+  /* 成员读取团队凭据（给本机 Codex 配置用；owner/admin 也可用来自检） */
+  if (p.startsWith("/teams/") && p.endsWith("/integrations") && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/integrations".length);
+    const role = teamRoleOf(teamId, who.username);
+    if (!role) return send(403, { ok: false, error: "not-a-member" });
+    const cur = db.teamIntegrations[teamId] || {};
+    const policy = teamPolicyOf();
+    return send(200, {
+      ok: true, role, policy,
+      knowledge: policy.kbEnabled && cur.kbId ? { ready: true, kbId: cur.kbId, kbName: cur.kbName || "", mcpUrl: cur.mcpUrl || "", mcpToken: cur.mcpToken || "" } : { ready: false },
+      memory: policy.memoryEnabled && cur.memKey ? { ready: true, baseUrl: cur.memBaseUrl || `${MEMHUB_PROXY_BASE}/claude-code/default/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key", memUserId: cur.memUserId || "" } : { ready: false },
+    });
+  }
+
+  /* 团队知识库检索代理（真库）：成员在云端即可检索团队库，无需本机 MCP。 */
+  if (p.startsWith("/teams/") && p.endsWith("/kb/search") && req.method === "POST") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/kb/search".length);
+    if (!teamRoleOf(teamId, who.username)) return send(403, { ok: false, error: "not-a-member" });
+    if (!teamPolicyOf().kbEnabled) return send(403, { ok: false, error: "team-kb-disabled", message: "团队知识库未开通" });
+    const body = await readBody();
+    const query = String((body && body.query) || "").trim().slice(0, 500);
+    if (!query) return send(400, { ok: false, error: "缺少检索词" });
+    if (!rateLimit(`tkbsearch:${who.username}`, 30, 60_000)) return send(429, { ok: false, error: "检索太频繁，请稍后再试" });
+    const info = await ensureTeamKnowledge(teamId);
+    const found = await weknoraAdmin("/api/v1/knowledge-search", { method: "POST", body: { query, knowledge_base_ids: [info.kbId] } });
+    const hits = (found && (found.data || found.results)) || [];
+    return send(200, {
+      ok: true, scope: "team", kind: "kb", backend: "weknora", q: query,
+      hits: hits.slice(0, 8).map((h) => ({
+        title: h.knowledge_title || h.knowledge_filename || "",
+        snippet: String(h.matched_content || h.content || "").replace(/\s+/g, " ").slice(0, 400),
+        score: Number(h.score || 0),
+      })),
+    });
+  }
+
+  /* 团队记忆：云端**不存内容**（内容在 MemHub，由成员 Codex 工具读写）。
+     这里只回「空间凭据 + 用法」，让工具侧/前端知道该往哪儿读写。 */
+  if (p.startsWith("/teams/") && p.endsWith("/memory") && req.method === "GET") {
+    const who = accountWho();
+    if (!who) return send(401, { ok: false, error: "unauthorized" });
+    const teamId = p.slice("/teams/".length, -"/memory".length);
+    if (!teamRoleOf(teamId, who.username)) return send(403, { ok: false, error: "not-a-member" });
+    const policy = teamPolicyOf();
+    if (!policy.memoryEnabled) return send(403, { ok: false, error: "team-memory-disabled", message: "团队记忆未开通" });
+    const cur = db.teamIntegrations[teamId] || {};
+    return send(200, {
+      ok: true, backend: "memhub", ready: Boolean(cur.memKey),
+      memory: cur.memKey
+        ? { baseUrl: cur.memBaseUrl || `${MEMHUB_PROXY_BASE}/claude-code/default/v1`, userKey: cur.memKey, instanceId: MEMHUB_INSTANCE, apiKeyHeader: "X-Tdai-User-Key", memUserId: cur.memUserId || "" }
+        : null,
+      note: "团队记忆存在 MemHub 的团队空间里（同一把 userKey = 同一空间）；读写走成员本机的 Codex 记忆工具。",
+    });
+  }
+
+  /* 管理员：团队开通条件与配置 / 全站团队列表 */
+  if (p === "/admin/team-policy" && req.method === "GET") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    return send(200, { ok: true, policy: teamPolicyOf() });
+  }
+  if (p === "/admin/team-policy" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBody();
+    const cur = teamPolicyOf();
+    db.teamPolicy = {
+      enabled: body && body.enabled !== undefined ? body.enabled !== false : cur.enabled,
+      freeSeats: body && body.freeSeats !== undefined ? Math.max(1, Math.min(500, Math.round(Number(body.freeSeats) || cur.freeSeats))) : cur.freeSeats,
+      memoryEnabled: body && body.memoryEnabled !== undefined ? body.memoryEnabled !== false : cur.memoryEnabled,
+      kbEnabled: body && body.kbEnabled !== undefined ? body.kbEnabled !== false : cur.kbEnabled,
+      maxEntryChars: body && body.maxEntryChars !== undefined ? Math.max(200, Math.min(20000, Math.round(Number(body.maxEntryChars) || cur.maxEntryChars))) : cur.maxEntryChars,
+    };
+    persist();
+    console.log("[team] " + me.username + " 更新团队策略：" + JSON.stringify(db.teamPolicy));
+    return send(200, { ok: true, policy: teamPolicyOf() });
+  }
+  if (p === "/admin/teams" && req.method === "GET") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const rows = Object.values(db.teams).map((t) => {
+      const integ = db.teamIntegrations[t.id] || {};
+      return {
+        id: t.id, name: t.name, owner: t.owner, createdAt: t.createdAt, status: t.status,
+        seats: teamSeatUsage(t.id), members: Object.keys(db.teamMembers[t.id] || {}).length,
+        kbReady: Boolean(integ.kbId), memoryReady: Boolean(integ.memKey),
+      };
+    }).sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
+    return send(200, { ok: true, teams: rows, policy: teamPolicyOf() });
+  }
+
   /* 管理端：邀请机制管理（10-23）—— 奖励配置 + 每位用户的邀请数 / 累计奖励 / 明细 */
   if (p === "/admin/invite" && req.method === "GET") {
     if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
