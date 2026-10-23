@@ -3488,6 +3488,27 @@ const server = http.createServer(async (req, res) => {
     return crypto.createHash("md5").update(line + String(key || ""), "utf8").digest("hex");
   };
   const newBillingId = (prefix) => prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+  /* ⛔ 10-23 用户澄清购买模型：**套餐用钱买，套餐自带赠送积分**（积分本身另有充值通道）——
+     这里是「开通套餐」的唯一实现：权益叠加续期 + 自动建库/发钥匙 + 赠送积分入账。 */
+  const activatePlan = (username, plan, note) => {
+    const features = (plan.features && typeof plan.features === "object") ? plan.features : {};
+    const picked = FEATURES.filter((f) => features[f]);
+    const days = Math.max(0, Math.round(Number(plan.days) || 0));   /* 0 = 永久（管理员自己配，慎用） */
+    const states = {};
+    for (const f of picked) {
+      const cfg = features[f] || {};
+      states[f] = grantFeature(username, f, {
+        days,
+        quotaMb: cfg.quotaMb !== undefined ? Number(cfg.quotaMb) : undefined,
+        quota: cfg.quota !== undefined ? Number(cfg.quota) : undefined,
+        note,
+      });
+      if (states[f].enabled) provisionFor(username, f);
+    }
+    const bonus = Math.max(0, Math.round(Number(plan.points) || 0));
+    if (bonus > 0) addPoints(username, bonus, "plan-bonus", "plan:" + plan.id + ":" + Date.now(), "订阅「" + plan.name + "」赠送积分");
+    return { states, bonus, days, features: picked };
+  };
   /* ⛔ 审查修复（10-23）：套餐 / 订单 id 一律走白名单字符集 —— `db.plans["__proto__"] = …` 是原型污染、
      奇形 id 会流进前端 data-* 属性。管理员是可信的，这是防御纵深。 */
   const BILL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -3507,7 +3528,8 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  /* 用户端：购买套餐（扣积分 → 各权益叠加续期 → 自动建库 / 发钥匙 → 落订阅流水） */
+  /* 用户端：购买套餐 —— **走支付**（金额 = priceCny），回调到账后开通权益 + 赠送积分。
+     ⛔ 10-23 用户澄清：不是用积分换套餐；支付渠道未配置时这里直接拒绝并提示联系管理员。 */
   if (p === "/plans/buy" && req.method === "POST") {
     const who = accountWho();
     if (!who) return send(401, { ok: false, error: "unauthorized" });
@@ -3517,33 +3539,31 @@ const server = http.createServer(async (req, res) => {
     if (!BILL_ID_RE.test(planId)) return send(400, { ok: false, error: "非法的套餐 ID" });
     const plan = (db.plans || {})[planId];
     if (!plan || plan.active === false) return send(404, { ok: false, error: "套餐不存在或已下架" });
-    const price = Math.max(0, Math.round(Number(plan.price) || 0));
-    const balance = Number(pointsOf(who.username).balance || 0);
-    if (price > balance) return send(402, { ok: false, error: "insufficient-points", need: price, balance });
-    const features = (plan.features && typeof plan.features === "object") ? plan.features : {};
-    const picked = FEATURES.filter((f) => features[f]);
-    if (!picked.length) return send(400, { ok: false, error: "套餐未包含任何权益" });
-    const days = Math.max(0, Math.round(Number(plan.days) || 0));   /* 0 = 永久（管理员自己配，慎用） */
-    if (price > 0) addPoints(who.username, -price, "subscribe", "plan:" + planId + ":" + Date.now(), "订阅「" + plan.name + "」");
-    const orderId = newBillingId("SUB");
-    const states = {};
-    for (const f of picked) {
-      const cfg = features[f] || {};
-      states[f] = grantFeature(who.username, f, {
-        days,
-        quotaMb: cfg.quotaMb !== undefined ? Number(cfg.quotaMb) : undefined,
-        quota: cfg.quota !== undefined ? Number(cfg.quota) : undefined,
-        note: "订阅「" + plan.name + "」",
-      });
-      if (states[f].enabled) provisionFor(who.username, f);
-    }
-    (db.orders || (db.orders = {}))[orderId] = {
-      id: orderId, username: who.username, planId, planName: plan.name,
-      points: price, days, features: picked, at: Date.now(), note: "",
+    const cny = Math.round(Number(plan.priceCny) * 100) / 100;
+    if (!(cny > 0)) return send(400, { ok: false, error: "该套餐未设置金额，请联系管理员" });
+    const billing = billingOf();
+    if (!topupEnabled()) return send(400, { ok: false, error: "topup-disabled", message: "支付渠道未配置，请联系管理员开通套餐" });
+    const orderId = newBillingId("SB");
+    (db.topups || (db.topups = {}))[orderId] = {
+      id: orderId, username: who.username, kind: "plan", planId, planName: plan.name,
+      cny, points: Math.max(0, Math.round(Number(plan.points) || 0)), at: Date.now(), status: "pending",
     };
     persist();
-    console.log("[billing] " + who.username + " 订阅「" + plan.name + "」，扣 " + price + " 积分，订单 " + orderId);
-    return send(200, { ok: true, orderId, planName: plan.name, states, balance: pointsOf(who.username).balance, entitlements: entitlementsSummary(who.username) });
+    const base = publicBaseOf(req).replace(/\/+$/, "");
+    const params = {
+      pid: billing.epay.pid,
+      type: "alipay",
+      out_trade_no: orderId,
+      notify_url: base + "/pay/notify",
+      return_url: base + "/account.html#subscribe",
+      name: plan.name + "（" + plan.priceCny + " 元）",
+      money: cny.toFixed(2),
+    };
+    params.sign = md5Sign(params, billing.epay.key);
+    params.sign_type = "MD5";
+    const payUrl = billing.epay.gate + "/submit.php?" + Object.keys(params).map((k) => k + "=" + encodeURIComponent(params[k])).join("&");
+    console.log("[billing] " + who.username + " 下单套餐「" + plan.name + "」" + cny + " 元（订单 " + orderId + "）");
+    return send(200, { ok: true, orderId, payUrl, cny, planName: plan.name });
   }
 
   /* 用户端：我的订阅流水 / 充值记录（最近 50 条，新的在前） */
@@ -3628,9 +3648,25 @@ const server = http.createServer(async (req, res) => {
       return plain("fail");
     }
     order.status = "paid"; order.tradeNo = String(params.trade_no || ""); order.paidAt = Date.now();
-    addPoints(order.username, order.points, "topup", "topup:" + orderId, "充值 " + order.cny + " 元 → " + order.points + " 积分");
+    if (order.kind === "plan") {
+      /* 套餐订单：开通权益 + 赠送积分（⛔ 用户澄清的模型：钱买套餐，套餐带积分） */
+      const plan = (db.plans || {})[order.planId];
+      if (plan) {
+        const r = activatePlan(order.username, plan, "订阅「" + plan.name + "」（订单 " + orderId + "）");
+        order.granted = { features: r.features, bonus: r.bonus, days: r.days };
+      } else {
+        order.note = "套餐已下架/删除，权益未开通 —— 请管理员核对";
+      }
+      (db.orders || (db.orders = {}))[orderId] = {
+        id: orderId, username: order.username, planId: order.planId, planName: order.planName,
+        cny: order.cny, points: order.points, days: plan ? plan.days : 0, at: Date.now(), note: "支付订单 " + orderId,
+      };
+      console.log("[billing] " + order.username + " 支付套餐「" + order.planName + "」" + order.cny + " 元 → 已开通（赠 " + order.points + " 积分）");
+    } else {
+      addPoints(order.username, order.points, "topup", "topup:" + orderId, "充值 " + order.cny + " 元 → " + order.points + " 积分");
+      console.log("[billing] " + order.username + " 充值 " + order.cny + " 元（订单 " + orderId + "）→ +" + order.points + " 积分");
+    }
     persist();
-    console.log("[billing] " + order.username + " 充值 " + order.cny + " 元（订单 " + orderId + "）→ +" + order.points + " 积分");
     return plain("success");
     } catch (e) {
       console.log("[billing] notify 处理异常：" + (e && e.message));
@@ -3677,10 +3713,10 @@ const server = http.createServer(async (req, res) => {
     if (!Object.keys(cleaned).length) return send(400, { ok: false, error: "至少勾选一项权益（知识库 / 记忆）" });
     (db.plans || (db.plans = {}))[id] = {
       id, name, desc: String((body && body.desc) || "").trim(),
-      price: Math.max(0, Math.round(Number(body && body.price) || 0)),
-      /* 10-23 用户定稿：**人民币标价与积分分开** —— priceCny 只是展示（¥ 标价），实扣永远是 price 积分 */
-      priceCny: body && body.priceCny !== undefined && body.priceCny !== "" && body.priceCny !== null
-        ? Math.max(0, Math.round(Number(body.priceCny) * 100) / 100) : undefined,
+      /* ⛔ 10-23 用户澄清：套餐用**钱**买（priceCny = 人民币金额），套餐**赠送积分**（points）。
+         旧字段 price（积分售价）已废弃，留着只为兼容历史数据。 */
+      priceCny: Math.max(0, Math.round(Number(body && body.priceCny) || 0) * 100) / 100,
+      points: Math.max(0, Math.round(Number(body && body.points) || 0)),
       days: Math.max(0, Math.round(Number(body && body.days) || 0)),
       features: cleaned, active: body.active === undefined ? true : body.active !== false,
       sort: Math.round(Number(body && body.sort) || 0),
@@ -3688,6 +3724,27 @@ const server = http.createServer(async (req, res) => {
     persist();
     console.log("[billing] " + me.username + " 保存套餐「" + name + "」（" + id + "）");
     return send(200, { ok: true, plans: Object.values(db.plans || {}) });
+  }
+
+  /* 管理端：手动开通套餐（支付渠道未配置 / 线下收款时的兜底；同样走 activatePlan） */
+  if (p === "/admin/plans/grant" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBody();
+    const target = String((body && body.username) || "").trim();
+    const planId = String((body && body.planId) || "").trim();
+    if (!db.users.some((u) => u.username === target)) return send(404, { ok: false, error: "用户不存在" });
+    const plan = (db.plans || {})[planId];
+    if (!plan) return send(404, { ok: false, error: "套餐不存在" });
+    const r = activatePlan(target, plan, "管理员 " + me.username + " 手动开通");
+    const orderId = newBillingId("SB");
+    (db.orders || (db.orders = {}))[orderId] = {
+      id: orderId, username: target, planId, planName: plan.name,
+      cny: Math.round((Number(plan.priceCny) || 0) * 100) / 100, points: r.bonus, days: r.days, at: Date.now(),
+      note: "管理员 " + me.username + " 手动开通（未收款）",
+    };
+    persist();
+    console.log("[billing] " + me.username + " 手动给 " + target + " 开通「" + plan.name + "」（赠 " + r.bonus + " 积分）");
+    return send(200, { ok: true, username: target, plan: plan.name, bonus: r.bonus, states: r.states, balance: pointsOf(target).balance });
   }
 
   /* 管理端：充值对账（最近 100 笔）+ 手动补单（回调丢失的兜底，⛔ 补单同样幂等） */
@@ -3704,9 +3761,22 @@ const server = http.createServer(async (req, res) => {
     if (!order) return send(404, { ok: false, error: "订单不存在" });
     if (order.status === "paid" || order.status === "manual") return send(200, { ok: true, order, already: true });
     order.status = "manual"; order.paidAt = Date.now(); order.note = "管理员 " + me.username + " 手动补单";
-    addPoints(order.username, order.points, "topup", "topup:" + orderId, "充值 " + order.cny + " 元 → " + order.points + " 积分（手动补单）");
+    if (order.kind === "plan") {
+      const plan = (db.plans || {})[order.planId];
+      if (plan) {
+        const r0 = activatePlan(order.username, plan, "补单开通「" + plan.name + "」");
+        (db.orders || (db.orders = {}))[orderId] = {
+          id: orderId, username: order.username, planId: order.planId, planName: order.planName,
+          cny: order.cny, points: r0.bonus, days: r0.days, at: Date.now(), note: "手动补单 " + orderId,
+        };
+      } else {
+        order.note = "套餐已不存在，无法补单开通";
+      }
+    } else {
+      addPoints(order.username, order.points, "topup", "topup:" + orderId, "充值 " + order.cny + " 元 → " + order.points + " 积分（手动补单）");
+    }
     persist();
-    console.log("[billing] " + me.username + " 手动补单 " + orderId + "（" + order.username + " +" + order.points + " 积分）");
+    console.log("[billing] " + me.username + " 手动补单 " + orderId + "（" + order.username + " " + (order.kind === "plan" ? "开通套餐" : "+" + order.points + " 积分") + "）");
     return send(200, { ok: true, order });
   }
 
