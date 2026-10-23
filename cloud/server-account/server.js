@@ -1592,14 +1592,21 @@ const server = http.createServer(async (req, res) => {
       sha256: assets.filter((a) => a.kind === "sha256"),
     };
   }
+  let productMem = null;   /* 进程内缓存：命中后不再读盘（页面每次打开都会调这个接口） */
   function readProductCache() {
+    if (productMem) return productMem;
     try {
       const j = JSON.parse(fs.readFileSync(PRODUCT_CACHE_FILE, "utf8"));
-      if (j && Array.isArray(j.releases) && j.releases.length) return j;
+      /* ⛔ 缓存必须绑定仓库：换了 PRODUCT_REPO 还命中旧快照 = 展示别人家的版本 */
+      if (j && j.repo === PRODUCT_REPO && Array.isArray(j.releases) && j.releases.length) {
+        productMem = j;
+        return j;
+      }
     } catch { /* 没缓存过 / 坏了都当没有 */ }
     return null;
   }
   function writeProductCache(payload) {
+    productMem = payload;
     try { fs.writeFileSync(PRODUCT_CACHE_FILE, JSON.stringify(payload), { mode: 0o600 }); } catch { /* 写不了不影响返回 */ }
   }
   let productInflight = null;
@@ -1609,25 +1616,52 @@ const server = http.createServer(async (req, res) => {
       try {
         const r = await fetch(m.prefix + "https://api.github.com" + PRODUCT_RELEASES_PATH, {
           headers: { "User-Agent": "codex-cloud-admin", Accept: "application/vnd.github+json" },
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(6000),
         });
-        if (!r.ok) return { name: m.name, ok: false, status: r.status, ms: Date.now() - t0, rows: [] };
+        if (!r.ok) return { name: m.name, mirror: Boolean(m.prefix), ok: false, status: r.status, ms: Date.now() - t0, rows: [] };
         const rows = await r.json();
-        return { name: m.name, ok: Array.isArray(rows) && rows.length > 0, status: r.status, ms: Date.now() - t0, rows: Array.isArray(rows) ? rows : [] };
+        return { name: m.name, mirror: Boolean(m.prefix), ok: Array.isArray(rows) && rows.length > 0, status: r.status, ms: Date.now() - t0, rows: Array.isArray(rows) ? rows : [] };
       } catch (error) {
-        return { name: m.name, ok: false, status: 0, ms: Date.now() - t0, rows: [], error: classifyFetchError(error) };
+        return { name: m.name, mirror: Boolean(m.prefix), ok: false, status: 0, ms: Date.now() - t0, rows: [], error: classifyFetchError(error) };
       }
     };
-    const tried = await Promise.all(UPDATE_MIRRORS.map(probe));
-    const good = tried.filter((t) => t.ok).map((t) => ({ ...t, shaped: t.rows.filter((r) => r && !r.draft).map(shapeRelease) }));
-    if (!good.length) return { ok: false, tried };
-    /* 取版本最高的一份（不是"第一个成功"）：镜像滞后会返回旧版本 */
-    const best = good.reduce((a, b) => {
-      const av = (a.shaped[0] && a.shaped[0].version) || "0";
-      const bv = (b.shaped[0] && b.shaped[0].version) || "0";
-      return cmpVersion(bv, av) > 0 ? b : a;
+    /* ⛔ 不能等所有镜像（最慢那个 6s 超时 ⇒ 首次打开干等 8s）。
+       判据：拿到 2 个成功源就够判断"哪个版本最新"，或最多 3.5s 先行返回。 */
+    const done = [];
+    const pickBest = () => {
+      const good = done.filter((t) => t.ok).map((t) => ({ ...t, shaped: t.rows.filter((r) => r && !r.draft).map(shapeRelease) }));
+      if (!good.length) return null;
+      const best = good.reduce((a, b) => {
+        const av = (a.shaped[0] && a.shaped[0].version) || "0";
+        const bv = (b.shaped[0] && b.shaped[0].version) || "0";
+        const c = cmpVersion(bv, av);
+        if (c > 0) return b;
+        /* 同版本：国内镜像优先（用户令「默认走国内镜像」），标签也就不会显示成直连 */
+        if (c === 0 && b.mirror && !a.mirror) return b;
+        return a;
+      });
+      return { ok: true, source: best.name, releases: best.shaped, tried: done.map((t) => ({ name: t.name, ok: t.ok, status: t.status, ms: t.ms, error: t.error || "" })) };
+    };
+    const result = await new Promise((resolve) => {
+      let settled = false;
+      let finished = 0;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(pickBest() || { ok: false, tried: done.map((t) => ({ name: t.name, ok: t.ok, status: t.status, ms: t.ms, error: t.error || "" })) });
+      };
+      const timer = setTimeout(finish, 3500);
+      UPDATE_MIRRORS.forEach((m) => {
+        probe(m).then((r) => {
+          done.push(r);
+          finished++;
+          const okCount = done.filter((x) => x.ok).length;
+          if (okCount >= 2 || finished === UPDATE_MIRRORS.length) finish();
+        }).catch(() => { finished++; if (finished === UPDATE_MIRRORS.length) finish(); });
+      });
     });
-    return { ok: true, source: best.name, releases: best.shaped, tried: tried.map((t) => ({ name: t.name, ok: t.ok, status: t.status, ms: t.ms, error: t.error || "" })) };
+    return result;
   }
   async function productHome(force) {
     const disk = readProductCache();
@@ -1638,6 +1672,7 @@ const server = http.createServer(async (req, res) => {
         .then((res) => {
           if (!res.ok) return null;
           const payload = {
+            repo: PRODUCT_REPO,
             fetchedAt: Date.now(),
             source: res.source,
             releases: res.releases,
