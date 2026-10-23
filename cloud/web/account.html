@@ -592,6 +592,8 @@
   .mb-sub { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.65; max-width: 78ch; }
   .mb-bar { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 12px 0; }
   /* 到期自动清理开关（10-23 用户令「只提醒不自动删」）：两个中心共用同一份 policy，切任一个另一个跟着变 */
+  .pf-os-note { margin-top: 8px; font-size: 11.5px; line-height: 1.7; color: var(--muted); }
+  .pf-os-note code { padding: 1px 5px; border-radius: 5px; background: var(--line); font-size: 11px; word-break: break-all; }
   .sub-hero-top { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
   .sub-balance { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; }
   .sub-balance b { font-size: 22px; font-variant-numeric: tabular-nums; color: var(--brand-ink); }
@@ -743,6 +745,10 @@
                 <a class="pf-os-btn quiet" id="prodDlMacX64" target="_blank" rel="noopener" href="#">GitHub</a>
                 <button class="pf-os-btn quiet" id="prodCopyMacX64">复制</button>
               </div>
+              <!-- ⛔ 10-23 用户令：mac 首次启动指令（未签名 app 会被 Gatekeeper 报「已损坏」） -->
+              <div class="pf-os-note">首次启动：解压后把 App 拖进「应用程序」；若提示「已损坏，无法打开」，在终端执行
+                <code id="prodXattrX64">…</code>
+                <button class="pf-os-btn quiet" id="prodXattrCopyX64">复制命令</button></div>
             </article>
             <article class="pf-os">
               <div class="pf-os-top">
@@ -754,6 +760,9 @@
                 <a class="pf-os-btn quiet" id="prodDlMacArm" target="_blank" rel="noopener" href="#">GitHub</a>
                 <button class="pf-os-btn quiet" id="prodCopyMacArm">复制</button>
               </div>
+              <div class="pf-os-note">首次启动：解压后把 App 拖进「应用程序」；若提示「已损坏，无法打开」，在终端执行
+                <code id="prodXattrArm">…</code>
+                <button class="pf-os-btn quiet" id="prodXattrCopyArm">复制命令</button></div>
             </article>
           </div>
           <div class="pf-foot">
@@ -1996,6 +2005,29 @@
         }).join("");
         if ($("prodFeatPill")) $("prodFeatPill").textContent = (j.features || []).length + " 项";
       }
+      /* ⛔ 10-23 用户令：mac 首次启动指令 —— App 名随站点产品（Codex Harness / PPcode）动态拼。 */
+      var prodName = (j.product && j.product.name) || "Codex Harness";
+      var xattrCmd = 'xattr -cr "/Applications/' + prodName + '.app"';
+      ["prodXattrX64", "prodXattrArm"].forEach(function (id) { var el = $(id); if (el) el.textContent = xattrCmd; });
+      [["prodXattrCopyX64"], ["prodXattrCopyArm"]].forEach(function (pair) {
+        var btn = $(pair[0]);
+        if (btn && !btn.dataset.bound) {
+          btn.dataset.bound = "1";
+          btn.onclick = function () {
+            var label = btn.textContent;
+            var done = function () { btn.textContent = "已复制 ✓"; setTimeout(function () { btn.textContent = label; }, 1600); };
+            var fail = function () { btn.textContent = "复制失败"; setTimeout(function () { btn.textContent = label; }, 1600); };
+            if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(xattrCmd).then(done, fail);
+            else {
+              var ta = document.createElement("textarea");
+              ta.value = xattrCmd; ta.style.position = "fixed"; ta.style.opacity = "0"; ta.style.left = "-9999px";
+              document.body.appendChild(ta); ta.select();
+              try { document.execCommand("copy") ? done() : fail(); } catch (e) { fail(); }
+              document.body.removeChild(ta);
+            }
+          };
+        }
+      });
       var rels = (j.releases || []).slice(0, 2);   /* ⛔ 用户定稿：只展示最新 2 个版本（服务端已裁，这里兜底防旧缓存） */
       if (logBox) {
         logBox.innerHTML = rels.length ? rels.map(function (x, i) {
