@@ -3451,15 +3451,30 @@
       : "";
     if (!confirm("把「模型通道」的上游指向 " + target + " ？\n\n之后用户/客户端的模型都从这台 Manager 出；网关密钥沿用现有的（没有就去模型管理中心填）。" + warn)) return;
     btn.disabled = true;
-    wbmSay("正在切换上游并同步目录（最多约 6 秒）…");
-    api("/admin/upstream", { method: "POST", body: { base: target } }).then(function (r) {
-      btn.disabled = false;
+    wbmSay("正在向面板签发密钥并切换上游（最多约 8 秒）…");
+    /* ⛔ 只切地址不换密钥 = 全体客户端 401（云侧存的是旧网关密钥，面板上并不存在）。
+       所以优先走 provision：登面板签一把 codex-cloud → 写进上游 → 同步目录。 */
+    api("/admin/wbm/provision", { method: "POST", body: {} }).then(function (r) {
       var j = (r && r.j) || {};
-      if (!r.ok || !j.ok) { wbmSay("切换失败：" + (j.error || ("HTTP " + r.status)), "bad"); return; }
-      var s2 = j.sync || {};
-      wbmSay("上游已指向 " + j.base + (s2.ok ? ("，已识别 " + s2.count + " 个模型") : ("；目录同步：" + (s2.message || s2.error || "未返回"))), s2.ok ? "ok" : "");
-      loadServices();
-      loadWbmHealth();
+      if (r.ok && j.ok) {
+        btn.disabled = false;
+        var s2 = j.sync || {};
+        wbmSay("已签发密钥 " + (j.keyPrefix ? j.keyPrefix + "…" : "") + " 并把上游指向 " + j.base
+          + (s2.ok ? ("，已识别 " + s2.count + " 个模型") : ("；目录同步：" + (s2.message || s2.error || "未返回")))
+          + (j.revoked ? ("（撤销同名旧密钥 " + j.revoked + " 把）") : ""), s2.ok ? "ok" : "");
+        loadServices();
+        loadWbmHealth();
+        return;
+      }
+      /* 没配面板账号 / 面板登录失败：不静默改地址，如实说清并给退路 */
+      if (j.error === "panel-credentials-missing") {
+        btn.disabled = false;
+        wbmSay((j.message || "还没配面板管理员账号") + "　—— 已取消切换（切过去会 401）", "bad");
+        return null;
+      }
+      btn.disabled = false;
+      wbmSay("签发密钥失败：" + (j.message || j.error || ("HTTP " + r.status)), "bad");
+      return null;
     })["catch"](function () { btn.disabled = false; wbmSay("切换失败：网络错误", "bad"); });
   };
 
