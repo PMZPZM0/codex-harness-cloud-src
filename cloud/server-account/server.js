@@ -89,7 +89,20 @@ function storageLimitFor(username) {
     const v = db.storageQuota && db.storageQuota[username];
     if (Number.isFinite(v) && v > 0) return v;
   } catch { /* ignore */ }
-  return STORAGE_LIMIT_BYTES;
+  return storageDefaultBytes();
+}
+
+/* 10-23 用户令「新用户注册送的积分 / 会话上传的内存 也要能在用户管理里调」：
+   这两项从"编译期常量"变成 db.policy 里的运行期配置（改完立刻生效，不用重启）。
+   ⛔ 单一真相源：注册、发放、配额判断、管理端回显全部走下面两个函数，
+      别再直接读 STORAGE_LIMIT_BYTES / SIGNUP_GRANT（那两个只当"没配置时的兜底"）。 */
+function signupPoints() {
+  const v = Number(db.policy && db.policy.signupPoints);
+  return Number.isFinite(v) && v >= 0 ? Math.round(v) : SIGNUP_GRANT;
+}
+function storageDefaultBytes() {
+  const v = Number(db.policy && db.policy.storageBytes);
+  return Number.isFinite(v) && v > 0 ? Math.round(v) : STORAGE_LIMIT_BYTES;
 }
 /** 云端数据落盘根：与账号文件同目录，便于一起备份/迁移。 */
 const SYNC_DIR = process.env.HARNESS_SYNC_DIR || path.join(path.dirname(DATA_FILE), "sync");
@@ -938,6 +951,8 @@ if (db.offPeak.rateSemantics !== "replace-v1") {
    ⛔ 流水是唯一真相源，balance 是它的累加；ref 唯一 ⇒ 同一件事只入账一次（幂等）。
    ⛔ 消耗数值**取自 WBM 返回的 usage.credit**（不是本地估的）⇒ 天然与 WBM 口径同步。 */
 if (typeof db.points !== "object" || !db.points) db.points = {};
+/* 10-23：注册赠分 / 默认云存储的运行期配置（管理员可在「用户管理中心」里改） */
+if (typeof db.policy !== "object" || !db.policy) db.policy = {};
 const SIGNUP_GRANT = Number(process.env.HARNESS_SIGNUP_POINTS || 1000);
 
 /* 注册反滥用（10-16 用户令「注册云端账号，看看加一个什么限制合适，防止被滥用」）。
@@ -1573,7 +1588,8 @@ const server = http.createServer(async (req, res) => {
       user.inviteCode = invite ? invite.code : "";
       db.users.push(user);
       /* 新用户注册即赠积分（ref 幂等 ⇒ 同一账号绝不会重复送） */
-      addPoints(username, SIGNUP_GRANT, "signup", `signup:${username}`, `注册赠送 ${SIGNUP_GRANT} 积分`);
+      const grant = signupPoints();
+      addPoints(username, grant, "signup", `signup:${username}`, `注册赠送 ${grant} 积分`);
       if (!db.registerIps) db.registerIps = {};
       db.registerIps[ip] = regCount + 1;
       /* 码上记账：⛔ usedCount 只增不减（否则"注册→删号→再注册"可无限刷额度）；
@@ -1585,14 +1601,14 @@ const server = http.createServer(async (req, res) => {
         if (invite.usedBy.length < 200) invite.usedBy.push(username);
       }
       persist();
-      console.log(`[points] 新用户 ${username} 注册，赠送 ${SIGNUP_GRANT} 积分（本 IP 累计 ${db.registerIps[ip]}/${REGISTER_MAX_PER_IP}）`);
+      console.log(`[points] 新用户 ${username} 注册，赠送 ${grant} 积分（本 IP 累计 ${db.registerIps[ip]}/${REGISTER_MAX_PER_IP}）`);
 
       /* 10-19 用户要求：注册后**自动**建好该账号的独立知识库与记忆空间。
          ⛔ 用 provisionFor（fire-and-forget + 幂等 + 失败只记日志），绝不 await ——
             远端建库 1~3 秒，等它就是让「注册」按钮转圈。
          ⛔ 所有消费入口（/integrations、/kb/*）仍会再调 ensure*，这里只是提前预热。 */
       provisionFor(username, "knowledge");
-      provisionFor(username, "memory");      return send(200, { ok: true, token: issueSession(username), account: publicView(user), points: { balance: pointsOf(username).balance, granted: SIGNUP_GRANT } });
+      provisionFor(username, "memory");      return send(200, { ok: true, token: issueSession(username), account: publicView(user), points: { balance: pointsOf(username).balance, granted: grant } });
     }
 
     /* 登录 */
@@ -3501,6 +3517,41 @@ location.replace("/");
       return send(200, { ok: true, which, key, masked: String(key).slice(0, 6) + "***" + String(key).slice(-4) });
     }
 
+    /* 新用户默认额度（10-23 用户令「注册送的积分 / 会话上传的内存 也要能在用户管理里调」）：
+       写到 db.policy，注册与配额判断立刻走新值（⛔ 不用重启）。
+       ⛔ 只影响"之后注册"的账号；已注册账号的云存储仍以 storageQuota[username] 为准（没设就跟这里）。 */
+    if (p === "/admin/policy") {
+      if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+      const gb = (bytes) => Math.round((Number(bytes) / 1073741824) * 100) / 100;
+      if (req.method === "GET") {
+        return send(200, {
+          ok: true,
+          signupPoints: signupPoints(),
+          storageBytes: storageDefaultBytes(),
+          storageGb: gb(storageDefaultBytes()),
+          env: { signupPoints: SIGNUP_GRANT, storageBytes: STORAGE_LIMIT_BYTES },
+        });
+      }
+      if (req.method !== "POST") return send(405, { ok: false, error: "只支持 GET / POST" });
+      const body = await readBody();
+      const next = Object.assign({}, db.policy || {});
+      if (body && body.reset) { delete next.signupPoints; delete next.storageBytes; }
+      if (body && body.signupPoints !== undefined && body.signupPoints !== null && body.signupPoints !== "") {
+        const n = Number(body.signupPoints);
+        if (!Number.isFinite(n) || n < 0 || n > 1e7) return send(400, { ok: false, error: "注册赠送积分要填 0 ~ 10000000 的整数" });
+        next.signupPoints = Math.round(n);
+      }
+      if (body && body.storageGb !== undefined && body.storageGb !== null && body.storageGb !== "") {
+        const g = Number(body.storageGb);
+        if (!Number.isFinite(g) || g <= 0 || g > 10240) return send(400, { ok: false, error: "默认云存储要填 0.1 ~ 10240 GB" });
+        next.storageBytes = Math.round(g * 1073741824);
+      }
+      db.policy = next;
+      persist();
+      console.log("[policy] " + me.username + " 设置：注册赠分 " + signupPoints() + " · 默认云存储 " + gb(storageDefaultBytes()) + " GB");
+      return send(200, { ok: true, signupPoints: signupPoints(), storageBytes: storageDefaultBytes(), storageGb: gb(storageDefaultBytes()) });
+    }
+
     /* 管理端：权益总览 / 开通·续期·停用 / 价格表 */
     if (p === "/admin/entitlements" && req.method === "GET") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
@@ -3576,7 +3627,7 @@ location.replace("/");
         ok: true,
         username: who.username,
         balance: acct.balance,
-        signupGrant: SIGNUP_GRANT,
+        signupGrant: signupPoints(),
         txns: acct.txns.slice(0, 50),
         verify: pointsVerify(who.username),
       });
@@ -3592,7 +3643,7 @@ location.replace("/");
         })
         .filter((r) => !q || r.username.toLowerCase().includes(q))
         .sort((a, b) => b.balance - a.balance);
-      return send(200, { ok: true, total: rows.length, signupGrant: SIGNUP_GRANT, users: rows });
+      return send(200, { ok: true, total: rows.length, signupGrant: signupPoints(), storageBytes: storageDefaultBytes(), users: rows });
     }
     if (p === "/admin/points/grant" && req.method === "POST") {
       if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
