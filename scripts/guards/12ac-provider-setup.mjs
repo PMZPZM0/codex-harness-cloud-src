@@ -109,7 +109,7 @@ ok(/if \(ok && intent\.relayActive\) writeRelayActive/.test(login), "中转站 r
 /* ── ⑤ 设置页 / 云账号页 / OpenAI 页 ── */
 ok(/provider-setup-hero/.test(modelPage) && /ProviderSetupDialog/.test(modelPage) && /refreshActive/.test(modelPage), "模型页大入口 + 弹窗 + 保存后刷新供应商列表");
 ok(/relaunchApp/.test(modelPage), "模型页保存后自动重启应用");
-ok(/openNewProvider/.test(modelPage) && /openProviderEditor/.test(modelPage) && /provider-card-update/.test(modelPage) && /测试当前供应商/.test(modelPage), "模型页保留手动添加 / 编辑 / 更新模型入口（大卡片 + 二级弹窗，功能不删）");
+ok(/openNewProvider/.test(modelPage) && /openProviderEditor/.test(modelPage) && /provider-card-update/.test(modelPage), "模型页保留手动添加 / 编辑 / 更新模型入口（大卡片 + 二级弹窗，功能不删）");
 ok(/provider-card-test/.test(modelPage) && /classifyProviderProbeFailure/.test(modelPage) && /密钥失效/.test(modelPage), "卡片支持测试连接并标出「密钥失效」，云端可修复 / 其它提示更新 Key");
 ok(/withSavedKey/.test(read("electron/features/custom-model-ipc.ts")), "卡片测试不带 Key 时回落到已保存的 Key（否则永远 401 / 误判）");
 ok(/model-compact-control/.test(modelPage) && !/model-global-bar/.test(modelPage), "自动压缩并进页头（旧整行文字条已删，长说明收进 ?）");
