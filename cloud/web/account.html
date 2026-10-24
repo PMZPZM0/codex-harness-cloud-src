@@ -421,6 +421,43 @@
   .admin-head h1 { margin: 0 0 4px; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
   .admin-head p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; max-width: 78ch; }
 
+  /* ── 管理端「配置教程」（10-24 用户令「管理员里面的功能都加一个配置教程，我看不懂」）──
+     ⛔ 默认展开：第一眼就要看见步骤；点「收起」后写 localStorage，之后所有管理页统一收起，
+        不长期占屏（两个诉求同时满足）。折叠态只用 ::after 切字，不额外加 JS 监听。 */
+  .cfg-guide { margin: 0 0 16px; border: 1px solid var(--line); border-left: 3px solid var(--brand); border-radius: 12px; background: var(--card); }
+  .cfg-guide > summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 11px 14px;
+    cursor: pointer; list-style: none; font-size: 13px; font-weight: 600; border-radius: 12px; transition: background var(--dur); }
+  .cfg-guide > summary::-webkit-details-marker { display: none; }
+  .cfg-guide > summary:hover { background: var(--field); }
+  .cfg-guide[open] > summary { border-radius: 12px 12px 0 0; border-bottom: 1px solid var(--line-soft); background: var(--field); }
+  .cfg-guide .cg-badge { padding: 2px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-ink); font-size: 11px; font-weight: 600; }
+  .cfg-guide .cg-sum { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .cfg-guide > summary::after { content: "展开"; margin-left: auto; color: var(--faint); font-size: 11.5px; font-weight: 400; white-space: nowrap; }
+  .cfg-guide[open] > summary::after { content: "收起"; }
+  .cfg-body { padding: 13px 16px 16px; font-size: 12.5px; line-height: 1.85; color: var(--muted); }
+  .cfg-body > *:first-child { margin-top: 0; }
+  .cfg-body h4 { margin: 14px 0 5px; font-size: 12.5px; font-weight: 700; color: var(--text); }
+  .cfg-body h4:first-child { margin-top: 0; }
+  .cfg-body ol, .cfg-body ul { margin: 0 0 4px; padding-left: 21px; }
+  .cfg-body li { margin: 3px 0; }
+  .cfg-body b { color: var(--text); font-weight: 600; }
+  .cfg-body code { padding: 1px 5px; border-radius: 5px; background: var(--field); border: 1px solid var(--line-soft);
+    font-size: 11.5px; word-break: break-all; }
+  .cfg-tbl-wrap { overflow-x: auto; margin: 4px 0 2px; }
+  .cfg-tbl { width: 100%; min-width: 440px; border-collapse: collapse; font-size: 12px; }
+  .cfg-tbl th { padding: 6px 9px; text-align: left; font-weight: 600; color: var(--text); background: var(--field);
+    border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .cfg-tbl td { padding: 6px 9px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  .cfg-tbl tr:last-child td { border-bottom: 0; }
+  .cfg-tbl td:first-child { color: var(--text); white-space: nowrap; }
+  .cfg-note { margin: 10px 0 0; padding: 9px 12px; border-radius: 9px; background: var(--warn-soft); border: 1px solid var(--line-soft); }
+  .cfg-note + .cfg-note { margin-top: 8px; }
+  @media (max-width: 720px) {
+    .cfg-body { padding: 11px 12px 14px; }
+    .cfg-guide > summary { padding: 10px 12px; }
+    .cfg-guide .cg-sum { flex-basis: 100%; order: 3; }
+  }
+
   #svcMemCard .svc-top, #svcKbCard .svc-top, #svcWbmCard .svc-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
   #svcMemCard .svc-top h2, #svcKbCard .svc-top h2, #svcWbmCard .svc-top h2 { margin: 0; }
   #svcMemCard .svc-grid, #svcKbCard .svc-grid, #svcWbmCard .svc-grid {
@@ -1181,6 +1218,59 @@
 
     <!-- ── 管理员：团队管理（开通条件 + 全站团队 + 团队套餐）── -->
     <section class="tab" data-tab="adminTeams" hidden>
+      <details class="cfg-guide" open>
+        <summary><span class="cg-badge">配置教程</span>团队管理怎么配<span class="cg-sum">四层闸门：平台开关 → 能力开关 → 按人开通 → 套餐积分</span></summary>
+        <div class="cfg-body">
+          <h4>这页在配什么</h4>
+          <p>团队是<b>按人开通</b>的能力，不是注册就有的。四层从宽到严，缺一层就用不了：</p>
+          <ol>
+            <li><b>平台总开关</b>（「团队开通条件」）—— 允许不允许创建团队。</li>
+            <li><b>能力开关</b>（同一张卡）—— 团队能用记忆 / 知识库吗。</li>
+            <li><b>按人开通</b>（「用户团队开通」）—— 具体谁能看到「团队」分组。</li>
+            <li><b>套餐与积分</b>（下面三张卡）—— 席位、容量、消耗怎么算钱。</li>
+          </ol>
+
+          <h4>按顺序操作</h4>
+          <ol>
+            <li><b>团队开通条件</b>：打开「团队功能总开关」；填「免费档席位数」（默认 3，= 不买套餐时一个团队最多几个人）；要记忆 / 知识库就打开对应开关；「单条记忆最大字数」默认 2000 → 点<b>「保存开通条件」</b>。</li>
+            <li><b>用户团队开通</b>：搜用户名（留空列出全部）→ 勾上人 → 填有效期（<code>0</code> = 长期）→ 点<b>「批量开通（选中）」</b>。<b>没开通的人看不到「团队」分组，接口也 403</b>。</li>
+            <li><b>团队积分设置</b>：填四项消耗单价（检索 / 上传 / 记忆写入 / 记忆检索）和低余额提醒阈值；要收费就勾「启用扣减」→ 保存。需要卖积分就在下面建「积分充值包」。</li>
+            <li><b>团队套餐设置</b>：填金额（元）、席位、时长、赠送团队积分、知识库 / 记忆容量 → 保存。金额 <code>0</code> = 体验套餐，每团队限领一次。</li>
+            <li><b>全站团队</b>：这里看所有团队。批量发积分要填<b>原因（必填）</b>；也能批量换套餐、导出 CSV。</li>
+            <li><b>操作审计</b>：谁在什么时候改了谁的团队都在这里，出问题先查它。</li>
+          </ol>
+
+          <h4>输入框速查</h4>
+          <div class="cfg-tbl-wrap"><table class="cfg-tbl">
+            <thead><tr><th>字段</th><th>填什么 / 什么含义</th></tr></thead>
+            <tbody>
+              <tr><td>免费档席位数</td><td>没买套餐的团队最多几个人。套餐里另写席位数，买套餐后按套餐的算。</td></tr>
+              <tr><td>单条记忆最大字数</td><td>团队记忆一条最多多长，超了写不进去。默认 2000。</td></tr>
+              <tr><td>消耗单价（4 项）</td><td>知识库检索（点/次）、知识库上传（点/MB）、记忆写入（点/条）、记忆检索（点/次）。</td></tr>
+              <tr><td>低余额提醒阈值</td><td>团队积分低于这个数就提醒。填 <code>0</code> = 不提醒。</td></tr>
+              <tr><td>启用扣减</td><td>关掉 = 团队能力免费（照常记账，不扣余额）。排查「怎么不扣费」先看这里。</td></tr>
+              <tr><td>套餐金额 / 席位 / 时长</td><td>金额是<b>元</b>（用户实付）；席位 = 这个团队最多几个人；时长 = 有效期天数。</td></tr>
+              <tr><td>赠送团队积分</td><td>买套餐时<b>一次性</b>加到团队余额，和月配额是两笔账。</td></tr>
+              <tr><td>知识库 / 记忆容量</td><td>套餐给的<b>上限</b>（MB），不是消耗品；消耗的是积分。</td></tr>
+              <tr><td>积分包「到账 / 赠送」</td><td>到账 = 花钱买到的，赠送 = 白给的，都进团队余额。「限购」= 每个团队最多买几次。</td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="cfg-note"><b>套餐容量 vs 积分余额别混</b>：容量是「最多能存多少」，积分是「能用多少次」。一次检索会同时占<b>月配额</b>和扣<b>积分余额</b>，两个都会掉。</div>
+
+          <h4>怎么确认配好了</h4>
+          <p>① 用被开通的账号登录，左侧出现「团队」分组；② 能建团队 / 加入团队；③ 在里面检索一次知识库，团队余额和本月已用都变了；④ 审计里出现这条操作。</p>
+
+          <h4>出问题先看这里</h4>
+          <ul>
+            <li><b>用户看不到团队</b> → 没在「用户团队开通」里给他开（总开关开着也没用）。</li>
+            <li><b>团队里检索报 403</b> → 「团队开通条件」里对应的能力开关关了，或这个团队没开通该能力。</li>
+            <li><b>用了但不扣积分</b> → 「启用扣减」没勾。</li>
+            <li><b>加人提示席位已满</b> → 看该团队的席位数：免费档按上面填的，买过套餐按套餐的算。</li>
+            <li><b>体验套餐领不了</b> → 每团队限一次；已有生效套餐的团队不能再领。</li>
+          </ul>
+        </div>
+      </details>
       <div class="card">
         <h2>团队开通条件</h2>
         <p class="hint" style="margin:0 0 12px">三层闸门：平台开关 → 能力开关（记忆 / 知识库）→ 团队级开通（建空间）。关闭能力后，成员调用对应接口会直接 403。</p>
@@ -1323,6 +1413,45 @@
 
     <!-- ── 邀请管理（10-23）：奖励配置 + 每位用户的邀请数与明细 ── -->
     <section class="tab" data-tab="adminInvite" hidden>
+      <details class="cfg-guide" open>
+        <summary><span class="cg-badge">配置教程</span>邀请管理怎么配<span class="cg-sum">老带新的奖励规则 —— 和「用户管理 → 邀请码」不是同一件事</span></summary>
+        <div class="cfg-body">
+          <h4>这页在配什么</h4>
+          <p>定<b>拉一个人奖励多少积分</b>，然后看谁拉得多。每个用户有一条自己的专属邀请链接，别人通过链接注册成功后，<b>邀请人自动加分</b>。</p>
+
+          <div class="cfg-note">别和「用户管理 → 邀请码」搞混：<b>那边</b>是给推广渠道建的<b>来源码</b>（限次数、限有效期、用来统计从哪来）；
+            <b>这边</b>是每个用户的<b>专属链接</b>和<b>奖励积分</b>。两套同时存在，互不影响。</div>
+
+          <h4>按顺序操作</h4>
+          <ol>
+            <li>填「每人奖励（积分）」，勾上「启用」→ 点<b>「保存配置」</b>。</li>
+            <li>点一次<b>「为存量用户补发邀请码」</b>：给所有老账号补上专属码（只补没有的，重复点不会重复发）。新注册的账号会自动有，不用管。</li>
+            <li>告诉用户：进自己的「邀请好友」页 → 复制链接 → 发给别人。对方用这个链接注册成功即算。</li>
+            <li>「邀请统计」按邀请人数排序，看得出谁在帮你拉人；点开能看每个人的明细。</li>
+          </ol>
+
+          <h4>输入框速查</h4>
+          <div class="cfg-tbl-wrap"><table class="cfg-tbl">
+            <thead><tr><th>字段</th><th>填什么 / 什么含义</th></tr></thead>
+            <tbody>
+              <tr><td>每人奖励（积分）</td><td>成功拉一个给邀请人加多少分。<code>0</code> = 只记关系、不发分。</td></tr>
+              <tr><td>是否启用奖励</td><td>关掉后仍然记录邀请关系（统计照常），但<b>不发积分</b>。适合先观察、后开奖。</td></tr>
+              <tr><td>为存量用户补发</td><td>给老账号生成专属邀请码。一次性操作，幂等。</td></tr>
+              <tr><td>邀请统计</td><td>按「拉来的人数」排序；「已注册」列是真实到账人数。</td></tr>
+            </tbody>
+          </table></div>
+
+          <h4>怎么确认配好了</h4>
+          <p>自己注册一个小号，走某人的邀请链接 → 回这页看统计 +1，再看邀请人的积分是否多了奖励数。</p>
+
+          <h4>出问题先看这里</h4>
+          <ul>
+            <li><b>注册了但没加分</b> → 先看「是否启用奖励」有没有勾；再看对方是不是用了别人的链接 / 直接开的注册页。</li>
+            <li><b>用户找不到自己的邀请链接</b> → 让他刷新「邀请好友」页；还没有就点一次「为存量用户补发邀请码」。</li>
+            <li><b>统计人数和实际不符</b> → 统计的是<b>关系记录</b>，被删掉的账号仍会留在历史里。</li>
+          </ul>
+        </div>
+      </details>
       <div class="card">
         <h2>邀请奖励配置</h2>
         <p class="hint" style="margin:0 0 12px">被邀请人通过任一用户的专属邀请链接注册成功后，自动给邀请人加分。</p>
@@ -1348,6 +1477,58 @@
 
     <!-- ── 订阅与充值（10-23 用户定稿三板块）：余额充值配置 / 订阅套餐设置 / 支付设置 ── -->
     <section class="tab" data-tab="adminBilling" hidden>
+      <details class="cfg-guide" open>
+        <summary><span class="cg-badge">配置教程</span>订阅与充值怎么配<span class="cg-sum">钱从哪进、套餐卖什么、掉单怎么补 —— 四张卡片按顺序来</span></summary>
+        <div class="cfg-body">
+          <h4>这页在配什么</h4>
+          <p>四件事，按卡片从上到下就是正确顺序：<b>① 充值比例 → ② 支付通道 → ③ 卖什么套餐 → ④ 出问题怎么补单</b>。</p>
+
+          <h4>配之前先准备</h4>
+          <ul>
+            <li>一个<b>易支付</b>商户（彩虹易支付 / 同类都行）。要拿到三样：<b>网关地址</b>、<b>商户 ID（pid）</b>、<b>商户密钥（key）</b>。</li>
+            <li>想好定价：1 元给多少积分、最低充多少、套餐卖多少钱送多少积分。</li>
+            <li>服务器的<b>对外域名必须公网可达</b>（支付平台要能回调进来；<code>127.0.0.1</code> / 内网收不到回调）。</li>
+          </ul>
+
+          <h4>按顺序操作</h4>
+          <ol>
+            <li><b>余额充值配置</b>：填「1 元 = 多少积分」（默认 100）和「最低充值（元）」（默认 5）→ 点<b>「保存充值配置」</b>。用户端充值页按这里换算。</li>
+            <li><b>支付设置</b>：粘上网关地址、商户 ID、商户密钥 → 点<b>「保存支付设置」</b>。三项齐了，用户端「充值」入口才会亮。回调地址由系统自动拼成 <code>对外地址 + /pay/notify</code>，不用手填。</li>
+            <li><b>订阅套餐设置</b>：填下面的表单（名称 / 金额 / 赠送积分 / 时长 / 描述 / 容量与次数）→ 勾「上架」→ 点<b>「保存套餐」</b>。用户端「订阅中心」立刻能看到。</li>
+            <li><b>充值对账</b>：用户说「付了没到账」，先在这里找那一笔（最近 100 笔）。回调丢了就点<b>「补单」</b> —— 幂等，重复点不会重复加积分。</li>
+          </ol>
+
+          <h4>输入框速查</h4>
+          <div class="cfg-tbl-wrap"><table class="cfg-tbl">
+            <thead><tr><th>字段</th><th>填什么 / 什么含义</th></tr></thead>
+            <tbody>
+              <tr><td>1 元 = 多少积分</td><td>充值换算比例。<code>100</code> ⇒ 充 10 元到账 1000 积分。</td></tr>
+              <tr><td>最低充值（元）</td><td>小于这个数不让下单（服务端也会挡）。上限固定 5000 元。</td></tr>
+              <tr><td>支付网关地址</td><td>易支付站点的根地址，如 <code>https://pay.example.com</code>。<b>不要</b>带 <code>/submit.php</code>。</td></tr>
+              <tr><td>商户 ID / 商户密钥</td><td>易支付商户后台里的 pid 和 key（key 只写不读，留空 = 保持原值）。</td></tr>
+              <tr><td>套餐金额（元）</td><td><b>用户实际支付的钱</b>。<code>0</code> = 免费体验包，用户可以自助领一次（已有生效套餐的人不能领）。</td></tr>
+              <tr><td>赠送积分</td><td><b>买完到账的积分</b>，和上面的金额是两回事。金额是钱，这里是积分。</td></tr>
+              <tr><td>时长（天）</td><td>套餐有效期。<code>0</code> = 永久（慎用，卖错了收不回来）。</td></tr>
+              <tr><td>知识库 / 记忆容量与次数</td><td>套餐生效后覆盖的额度；不勾「含知识库 / 含记忆」就不生效。</td></tr>
+              <tr><td>补单</td><td>把一笔订单标记为已支付并给用户加积分。只用于「确实付了但回调没到」。</td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="cfg-note">「示例」按钮只是<b>一张参考图</b>，不是商品：鼠标悬停看，点一下可以换图。它不会出现在用户端，也不参与购买。</div>
+
+          <h4>怎么确认配好了</h4>
+          <p>① 用一个普通用户打开「订阅中心」，能看到上架的套餐；② 充值页能拉起支付；③ 付一笔小额，积分自动到账、对账表里状态是已支付。三步都通才算配完。</p>
+
+          <h4>出问题先看这里</h4>
+          <ul>
+            <li><b>用户端「充值」按钮不亮</b> → 支付设置三项没填全或没保存。</li>
+            <li><b>付了钱没到账</b> → 到「充值对账」点补单。补单提示「已支付」说明系统已记过，查是不是付到了另一个账号。</li>
+            <li><b>支付平台一直回调失败</b> → 对外域名不可达（本地 / 内网部署收不到），或站点没配 HTTPS。</li>
+            <li><b>套餐在用户端看不到</b> → 没勾「上架」，或「时长」填了 0 以外但金额为空。</li>
+            <li><b>免费套餐领不了</b> → 每个账号限领一次；已有生效套餐的也领不了。</li>
+          </ul>
+        </div>
+      </details>
       <div class="card">
         <h2>余额充值配置</h2>
         <div class="sub-hero-top" style="margin-bottom:12px">
@@ -1374,7 +1555,7 @@
           <button class="btn sm" id="blSampleBtn" data-sample="plan" title="示例套餐不是真商品，只是一张参考图：悬停看，点击上传">示例</button>
         </div>
         <div class="table-wrap"><table class="mb-table">
-          <thead><tr><th style="width:18%">名称</th><th style="width:16%">价格（积分）</th><th style="width:9%">时长（天）</th><th style="width:22%">包含</th><th style="width:9%">状态</th><th style="width:26%">操作</th></tr></thead>
+          <thead><tr><th style="width:18%">名称</th><th style="width:16%">价格（元）</th><th style="width:9%">时长（天）</th><th style="width:22%">包含</th><th style="width:9%">状态</th><th style="width:26%">操作</th></tr></thead>
           <tbody id="blPlanRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
         </table></div>
         <h3 style="margin:16px 0 8px;font-size:14px" id="blPlanFormTitle">新建套餐</h3>
@@ -1544,6 +1725,55 @@
     <h1>用户管理</h1>
     <p>服务器基础设置、站点外观、用户与权益、邀请码 —— 这里的改动会影响所有用户。</p>
   </div>
+  <!-- 10-24 配置教程（用户令「每个功能都加一个，我看不懂」）：8 个管理页各一块，
+       写法统一 = 这页做什么 / 按顺序点哪儿 / 字段填什么 / 怎么验收 / 出问题先看。 -->
+  <details class="cfg-guide" open>
+    <summary><span class="cg-badge">配置教程</span>用户管理怎么配<span class="cg-sum">含「管理端整体顺序」—— 第一次用先看这里</span></summary>
+    <div class="cfg-body">
+      <h4>管理端整体只有 4 件事，按这个顺序做</h4>
+      <ol>
+        <li><b>先有模型</b>：到「模型管理」填上游地址 + 密钥 → 同步目录 → 勾选对用户开放的模型。模型不通，后面所有功能都是空的。</li>
+        <li><b>再接存储</b>：到「知识库管理」「记忆空间管理」把两套服务接上，再在成员表里给人开通。</li>
+        <li><b>然后收钱</b>：到「订阅与充值」定充值比例、套餐和支付三件套；「邀请管理」定拉新奖励。</li>
+        <li><b>最后开团队</b>：到「团队管理」先给具体的人开团队入口，再建套餐和积分包。</li>
+      </ol>
+      <p>顺序错了的典型症状：建了套餐没人买（模型没配）、知识库上传文档失败（嵌入模型没配）、用户看不到团队（没给他开通）。</p>
+
+      <h4>这页在配什么</h4>
+      <p>账号本身（谁能登录、谁是管理员）、每个人的积分 / 云存储 / 知识库 / 记忆额度，以及服务器自己的更新和外观。</p>
+
+      <h4>按顺序操作</h4>
+      <ol>
+        <li><b>部署与更新</b>：标题右边的 <code>v—</code> 是当前跑的版本。点「检查更新」→ 有新版本再点「立即更新并重启」（约 30 秒不可用）。不想手动就勾「自动更新」。</li>
+        <li><b>站点图标</b>：点「选择图片上传」，刷新浏览器标签页看效果。传错了点「恢复默认」。</li>
+        <li><b>应用连接地址</b>：把这一行<b>复制发给用户</b>，让他们填到桌面端「设置 → 云账号 → 服务地址」。它按当前域名自动算，换域名不用改。</li>
+        <li><b>加人 / 改人</b>：在「用户 · 权益 · 积分」表里按用户名搜。每行能发积分、改云存储、开知识库 / 记忆（填天数 + 容量）。</li>
+        <li><b>新用户默认额度</b>：改的是<b>以后注册</b>的账号；已注册的按表格里那一列算（那一列留空才跟默认值）。</li>
+        <li><b>邀请码</b>（可选）：给推广渠道建码，能限次数和有效期。它和「邀请管理」的奖励是两件事 —— 那边管<b>加分</b>，这边管<b>来源统计</b>。</li>
+      </ol>
+
+      <h4>输入框速查</h4>
+      <div class="cfg-tbl-wrap"><table class="cfg-tbl">
+        <thead><tr><th>字段</th><th>填什么</th></tr></thead>
+        <tbody>
+          <tr><td>发积分</td><td>正数 = 加，负数 = 扣（例 <code>500</code> / <code>-200</code>），点完立刻到账。</td></tr>
+          <tr><td>云存储（GB）</td><td>这个人能上传多少会话数据。<b>留空 = 跟「新用户默认额度」</b>。</td></tr>
+          <tr><td>知识库 / 记忆</td><td>勾「开」+ 天数 + 容量（MB）。到期自动失效，续期就在同一格加天数。</td></tr>
+          <tr><td>停用</td><td>阻止登录，数据保留；恢复点同一个按钮。</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>怎么确认配好了</h4>
+      <p>每次改完点保存，按钮旁边出现<b>「已保存」</b>才算生效（只改输入框不点保存 = 没改）。让对方刷新页面看余额 / 容量。</p>
+
+      <h4>出问题先看这里</h4>
+      <ul>
+        <li>用户说「看不到模型」→ 去「模型管理」底部勾选对他开放的模型。</li>
+        <li>用户说「连不上服务器」→ 把「应用连接地址」整行复制给他，别让他手打。</li>
+        <li>「检查更新」说已是最新但界面没变 → 先看版本徽标对不对，再按 Ctrl+F5 强制刷新。</li>
+      </ul>
+    </div>
+  </details>
 <div class="card" id="updCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">部署与更新
         <!-- 版本徽标（10-18 用户令「加一个版本号」）：一眼看到当前跑的到底是哪个版本 -->
@@ -1771,6 +2001,55 @@
     <h1>模型管理</h1>
     <p>上游网关地址与密钥、模型目录与倍率、闲时时段，以及对用户开放的模型。</p>
   </div>
+  <details class="cfg-guide" open>
+    <summary><span class="cg-badge">配置教程</span>模型管理怎么配<span class="cg-sum">先让服务器有模型可用 —— 这是所有功能的地基</span></summary>
+    <div class="cfg-body">
+      <h4>这页在配什么</h4>
+      <p>三件事：<b>从哪儿拿模型</b>（上游地址 + 密钥）、<b>每个模型扣多少积分</b>（倍率）、<b>哪些模型给用户选</b>。</p>
+
+      <h4>配之前先准备</h4>
+      <ul>
+        <li>一个 <b>OpenAI 兼容</b>的上游地址，和它的密钥。可以是本机的 WorkBuddy Manager（见「WorkBuddy Manager」页），也可以是别的中转 / 官方网关。</li>
+        <li>地址要填到 <code>/v1</code> 这一层，例如 <code>http://127.0.0.1:7864/v1</code>、<code>https://api.example.com/v1</code>。</li>
+      </ul>
+
+      <h4>按顺序操作</h4>
+      <ol>
+        <li>把地址粘进「上游 API 地址」，密钥粘进「网关密钥」（已保存过就留空 = 不改）。</li>
+        <li>点<b>「保存（热生效）」</b>，再点<b>「测试连通性」</b>：结果里每个端点都返回 200 才算通。</li>
+        <li>点<b>「重新同步目录」</b>，把上游的模型列表拉下来（拉不到会保留旧目录并提示）。</li>
+        <li>在下表给模型填「改为」= 倍率。<b>留空 = 免费</b>；<code>0.29</code> = 按原价的 29% 扣积分。</li>
+        <li>要用闲时价：标题行点「设置」→ 加时间段 → 保存；再到表格「闲时改为」列给单个模型填值。</li>
+        <li>滚到最下面「对用户开放的模型」→ 勾上要给的 → 点<b>「保存（对用户开放这些模型）」</b>。</li>
+        <li>最后用「聊天测试」选一个模型发一句，能回话就说明整条链路通了。</li>
+      </ol>
+
+      <h4>输入框速查</h4>
+      <div class="cfg-tbl-wrap"><table class="cfg-tbl">
+        <thead><tr><th>字段</th><th>填什么 / 什么含义</th></tr></thead>
+        <tbody>
+          <tr><td>上游 API 地址</td><td>服务端访问的地址，含 <code>/v1</code>。可带端口与前缀。</td></tr>
+          <tr><td>目录同步地址</td><td>一般留空（= 与上游同址）。只有拉模型列表的地址和调用地址不一样时才填。</td></tr>
+          <tr><td>网关密钥</td><td>上游发给你的 key。保存后只显示掩码，忘记就重新粘一次。</td></tr>
+          <tr><td>倍率</td><td>扣积分的系数，不是折扣百分比。<code>0.29</code> = 1 积分额度按 0.29 计；<b>留空 = 免费</b>。</td></tr>
+          <tr><td>已钉</td><td>你手动改过这个模型的倍率。<b>同步目录不会覆盖</b>；点「恢复上游」还原。</td></tr>
+          <tr><td>闲时倍率</td><td><b>直接倍率，不是折扣</b>。高峰 0.11、闲时填 0.05 ⇒ 闲时按 0.05 扣（不是 0.11×0.05）。</td></tr>
+          <tr><td>对用户开放</td><td>勾了用户端才能看到并自己选；不勾 = 用户看不到。多个模型可批量勾。</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>怎么确认配好了</h4>
+      <p>① 测试连通性全绿；② 「聊天测试」有回复；③ 用一个普通用户登录，模型下拉里能看到你勾的模型。</p>
+
+      <h4>出问题先看这里</h4>
+      <ul>
+        <li><b>「没给出模型列表」</b> → 地址少了 <code>/v1</code>，或密钥不对，或上游要求先充钱。</li>
+        <li><b>改了倍率没生效</b> → 看那一行是不是「已钉」；批量改过也算钉，需要「恢复上游」再改。</li>
+        <li><b>换了上游但目录还是旧的</b> → 同步失败会保留旧目录，页面有黄色提示；先修地址 / 密钥再同步。</li>
+        <li><b>用户端看不到模型</b> → 底部「对用户开放的模型」没勾，或勾了没点保存。</li>
+      </ul>
+    </div>
+  </details>
 <div class="card" id="upstreamCard">
       <h2>上游 API <span class="pill ok">热生效</span></h2>
       <p class="hint" id="auInfo">读取中…</p>
@@ -1916,6 +2195,55 @@
     <h1>记忆空间管理</h1>
     <p>本机部署的腾讯记忆空间（Memory Hub）：面板入口、记忆服务地址与模型代理。</p>
   </div>
+  <details class="cfg-guide" open>
+    <summary><span class="cg-badge">配置教程</span>记忆空间怎么配<span class="cg-sum">接线两步 + 给人开通，最容易填错的是「检索代理」</span></summary>
+    <div class="cfg-body">
+      <h4>这页在配什么</h4>
+      <p>把<b>跑在本机的记忆空间</b>接到本服务上（地址 + 密钥），然后决定<b>谁能用、用多少</b>。记忆空间本身不在本服务里，它是独立部署的一套服务。</p>
+
+      <h4>配之前先准备</h4>
+      <ul>
+        <li>记忆空间已经在服务器上跑起来。默认两个端口：<b>8125</b> = 面板 / 记忆 API，<b>8096</b> = 检索代理。</li>
+        <li>它的 <b>API Key</b>（在记忆空间面板里生成 / 查看）。</li>
+      </ul>
+
+      <h4>按顺序操作</h4>
+      <ol>
+        <li>「服务地址」填 <code>http://127.0.0.1:8125</code> —— 这是<b>服务器自己访问</b>用的，不是给用户点的。</li>
+        <li>「检索代理地址」填 <code>http://127.0.0.1:8096</code>。<b>这一行填错 = 对话读不到记忆</b>（写入还正常，所以最难发现）。</li>
+        <li>「实例名」一般就填 <code>default</code>；「API Key」粘进去（留空 = 不改）。</li>
+        <li>点<b>「保存（热生效）」</b>→ 再点<b>「测试连通」</b>，看到通过再往下。</li>
+        <li>点<b>「打开面板」</b>确认能进后台；进不去就先查端口和 API Key。</li>
+        <li>展开「对外访问地址」，填<b>用户浏览器能打开的</b>地址，例如 <code>http://你的域名:8125</code>，点保存。</li>
+        <li>到「已开通成员」：勾上人 → 填天数 / 容量 / 检索次数 → 点<b>「批量开通 / 续期」</b>。钥匙会自动下发。</li>
+        <li>「到期自动清理」建议先<b>关着</b>：只提醒、不删数据。开了会在宽限 3 天后真的删远端资源。</li>
+      </ol>
+
+      <h4>输入框速查</h4>
+      <div class="cfg-tbl-wrap"><table class="cfg-tbl">
+        <thead><tr><th>字段</th><th>填什么 / 给谁用</th></tr></thead>
+        <tbody>
+          <tr><td>服务地址</td><td>服务端调记忆 API 用（写入走它）。内网地址即可，如 <code>127.0.0.1:8125</code>。</td></tr>
+          <tr><td>检索代理</td><td>服务端读记忆用（模型入口）。填错不会报错，只是「记不住」。</td></tr>
+          <tr><td>对外访问地址</td><td><b>发给用户的地址</b>（浏览器打开面板用）。不填会按当前域名 + 端口自动推。</td></tr>
+          <tr><td>容量（MB）</td><td>这个人最多存多少记忆。超了写不进去。</td></tr>
+          <tr><td>检索次数</td><td>这个人能查多少次。用完要加次数。</td></tr>
+          <tr><td>记忆钥匙</td><td>下发给客户端的凭证。显示没下发 / 丢了，点「补齐 / 补发钥匙」。</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>怎么确认配好了</h4>
+      <p>①「测试连通」通过；② 成员表里状态是<b>已开通</b>、钥匙是<b>已下发</b>；③ 用该成员账号在客户端写一条记忆，再让它回忆 —— 能读回来才算整条链路通。</p>
+
+      <h4>出问题先看这里</h4>
+      <ul>
+        <li><b>能记住但用不上</b> → 十有八九是「检索代理地址」填错或为空。</li>
+        <li><b>「打开面板」打不开</b> → 对外地址没填，或服务器端口没放行。</li>
+        <li><b>成员说钥匙无效</b> → 点「补齐 / 补发钥匙」重发一次。</li>
+        <li><b>「清理已过期」</b> 是<b>真删除</b>（删远端记忆），只对已过期且过了宽限期的人生效，点前先看清楚。</li>
+      </ul>
+    </div>
+  </details>
     <div class="card" id="svcMemCard">
       <div class="svc-top">
         <h2>记忆空间服务 <span class="pill ok">热生效</span></h2>
@@ -2034,6 +2362,60 @@
     <h1>知识库管理</h1>
     <p>本机部署的腾讯知识库（WeKnora）：后台入口、知识库 API 与问答 / 向量模型。</p>
   </div>
+  <details class="cfg-guide" open>
+    <summary><span class="cg-badge">配置教程</span>知识库怎么配<span class="cg-sum">三步：接服务 → 给它模型 → 给人开通（缺嵌入模型会传不了文档）</span></summary>
+    <div class="cfg-body">
+      <h4>这页在配什么</h4>
+      <p>知识库（WeKnora）是独立部署的一套服务。<b>它只会「用」模型，不会自带模型</b> —— 所以这里要做两段接线：先接上知识库本身，再把上游模型写给它。最后才是给人开通。</p>
+
+      <h4>配之前先准备</h4>
+      <ul>
+        <li>知识库在服务器上跑着。默认两个端口：<b>8080</b> = API，<b>8081</b> = 后台界面（⛔ 两个不是同一个端口）。</li>
+        <li>知识库的<b>租户 API Key</b>（请求头 <code>X-API-Key</code>）。</li>
+        <li>一个模型上游：<b>API 地址（含 /v1）+ 密钥 + 模型名</b>。问答和嵌入各要一个，视觉可选。</li>
+      </ul>
+
+      <h4>按顺序操作</h4>
+      <ol>
+        <li>「服务地址」填 <code>http://127.0.0.1:8080</code>，粘上「租户 API Key」→ 点<b>「保存（热生效）」</b>→ 点<b>「测试连通」</b>。</li>
+        <li>点<b>「读取模型列表」</b>，确认能从知识库拿回它已注册的模型（拿不到说明地址 / Key 不对）。</li>
+        <li>往下到「模型接入」，三个块分别填：<b>问答模型</b>（回答用）、<b>嵌入模型</b>（建索引用，<b>必填</b>）、<b>视觉模型</b>（可不填）。每个块点<b>「保存并设为默认」</b>，再点<b>「测试连通」</b>。</li>
+        <li>如果之前已经有用户库、想统一换成新模型：点<b>「应用到全部用户库」</b>（只换模型，不动文档）。</li>
+        <li>「后台免密登录」：点<b>「一键生成后台账号」</b>，以后点「打开后台」直接进，密码不下发浏览器。</li>
+        <li>展开「浏览器访问地址」，分别填<b>后台界面</b>（8081）和 <b>API 对外</b>（8080）两个地址 —— 这是给用户浏览器用的，填内网地址用户打不开。</li>
+        <li>到「已开通成员」：勾人 → 填天数 / 容量 → 点<b>「批量开通 / 续期」</b>。某人的库没建好，点「补齐 / 重建库」。</li>
+      </ol>
+
+      <h4>输入框速查</h4>
+      <div class="cfg-tbl-wrap"><table class="cfg-tbl">
+        <thead><tr><th>字段</th><th>填什么 / 什么含义</th></tr></thead>
+        <tbody>
+          <tr><td>服务地址（API）</td><td>服务端调知识库用，默认 <code>127.0.0.1:8080</code>。⛔ 不是后台界面的 8081。</td></tr>
+          <tr><td>租户 API Key</td><td>知识库后台里的 API Key，走请求头 <code>X-API-Key</code>。留空 = 不改。</td></tr>
+          <tr><td>问答模型</td><td>回答用户提问用的模型，填<b>上游真实 model id</b>（不是显示名）。</td></tr>
+          <tr><td>嵌入模型</td><td><b>必填</b>。负责把文档切块转成向量；没配 = 上传文档会失败。</td></tr>
+          <tr><td>视觉模型</td><td>可空。填了才能识别图片 / 扫描件。</td></tr>
+          <tr><td>API 地址（模型块里）</td><td>OpenAI 兼容根，<b>要带 /v1</b>，如 <code>https://api.example.com/v1</code>。</td></tr>
+          <tr><td>后台界面地址</td><td>给管理员浏览器打开的地址（8081）。</td></tr>
+          <tr><td>容量（MB）</td><td>这个人知识库最多存多少文档。</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="cfg-note">⛔ 知识库会做 SSRF 校验：<b>内网 / 无法解析</b>的模型地址会被拒（报「Base URL 未通过安全校验」）。
+        模型地址要填<b>公网可访问</b>的；确实要连内网，得把域名加进 WeKnora 的 <code>SSRF_WHITELIST_EXTRA</code>。</div>
+
+      <h4>怎么确认配好了</h4>
+      <p>① 服务「测试连通」通过；② 三个模型块状态都是<b>已配置</b>（视觉可空）；③ 用成员账号上传一个小文档，能切块、能检索到；④ 提问能引用到刚传的内容。</p>
+
+      <h4>出问题先看这里</h4>
+      <ul>
+        <li><b>上传文档失败</b> → 「嵌入模型」没配或配错（这是最常见的一个）。</li>
+        <li><b>「Base URL 未通过安全校验」</b> → 模型地址写成了内网 IP / localhost，换成公网地址。</li>
+        <li><b>「打开后台」打不开</b> → 「后台界面地址」填成了 8080。API 是 8080，界面是 8081。</li>
+        <li><b>成员登录后没有库</b> → 到成员表点「补齐 / 重建库」。</li>
+      </ul>
+    </div>
+  </details>
     <div class="card" id="svcKbCard">
       <div class="svc-top">
         <h2>知识库服务 <span class="pill ok">热生效</span></h2>
@@ -2241,6 +2623,54 @@
     <h1>WorkBuddy Manager</h1>
     <p>模型池网关（上游账号池）：它出模型，模型通道的上游指到它的 <code>/v1</code>，客户端才有模型可用。</p>
   </div>
+  <details class="cfg-guide" open>
+    <summary><span class="cg-badge">配置教程</span>Manager 怎么配<span class="cg-sum">它是「模型的来源」；本服务只是把上游指过去</span></summary>
+    <div class="cfg-body">
+      <h4>这页在配什么</h4>
+      <p>WorkBuddy Manager 是<b>模型池网关</b>：它自己管着一批上游账号，对外提供一个统一的 <code>/v1</code>。
+        本服务不生产模型，只是把「模型管理」里的上游地址<b>指向它</b>。所以顺序永远是：<b>先配 Manager → 再指过来 → 最后同步目录</b>。</p>
+
+      <h4>配之前先准备</h4>
+      <ul>
+        <li>Manager 已经部署并启动（容器默认 <b>7864</b>）。</li>
+        <li>它的初始管理员密码在服务器 <code>/opt/workbuddy-manager/admin-password.txt</code>（只有 root 能读，⛔ 别贴到聊天 / 截图里）。</li>
+      </ul>
+
+      <h4>按顺序操作</h4>
+      <ol>
+        <li>「服务地址」填 <code>http://127.0.0.1:7864</code> —— 服务端访问用，一般不用改。</li>
+        <li>「对外地址」填<b>你浏览器能打开</b>的面板地址，例如 <code>http://你的域名:7864</code>。</li>
+        <li>点<b>「保存（热生效）」</b>→ 点<b>「测试连通」</b>，通过再往下。</li>
+        <li>点<b>「打开面板」</b>，用初始密码登录 → 在面板里扫码 / 导入上游账号，它会自动同步出可用模型。</li>
+        <li>在面板里<b>签发一个网关密钥</b>，粘回本页「网关密钥」→ 保存。</li>
+        <li>点<b>「把模型通道指到这台 Manager」</b>：它会自动把「模型管理」的上游改成这台 Manager 的 <code>/v1</code>。</li>
+        <li>去「模型管理」：补上网关密钥 → 点<b>「重新同步目录」</b>→ 在底部勾选<b>对用户开放</b>的模型并保存。</li>
+        <li>（可选）「面板免密登录」填一次账号密码，以后点「打开面板」直接进，密码只存服务端。</li>
+      </ol>
+
+      <h4>输入框速查</h4>
+      <div class="cfg-tbl-wrap"><table class="cfg-tbl">
+        <thead><tr><th>字段</th><th>填什么 / 给谁用</th></tr></thead>
+        <tbody>
+          <tr><td>服务地址</td><td>服务端访问 Manager 的地址，默认 <code>127.0.0.1:7864</code>。</td></tr>
+          <tr><td>对外地址</td><td>管理员浏览器打开面板用。<b>不是</b>给客户端调用的地址。</td></tr>
+          <tr><td>网关密钥</td><td>Manager 面板里签发的下游调用 key。模型管理那边要用同一个。</td></tr>
+          <tr><td>面板账号 / 密码</td><td>只为「打开面板」免登录，与网关密钥是两套东西。密码留空 = 不改。</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>怎么确认配好了</h4>
+      <p>① 本页「测试连通」通过；② 面板里能看到上游账号和模型；③ 「模型管理」同步目录后能看到模型；④ 客户端模型下拉里有东西。</p>
+
+      <h4>出问题先看这里</h4>
+      <ul>
+        <li><b>「打开面板」打不开</b> → 对外地址没填 / 端口没放行 / 没做反向代理。内网地址只有服务器自己能访问。</li>
+        <li><b>「模型管理」报 401 / 无权限</b> → 网关密钥没填、填错，或用了面板登录密码（两者不是一回事）。</li>
+        <li><b>面板里有模型，用户端没有</b> → 忘了「重新同步目录」，或没在模型管理底部勾「对用户开放」。</li>
+        <li><b>Manager 里一个账号都没纳管</b> → 模型池是空的，先去面板扫码 / 导入。</li>
+      </ul>
+    </div>
+  </details>
   <div class="card" id="svcWbmCard">
     <div class="svc-top">
       <h2>Manager 服务 <span class="pill plain" id="svcWbmState">检测中…</span></h2>
@@ -2293,6 +2723,33 @@
 
 
   <script> void 0; </script>
+<script>
+/* 管理端配置教程（10-24）：默认全展开 —— 用户原话「我看不懂」，第一眼就要看到步骤。
+   点一次「收起」后记住选择，8 个管理页统一收起，不再长期挡配置区。
+   ⛔ 自包含 IIFE：别的 <script> 里的 $ / api 在这里看不见（踩过「跨块不可见」的坑）。
+   ⛔ 监听 summary 的 click 而不是 details 的 toggle：后者由浏览器**异步派发**，
+      程序自己设 d.open 也会触发，会误判成用户操作写脏存储。 */
+(function () {
+  var KEY = "chc.cfgGuide";
+  var list = document.querySelectorAll("details.cfg-guide");
+  if (!list.length) return;
+  var saved = null;
+  try { saved = localStorage.getItem(KEY); } catch (e) { /* 隐私模式下会抛 */ }
+  var initial = saved !== "closed";          /* 没存过 = 展开 */
+  Array.prototype.forEach.call(list, function (d) {
+    d.open = initial;
+    var sum = d.querySelector("summary");
+    if (!sum) return;
+    sum.addEventListener("click", function () {
+      /* 浏览器先翻 open，再轮到我们读 ⇒ 放到下一个任务里 */
+      setTimeout(function () {
+        try { localStorage.setItem(KEY, d.open ? "open" : "closed"); } catch (e) { /* 忽略 */ }
+        Array.prototype.forEach.call(list, function (x) { if (x !== d) x.open = d.open; });
+      }, 0);
+    });
+  });
+})();
+</script>
 <script>(function () {
   "use strict";
   var API = "/cloud-api";
