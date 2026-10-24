@@ -35,6 +35,7 @@ import { ToolCard, builtinCommandCatalog, categoryLabel, cronTemplates, describe
 import { Slot } from "../../../../../runtime/registry";
 
 const ModelSettingsSection = lazy(() => import("../../../../settings-model/ModelSettingsSection").then((m) => ({ default: m.ModelSettingsSection })));
+const BossGroupsSection = lazy(() => import("../../../../settings-boss-groups/BossGroupsSection").then((m) => ({ default: m.BossGroupsSection })));
 const McpSettingsSection = lazy(() => import("../../../../settings-mcp/McpSettingsSection").then((m) => ({ default: m.McpSettingsSection })));
 const SkillsCenterSection = lazy(() => import("../../../../settings-skills/SkillsCenterSection").then((m) => ({ default: m.SkillsCenterSection })));
 const GeneralSettingsSection = lazy(() => import("../../../../settings-general/GeneralSettingsSection").then((m) => ({ default: m.GeneralSettingsSection })));
@@ -457,6 +458,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
   return {
     automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} setNotice={setNotice} /> },
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
+    "boss-groups": { render: () => <BossGroupsSection /> },
     "expert-center": { back: { to: "agentteam", label: "返回智能体团队" }, render: () => expertMarketOpen ? <ExpertMarketSection localSkills={localSkills} onBack={() => setExpertMarketOpen(false)} onInstalled={() => void refreshExpertCenterData()} onNotice={(m) => setNotice(m)} /> : <><ExpertCenterSection expertTeams={expertTeams} EXPERT_CATEGORY_DEFS={EXPERT_CATEGORY_DEFS} expertTeamMemberDirect={expertTeamMemberDirect} startMemberDirectSession={startMemberDirectSession} onOpenMarket={() => setExpertMarketOpen(true)} /></> },
     user: { render: () => <UserCenterSection
                           username={username}
