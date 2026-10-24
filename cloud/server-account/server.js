@@ -3723,8 +3723,18 @@ const server = http.createServer(async (req, res) => {
     if (!BILL_ID_RE.test(planId)) return send(400, { ok: false, error: "非法的套餐 ID" });
     const plan = (db.plans || {})[planId];
     if (!plan || plan.active === false) return send(404, { ok: false, error: "套餐不存在或已下架" });
-    if (plan.demo) return send(400, { ok: false, error: "demo-plan", message: "该套餐是示例（仅展示内容），不参与售卖。如需开通请联系管理员手动开通。" });
     const cny = Math.round(Number(plan.priceCny) * 100) / 100;
+    /* ⛔ 10-24 用户令：示例套餐不售卖（后台改成一张参考图）；
+       这里承接 **priceCny = 0 的免费体验套餐**：免支付直接开通，每人每套餐限领一次。 */
+    if (cny === 0) {
+      const claims = ((db.planClaims || (db.planClaims = {}))[who.username] || (db.planClaims[who.username] = {}));
+      if (claims[planId]) return send(409, { ok: false, error: "already-claimed", message: "这个免费体验套餐你已经领过了（每人限一次）" });
+      const r = activatePlan(who.username, plan, "免费领取「" + plan.name + "」");
+      claims[planId] = Date.now();
+      persist();
+      console.log("[billing] " + who.username + " 免费领取套餐「" + plan.name + "」");
+      return send(200, { ok: true, free: true, planName: plan.name, bonus: r.bonus, days: r.days, entitlements: r.states });
+    }
     if (!(cny > 0)) return send(400, { ok: false, error: "该套餐未设置金额，请联系管理员" });
     const billing = billingOf();
     if (!topupEnabled()) return send(400, { ok: false, error: "topup-disabled", message: "支付渠道未配置，请联系管理员开通套餐" });
@@ -3904,6 +3914,40 @@ const server = http.createServer(async (req, res) => {
   }
 
   /* 管理端：套餐 CRUD（upsert / 删除 / 上下架） */
+  /* ══ 示例图（10-24 用户令）：示例套餐**不是真商品**，只是给管理员看的一张参考图。
+     ⛔ 只存一张图（dataURL ≤ 800KB 或 http(s) 链接），不进 db.plans / teamPlans / teamPointPkgs，
+        不参与售卖；用户端不展示（用户端只放用途注释）。 */
+  if (!db.samples || typeof db.samples !== "object") db.samples = {};
+  if (p === "/admin/samples" && req.method === "GET") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    return send(200, { ok: true, samples: {
+      plan: db.samples.plan || null, teamPlan: db.samples.teamPlan || null, pkg: db.samples.pkg || null,
+    } });
+  }
+  if (p === "/admin/samples" && req.method === "POST") {
+    if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
+    const body = await readBodyLarge(900 * 1024);
+    const kind = String((body && body.kind) || "").trim();
+    if (["plan", "teamPlan", "pkg"].indexOf(kind) < 0) return send(400, { ok: false, error: "未知的示例类型" });
+    if (body && body.clear) {
+      delete db.samples[kind]; persist();
+      return send(200, { ok: true, cleared: kind, samples: db.samples });
+    }
+    const image = String((body && body.image) || "").trim();
+    const isData = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(image) && image.length <= 800 * 1024;
+    const isUrl = /^https?:\/\/[^\s"'<>]{6,500}$/.test(image);
+    if (!isData && !isUrl) return send(400, { ok: false, error: "图片格式不对", message: "请上传 PNG/JPG/WebP/GIF（≤600KB），或填一个 http(s) 图片链接" });
+    db.samples[kind] = {
+      image,
+      title: String((body && body.title) || "").trim().slice(0, 60),
+      note: String((body && body.note) || "").trim().slice(0, 200),
+      updatedAt: Date.now(), by: me.username,
+    };
+    persist();
+    console.log("[samples] " + me.username + " 更新示例图：" + kind);
+    return send(200, { ok: true, sample: db.samples[kind], samples: db.samples });
+  }
+
   if (p === "/admin/plans" && req.method === "GET") {
     if (!me || me.role !== "admin") return send(403, { ok: false, error: "需要管理员权限" });
     return send(200, { ok: true, plans: Object.values(db.plans || {}), billing: billingOf(), topupEnabled: topupEnabled() });
@@ -3946,8 +3990,6 @@ const server = http.createServer(async (req, res) => {
       points: Math.max(0, Math.round(Number(body && body.points) || 0)),
       days: Math.max(0, Math.round(Number(body && body.days) || 0)),
       features: cleaned, active: body.active === undefined ? true : body.active !== false,
-      /* ⛔ 10-24 用户令：示例套餐只展示、不可购买（管理员填内容给用户看，不参与售卖） */
-      demo: (body && body.demo) === true,
       sort: Math.round(Number(body && body.sort) || 0),
     };
     persist();
@@ -4782,8 +4824,24 @@ const server = http.createServer(async (req, res) => {
     if (role !== "owner" && !(me && me.role === "admin")) return send(403, { ok: false, error: "no-permission", message: "只有团队 owner 可以购买团队套餐" });
     const plan = (db.teamPlans || {})[planId];
     if (!plan || plan.active === false) return send(404, { ok: false, error: "套餐不存在或已下架" });
-    if (plan.demo) return send(400, { ok: false, error: "demo-plan", message: "该套餐是示例（仅展示内容），不参与售卖。如需开通请联系管理员手动开通。" });
     const cny = Math.round(Number(plan.priceCny) * 100) / 100;
+    /* 免费体验团队套餐（priceCny = 0）：免支付直接开通，每团队每套餐限领一次。
+       ⛔ 必须限次：不然反复领取 = 无限叠加席位与赠送积分。 */
+    if (cny === 0) {
+      /* 顺序：先判「领过」（提示最准确），再判「已有生效套餐」（防 10 席被降成 2 席）。 */
+      const claims = ((db.teamPlanClaims || (db.teamPlanClaims = {}))[teamId] || (db.teamPlanClaims[teamId] = {}));
+      if (claims[planId]) return send(409, { ok: false, error: "already-claimed", message: "这个免费体验套餐该团队已经领过了（每团队限一次）" });
+      /* ⛔ 已有生效中的套餐时不允许领体验版 —— 否则 10 席团队点一下就降成 2 席（10-24 审查抓到）。 */
+      const curEnt = teamEntitlementsOf(teamId);
+      if (curEnt.status === "active" && Number(curEnt.expiresAt || 0) > Date.now()) {
+        return send(409, { ok: false, error: "already-active", message: "该团队已有生效中的套餐（" + (curEnt.planName || "套餐") + "），无需领取体验版；需要更换请让管理员处理" });
+      }
+      const r = activateTeamPlan(teamId, plan, "免费领取「" + plan.name + "」（" + who.username + "）", "freeplan:" + teamId + ":" + planId);
+      claims[planId] = Date.now();
+      persist();
+      console.log("[team] " + who.username + " 为团队 " + teamId + " 免费领取套餐「" + plan.name + "」");
+      return send(200, { ok: true, free: true, planName: plan.name, entitlements: r.entitlements, bonus: r.bonus, seats: r.seats });
+    }
     if (!(cny > 0)) return send(400, { ok: false, error: "该套餐未设置金额，请联系管理员" });
     if (!topupEnabled()) return send(400, { ok: false, error: "topup-disabled", message: "支付渠道未配置，请联系管理员开通团队套餐" });
     const orderId = newBillingId("TB");
@@ -4839,8 +4897,6 @@ const server = http.createServer(async (req, res) => {
       /* 10-24：每月自动补充的积分（进 teamQuota，当月清零）。
          ⛔ 不存 overagePolicy：当前实现固定「配额用完继续扣余额」，存了也不会生效（死配置）。 */
       monthlyPoints: Math.max(0, Math.round(Number(body.monthlyPoints) || 0)),
-      /* 示例团队套餐：只展示内容，不可购买（同个人套餐口径） */
-      demo: (body && body.demo) === true,
       active: body.active === undefined ? true : body.active !== false,
       sort: Math.round(Number(body.sort) || 0),
     };
@@ -5004,8 +5060,6 @@ const server = http.createServer(async (req, res) => {
       bonusPoints: Math.max(0, Math.round(Number(body.bonusPoints) || 0)),
       validDays: Math.max(0, Math.round(Number(body.validDays) || 0)),
       limitPerTeam: Math.max(0, Math.round(Number(body.limitPerTeam) || 0)),
-      /* 示例积分包：只展示面额/赠送规则，不可购买 */
-      demo: (body && body.demo) === true,
       active: body.active === undefined ? true : body.active !== false,
       sort: Math.round(Number(body.sort) || 0),
     };
@@ -5043,8 +5097,21 @@ const server = http.createServer(async (req, res) => {
     if (role !== "owner" && !(me && me.role === "admin")) return send(403, { ok: false, error: "no-permission", message: "只有团队 owner 可以购买积分包" });
     const pkg = (db.teamPointPkgs || {})[pkgId];
     if (!pkg || pkg.active === false) return send(404, { ok: false, error: "积分包不存在或已下架" });
-    if (pkg.demo) return send(400, { ok: false, error: "demo-plan", message: "该积分包是示例（仅展示面额与赠送规则），不参与售卖。如需积分请联系管理员发放。" });
     const cny = Math.round(Number(pkg.priceCny) * 100) / 100;
+    /* 免费体验积分包（priceCny = 0）：免支付直接入团队余额，按 limitPerTeam 限领。 */
+    if (cny === 0) {
+      const claims = ((db.teamPkgClaims || (db.teamPkgClaims = {}))[teamId] || (db.teamPkgClaims[teamId] = {}));
+      const usedFree = Number(claims[pkgId] || 0);
+      const cap = Number(pkg.limitPerTeam) || 0;
+      if (cap > 0 && usedFree >= cap) return send(400, { ok: false, error: "limit-reached", message: "该免费积分包每个团队限领 " + cap + " 次" });
+      const total = Math.max(0, Math.round(Number(pkg.points) || 0) + Math.round(Number(pkg.bonusPoints) || 0));
+      if (total <= 0) return send(400, { ok: false, error: "该积分包未设置积分数" });
+      teamAddPoints(teamId, total, "pkg-free", "freepkg:" + teamId + ":" + pkgId + ":" + Date.now(), "免费领取「" + pkg.name + "」", who.username);
+      claims[pkgId] = usedFree + 1;
+      persist();
+      console.log("[team] " + who.username + " 为团队 " + teamId + " 免费领取积分包「" + pkg.name + "」（" + total + " 分）");
+      return send(200, { ok: true, free: true, credited: total, points: teamPointsSummary(teamId) });
+    }
     if (!(cny > 0)) return send(400, { ok: false, error: "该积分包未设置金额，请联系管理员" });
     if (!topupEnabled()) return send(400, { ok: false, error: "topup-disabled", message: "支付渠道未配置，请联系管理员发放团队积分" });
     /* 限购：按已支付订单数判断 */

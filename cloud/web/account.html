@@ -895,7 +895,7 @@
         <div class="sub-hero-top">
           <div>
             <h2>订阅中心</h2>
-            <p class="hint">套餐<b>按金额购买</b>（积分单独用于充值/抵扣，两者互不动用）：一个套餐同时开通多项权益并叠加续期；到期后进入宽限期，续费即恢复。<br>注意：容量与检索次数额度以<b>最后一次订阅的套餐</b>为准（不跨套餐累加）；标「示例」的套餐只做展示、不可购买。</p>
+            <p class="hint"><b>套餐有什么用：</b>一次开通知识库与记忆的<b>容量 / 检索次数</b>额度（叠加续期），按<b>金额购买</b>——不是用积分换。<b>积分</b>单独用于充值 / 抵扣，两者互不动用。<br>到期后进入宽限期，续费即恢复；额度以<b>最后一次订阅的套餐</b>为准（不跨套餐累加）。</p>
           </div>
           <div class="sub-balance">
             <span>当前积分</span>
@@ -1135,7 +1135,7 @@
       </div>
       <div class="card">
         <h2>团队套餐</h2>
-        <p class="hint" style="margin:0 0 12px">团队套餐按<b>席位 + 容量</b>定价，购买后赠送积分进入<b>团队积分池</b>（与个人积分互不相通）。仅 owner 可购买。</p>
+        <p class="hint" style="margin:0 0 12px"><b>团队套餐有什么用：</b>决定团队<b>成员上限（席位）</b>、团队知识库与团队记忆的<b>容量</b>、以及每月补充的<b>团队积分配额</b>；购买后赠送的积分进入团队积分池。<b>按金额购买</b>（不是用积分换），仅 owner 可购买；标「体验」的套餐 0 元，可免费领一次先试用。</p>
         <div class="table-wrap"><table class="mb-table">
           <thead><tr><th style="width:22%">套餐</th><th style="width:14%">价格</th><th style="width:10%">席位</th><th style="width:22%">容量</th><th style="width:12%">时长</th><th style="width:20%">操作</th></tr></thead>
           <tbody id="tmsPlans"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
@@ -1144,7 +1144,7 @@
       </div>
       <div class="card">
         <h2>团队积分包</h2>
-        <p class="hint" style="margin:0 0 12px">积分用于团队能力消耗（知识库检索 / 上传等），与个人积分互不相通。仅 owner 可购买；管理员也可直接分配。</p>
+        <p class="hint" style="margin:0 0 12px"><b>团队积分有什么用：</b>团队知识库<b>检索</b>（按次）、知识库<b>上传</b>（按 MB）、团队记忆<b>写入 / 检索</b>（按条/次）都会从团队积分扣；用完则相关操作被拒（402）。它与<b>个人积分互不相通</b>，不能互转。仅 owner 可购买，管理员也可直接分配；标「体验」的 0 元包可免费领（按限购次数）。</p>
         <div class="table-wrap"><table class="mb-table">
           <thead><tr><th style="width:22%">积分包</th><th style="width:14%">价格</th><th style="width:18%">到账积分</th><th style="width:14%">有效期</th><th style="width:12%">限购</th><th style="width:20%">操作</th></tr></thead>
           <tbody id="tmsPkgs"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
@@ -1219,7 +1219,10 @@
           <button class="btn primary" id="atSavePrice">保存积分设置</button>
           <span class="status" id="atPriceStatus" role="status"></span>
         </div>
-        <h3 style="margin:18px 0 8px;font-size:14px">积分充值包</h3>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 8px">
+          <h3 style="margin:0;font-size:14px">积分充值包</h3>
+          <button class="btn sm" id="atSamplePkgBtn" data-sample="pkg" title="示例积分包不是真商品，只是一张参考图：悬停看，点击上传">示例</button>
+        </div>
         <div class="table-wrap"><table class="mb-table">
           <thead><tr><th style="width:18%">名称</th><th style="width:12%">价格</th><th style="width:16%">到账 / 赠送</th><th style="width:12%">有效期</th><th style="width:10%">限购</th><th style="width:10%">状态</th><th style="width:22%">操作</th></tr></thead>
           <tbody id="atPkgRows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
@@ -1227,21 +1230,23 @@
         <div class="pol-grid" style="margin-top:12px">
           <div class="pol-field"><label>积分包 ID（留空自动）</label><input class="field" id="atpkId" placeholder="pkg-small" /></div>
           <div class="pol-field"><label>名称</label><input class="field" id="atpkName" placeholder="小包" /></div>
-          <div class="pol-field"><label>价格（元）</label><input class="field" id="atpkPrice" type="number" min="0" step="10" /></div>
+          <div class="pol-field"><label>价格（元；0 = 免费体验，按限购次数领取）</label><input class="field" id="atpkPrice" type="number" min="0" step="10" /></div>
           <div class="pol-field"><label>到账积分</label><input class="field" id="atpkPoints" type="number" min="0" step="1000" /></div>
           <div class="pol-field"><label>赠送积分</label><input class="field" id="atpkBonus" type="number" min="0" step="100" /></div>
           <div class="pol-field"><label>有效期（天，0 = 永久）</label><input class="field" id="atpkDays" type="number" min="0" step="30" /></div>
           <div class="pol-field"><label>每团队限购（0 = 不限）</label><input class="field" id="atpkLimit" type="number" min="0" step="1" /></div>
         </div>
         <div class="pol-actions">
-          <label class="mb-check" title="示例积分包只做展示，购买入口会提示不可购买"><input type="checkbox" id="atpkDemo" /> <span>示例（仅展示，不可购买）</span></label>
           <button class="btn primary" id="atPkgSave">保存积分包</button>
           <button class="btn" id="atPkgReset">清空表单</button>
           <span class="status" id="atPkgStatus" role="status"></span>
         </div>
       </div>
       <div class="card">
-        <h2>团队套餐设置</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <h2 style="margin:0">团队套餐设置</h2>
+          <button class="btn sm" id="atSampleTPlanBtn" data-sample="teamPlan" title="示例套餐不是真商品，只是一张参考图：悬停看，点击上传">示例</button>
+        </div>
         <div class="table-wrap"><table class="mb-table">
           <thead><tr><th style="width:20%">名称</th><th style="width:12%">价格</th><th style="width:8%">席位</th><th style="width:22%">容量</th><th style="width:10%">时长</th><th style="width:8%">状态</th><th style="width:20%">操作</th></tr></thead>
           <tbody id="atPlanRows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
@@ -1250,7 +1255,7 @@
         <div class="pol-grid">
           <div class="pol-field"><label>套餐 ID（留空自动）</label><input class="field" id="atpId" placeholder="team-basic" /></div>
           <div class="pol-field"><label>名称</label><input class="field" id="atpName" placeholder="团队基础版" /></div>
-          <div class="pol-field"><label>金额（元）</label><input class="field" id="atpPrice" type="number" min="0" step="10" /></div>
+          <div class="pol-field"><label>金额（元；0 = 免费体验，每团队限领一次）</label><input class="field" id="atpPrice" type="number" min="0" step="10" /></div>
           <div class="pol-field"><label>席位数</label><input class="field" id="atpSeats" type="number" min="1" step="1" /></div>
           <div class="pol-field"><label>时长（天）</label><input class="field" id="atpDays" type="number" min="0" step="30" /></div>
           <div class="pol-field"><label>赠送团队积分</label><input class="field" id="atpPoints" type="number" min="0" step="1000" /></div>
@@ -1259,7 +1264,6 @@
           <div class="pol-field" style="grid-column:span 2"><label>描述</label><input class="field" id="atpDesc" placeholder="适合 5-10 人项目组" /></div>
         </div>
         <div class="pol-actions">
-          <label class="mb-check" title="示例套餐只做展示，团队端显示「示例 · 不可购买」"><input type="checkbox" id="atpDemo" /> <span>示例（仅展示，不可购买）</span></label>
           <button class="btn primary" id="atPlanSave">保存</button>
           <button class="btn" id="atPlanReset">清空表单</button>
           <span class="status" id="atPlanStatus" role="status"></span>
@@ -1347,7 +1351,10 @@
         <div class="hint" id="blChannel" style="margin-top:10px"></div>
       </div>
       <div class="card">
-        <h2>订阅套餐设置</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <h2 style="margin:0">订阅套餐设置</h2>
+          <button class="btn sm" id="blSampleBtn" data-sample="plan" title="示例套餐不是真商品，只是一张参考图：悬停看，点击上传">示例</button>
+        </div>
         <div class="table-wrap"><table class="mb-table">
           <thead><tr><th style="width:18%">名称</th><th style="width:16%">价格（积分）</th><th style="width:9%">时长（天）</th><th style="width:22%">包含</th><th style="width:9%">状态</th><th style="width:26%">操作</th></tr></thead>
           <tbody id="blPlanRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
@@ -1356,7 +1363,7 @@
         <div class="pol-grid">
           <div class="pol-field"><label>套餐 ID（留空自动）</label><input class="field" id="plId" placeholder="plan-monthly" /></div>
           <div class="pol-field"><label>名称</label><input class="field" id="plName" placeholder="全能月卡" /></div>
-          <div class="pol-field"><label>套餐金额（元，用户支付）</label><input class="field" id="plPriceCny" type="number" min="0" step="10" /></div>
+          <div class="pol-field"><label>套餐金额（元，用户支付；0 = 免费体验可自助领取一次）</label><input class="field" id="plPriceCny" type="number" min="0" step="10" /></div>
           <div class="pol-field"><label>赠送积分（购买后到账）</label><input class="field" id="plPrice" type="number" min="0" step="100" /></div>
           <div class="pol-field"><label>时长（天，0 = 永久，慎用）</label><input class="field" id="plDays" type="number" min="0" step="30" /></div>
           <div class="pol-field"><label>排序（小在前）</label><input class="field" id="plSort" type="number" step="1" /></div>
@@ -1372,7 +1379,6 @@
           <label class="mb-check"><input type="checkbox" id="plKbOn" checked /> <span>含知识库</span></label>
           <label class="mb-check"><input type="checkbox" id="plMemOn" checked /> <span>含记忆</span></label>
           <label class="mb-check"><input type="checkbox" id="plActive" checked /> <span>上架</span></label>
-          <label class="mb-check" title="示例套餐只做展示，用户端显示「示例 · 不可购买」"><input type="checkbox" id="plDemo" /> <span>示例（仅展示，不可购买）</span></label>
           <button class="btn primary" id="plSave">保存套餐</button>
           <button class="btn" id="plReset">清空表单</button>
           <span class="status" id="plStatus" role="status"></span>
@@ -6259,6 +6265,120 @@
 
   /* ⛔ 10-23：立刻挂到 window（函数声明已提升，IIFE 顶层第一句就能挂）——
      即使本块后面的接线代码抛错，show() 也能调到。 */
+  /* ══ 示例图（10-24 用户令）：示例套餐**不是真商品**，只是给管理员看的一张参考图。
+     三处「示例」按钮（订阅套餐 / 团队套餐 / 积分充值包）：鼠标悬停浮出预览，点击上传/替换/清除。
+     ⛔ 用户端不展示示例图，用户端只放「这些套餐/积分有什么用」的注释。 ══ */
+  var SAMPLES = null, SAMPLE_POP = null;
+  function sampleName(kind) {
+    return kind === "teamPlan" ? "团队套餐 · 示例图" : (kind === "pkg" ? "积分充值包 · 示例图" : "订阅套餐 · 示例图");
+  }
+  function sampleSay(text, cls) {
+    var el = document.getElementById("sampleStatus");
+    if (el) { el.textContent = text; el.className = "status " + (cls || ""); }
+  }
+  function loadSamples(force) {
+    if (SAMPLES && !force) return Promise.resolve(SAMPLES);
+    return api("/admin/samples").then(function (r) {
+      SAMPLES = (r.j && r.j.samples) || {};
+      return SAMPLES;
+    })["catch"](function () { SAMPLES = {}; return SAMPLES; });
+  }
+  function ensureSamplePop() {
+    if (!SAMPLE_POP) {
+      SAMPLE_POP = document.createElement("div");
+      SAMPLE_POP.id = "samplePop";
+      /* ⛔ 只能有一条 max-width：两条会互相覆盖（实测宽度涨到 818px、右边缘被裁） */
+      SAMPLE_POP.style.cssText = "position:fixed;z-index:1300;display:none;padding:8px;background:#fff;"
+        + "border:1px solid #d8d8e0;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);"
+        + "max-width:min(420px, calc(100vw - 24px))";
+      document.body.appendChild(SAMPLE_POP);
+    }
+    return SAMPLE_POP;
+  }
+  function showSamplePop(btn, kind) {
+    var pop = ensureSamplePop();
+    var sp = SAMPLES && SAMPLES[kind];
+    pop.innerHTML = (sp && sp.image)
+      ? '<img src="' + escAttr(sp.image) + '" alt="示例" style="display:block;max-width:100%;max-height:320px;border-radius:6px" />'
+        + (sp.title ? '<div style="font-size:12px;margin-top:6px;color:#555">' + esc(sp.title) + "</div>" : "")
+      : '<div style="font-size:12.5px;line-height:1.8;color:#666;padding:6px 8px">还没有示例图。<br>点这个「示例」按钮上传一张（或填图片链接）。</div>';
+    var r = btn.getBoundingClientRect();
+    /* ⛔ 右对齐定位：图片未加载时 offsetWidth 偏小，按宽度夹取会让浮层超出右边缘（实测裁切）。 */
+    pop.style.display = "block";
+    pop.style.left = "auto";
+    pop.style.right = Math.max(8, window.innerWidth - r.right) + "px";
+    pop.style.top = (r.bottom + 8) + "px";
+  }
+  function hideSamplePop() { if (SAMPLE_POP) SAMPLE_POP.style.display = "none"; }
+
+  function openSampleDialog(kind) {
+    hideSamplePop();
+    loadSamples().then(function () {
+      var sp = (SAMPLES && SAMPLES[kind]) || null;
+      var preview = (sp && sp.image)
+        ? '<img src="' + escAttr(sp.image) + '" alt="示例" style="display:block;max-width:100%;max-height:260px;border-radius:8px;border:1px solid #e2e2ea" />'
+        : '<div class="hint">还没有示例图（上传后，鼠标悬停右上角「示例」即可预览）</div>';
+      showModal(sampleName(kind), '<div style="font-size:13.5px;line-height:1.9">'
+        + '<div class="hint" style="margin-bottom:10px">示例只是<b>一张参考图</b>：不是真商品、不参与售卖，用户端也不展示它。</div>'
+        + '<div id="samplePrevBox" style="margin-bottom:10px">' + preview + "</div>"
+        + '<div class="pol-field"><label>选择图片（PNG / JPG / WebP / GIF，≤600KB）</label><input type="file" accept="image/*" id="sampleFile" /></div>'
+        + '<div class="pol-field" style="margin-top:8px"><label>或填图片链接</label>'
+        + '<input class="field" id="sampleUrl" placeholder="https://…" value="'
+        + (sp && /^https?:/i.test(sp.image || "") ? escAttr(sp.image) : "") + '" /></div>'
+        + '<div class="pol-field" style="margin-top:8px"><label>标题（选填）</label>'
+        + '<input class="field" id="sampleTitle" maxlength="60" value="' + escAttr((sp && sp.title) || "") + '" /></div>'
+        + '<div style="margin-top:12px;display:flex;gap:8px;align-items:center">'
+        + '<button class="btn primary" id="sampleSave">保存示例图</button>'
+        + (sp ? '<button class="btn" id="sampleClear">清除</button>' : "")
+        + '<span class="status" id="sampleStatus"></span></div></div>');
+
+      var pending = null;
+      if ($("sampleFile")) $("sampleFile").onchange = function () {
+        var f = this.files && this.files[0];
+        if (!f) return;
+        if (f.size > 600 * 1024) { sampleSay("图片太大（≤600KB）", "bad"); return; }
+        var fr = new FileReader();
+        fr.onload = function () {
+          pending = String(fr.result || "");
+          $("samplePrevBox").innerHTML = '<img src="' + escAttr(pending) + '" alt="预览" style="display:block;max-width:100%;max-height:260px;border-radius:8px;border:1px solid #e2e2ea" />';
+          sampleSay("已选好，点「保存示例图」", "ok");
+        };
+        fr.readAsDataURL(f);
+      };
+      if ($("sampleSave")) $("sampleSave").onclick = function () {
+        var image = pending || (($("sampleUrl") || {}).value || "").trim();
+        if (!image) { sampleSay("请先选图片或填链接", "warn"); return; }
+        sampleSay("保存中…", "");
+        api("/admin/samples", { method: "POST", body: { kind: kind, image: image, title: ($("sampleTitle") || {}).value || "" } })
+          .then(function (r) {
+            var j = r.j || {};
+            if (!r.ok || !j.ok) { sampleSay(j.message || j.error || "保存失败", "bad"); return; }
+            SAMPLES = j.samples || SAMPLES;
+            sampleSay("已保存", "ok");
+            var m = document.getElementById("mbModal"); if (m && m.parentNode) m.parentNode.removeChild(m);
+          })["catch"](function () { sampleSay("网络错误", "bad"); });
+      };
+      if ($("sampleClear")) $("sampleClear").onclick = function () {
+        if (!window.confirm("清除这张示例图？")) return;
+        api("/admin/samples", { method: "POST", body: { kind: kind, clear: true } }).then(function (r) {
+          var j = r.j || {};
+          if (!r.ok || !j.ok) { sampleSay(j.error || "清除失败", "bad"); return; }
+          SAMPLES = j.samples || {};
+          var m = document.getElementById("mbModal"); if (m && m.parentNode) m.parentNode.removeChild(m);
+        });
+      };
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-sample]"), function (b) {
+    if (b.getAttribute("data-sample-bound") === "1") return;
+    b.setAttribute("data-sample-bound", "1");
+    b.addEventListener("mouseenter", function () {
+      loadSamples().then(function () { showSamplePop(b, b.getAttribute("data-sample")); });
+    });
+    b.addEventListener("mouseleave", hideSamplePop);
+    b.onclick = function () { openSampleDialog(b.getAttribute("data-sample")); };
+  });
+
   window.__subApi = window.__subApi || {};
   window.__subApi.loadSubscribe = loadSubscribe;
   window.__subApi.loadAdminBilling = loadAdminBilling;
@@ -6380,28 +6500,43 @@
         feats.push("<div>" + (f === "knowledge" ? "📚 知识库" : "🧠 记忆") + "：<b>" + (bits.length ? bits.join(" · ") : "标准额度") + "</b></div>");
       });
       /* ⛔ 用户澄清：套餐用钱买，所以不再按积分余额禁用按钮 */
-      var demo = Boolean(pl.demo);
+      var free = Number(pl.priceCny) === 0;
       return '<article class="plan-card">'
-        + "<h3>" + esc(pl.name) + (demo ? ' <span class="pill plain">示例</span>' : "") + "</h3>"
-        + '<div class="plan-price">' + (Number(pl.priceCny) > 0 ? "¥" + esc(pl.priceCny) : '<span class="hint">未定价</span>')
+        + "<h3>" + esc(pl.name) + (free ? ' <span class="pill plain">体验</span>' : "") + "</h3>"
+        + '<div class="plan-price">' + (Number(pl.priceCny) > 0 ? "¥" + esc(pl.priceCny) : '<span class="hint">免费体验</span>')
         + ' <small>/ ' + (pl.days === 0 ? "永久" : pl.days + " 天") + "</small></div>"
         + (Number(pl.points) > 0 ? '<div class="hint">购买即赠 <b>' + esc(pl.points) + " 积分</b></div>" : "")
         + (pl.desc ? '<div class="hint">' + esc(pl.desc) + "</div>" : "")
         + '<div class="plan-feats">' + feats.join("") + "</div>"
-        + (demo
-          ? '<button class="btn sm" data-demo-plan="' + escAttr(pl.id) + '">示例 · 不可购买</button>'
+        + (free
+          ? '<button class="btn primary sm" data-free-plan="' + escAttr(pl.id) + '">免费领取</button>'
           : '<button class="btn primary sm" data-buy="' + escAttr(pl.id) + '">立即购买</button>')
         + "</article>";
     }).join("");
     Array.prototype.forEach.call(box.querySelectorAll("[data-buy]"), function (b) {
       b.onclick = function () { buyPlan(b.getAttribute("data-buy")); };
     });
-    /* ⛔ 示例套餐：只展示内容，不参与售卖（服务端同样拦截，这里只做解释） */
-    Array.prototype.forEach.call(box.querySelectorAll("[data-demo-plan]"), function (b) {
+    /* 免费体验套餐：无需支付，直接开通（每人每套餐限一次；服务端幂等校验） */
+    Array.prototype.forEach.call(box.querySelectorAll("[data-free-plan]"), function (b) {
       b.onclick = function () {
-        showModal("示例套餐（不可购买）", '<div style="font-size:13.5px;line-height:1.9">'
-          + "这个套餐是<b>示例</b>：列出它会包含的权益与额度，方便你了解套餐内容，<b>不参与售卖</b>。<br><br>"
-          + "如需开通，请联系管理员在「用户管理 → 手动开通」为你开通；正式套餐上架后这里会显示「立即购买」。</div>");
+        var pid = b.getAttribute("data-free-plan");
+        if (!window.confirm("免费领取这个体验套餐？\n\n权益立即生效（每人每套餐限领一次），赠送积分同时到账。")) return;
+        b.disabled = true;
+        api("/plans/buy", { method: "POST", body: { planId: pid } }).then(function (r) {
+          b.disabled = false;
+          var j = r.j || {};
+          if (!r.ok || !j.ok) {
+            showModal(j.error === "already-claimed" ? "已经领过了" : "领取失败",
+              '<div style="font-size:13.5px;line-height:1.9">' + esc(j.message || j.error || ("HTTP " + r.status)) + "</div>");
+            return;
+          }
+          showModal("已领取", '<div style="font-size:13.5px;line-height:1.9">「<b>' + esc(j.planName) + "</b>」已开通"
+            + (Number(j.days) > 0 ? "（" + esc(j.days) + " 天）" : "") + "，赠送 <b>" + esc(j.bonus || 0) + " 积分</b> 已到账。<br><br>"
+            + "我可以在左侧「知识库 / 记忆空间」里看到对应额度。</div>");
+          var sec = document.querySelector('[data-tab="subscribe"]');
+          if (sec) { /* 刷新余额 */ }
+          location.reload();
+        })["catch"](function () { b.disabled = false; showModal("领取失败", "网络错误"); });
       };
     });
   }
@@ -6545,7 +6680,7 @@
     box.innerHTML = ADMIN_PLANS.length ? ADMIN_PLANS.map(function (pl) {
       var priceText = (Number(pl.priceCny) > 0 ? "¥" + esc(pl.priceCny) : '<span class="hint">未定价</span>')
         + '<span class="hint"> · 赠 ' + esc(pl.points || 0) + " 积分</span>";
-      return "<tr><td>" + esc(pl.name) + (pl.demo ? ' <span class="pill plain">示例</span>' : "") + ' <span class="hint">' + esc(pl.id) + "</span></td><td>" + priceText + "</td><td>" + esc(pl.days === 0 ? "永久" : pl.days + " 天") + "</td><td class=\"wrap\">" + esc(planFeatText(pl)) + "</td><td>" + (pl.active !== false ? '<span class="pill ok">上架</span>' : '<span class="pill plain">下架</span>') + "</td>"
+      return "<tr><td>" + esc(pl.name) + (Number(pl.priceCny) === 0 ? ' <span class="pill plain">体验</span>' : "") + ' <span class="hint">' + esc(pl.id) + "</span></td><td>" + priceText + "</td><td>" + esc(pl.days === 0 ? "永久" : pl.days + " 天") + "</td><td class=\"wrap\">" + esc(planFeatText(pl)) + "</td><td>" + (pl.active !== false ? '<span class="pill ok">上架</span>' : '<span class="pill plain">下架</span>') + "</td>"
         + '<td><div class="mb-ops"><button class="btn sm" data-pl-edit="' + esc(pl.id) + '">编辑</button><button class="btn sm" data-pl-grant="' + esc(pl.id) + '">手动开通</button>'
         + '<button class="btn sm" data-pl-toggle="' + esc(pl.id) + '">' + (pl.active !== false ? "下架" : "上架") + "</button>"
         + '<button class="btn sm danger" data-pl-del="' + esc(pl.id) + '">删除</button></div></td></tr>';
@@ -6593,7 +6728,6 @@
     $("plPrice").value = pl.points != null ? pl.points : (pl.price || "");
     $("plDays").value = pl.days; $("plSort").value = pl.sort || 0;
     $("plActive").checked = pl.active !== false;
-    if ($("plDemo")) $("plDemo").checked = Boolean(pl.demo);
     var f = pl.features || {};
     $("plKbOn").checked = Boolean(f.knowledge); $("plMemOn").checked = Boolean(f.memory);
     $("plKbMb").value = f.knowledge && f.knowledge.quotaMb != null ? f.knowledge.quotaMb : "";
@@ -6618,7 +6752,7 @@
       priceCny: Number($("plPriceCny").value || 0),
       points: Number($("plPrice").value || 0),
       days: Number($("plDays").value || 0), sort: Number($("plSort").value || 0),
-      active: $("plActive").checked, demo: Boolean($("plDemo") && $("plDemo").checked), features: features,
+      active: $("plActive").checked, features: features,
     };
   }
   function renderTopupAdmin() {
@@ -6722,7 +6856,6 @@
       $("blPlanFormTitle").textContent = "新建套餐";
       ["plId", "plName", "plDesc", "plPriceCny", "plPrice", "plDays", "plSort", "plKbMb", "plKbQuota", "plMemMb", "plMemQuota"].forEach(function (id) { if ($(id)) $(id).value = ""; });
       $("plKbOn").checked = true; $("plMemOn").checked = true; $("plActive").checked = true;
-      if ($("plDemo")) $("plDemo").checked = false;
     };
   }
 })();
@@ -6921,8 +7054,7 @@
         return;
       }
       var html = '<div style="font-size:13.5px;line-height:1.9">';
-      html += '<div class="hint" style="margin-bottom:10px">选择要购买的积分包（到账直接进团队余额）：'
-        + (pkgs.some(function (x) { return x.demo; }) ? '<br>标「示例」的只做展示，<b>不可购买</b>。' : "") + "</div>";
+      html += '<div class="hint" style="margin-bottom:10px">选择要购买的积分包（到账直接进团队余额）；标「体验」的 0 元包可直接领取（按限购次数）。</div>';
       pkgs.forEach(function (p) {
         html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line-soft)">'
           + "<div><b>" + esc(p.name) + "</b>"
@@ -6930,13 +7062,32 @@
           + '<div class="hint">到账 ' + esc(p.points) + (Number(p.bonusPoints) > 0 ? " + 赠 " + esc(p.bonusPoints) : "") + " 积分"
           + (Number(p.validDays) > 0 ? " · " + esc(p.validDays) + " 天有效" : " · 长期有效") + "</div></div>"
           + '<div style="white-space:nowrap"><b>¥' + esc(p.priceCny) + "</b> "
-          + (p.demo
-            ? '<span class="pill plain">示例</span>'
+          + (Number(p.priceCny) === 0
+            ? '<button class="btn primary" data-freepkg2="' + escAttr(p.id) + '">免费领取</button>'
             : '<button class="btn primary" data-pkgbuy="' + escAttr(p.id) + '">购买</button>')
           + "</div></div>";
       });
       html += "</div>";
       showModal("购买团队积分包", html);
+      Array.prototype.forEach.call(document.querySelectorAll("[data-freepkg2]"), function (b) {
+        b.onclick = function () {
+          var kid = b.getAttribute("data-freepkg2");
+          if (!window.confirm("免费领取这个体验积分包？\n\n积分直接进团队余额（按限购次数）。")) return;
+          b.disabled = true;
+          api("/team-points/buy", { method: "POST", body: { teamId: t.id, pkgId: kid } }).then(function (x) {
+            b.disabled = false;
+            var j = x.j || {};
+            if (!x.ok || !j.ok) {
+              showModal(j.error === "limit-reached" ? "领取次数已用完" : "领取失败",
+                '<div style="font-size:13.5px;line-height:1.9">' + esc(j.message || j.error || ("HTTP " + x.status)) + "</div>");
+              return;
+            }
+            showModal("已到账", '<div style="font-size:13.5px">已到账 <b>' + esc(j.credited) + " 团队积分</b>。</div>");
+            var m = document.getElementById("mbModal"); if (m && m.parentNode) m.parentNode.removeChild(m);
+            loadSettings();
+          })["catch"](function () { b.disabled = false; showModal("领取失败", "网络错误"); });
+        };
+      });
       Array.prototype.forEach.call(document.querySelectorAll("[data-pkgbuy]"), function (b) {
         b.onclick = function () {
           b.disabled = true;
@@ -7139,22 +7290,35 @@
       var owner = roleOf(t) === "owner";
       $("tmsPkgs").innerHTML = pkgs.map(function (p) {
         var total = Number(p.points || 0) + Number(p.bonusPoints || 0);
-        return "<tr><td>" + esc(p.name) + (p.demo ? ' <span class="pill plain">示例</span>' : "") + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "") + "</td>"
-          + "<td>¥" + esc(p.priceCny) + "</td>"
+        var kfree = Number(p.priceCny) === 0;
+        return "<tr><td>" + esc(p.name) + (kfree ? ' <span class="pill plain">体验</span>' : "") + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "") + "</td>"
+          + "<td>" + (kfree ? "免费" : "¥" + esc(p.priceCny)) + "</td>"
           + "<td>" + esc(p.points) + (Number(p.bonusPoints) > 0 ? " <span class='hint'>+赠 " + esc(p.bonusPoints) + "</span>" : "") + "</td>"
           + "<td>" + (Number(p.validDays) > 0 ? esc(p.validDays) + " 天" : "长期") + "</td>"
           + "<td>" + (Number(p.limitPerTeam) > 0 ? esc(p.limitPerTeam) + " 次" : "不限") + "</td>"
-          + (p.demo
-            ? '<td><button class="btn" data-demo-pkg="' + escAttr(p.id) + '">示例 · 不可购买</button></td>'
+          + (kfree
+            ? '<td><button class="btn primary" data-free-pkg="' + escAttr(p.id) + '"' + (owner ? "" : " disabled") + ">免费领取</button></td>"
             : '<td><button class="btn primary" data-pkgbuy2="' + escAttr(p.id) + '"' + (owner ? "" : " disabled") + ">购买</button></td>")
           + "</tr>";
       }).join("");
       if ($("tmsPkgState")) $("tmsPkgState").innerHTML = "到账直接进团队余额（余额与配额分开展示）。" + (j.topupEnabled === false ? ' <span style="color:#c0392b">支付渠道未配置，暂时只能由管理员分配。</span>' : "");
-      Array.prototype.forEach.call($("tmsPkgs").querySelectorAll("[data-demo-pkg]"), function (b) {
+      Array.prototype.forEach.call($("tmsPkgs").querySelectorAll("[data-free-pkg]"), function (b) {
         b.onclick = function () {
-          showModal("示例积分包（不可购买）", '<div style="font-size:13.5px;line-height:1.9">'
-            + "这个积分包是<b>示例</b>：展示面额与赠送规则，<b>不参与售卖</b>。<br><br>"
-            + "需要补充团队积分请联系管理员，在「团队管理 → 全站团队 → 发积分」直接发放。</div>");
+          var kid = b.getAttribute("data-free-pkg");
+          if (!window.confirm("免费领取这个体验积分包？\n\n积分直接进团队余额（按限购次数）。")) return;
+          b.disabled = true;
+          api("/team-points/buy", { method: "POST", body: { teamId: t.id, pkgId: kid } }).then(function (x) {
+            b.disabled = false;
+            var j = x.j || {};
+            if (!x.ok || !j.ok) {
+              showModal(j.error === "limit-reached" ? "领取次数已用完" : "领取失败",
+                '<div style="font-size:13.5px;line-height:1.9">' + esc(j.message || j.error || ("HTTP " + x.status)) + "</div>");
+              return;
+            }
+            showModal("已到账", '<div style="font-size:13.5px;line-height:1.9"><b>' + esc(j.credited) + " 团队积分</b> 已进入团队余额。"
+              + "<br>可用 = 本期配额剩 + 余额，可在「团队概览」查看。</div>");
+            loadSettings();
+          })["catch"](function () { b.disabled = false; showModal("领取失败", "网络错误"); });
         };
       });
       Array.prototype.forEach.call($("tmsPkgs").querySelectorAll("[data-pkgbuy2]"), function (b) {
@@ -7174,19 +7338,33 @@
       var owner = roleOf(t) === "owner";
       $("tmsPlans").innerHTML = plans.map(function (p) {
         var cap = "知识库 " + (p.kbQuotaMb || 0) + " MB / 记忆 " + (p.memQuotaMb || 0) + " MB";
-        return "<tr><td>" + esc(p.name) + (p.demo ? ' <span class="pill plain">示例</span>' : "") + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "") + "</td>"
-          + "<td>¥" + esc(p.priceCny) + "</td><td>" + esc(p.seats) + " 人</td><td>" + esc(cap) + "</td>"
+        var tfree = Number(p.priceCny) === 0;
+        return "<tr><td>" + esc(p.name) + (tfree ? ' <span class="pill plain">体验</span>' : "") + (p.desc ? '<div class="hint">' + esc(p.desc) + "</div>" : "") + "</td>"
+          + "<td>" + (tfree ? "免费" : "¥" + esc(p.priceCny)) + "</td><td>" + esc(p.seats) + " 人</td><td>" + esc(cap) + "</td>"
           + "<td>" + (Number(p.days) > 0 ? esc(p.days) + " 天" : "永久") + "</td>"
-          + (p.demo
-            ? '<td><button class="btn" data-demo-tplan="' + escAttr(p.id) + '">示例 · 不可购买</button></td>'
+          + (tfree
+            ? '<td><button class="btn primary" data-free-tplan="' + escAttr(p.id) + '"' + (owner ? "" : " disabled") + ">免费领取</button></td>"
             : '<td><button class="btn primary" data-buy="' + escAttr(p.id) + '"' + (owner ? "" : " disabled") + ">购买 / 续费</button></td>")
           + "</tr>";
       }).join("");
-      Array.prototype.forEach.call($("tmsPlans").querySelectorAll("[data-demo-tplan]"), function (b) {
+      Array.prototype.forEach.call($("tmsPlans").querySelectorAll("[data-free-tplan]"), function (b) {
         b.onclick = function () {
-          showModal("示例团队套餐（不可购买）", '<div style="font-size:13.5px;line-height:1.9">'
-            + "这个团队套餐是<b>示例</b>：展示席位、容量与配额构成，<b>不参与售卖</b>。<br><br>"
-            + "需要开通请让管理员在「团队管理 → 团队套餐设置」用「手动开通」为该团队开通。</div>");
+          var pid = b.getAttribute("data-free-tplan");
+          if (!window.confirm("免费领取这个体验团队套餐？\n\n席位与共享空间容量立即生效（每团队每套餐限领一次）。")) return;
+          b.disabled = true;
+          api("/team-plans/buy", { method: "POST", body: { teamId: t.id, planId: pid } }).then(function (x) {
+            b.disabled = false;
+            var j = x.j || {};
+            if (!x.ok || !j.ok) {
+              say("tmsStatus", j.message || j.error || "领取失败", "bad");
+              showModal(j.error === "already-claimed" ? "已经领过了" : "领取失败",
+                '<div style="font-size:13.5px;line-height:1.9">' + esc(j.message || j.error || ("HTTP " + x.status)) + "</div>");
+              return;
+            }
+            showModal("已领取", '<div style="font-size:13.5px;line-height:1.9">团队套餐「<b>' + esc(j.planName) + "</b>」已开通："
+              + "<b>" + esc(j.seats) + " 席位</b>，赠送 <b>" + esc(j.bonus || 0) + " 团队积分</b> 已入池。</div>");
+            loadSettings();
+          })["catch"](function () { b.disabled = false; showModal("领取失败", "网络错误"); });
         };
       });
       Array.prototype.forEach.call($("tmsPlans").querySelectorAll("[data-buy]"), function (b) {
@@ -7405,8 +7583,8 @@
     if (!$("atPkgRows")) return;
     if (!pkgs.length) { $("atPkgRows").innerHTML = '<tr><td colspan="7" class="empty">还没有积分包，用下方表单新建</td></tr>'; return; }
     $("atPkgRows").innerHTML = pkgs.map(function (p) {
-      return "<tr><td>" + esc(p.name) + (p.demo ? ' <span class="pill plain">示例</span>' : "") + '<div class="hint">' + esc(p.id) + "</div></td>"
-        + "<td>¥" + esc(p.priceCny) + "</td>"
+      return "<tr><td>" + esc(p.name) + (Number(p.priceCny) === 0 ? ' <span class="pill plain">体验</span>' : "") + '<div class="hint">' + esc(p.id) + "</div></td>"
+        + "<td>" + (Number(p.priceCny) === 0 ? "免费" : "¥" + esc(p.priceCny)) + "</td>"
         + "<td>" + esc(p.points) + (Number(p.bonusPoints) > 0 ? " <span class='hint'>+赠 " + esc(p.bonusPoints) + "</span>" : "") + "</td>"
         + "<td>" + (Number(p.validDays) > 0 ? esc(p.validDays) + " 天" : "永久") + "</td>"
         + "<td>" + (Number(p.limitPerTeam) > 0 ? esc(p.limitPerTeam) + " 次" : "不限") + "</td>"
@@ -7423,7 +7601,7 @@
         $("atpkId").value = p.id; $("atpkName").value = p.name || ""; $("atpkPrice").value = p.priceCny || 0;
         $("atpkPoints").value = p.points || 0; $("atpkBonus").value = p.bonusPoints || 0;
         $("atpkDays").value = p.validDays || 0; $("atpkLimit").value = p.limitPerTeam || 0;
-        if ($("atpkDemo")) $("atpkDemo").checked = Boolean(p.demo);
+
       };
     });
     Array.prototype.forEach.call($("atPkgRows").querySelectorAll("[data-pkg-toggle]"), function (b) {
@@ -7449,8 +7627,8 @@
       var plans = j.plans || [];
       if (!plans.length) { $("atPlanRows").innerHTML = '<tr><td colspan="7" class="empty">还没有团队套餐，用下方表单新建</td></tr>'; return; }
       $("atPlanRows").innerHTML = plans.map(function (p) {
-        return "<tr><td>" + esc(p.name) + (p.demo ? ' <span class="pill plain">示例</span>' : "") + '<div class="hint">' + esc(p.id) + "</div></td>"
-          + "<td>¥" + esc(p.priceCny) + "</td><td>" + esc(p.seats) + "</td>"
+        return "<tr><td>" + esc(p.name) + (Number(p.priceCny) === 0 ? ' <span class="pill plain">体验</span>' : "") + '<div class="hint">' + esc(p.id) + "</div></td>"
+          + "<td>" + (Number(p.priceCny) === 0 ? "免费" : "¥" + esc(p.priceCny)) + "</td><td>" + esc(p.seats) + "</td>"
           + "<td>" + esc("KB " + (p.kbQuotaMb || 0) + " / 记忆 " + (p.memQuotaMb || 0) + " MB") + "</td>"
           + "<td>" + (Number(p.days) > 0 ? esc(p.days) + " 天" : "永久") + "</td>"
           + "<td>" + (p.active === false ? "已下架" : "在售") + "</td>"
@@ -7467,7 +7645,6 @@
           $("atpId").value = p.id; $("atpName").value = p.name || ""; $("atpPrice").value = p.priceCny || 0;
           $("atpSeats").value = p.seats || 3; $("atpDays").value = p.days || 0; $("atpPoints").value = p.points || 0;
           $("atpKb").value = p.kbQuotaMb || 0; $("atpMem").value = p.memQuotaMb || 0; $("atpDesc").value = p.desc || "";
-          if ($("atpDemo")) $("atpDemo").checked = Boolean(p.demo);
         };
       });
       Array.prototype.forEach.call(body.querySelectorAll("[data-toggle]"), function (b) {
@@ -7690,8 +7867,7 @@
       priceCny: Number($("atpPrice").value) || 0, seats: Number($("atpSeats").value) || 3,
       days: Number($("atpDays").value) || 0, points: Number($("atpPoints").value) || 0,
       kbQuotaMb: Number($("atpKb").value) || 0, memQuotaMb: Number($("atpMem").value) || 0,
-      desc: ($("atpDesc").value || "").trim(),
-      demo: Boolean($("atpDemo") && $("atpDemo").checked)
+      desc: ($("atpDesc").value || "").trim()
     };
     if (!body.name) { say("atPlanStatus", "请填套餐名称", "warn"); return; }
     api("/admin/team-plans", { method: "POST", body: body }).then(function (r) {
@@ -7769,8 +7945,7 @@
       id: (($("atpkId") || {}).value || "").trim(), name: (($("atpkName") || {}).value || "").trim(),
       priceCny: Number(($("atpkPrice") || {}).value) || 0, points: Number(($("atpkPoints") || {}).value) || 0,
       bonusPoints: Number(($("atpkBonus") || {}).value) || 0, validDays: Number(($("atpkDays") || {}).value) || 0,
-      limitPerTeam: Number(($("atpkLimit") || {}).value) || 0,
-      demo: Boolean($("atpkDemo") && $("atpkDemo").checked)
+      limitPerTeam: Number(($("atpkLimit") || {}).value) || 0
     };
     if (!body.name) { say("atPkgStatus", "请填名称", "warn"); return; }
     if (!body.points) { say("atPkgStatus", "到账积分不能为 0", "warn"); return; }
@@ -7784,7 +7959,7 @@
   };
   if ($("atPkgReset")) $("atPkgReset").onclick = function () {
     ["atpkId", "atpkName", "atpkPrice", "atpkPoints", "atpkBonus", "atpkDays", "atpkLimit"].forEach(function (id) { if ($(id)) $(id).value = ""; });
-    if ($("atpkDemo")) $("atpkDemo").checked = false;
+
   };
 
   /* ── 全站团队：勾选 / 批量发分 / 批量设套餐 / 导出 ── */
@@ -7870,7 +8045,6 @@
     if ($("atPlanFormTitle")) $("atPlanFormTitle").textContent = "新建团队套餐";
     ["atpId", "atpName", "atpPrice", "atpSeats", "atpDays", "atpPoints", "atpKb", "atpMem", "atpDesc"].forEach(function (id) { if ($(id)) $(id).value = ""; });
     if ($("atpSeats")) $("atpSeats").value = "5";
-    if ($("atpDemo")) $("atpDemo").checked = false;
   };
 })();
 
