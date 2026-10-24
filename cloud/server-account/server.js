@@ -4129,7 +4129,7 @@ const server = http.createServer(async (req, res) => {
     };
   }
   /** 扣费：先配额、后余额。⛔ 判定与写入之间没有 await（Node 单线程 ⇒ 原子）。 */
-  function teamConsume(teamId, scene, qty, ref) {
+  function teamConsume(teamId, scene, qty, ref, actor) {
     const policy = teamPolicyRaw();
     if (!policy.pointsEnabled) return { ok: true, cost: 0, quotaPart: 0, poolPart: 0, free: true, ref: String(ref || "") };
     const unit = Number(policy.prices[scene] || 0);
@@ -4159,7 +4159,8 @@ const server = http.createServer(async (req, res) => {
       id, at: Date.now(), delta: poolPart > 0 ? -poolPart : 0, quotaCost: quotaPart || 0,
       kind: "consume", scene: String(scene), ref: r,
       note: String(scene) + " 消耗 " + cost + " 点（" + (quotaPart > 0 ? "配额 " + quotaPart : "") + (quotaPart > 0 && poolPart > 0 ? " + " : "") + (poolPart > 0 ? "余额 " + poolPart : "") + "）",
-      actor: "", period,
+      /* ⛔ 10-24：必须记**是谁用的** —— 团队积分是共享池，没有成员归属就查不出「谁在烧钱」。 */
+      actor: String(actor || ""), period,
     };
     persist();
     return { ok: true, cost, quotaPart, poolPart, ref: r, scene: String(scene), available: teamPointsSummary(teamId).available };
@@ -4492,7 +4493,7 @@ const server = http.createServer(async (req, res) => {
     const info = { kbId: integS.kbId, kbName: integS.kbName || "" };
     /* 计费：1 次 × 单价。⛔ reqId 由前端带（重试才会命中幂等；不带的请求每次都是新的扣费）。 */
     const reqId = String((body && body.reqId) || "").trim().slice(0, 64);
-    const charge = teamConsume(teamId, "kb_search", 1, "kb_search:" + teamId + ":" + (reqId || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6))));
+    const charge = teamConsume(teamId, "kb_search", 1, "kb_search:" + teamId + ":" + (reqId || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6))), who.username);
     if (!charge.ok) {
       return send(402, { ok: false, error: charge.error, need: charge.need, available: charge.available,
         message: "团队积分不足（还差 " + charge.need + " 点），请团队 owner 充值或联系管理员分配" });
@@ -4712,7 +4713,7 @@ const server = http.createServer(async (req, res) => {
     /* 计费：按 MB 向上取整 × 单价（不足 1MB 按 1MB）。⛔ 顺序：容量闸 → 积分闸 → 上游。 */
     const upReq = String((body && body.reqId) || "").trim().slice(0, 64);
     const charge = teamConsume(teamId, "kb_upload", Math.max(1, Math.ceil(buf.length / 1048576)),
-      "kb_upload:" + teamId + ":" + (upReq || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6))));
+      "kb_upload:" + teamId + ":" + (upReq || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6))), who.username);
     if (!charge.ok) {
       return send(402, { ok: false, error: charge.error, need: charge.need, available: charge.available,
         message: "团队积分不足（还差 " + charge.need + " 点），请团队 owner 充值或联系管理员分配" });
@@ -5159,7 +5160,7 @@ const server = http.createServer(async (req, res) => {
     }
     const rid = String((body && body.ref) || "").trim().slice(0, 64);
     const ref = "report:" + teamId + ":" + (rid || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)));
-    const charge = teamConsume(teamId, scene, qty, ref);
+    const charge = teamConsume(teamId, scene, qty, ref, who.username);
     if (!charge.ok) {
       return send(402, { ok: false, error: charge.error, need: charge.need, available: charge.available, message: "团队积分不足，写入/检索被拒绝" });
     }

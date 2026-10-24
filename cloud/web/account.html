@@ -1077,6 +1077,17 @@
               <span class="hint" id="tmPointsUnit">积分</span></div>
             <div class="hint" id="tmPointsBreak" style="margin-top:6px">—</div>
             <div class="hint" id="tmPointsWarn" style="margin-top:4px;color:#c0392b" hidden></div>
+            <!-- 10-24：团队积分是共享池，用户问「谁用的」——流水不再只留后端，摊开给成员看 -->
+            <details class="tm-ledger" id="tmLedgerBox" style="margin-top:10px">
+              <summary>积分消耗明细（最近 50 条）</summary>
+              <div class="table-wrap" style="max-height:300px;overflow:auto;margin-top:8px">
+                <table class="mb-table">
+                  <thead><tr><th style="width:24%">时间</th><th style="width:22%">成员</th><th style="width:36%">场景</th><th style="width:18%">点数</th></tr></thead>
+                  <tbody id="tmLedgerRows"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody>
+                </table>
+              </div>
+              <p class="hint" style="margin:8px 0 0">「未记录」= 10-24 之前的旧流水（当时没记成员）；配额与余额都从这里扣。</p>
+            </details>
           </div>
           <div class="sub-balance">
             <span>本期已用</span>
@@ -7642,11 +7653,29 @@
         warnEl.hidden = !isLow;
         if (isLow) warnEl.textContent = "团队可用积分偏低（" + fmtNum(j.available) + " ≤ " + fmtNum(low) + "），余额耗尽后检索/上传会被拒绝，请及时充值或联系管理员分配。";
       }
+      renderTeamLedger(j.rows);
       window.__teamPoints = j;
     });
   }
 
   /* 购买积分包（owner）：拉在售包 → 弹窗选择 → 下单跳支付 */
+  /* 团队积分流水（10-24）：只列消耗/退还 —— 赠分与配额行属于"进账"，不该混在消耗里。 */
+  var LEDGER_SCENE = { kb_search: "团队库检索", kb_upload: "团队库上传", memory_write: "记忆写入", memory_search: "记忆检索" };
+  function renderTeamLedger(rows) {
+    var box = $("tmLedgerRows");
+    if (!box) return;
+    var list = (rows || []).filter(function (x) { return x && (x.kind === "consume" || x.kind === "refund"); }).slice(0, 50);
+    if (!list.length) { box.innerHTML = '<tr><td colspan="4" class="empty">还没有消耗记录</td></tr>'; return; }
+    box.innerHTML = list.map(function (x) {
+      var d = new Date(Number(x.at) || 0);
+      var ts = (d.getMonth() + 1) + "-" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+      var pts = (Number(x.quotaCost) || 0) + Math.abs(Number(x.delta) || 0);
+      var scene = LEDGER_SCENE[x.scene] || x.scene || x.kind;
+      if (x.kind === "refund") scene += "（已退还）";
+      return '<tr><td>' + ts + '</td><td>' + esc(x.actor || "未记录") + '</td><td>' + esc(scene) + '</td><td>' + (pts ? "-" + pts : "0") + '</td></tr>';
+    }).join("");
+  }
+
   function openPkgBuy() {
     var t = curTeam();
     if (!t) return;
