@@ -69,7 +69,17 @@ export const customModelFeature = defineFeature<null>({
 
     ipcHost.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
 
-    ipcHost.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(input));
+    /* ⛔ 调用方没带 apiKey 时回落到已保存的那把：卡片「测试」、模型行「测试」、设置页
+       「测试当前供应商」用的都是不带 Key 的入参；不回退就永远 401 / 或对 mock 误判为通过。 */
+    const withSavedKey = async <T extends { provider?: string; apiKey?: string }>(input: T): Promise<T> => {
+      if (String(input.apiKey || "").trim() || !input.provider) return input;
+      const row = (await readCustomModels()).find((entry) => entry.provider === input.provider);
+      const saved = row?.encryptedKey && secure.isEncryptionAvailable()
+        ? secure.decryptString(Buffer.from(row.encryptedKey, "base64"))
+        : "";
+      return saved ? { ...input, apiKey: saved } : input;
+    };
+    ipcHost.handle("custom-model:probe", async (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(await withSavedKey(input)));
 
     ipcHost.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; upstreamProtocol?: BridgeMode }) => {
       const provider = safeProviderId(input.provider.trim());
