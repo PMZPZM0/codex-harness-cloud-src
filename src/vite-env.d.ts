@@ -1158,6 +1158,22 @@ interface Window {
     runAllAutoUpdateComponents(): Promise<{ id: string; label: string; action: "updated" | "unchanged" | "failed" | "skipped"; before: string; after: string; message: string }>[];
     /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
     respondCloseConfirm(action: "tray" | "quit" | "cancel", remember: boolean): Promise<{ ok: boolean; error?: string }>;
+    /* 创世 boss：所有群（看板列表） */
+    listBossGroups(): Promise<any[]>;
+    /* 创世 boss：某群的账本快照（成员/任务/事件/打回） */
+    bossGroupStatus(groupId: string): Promise<any>;
+    /* 创世 boss：建群 + 声明成员岗位（成员会话在建会话那刻定工具面） */
+    createBossGroup(input: any): Promise<any>;
+    /* 创世 boss：加任务并派活（异步，turn/start 立刻返回；结果靠后台回调） */
+    assignBossTask(input: any): Promise<any>;
+    /* 创世 boss：人工给审查结论（打回必须带理由，空理由会被拒） */
+    reviewBossTask(input: any): Promise<any>;
+    /* 创世 boss：用户三选一（换模型重做 / 放宽标准 / 自己接手） */
+    escalateBossTask(input: any): Promise<any>;
+    /* 创世 boss：成员浏览器能力（ego lite 是否可用；每人独立 TaskSpace） */
+    bossBrowserStatus(): Promise<{ installed: boolean; cli: string; hint: string }>;
+    /* 创世 boss：重跑一次独立评审（评审会话丢了/结论过期时用） */
+    recheckBossTask(taskId: string): Promise<any>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

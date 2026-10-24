@@ -25,6 +25,7 @@ const OUT = path.join(ROOT, "electron", "builtin-skills", "14-skill-harness-api.
 /* ── 每域的「用户可感知能力」描述（人工维护；新域必须补，缺了生成器报错）──
    口径：写给引擎看 —— 用户提什么需求时该想到这个域、能力边界在哪。一句话。 */
 const DOMAIN_DESCRIPTIONS = {
+  "boss-groups": "创世 boss 群编排：建群/派活/独立评审/打回换人/预算闸（成员各自一个常驻会话，浏览器用 ego lite 独立 TaskSpace）",
   "cloud": "**云版预留接口层**（10-11，14 条，命名 cloud:<组>/<动作>）：云版产品线的占位通道，渲染层/远端按稳定通道名先行开发，后端逐步把桩换真。五组：cloud:sync/*（云端存储数据同步，预留桩）、cloud:device/*（本机配对设备管理，真实现）、cloud:notify/*（站长公告，本地缓存真实现）、cloud:update/*（助手自更新，check 真实现）、cloud:tools/*（工具链按需下载，status/progress 真实现）。⛔ 预留桩统一返回 {ok:false, reserved:true, code, error}，调用方以 reserved!==true 判能力；通道名发布即冻结只增不改",
   "work-logs": "各项目的**工作日志与项目记忆**管理（<项目>/.codex-harness/memory/**：长期记忆 MEMORY.md / 坑与纪律 LESSONS.md+lessons/ / 每日工作日志 logs/YYYY-MM-DD.md / archive / project）——设置 → 数据管理 → 工作日志。可看正文、按项目与类型分组、批量删除。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事；删除是销毁性的（工作日志删了不会重建）",
   "video": "内置视频生成接口（国内外 8 家：可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo）：submit 提交 → poll 轮询 → download 落工作区；凭证存 userData/video-providers.json",

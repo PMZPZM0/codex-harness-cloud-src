@@ -8,6 +8,7 @@ import "./ipc-host";
 import "./runtime/seams";
 import type { Plugin } from "./context";
 import { mountFeature } from "./context";
+import { bossGroupsFeature as feat_boss_groups } from "./features/boss-groups-ipc";
 import { queueTimerFeature as feat_queue_timer } from "./features/queue-timer-ipc";
 import { clipboardFeature as feat_clipboard } from "./features/clipboard-ipc";
 import { phoneHarnessFeature as feat_phone } from "./features/phone-harness-ipc";
@@ -115,6 +116,7 @@ export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unkno
  *     调用 mountEnabledDomains()。原因见该函数注释（10-07 设置缓存被写坏事故）。
  *  ⛔⛔ 本函数体是**模板字符串**：里面**绝不能出现反引号**（会把模板提前闭合 ⇒ 生成器语法错误）。 */
 export const ENABLED: EnabledDomain[] = [
+  { id: "boss-groups", plugin: feat_boss_groups as Plugin<unknown>, config: null },
   { id: "queue-timer", plugin: feat_queue_timer as Plugin<unknown>, config: null },
   { id: "clipboard", plugin: feat_clipboard as Plugin<unknown>, config: null },
   { id: "phone", plugin: feat_phone as Plugin<unknown>, config: null },
