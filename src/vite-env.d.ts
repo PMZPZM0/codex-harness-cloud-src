@@ -1178,6 +1178,8 @@ interface Window {
     bossGroupMember(input: any): Promise<any>;
     /* 创世 boss：置顶/取消置顶群事件（群视图卡带，最多 3 条） */
     bossGroupPin(input: any): Promise<any>;
+    /* 创世 boss：你在群对话框里说话 → boss 线程（回复镜像回群流） */
+    bossGroupSay(input: any): Promise<any>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
