@@ -9,6 +9,13 @@
   },
   "domains": [
     {
+      "id": "boss-groups",
+      "enabled": true,
+      "file": "features/boss-groups-ipc.ts",
+      "export": "bossGroupsFeature",
+      "config": null
+    },
+    {
       "id": "queue-timer",
       "enabled": true,
       "file": "features/queue-timer-ipc.ts",
