@@ -2826,8 +2826,14 @@ const server = http.createServer(async (req, res) => {
        `https://…/cloud-api/proxy/**chat/completions**`（**不带 /v1**），
        而服务端只注册了 /proxy/v1/chat/completions ⇒ 404「not-found」⇒ 5 次重连全废。
        ⇒ 这里同时接受带 /v1 与不带 /v1 两种形态（与 models 的处理保持一致）。 */
+    /* 10-24 团队模型代理：`/proxy/t/<teamId>/v1/...` —— 团队模式下客户端把上游指到这里，
+       请求经云端转发到 MemHub 团队端点（注入团队 userKey），结束后按 credit 扣**团队积分**。
+       ⛔ 必须经过云端才能计费：桌面端原先直连 memapi（团队 key 在客户端），云端看不见调用。 */
+    const teamPath = /^\/proxy\/t\/([A-Z0-9]{4,40})\/(?:v1\/)?(chat\/completions|models)$/.exec(p);
     if ((p === "/proxy/v1/chat/completions" || p === "/proxy/chat/completions") && req.method === "POST" ||
-        ((p === "/proxy/v1/models" || p === "/proxy/models") && req.method === "GET")) {
+        ((p === "/proxy/v1/models" || p === "/proxy/models") && req.method === "GET") ||
+        (teamPath && (req.method === "POST" || req.method === "GET"))) {
+      const teamMode = teamPath ? String(teamPath[1]) : "";
       const header = String(req.headers.authorization || "");
       const presented = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
       if (!presented || !presented.startsWith(PROXY_TOKEN_PREFIX)) {
@@ -2874,6 +2880,16 @@ const server = http.createServer(async (req, res) => {
       }
       const owner = db.users.find((u) => u.username === effectiveUsername);
       if (!owner || owner.disabled) return send(403, { ok: false, error: "account-disabled" });
+      /* 团队模式：必须是成员 + 记忆已开通 + 套餐没过期。任一不满足就拒（⛔ 不静默回落到个人计费，
+         否则「以为在烧团队积分、实际扣自己」是最难查的一类账）。 */
+      if (teamMode) {
+        if (!teamRoleOf(teamMode, effectiveUsername)) return send(403, { ok: false, error: "not-a-member", message: "不是该团队成员" });
+        if (!teamPolicyOf().memoryEnabled) return send(403, { ok: false, error: "team-memory-disabled", message: "团队记忆未开通" });
+        const tEnt = teamEntitlementsOf(teamMode);
+        if (String(tEnt.status) === "expired") return send(402, { ok: false, error: "team-plan-expired", message: "团队套餐已过期（当前只读）：模型调用已暂停，请 owner 续费" });
+        const tInteg = db.teamIntegrations[teamMode] || {};
+        if (!tInteg.memKey) return send(409, { ok: false, error: "team-memory-not-provisioned", message: "团队记忆空间还没开通，请 owner 在网页端点「开通 / 修复团队空间」" });
+      }
       /* 来源绑定：首次见到就记住，最多 PROXY_IP_LIMIT 个；超出直接拒（防令牌被转发给别人用） */
       const ip = ipOf(req);
       const ips = Array.isArray(hit.row.ips) ? hit.row.ips : [];
@@ -2885,7 +2901,15 @@ const server = http.createServer(async (req, res) => {
       /* 走旧令牌 = 某个外部副本还没跟上轮换；记下来，运维看日志就知道该更新谁了。 */
       if (hit.viaRing) console.log(`[proxy] 账号 ${hit.username} 用**环内旧令牌**通过鉴权（外部副本待更新）`);
       persist();
-      if (!currentUpstreamBase() || !currentGatewayKey()) return send(503, { ok: false, error: "upstream-not-configured" });
+      if (!teamMode && (!currentUpstreamBase() || !currentGatewayKey())) return send(503, { ok: false, error: "upstream-not-configured" });
+      /* 团队模式的上游 = MemHub 团队端点（userKey 由云端注入；⛔ 客户端不再持有团队 key）。 */
+      const teamUp = teamMode
+        ? { base: `${String(memPublicProxyBase() || "").replace(/\/+$/, "")}/claude-code/default/v1`, key: String((db.teamIntegrations[teamMode] || {}).memKey || "") }
+        : null;
+      const upHeaders = (extra) => (teamUp
+        ? { "Content-Type": "application/json", "X-Tdai-User-Key": teamUp.key, "X-Tdai-Service-Id": MEMHUB_INSTANCE, ...extra }
+        : { Authorization: `Bearer ${currentGatewayKey()}`, ...extra });
+      const resolveUpstream = (kind) => (teamUp ? `${teamUp.base}/${kind}` : upstreamUrl(kind));
       /* ⛔ 先把请求体读完（判模型与转发都要用）。
          10-14 踩坑：原先把这段放在下面 ⇒ 上面的判模型引用了尚未声明的 bodyBuf，
          抛错被 catch 吞掉 ⇒ 未勾选的模型**照样放行**。顺序必须是这样。 */
@@ -2894,7 +2918,11 @@ const server = http.createServer(async (req, res) => {
       const bodyBuf = Buffer.concat(chunks);
       /* ⛔ 勾选即生效：只放行用户勾选的模型（未勾选 ⇒ 403，附明确文案）。
          这是"勾选管理哪些模型生效"的执行点 —— 界面只是表达，这里是强制。 */
-      const allowed = new Set(Array.isArray(db.userModels[effectiveUsername]) ? db.userModels[effectiveUsername] : []);
+      /* 团队模式按**管理员开放目录**放行：团队里各人的个人勾选可能不同，
+         按个人勾选会出现「队友能用、我不能用」这种莫名其妙的差异。 */
+      const teamCatalog = teamMode && Array.isArray(db.modelCatalog.available) && db.modelCatalog.available.length
+        ? db.modelCatalog.available : null;
+      const allowed = new Set(teamCatalog || (Array.isArray(db.userModels[effectiveUsername]) ? db.userModels[effectiveUsername] : []));
       if (p.endsWith("models")) {
         // 清单口径 = 管理员设定的开放目录（available），见下面 shape()
         const availSet = Array.isArray(db.modelCatalog.available) && db.modelCatalog.available.length
@@ -2904,14 +2932,17 @@ const server = http.createServer(async (req, res) => {
             ? payload.data.filter((m) => !availSet || availSet.has(String(m.id || ""))) : [];
           return { ...(payload || {}), data, source };
         };
-        const cacheKey = currentUpstreamBase() + "|" + String(currentGatewayKey()).slice(-6);
+        /* ⛔ 团队模式必须按团队分桶：共用一个键会把别处（个人/其他团队）的模型清单当成自己的 */
+        const cacheKey = teamUp
+          ? "team:" + teamMode + "|" + teamUp.key.slice(-6)
+          : currentUpstreamBase() + "|" + String(currentGatewayKey()).slice(-6);
         /* 命中缓存直接回（不发上游） */
         if (modelListCache.payload && modelListCache.key === cacheKey && Date.now() - modelListCache.at < MODEL_LIST_TTL_MS) {
           return send(200, shape(modelListCache.payload, "cache"));
         }
         const upstreamList = await (async () => {
           try {
-            const r = await fetch(upstreamUrl("models"), { headers: { Authorization: `Bearer ${currentGatewayKey()}` }, signal: AbortSignal.timeout(8000) });
+            const r = await fetch(resolveUpstream("models"), { headers: upHeaders({}), signal: AbortSignal.timeout(8000) });
             if (!r.ok) {
               console.log("[proxy] 上游模型清单 " + r.status + "（限流/异常）→ 回落本地目录");
               return null;
@@ -2934,20 +2965,22 @@ const server = http.createServer(async (req, res) => {
         return send(502, { ok: false, error: "upstream-unreachable", message: "上游模型清单读不到（可能被限流），本地目录也是空的 —— 去「模型管理中心」点一次同步" });
       }
       /* 余额预检：≤0 直接拒（不让上游白跑；管理员发放后即可继续） */
-      const myBalance = pointsOf(effectiveUsername).balance;
+      const myBalance = teamMode ? teamPointsSummary(teamMode).available : pointsOf(effectiveUsername).balance;
       if (myBalance <= 0) {
-        return send(402, { ok: false, error: "insufficient-points", balance: myBalance, message: "积分为 0，已暂停调用 —— 请联系管理员加分或改用其它供应商" });
+        return send(402, teamMode
+          ? { ok: false, error: "team-points-insufficient", balance: 0, message: "团队可用积分为 0，已暂停调用 —— 请团队 owner 充值或联系管理员分配" }
+          : { ok: false, error: "insufficient-points", balance: myBalance, message: "积分为 0，已暂停调用 —— 请联系管理员加分或改用其它供应商" });
       }
       let wantedModel = "";
       try { wantedModel = String((JSON.parse(bodyBuf.toString("utf8")) || {}).model || ""); } catch { /* 解析不了就交给上游报错 */ }
-      if (wantedModel && !allowed.has(wantedModel)) {
+      if (wantedModel && allowed.size && !allowed.has(wantedModel)) {
         return send(403, { ok: false, error: "model-not-enabled", message: "该模型未在「限时福利」里启用 —— 请在云端管理的模型列表里勾选后重试" });
       }
       /* 转发：只替换 Authorization，其余原样（模型、参数、流式标志） */
-      const target = upstreamUrl(p.endsWith("models") ? "models" : "chat/completions");
+      const target = resolveUpstream(p.endsWith("models") ? "models" : "chat/completions");
       /* 排队拿上游槽位（前面已把 models 分支 return 掉，这里只会是对话） */
       const queuedAt = Date.now();
-      const slot = await proxyAcquire();
+      const slot = teamUp ? { ok: true } : await proxyAcquire();
       if (!slot) {
         return send(503, {
           ok: false, error: "proxy-busy",
@@ -2969,7 +3002,7 @@ const server = http.createServer(async (req, res) => {
         for (let attempt = 0; attempt <= retries; attempt++) {
           upstream = await fetch(target, {
             method: req.method,
-            headers: { Authorization: `Bearer ${currentGatewayKey()}`, "Content-Type": String(req.headers["content-type"] || "application/json") },
+            headers: upHeaders({ "Content-Type": String(req.headers["content-type"] || "application/json") }),
             body: req.method === "POST" ? bodyBuf : undefined,
           });
           if (upstream.status !== 503 && upstream.status !== 429) break;
@@ -3101,9 +3134,23 @@ const server = http.createServer(async (req, res) => {
           if (credit !== null && Number.isFinite(credit) && credit >= 0) {
             const ref = `call:${crypto.randomBytes(8).toString("hex")}`;
             const label = wantedModel || "模型调用";
-            const r = credit > 0
-              ? addPoints(effectiveUsername, -credit, "consume", ref, `限时福利 · ${label} 消耗 ${credit}`)
-              : addUsageOnly(effectiveUsername, "consume", ref, `限时福利 · ${label}（免费模型，未扣积分）`);
+            let r = { changed: false, balance: 0 };
+            if (teamMode) {
+              /* 团队计费：配额 → 余额（teamConsume 内部按此顺序）。不够就记一笔负余额 ——
+                 与个人语义一致（允许透支一笔，下一次请求会被余额闸挡住），⛔ 不静默改成扣个人。 */
+              if (credit > 0) {
+                const ch = teamConsume(teamMode, "model", credit, ref, effectiveUsername);
+                if (!ch.ok) {
+                  teamAddPoints(teamMode, -Math.ceil(credit), "model-consume", ref + ":over",
+                    `模型调用 ${label} 消耗 ${credit}（超出可用额度，记透支）`, effectiveUsername);
+                }
+                r = { changed: true, balance: teamPointsSummary(teamMode).available };
+              }
+            } else {
+              r = credit > 0
+                ? addPoints(effectiveUsername, -credit, "consume", ref, `限时福利 · ${label} 消耗 ${credit}`)
+                : addUsageOnly(effectiveUsername, "consume", ref, `限时福利 · ${label}（免费模型，未扣积分）`);
+            }
             /* ⛔ 10-18 修：`addPoints` / `addUsageOnly` **只改内存不落盘**（它们的实现里没有 persist），
                原来这里也没有 ⇒ 这条消耗流水要等**下一次**请求在鉴权处顺带 persist 才写进 data.json；
                若期间服务重启/崩溃，这次消耗就**永久丢失**（用户只调一次就重启 ⇒ 白送）。
@@ -3114,7 +3161,8 @@ const server = http.createServer(async (req, res) => {
       } catch (error) {
         send(502, { ok: false, error: "upstream-unreachable", message: sanitize(error && error.message) });
       } finally {
-        proxyRelease();
+        /* ⛔ 团队模式没占用 WBM 槽位，不能在这里释放（会把别人的计数减掉） */
+        if (!teamUp) proxyRelease();
       }
       return;
     }
@@ -4048,6 +4096,8 @@ const server = http.createServer(async (req, res) => {
         kb_upload: Math.max(0, Math.round(num(prices.kb_upload, 2))),
         memory_write: Math.max(0, Math.round(num(prices.memory_write, 1))),
         memory_search: Math.max(0, Math.round(num(prices.memory_search, 1))),
+        /* 模型调用：1 点 = 1 个"个人积分额度"（上游 credit 已含模型倍率，这里只是团队侧系数） */
+        model: Math.max(0, Math.round(num(prices.model, 1))),
       },
     };
   }
@@ -5079,7 +5129,7 @@ const server = http.createServer(async (req, res) => {
       pointsEnabled: body && body.pointsEnabled !== undefined ? body.pointsEnabled !== false : cur.pointsEnabled,
       lowBalanceWarn: body && body.lowBalanceWarn !== undefined ? Math.max(0, Math.min(1000000, Math.round(Number(body.lowBalanceWarn) || 0))) : cur.lowBalanceWarn,
       accessRequired: body && body.accessRequired !== undefined ? body.accessRequired !== false : cur.accessRequired,
-      prices: { kb_search: pick("kb_search"), kb_upload: pick("kb_upload"), memory_write: pick("memory_write"), memory_search: pick("memory_search") },
+      prices: { kb_search: pick("kb_search"), kb_upload: pick("kb_upload"), memory_write: pick("memory_write"), memory_search: pick("memory_search"), model: pick("model") },
     };
     persist();
     console.log("[team] " + me.username + " 更新积分单价：" + JSON.stringify(db.teamPolicy.prices));
