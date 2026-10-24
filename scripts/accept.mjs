@@ -2053,6 +2053,37 @@ const CHECKS = [
     },
   },
   {
+    id: "skills-bulk",
+    name: "🧩 技能本地导入批量管理（只在本地分组内 / 市场与内置不参与 / 样式收口）",
+    run: async (h) => {
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(900);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll('.settings-nav button')].find(x=>(x.textContent||'').trim()==='技能'); b&&b.click(); return 1; })()`);
+      await wait(1700);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll('button')].find(x=>/我的技能/.test(x.textContent||'')); b&&b.click(); return 1; })()`);
+      await wait(1500);
+      const ui = await h.eval(`(function(){
+        const bulk=document.querySelector('.skill-local-bulk');
+        const groups=[...document.querySelectorAll('.skill-installed-group')];
+        const groupOf=(label)=>groups.find(g=>(g.querySelector('header')?.textContent||'').includes(label));
+        const local=groupOf('本地导入'); const market=groupOf('市场安装'); const builtin=groupOf('Codex 内置');
+        return {
+          bulk:!!bulk,
+          inLocal:!!(local&&local.contains(bulk)),
+          topToolbar:[...document.querySelectorAll('.skill-installed-view > .resource-toolbar.secondary')].filter(x=>x.querySelector('.batch-actions,.select-all')).length,
+          marketDisabled:market ? [...market.querySelectorAll('.check-card')].every(b=>b.disabled) : true,
+          builtinDisabled:builtin ? [...builtin.querySelectorAll('.check-card')].every(b=>b.disabled) : true,
+          text:(bulk?.innerText||'').slice(0,160),
+        };
+      })()`);
+      h.check("① 批量管理卡只在「本地导入」分组内（页面顶部没有全局批量条）",
+        Boolean(ui.bulk && ui.inLocal && ui.topToolbar === 0), JSON.stringify(ui));
+      h.check("② 市场安装 / 内置技能不参与本地批量勾选", Boolean(ui.marketDisabled && ui.builtinDisabled), JSON.stringify(ui));
+      h.check("③ 批量卡有全选、计数与启用/停用两个操作", /本地技能可勾选/.test(ui.text) && /启用所选/.test(ui.text) && /停用所选/.test(ui.text), ui.text);
+    },
+  },
+  {
     id: "provider-autosetup",
     name: "🧭 供应商自动配置：检测 → 全选 → 保存启用 → 旧供应商自动停用（10-24）",
     run: async (h) => {
@@ -4872,6 +4903,7 @@ const ROUND_OF = {
   "provider-autosetup": "10-24",   // 10-24 轮：模型页自动配置大弹窗（检测/全选/保存/旧供应商停用，本地 mock 网关真链路）
   "settings-unified": "10-24",   // 10-24 轮：设置统一简洁风（24 页 / 页头两行 / 无溢出 / 一列长卡）
   "updates-simplified": "10-24",   // 10-24 轮：技能/插件更新收口（两个总开关 / 删四块面板 / 已安装单个检查更新）
+  "skills-bulk": "10-24",   // 10-24 轮：技能本地导入批量管理（位置/范围/样式）
   "file-cards": "10-22",   // 10-22 轮：Qoder 式本轮产物文件卡 + 右栏工作区文件预览
   "panel-tabs": "10-22",   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "voice-toggle": "10-22",   // 10-22 轮：回合头 📢 会话级播报开关（名字后图标 / 每会话独立 / 与悬浮球同步）
