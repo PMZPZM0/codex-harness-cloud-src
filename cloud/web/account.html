@@ -1079,8 +1079,10 @@
             <div class="hint" id="tmPointsWarn" style="margin-top:4px;color:#c0392b" hidden></div>
             <div class="hint" style="margin-top:6px">团队模式下<b>模型调用也从这里扣</b>（1 点 = 1 个个人积分额度）；没进入团队模式则扣个人积分。</div>
             <!-- 10-24：团队积分是共享池，用户问「谁用的」——流水不再只留后端，摊开给成员看 -->
+            <!-- 10-24 续：再往上给一行按成员汇总（口径与「本期已用」同源，避免明细有量而本期显示 0） -->
+            <div class="hint" id="tmMemberUsage" style="margin-top:8px" hidden></div>
             <details class="tm-ledger" id="tmLedgerBox" style="margin-top:10px">
-              <summary>积分消耗明细（最近 50 条）</summary>
+              <summary>积分消耗明细（最近 50 条，含本期之前的历史）</summary>
               <div class="table-wrap" style="max-height:300px;overflow:auto;margin-top:8px">
                 <table class="mb-table">
                   <thead><tr><th style="width:24%">时间</th><th style="width:22%">成员</th><th style="width:36%">场景</th><th style="width:18%">点数</th></tr></thead>
@@ -7660,11 +7662,40 @@
         if (isLow) warnEl.textContent = "团队可用积分偏低（" + fmtNum(availShown) + " ≤ " + fmtNum(low) + "），余额耗尽后检索 / 上传 / 模型调用都会被拒绝，请及时充值或联系管理员分配。";
       }
       renderTeamLedger(j.rows);
+      renderMemberUsage(j.byMember);
       window.__teamPoints = j;
     });
   }
 
   /* 购买积分包（owner）：拉在售包 → 弹窗选择 → 下单跳支付 */
+  /* 成员消耗汇总（10-24 续）：共享池里「谁在烧钱」一眼可见，不用翻 50 条流水数。
+     ⛔ 口径：本期 = 与后端 `monthUsed` 完全同源（同期 + 重新开通后的起点）。
+       本期为空但历史有量时**必须解释**，否则用户会以为「我明明用了却显示 0」是丢了数据。 */
+  function renderMemberUsage(by) {
+    var el = $("tmMemberUsage");
+    if (!el) return;
+    var p = (by && by.periodList) || [];
+    var all = (by && by.allList) || [];
+    function line(list) {
+      return list.slice(0, 5).map(function (x) {
+        /* 退款行是负数，排行里不显示成「-2」的负数成员，按 0 计（总额由「本期已用」承担）。 */
+        return esc(x.actor) + " <b>" + fmtNum(Math.max(0, Number(x.cost) || 0)) + "</b>";
+      }).join(" · ");
+    }
+    if (p.length) {
+      el.hidden = false;
+      el.innerHTML = "本期成员消耗：" + line(p) + (p.length > 5 ? " 等 " + p.length + " 人" : "");
+      return;
+    }
+    if (all.length) {
+      el.hidden = false;
+      el.innerHTML = "本期还没有消耗（重新开通或升级套餐后重新计时）；历史累计：" + line(all);
+      return;
+    }
+    el.hidden = true;
+    el.textContent = "";
+  }
+
   /* 团队积分流水（10-24）：只列消耗/退还 —— 赠分与配额行属于"进账"，不该混在消耗里。 */
   var LEDGER_SCENE = { kb_search: "团队库检索", kb_upload: "团队库上传", memory_write: "记忆写入", memory_search: "记忆检索", model: "模型调用" };
   function renderTeamLedger(rows) {

@@ -4209,6 +4209,41 @@ const server = http.createServer(async (req, res) => {
       lowBalanceWarn: teamPolicyRaw().lowBalanceWarn,
     };
   }
+  /** 按成员汇总消耗 —— 回答「这个共享池里谁在烧钱」。
+      ⛔⛔ 口径必须与 `monthUsed` **逐字同源**（同期 + 本期起点之后），否则同一页会出现
+      「本期已用 0，但成员排行里有人消耗 53」的自相矛盾（10-24 实测旧流水就这么露出来了）。
+      `all` 只作历史参考（配额重置/重新开通之前的账），不参与任何闸门判断。 */
+  function teamMemberUsageOf(teamId) {
+    const q = teamQuotaOf(teamId);
+    const period = q.period || teamPeriod(Date.now());
+    const map = db.teamPointsLedger[teamId] || {};
+    const cur = {};
+    const all = {};
+    Object.values(map).forEach((x) => {
+      if (!x) return;
+      if (String(x.kind) !== "consume" && String(x.kind) !== "refund") return;
+      /* 退款是负值冲回，用同一个算式（quotaCost + -delta）自然抵减，不单独分支。 */
+      const cost = (Number(x.quotaCost) || 0) + (-Number(x.delta) || 0);
+      /* 旧流水 actor 为空（10-24 续 12 之前没记成员）⇒ 明确标成「未记录」，不静默归到某个人。 */
+      const actor = String(x.actor || "").trim() || "(未记录)";
+      const a = all[actor] || (all[actor] = { actor, cost: 0, count: 0 });
+      a.cost += cost; a.count += 1;
+      if (String(x.period || "") !== period) return;
+      if (q.startedAt && Number(x.at || 0) < Number(q.startedAt)) return;
+      const b = cur[actor] || (cur[actor] = { actor, cost: 0, count: 0 });
+      b.cost += cost; b.count += 1;
+    });
+    const list = (o) => Object.values(o)
+      .map((v) => ({ actor: v.actor, cost: Math.round(v.cost * 100) / 100, count: v.count }))
+      .sort((a, b) => b.cost - a.cost || String(a.actor).localeCompare(String(b.actor)));
+    return {
+      period,
+      /* 起点暴露给前端：本期为空时能解释「为什么 0」——不是没消耗，是本期重新开始计时。 */
+      startedAt: Number(q.startedAt || 0),
+      periodList: list(cur),
+      allList: list(all),
+    };
+  }
   /** 扣费：先配额、后余额。⛔ 判定与写入之间没有 await（Node 单线程 ⇒ 原子）。
       `opts.overdraft`：额度不够时**允许透支一笔** —— 先把本期配额吃干净，差额记成负余额，
       下一笔会被余额闸挡住（与个人「允许透支一笔」同语义）。 */
@@ -4893,6 +4928,8 @@ const server = http.createServer(async (req, res) => {
       /* 兼容旧字段（balance / rows），新增汇总（available / quota / monthUsed / lowBalanceWarn） */
       balance: summary.balance, rows: pool.rows, entitlements: teamEntitlementsOf(teamId),
       available: summary.available, quota: summary.quota, monthUsed: summary.monthUsed,
+      /* 10-24：成员消耗汇总（共享池「谁在烧钱」）——口径与 monthUsed 同源，见 teamMemberUsageOf */
+      byMember: teamMemberUsageOf(teamId),
       lowBalanceWarn: summary.lowBalanceWarn, pointsEnabled: teamPolicyRaw().pointsEnabled,
     });
   }
