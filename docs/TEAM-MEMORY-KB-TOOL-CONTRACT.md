@@ -243,3 +243,19 @@ knowledge_add({ scope, teamId?, title, text, tags })   // P1：team 走上传
 - **实测结果**（客户机 38.145，真实 MemHub + WeKnora）：团队库 `t-TMVL1K8VTGMRQ` 建成 → 上传 markdown → `parse_status=completed` → 检索命中（score 0.995）→ 团队记忆 key 可取且**对外地址可访问** → 非成员 403 → 关能力后 403 降级。
 - 凭据一律下发**对外地址**（`kbUiBase` / `memory.publicBase`），不再出现 `127.0.0.1`（这是本节最重要的修正：早期实现下发内网地址，成员机器必然连不上）。
 - 桌面端 `scope` 参数仍为 **P1 未实施**；当前成员用「云端下发的团队凭据」在本机 Codex 侧配置即可工作。
+
+---
+
+## 10. 桌面端落地（2026-10-24 · 主仓 `0f0169a`）
+
+> 本节只留指针 —— **代码不在本仓**（本仓是云端服务 + 云端界面，没有桌面端云账号设置页）。
+
+桌面端的接法**不是** §6.4 的「给 memory_write 加 scope 参数」，而是**通道切换**
+（`electron/features/team-mode.ts`，域 id `team`）：
+
+- 进入团队 = 对话上游切到团队 `userKey`（记忆在请求层自动注入/写入；MemHub 无 CRUD，造不出 write/search 工具）
+- 团队知识库 = 接成 `cloud-kb-team` 连接器（与个人 `cloud-kb` 互斥：WeKnora 工具名相同）
+- 退出 = 清记忆上游 + 停团队连接器 + 按原状态恢复个人库
+
+详细约束与未做项见主仓 `docs/TEAM-MEMORY-KB-TOOL-CONTRACT.md` §10。
+⛔ 本仓不参与该功能（无 settings-cloud 域），改动只有两条守卫判据的同步。
