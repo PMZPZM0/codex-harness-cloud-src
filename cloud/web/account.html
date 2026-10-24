@@ -7674,12 +7674,16 @@
   function renderMemberUsage(by) {
     var el = $("tmMemberUsage");
     if (!el) return;
-    var p = (by && by.periodList) || [];
-    var all = (by && by.allList) || [];
+    /* ⛔ 10-24 审查：只列**净消耗 > 0** 的人。退款会把人冲回 0，旧账里还有 actor=system 的
+       退款行（1.8.12 之前的退款都记 system）—— 照原样画会得到「system 0」，读者以为系统在烧钱。 */
+    function positive(list) {
+      return (list || []).filter(function (x) { return (Number(x.cost) || 0) > 0; });
+    }
+    var p = positive(by && by.periodList);
+    var all = positive(by && by.allList);
     function line(list) {
       return list.slice(0, 5).map(function (x) {
-        /* 退款行是负数，排行里不显示成「-2」的负数成员，按 0 计（总额由「本期已用」承担）。 */
-        return esc(x.actor) + " <b>" + fmtNum(Math.max(0, Number(x.cost) || 0)) + "</b>";
+        return esc(x.actor) + " <b>" + fmtNum(Number(x.cost) || 0) + "</b>";
       }).join(" · ");
     }
     if (p.length) {
@@ -7689,7 +7693,8 @@
     }
     if (all.length) {
       el.hidden = false;
-      el.innerHTML = "本期还没有消耗（重新开通或升级套餐后重新计时）；历史累计：" + line(all);
+      el.innerHTML = "本期还没有消耗（重新开通或升级套餐后重新计时）；历史累计：" + line(all)
+        + (all.length > 5 ? " 等 " + all.length + " 人" : "");
       return;
     }
     el.hidden = true;
