@@ -1676,6 +1676,18 @@ function publicView(user) {
   return { username: user.username, role: user.role, createdAt: user.createdAt, disabled: user.disabled, lastLogin: user.lastLogin || 0 };
 }
 
+/* ── 团队计费容器：模块级兜底（10-24 审查修）──────────────────────────────
+   ⛔ 为什么必须在这里：路由体是一个大函数，团队段的 `if (!db.teamX)` 兜底在源码上**排在
+      proxy 分支之后** ⇒ 团队模型请求会先用到 `db.teamPointsLedger/teamQuota` 而它们还没建，
+      报 TypeError 又被计费的 try/catch 吞掉 = **静默免费调用**（实测复现）。
+   这里幂等，不覆盖任何已有值。 */
+for (const k of ["teams", "teamMembers", "teamInvites", "teamStore", "teamQuota", "teamPointsLedger", "teamEntitlements", "teamPlans", "teamOrders", "teamAccess", "teamPointPkgs"]) {
+  if (!db[k] || typeof db[k] !== "object") db[k] = {};
+}
+if (!db.teamPolicy || typeof db.teamPolicy !== "object") {
+  db.teamPolicy = { enabled: true, freeSeats: 3, memoryEnabled: true, kbEnabled: true, maxEntryChars: 2000 };
+}
+
 const server = http.createServer(async (req, res) => {
   const origin = String(req.headers.origin || "");
   // ⛔ 服务端硬闸：带 Origin 的请求必须来自站点自身。只回空 CORS 头是不够的 ——
@@ -2829,7 +2841,7 @@ const server = http.createServer(async (req, res) => {
     /* 10-24 团队模型代理：`/proxy/t/<teamId>/v1/...` —— 团队模式下客户端把上游指到这里，
        请求经云端转发到 MemHub 团队端点（注入团队 userKey），结束后按 credit 扣**团队积分**。
        ⛔ 必须经过云端才能计费：桌面端原先直连 memapi（团队 key 在客户端），云端看不见调用。 */
-    const teamPath = /^\/proxy\/t\/([A-Z0-9]{4,40})\/(?:v1\/)?(chat\/completions|models)$/.exec(p);
+    const teamPath = /^\/proxy\/t\/(T[A-Z0-9]{4,40})\/(?:v1\/)?(chat\/completions|models)$/.exec(p);
     if ((p === "/proxy/v1/chat/completions" || p === "/proxy/chat/completions") && req.method === "POST" ||
         ((p === "/proxy/v1/models" || p === "/proxy/models") && req.method === "GET") ||
         (teamPath && (req.method === "POST" || req.method === "GET"))) {
@@ -2883,8 +2895,11 @@ const server = http.createServer(async (req, res) => {
       /* 团队模式：必须是成员 + 记忆已开通 + 套餐没过期。任一不满足就拒（⛔ 不静默回落到个人计费，
          否则「以为在烧团队积分、实际扣自己」是最难查的一类账）。 */
       if (teamMode) {
+        /* ⛔ 总开关关掉时必须一起拒：否则老客户端还能继续烧团队积分（网页端早已 403）。 */
+        if (!teamPolicyOf().enabled) return send(403, { ok: false, error: "team-disabled", message: "团队功能未开通，请联系管理员" });
         if (!teamRoleOf(teamMode, effectiveUsername)) return send(403, { ok: false, error: "not-a-member", message: "不是该团队成员" });
-        if (!teamPolicyOf().memoryEnabled) return send(403, { ok: false, error: "team-memory-disabled", message: "团队记忆未开通" });
+        /* ⛔ 这里的因果要说清：团队模型的上游**就是**团队记忆端点，记忆关掉 = 模型也没法走团队计费。 */
+        if (!teamPolicyOf().memoryEnabled) return send(403, { ok: false, error: "team-memory-disabled", message: "团队记忆服务已关闭 —— 团队模型调用走团队记忆端点，无法单独使用（请联系管理员开启）" });
         const tEnt = teamEntitlementsOf(teamMode);
         if (String(tEnt.status) === "expired") return send(402, { ok: false, error: "team-plan-expired", message: "团队套餐已过期（当前只读）：模型调用已暂停，请 owner 续费" });
         const tInteg = db.teamIntegrations[teamMode] || {};
@@ -2909,6 +2924,9 @@ const server = http.createServer(async (req, res) => {
       const upHeaders = (extra) => (teamUp
         ? { "Content-Type": "application/json", "X-Tdai-User-Key": teamUp.key, "X-Tdai-Service-Id": MEMHUB_INSTANCE, ...extra }
         : { Authorization: `Bearer ${currentGatewayKey()}`, ...extra });
+      if (teamUp && !/^https?:\/\//i.test(teamUp.base)) {
+        return send(503, { ok: false, error: "team-upstream-not-configured", message: "团队记忆服务地址未配置（services.memory.publicBase），请管理员检查" });
+      }
       const resolveUpstream = (kind) => (teamUp ? `${teamUp.base}/${kind}` : upstreamUrl(kind));
       /* ⛔ 先把请求体读完（判模型与转发都要用）。
          10-14 踩坑：原先把这段放在下面 ⇒ 上面的判模型引用了尚未声明的 bodyBuf，
@@ -2923,6 +2941,9 @@ const server = http.createServer(async (req, res) => {
       const teamCatalog = teamMode && Array.isArray(db.modelCatalog.available) && db.modelCatalog.available.length
         ? db.modelCatalog.available : null;
       const allowed = new Set(teamCatalog || (Array.isArray(db.userModels[effectiveUsername]) ? db.userModels[effectiveUsername] : []));
+      /* ⛔⛔ 10-24 审查修：上一版这里写成 `allowed.size && !allowed.has(...)`，
+         等于「一个都没勾 ⇒ 全部放行」—— 空集成了万能通行证（个人账号也一样）。
+         勾选即生效的语义是「没在清单里就拒」，空清单 = 谁都别用。 */
       if (p.endsWith("models")) {
         // 清单口径 = 管理员设定的开放目录（available），见下面 shape()
         const availSet = Array.isArray(db.modelCatalog.available) && db.modelCatalog.available.length
@@ -2973,8 +2994,10 @@ const server = http.createServer(async (req, res) => {
       }
       let wantedModel = "";
       try { wantedModel = String((JSON.parse(bodyBuf.toString("utf8")) || {}).model || ""); } catch { /* 解析不了就交给上游报错 */ }
-      if (wantedModel && allowed.size && !allowed.has(wantedModel)) {
-        return send(403, { ok: false, error: "model-not-enabled", message: "该模型未在「限时福利」里启用 —— 请在云端管理的模型列表里勾选后重试" });
+      if (wantedModel && !allowed.has(wantedModel)) {
+        return send(403, teamMode
+          ? { ok: false, error: "model-not-enabled", message: "该模型不在管理员开放目录里 —— 团队模式只放行开放目录（目录为空时按你个人的模型勾选）；请管理员在「模型管理」里开放后重试" }
+          : { ok: false, error: "model-not-enabled", message: "该模型未在「限时福利」里启用 —— 请在云端管理的模型列表里勾选后重试" });
       }
       /* 转发：只替换 Authorization，其余原样（模型、参数、流式标志） */
       const target = resolveUpstream(p.endsWith("models") ? "models" : "chat/completions");
@@ -3136,15 +3159,16 @@ const server = http.createServer(async (req, res) => {
             const label = wantedModel || "模型调用";
             let r = { changed: false, balance: 0 };
             if (teamMode) {
-              /* 团队计费：配额 → 余额（teamConsume 内部按此顺序）。不够就记一笔负余额 ——
-                 与个人语义一致（允许透支一笔，下一次请求会被余额闸挡住），⛔ 不静默改成扣个人。 */
+              /* 团队计费：配额 → 余额（teamConsume 内部按此顺序，⛔ 单价与取整只在它一处）。
+                 额度不够就**透支一笔**（吃干净配额 + 记负余额），下一笔被余额闸挡住；
+                 ⛔ 不静默改成扣个人。 */
               if (credit > 0) {
-                const ch = teamConsume(teamMode, "model", credit, ref, effectiveUsername);
-                if (!ch.ok) {
-                  teamAddPoints(teamMode, -Math.ceil(credit), "model-consume", ref + ":over",
-                    `模型调用 ${label} 消耗 ${credit}（超出可用额度，记透支）`, effectiveUsername);
-                }
-                r = { changed: true, balance: teamPointsSummary(teamMode).available };
+                const ch = teamConsume(teamMode, "model", credit, ref, effectiveUsername, { overdraft: true });
+                r = { changed: ch.cost > 0, balance: ch.available };
+                console.log(`[points][team] ${teamMode} ${effectiveUsername} ${label}：扣 ${ch.cost}（配额 ${ch.quotaPart} / 余额 ${ch.poolPart}${ch.overdraft ? "，透支" : ""}）→ 可用 ${ch.available}`);
+              } else {
+                /* 免费模型也要留痕：否则「团队积分没动」会被误读成「没走团队通道」。 */
+                console.log(`[points][team] ${teamMode} ${effectiveUsername} ${label}：免费调用（上游未给 credit）`);
               }
             } else {
               r = credit > 0
@@ -3664,7 +3688,7 @@ const server = http.createServer(async (req, res) => {
   if (!db.teamOrders || typeof db.teamOrders !== "object") db.teamOrders = {};
 
   /** 团队权益（席位 / 容量 / 到期）；无记录时按免费档给默认值。 */
-  const teamEntitlementsOf = (teamId) => {
+  function teamEntitlementsOf(teamId) {
     const cur = db.teamEntitlements[teamId];
     const team = (db.teams || {})[teamId];
     const fallbackSeats = Number((team && team.seatLimit) || 3);
@@ -3681,7 +3705,7 @@ const server = http.createServer(async (req, res) => {
       status: expired ? "expired" : String(cur.status || "active"),
       kbUsedMb: Math.max(0, Number(cur.kbUsedMb) || 0), memUsedMb: Math.max(0, Number(cur.memUsedMb) || 0),
     };
-  };
+  }
 
   /** 团队积分池：余额 + 最近流水。⛔ 余额 = 流水求和，不单独存冗余数字（防漂移）。 */
   const teamPointsOf = (teamId) => {
@@ -4056,8 +4080,10 @@ const server = http.createServer(async (req, res) => {
      键能骗过「[A-Za-z0-9_-]」宽松白名单（实测：管理员解散 `__proto__` 会把 status 写到
      Object.prototype 上）。宁可窄，团队 ID 由服务端生成，不会有别的形态。 */
   const TEAM_ID_RE = /^T[A-Z0-9]{4,40}$/;
-  const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k);
-  const teamOf = (id) => (hasOwn(db.teams, id) ? db.teams[id] : null);
+  /* ⛔ 函数声明而不是 const 箭头：本文件的路由体是**一个请求处理函数**，
+     proxy 分支在源码上位于这些 helper 之前就 return ⇒ const 会踩 TDZ（实测 400）。 */
+  function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o || {}, k); }
+  function teamOf(id) { return hasOwn(db.teams, id) ? db.teams[id] : null; }
   if (p.startsWith("/teams/")) {
     const seg0 = p.slice("/teams/".length).split("/")[0];
     if (seg0 && seg0 !== "join" && !TEAM_ID_RE.test(seg0)) return send(400, { ok: false, error: "非法的团队 ID" });
@@ -4170,50 +4196,67 @@ const server = http.createServer(async (req, res) => {
       monthUsed += (Number(x.quotaCost) || 0) + (-Number(x.delta) || 0);
     });
     const quotaLeft = Math.max(0, Number(q.total || 0) - Number(q.used || 0));
-    const balance = Math.max(0, teamBalanceOf(teamId));
+    const balanceRaw = teamBalanceOf(teamId);
+    const balance = Math.max(0, balanceRaw);
     return {
-      available: quotaLeft + balance,
+      /* ⛔⛔ 10-24 审查修：available 必须**诚实**（允许为负）。
+         原先 `quotaLeft + Math.max(0, 余额)` 把透支钳成 0 ⇒ 只要本期配额还剩 1 点，
+         余额闸就永远 >0 ⇒ 每一笔都「透支」成功 = 无限免费调用（实测复现）。 */
+      available: Math.round((quotaLeft + balanceRaw) * 100) / 100,
+      debt: Math.round(Math.max(0, -balanceRaw) * 100) / 100,
       quota: { period, total: Number(q.total || 0), used: Number(q.used || 0), left: quotaLeft },
       balance, monthUsed: Math.max(0, monthUsed),
       lowBalanceWarn: teamPolicyRaw().lowBalanceWarn,
     };
   }
-  /** 扣费：先配额、后余额。⛔ 判定与写入之间没有 await（Node 单线程 ⇒ 原子）。 */
-  function teamConsume(teamId, scene, qty, ref, actor) {
+  /** 扣费：先配额、后余额。⛔ 判定与写入之间没有 await（Node 单线程 ⇒ 原子）。
+      `opts.overdraft`：额度不够时**允许透支一笔** —— 先把本期配额吃干净，差额记成负余额，
+      下一笔会被余额闸挡住（与个人「允许透支一笔」同语义）。 */
+  function teamConsume(teamId, scene, qty, ref, actor, opts) {
     const policy = teamPolicyRaw();
     if (!policy.pointsEnabled) return { ok: true, cost: 0, quotaPart: 0, poolPart: 0, free: true, ref: String(ref || "") };
     const unit = Number(policy.prices[scene] || 0);
-    const n = Math.max(1, Math.ceil(Number(qty) || 1));
-    const cost = unit > 0 ? Math.max(1, Math.ceil(n * unit)) : 0;
+    /* ⛔ 10-24 审查修口径：**模型调用按个人同一口径（两位小数）**，不向上取整。
+       上游 `credit` 本身就是小数（实测 0.35 / 1.37），ceil 会把便宜模型放大好几倍；
+       其它场景仍按整数（上传按 MB、检索/记忆按条/次）。 */
+    const isModel = String(scene) === "model";
+    const two = (v) => Math.round((Number(v) || 0) * 100) / 100;
+    const n = isModel ? Math.max(0, two(qty)) : Math.max(1, Math.ceil(Number(qty) || 1));
+    const cost = unit > 0 ? (isModel ? two(n * unit) : Math.max(1, Math.ceil(n * unit))) : 0;
     const r = String(ref || (scene + ":" + teamId + ":" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)));
     if (!cost) return { ok: true, cost: 0, quotaPart: 0, poolPart: 0, ref: r };
     const map = (db.teamPointsLedger[teamId] = db.teamPointsLedger[teamId] || {});
     const dup = Object.values(map).filter((x) => x && x.ref === r);
     if (dup.length) {
-      return { ok: true, cost: dup.reduce((s, x) => s + Math.abs(Number(x.delta || 0)) + Number(x.quotaCost || 0), 0), quotaPart: 0, poolPart: 0, duplicate: true, ref: r };
+      return { ok: true, cost: dup.reduce((s2, x) => s2 + Math.abs(Number(x.delta || 0)) + Number(x.quotaCost || 0), 0), quotaPart: 0, poolPart: 0, duplicate: true, ref: r };
     }
     const q = teamQuotaOf(teamId);
     const quotaLeft = Math.max(0, Number(q.total || 0) - Number(q.used || 0));
     const bal = Math.max(0, teamBalanceOf(teamId));
-    if (quotaLeft + bal < cost) {
+    const overdraft = Boolean(opts && opts.overdraft);
+    if (!overdraft && quotaLeft + bal < cost) {
       return { ok: false, error: "points-insufficient", cost, need: cost - (quotaLeft + bal), available: quotaLeft + bal, ref: r };
     }
-    const quotaPart = Math.min(quotaLeft, cost);
-    const poolPart = cost - quotaPart;
+    const quotaPart = two(Math.min(quotaLeft, cost));
+    const poolPart = two(cost - quotaPart);
+    /* 差额超过余额 ⇒ 这笔是透支（余额会变负），note 里写明，账上看得见。 */
+    const negative = poolPart > bal;
     const period = q.period || teamPeriod(Date.now());
-    if (quotaPart > 0) q.used = Number(q.used || 0) + quotaPart;
+    if (quotaPart > 0) q.used = two(Number(q.used || 0) + quotaPart);
     /* ⛔ 一行记一次消耗：delta 只表示**余额**变化（配额不占余额），quotaCost 单独记配额用量。
-       早期两个都写会让一次检索扣两次（配额 3 + 余额 3，实测抓到）。 */
+       早期两个都写会让一次检索扣两次（配额 3 + 余额 3，实测抓到）。
+       ⛔⛔ 10-24 审查修「无限免费调用」：透支也必须动 `q.used` —— 原先只在 ledger 记一笔负数、
+          配额原封不动 ⇒ 配额还剩 1 点就能一直透下去。现在透支先吃干净配额，再记负余额。 */
     const id = "TP" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
     map[id] = {
       id, at: Date.now(), delta: poolPart > 0 ? -poolPart : 0, quotaCost: quotaPart || 0,
       kind: "consume", scene: String(scene), ref: r,
-      note: String(scene) + " 消耗 " + cost + " 点（" + (quotaPart > 0 ? "配额 " + quotaPart : "") + (quotaPart > 0 && poolPart > 0 ? " + " : "") + (poolPart > 0 ? "余额 " + poolPart : "") + "）",
+      note: String(scene) + " 消耗 " + cost + " 点（" + (quotaPart > 0 ? "配额 " + quotaPart : "") + (quotaPart > 0 && poolPart > 0 ? " + " : "") + (poolPart > 0 ? "余额 " + poolPart : "") + (negative ? "，透支" : "") + "）",
       /* ⛔ 10-24：必须记**是谁用的** —— 团队积分是共享池，没有成员归属就查不出「谁在烧钱」。 */
       actor: String(actor || ""), period,
     };
     persist();
-    return { ok: true, cost, quotaPart, poolPart, ref: r, scene: String(scene), available: teamPointsSummary(teamId).available };
+    return { ok: true, cost, quotaPart, poolPart, overdraft: negative, ref: r, scene: String(scene), available: teamPointsSummary(teamId).available };
   }
   /** 退费：按原路退回（配额恢复 used、余额加回）。幂等：同 ref 已退则跳过。 */
   function teamRefund(teamId, charge, reason) {
@@ -4276,7 +4319,7 @@ const server = http.createServer(async (req, res) => {
   if (!db.teamInvites || typeof db.teamInvites !== "object") db.teamInvites = {};
   if (!db.teamStore || typeof db.teamStore !== "object") db.teamStore = {};
 
-  const teamPolicyOf = () => {
+  function teamPolicyOf() {
     const p = (db.teamPolicy && typeof db.teamPolicy === "object") ? db.teamPolicy : {};
     return {
       enabled: p.enabled !== false,
@@ -4285,15 +4328,15 @@ const server = http.createServer(async (req, res) => {
       kbEnabled: p.kbEnabled !== false,
       maxEntryChars: Math.max(200, Math.min(20000, Math.round(Number(p.maxEntryChars) || 2000))),
     };
-  };
+  }
   /** 当前用户在团队里的角色（含 owner 覆盖）；非成员返回空串。 */
-  const teamRoleOf = (teamId, username) => {
+  function teamRoleOf(teamId, username) {
     const team = teamOf(teamId);
     if (!team || team.status !== "active") return "";
     if (team.owner === username) return "owner";
     const m = (db.teamMembers[teamId] || {})[username];
     return m && m.status === "active" ? String(m.role || "member") : "";
-  };
+  }
   const teamSeatUsage = (teamId) => {
     const team = db.teams[teamId];
     const members = db.teamMembers[teamId] || {};

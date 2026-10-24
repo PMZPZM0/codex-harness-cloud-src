@@ -7640,7 +7640,11 @@
       var j = r.j || {};
       if (!r.ok || !j.ok) { say("tmPointsWarn", (j.message || j.error || "积分读取失败"), "warn"); return; }
       var q = j.quota || {};
-      if ($("tmPointsAvail")) $("tmPointsAvail").textContent = fmtNum(j.available);
+      /* ⛔ 可用积分可能是负数（透支）：直接显示 -9 会让人以为数据坏了，
+         显示成 0 + 「透支欠 N」更接近事实，也和余额闸的实际效果一致。 */
+      var availShown = Math.max(0, Number(j.available) || 0);
+      var debtText = Number(j.debt) > 0 ? "（透支欠 " + fmtNum(j.debt) + "）" : "";
+      if ($("tmPointsAvail")) $("tmPointsAvail").textContent = fmtNum(availShown) + debtText;
       if ($("tmMonthUsed")) $("tmMonthUsed").textContent = fmtNum(j.monthUsed);
       if ($("tmPointsBreak")) {
         $("tmPointsBreak").innerHTML = (j.pointsEnabled === false
@@ -7653,7 +7657,7 @@
         var low = Number(j.lowBalanceWarn || 0);
         var isLow = low > 0 && (Number(j.available) || 0) <= low && j.pointsEnabled !== false;
         warnEl.hidden = !isLow;
-        if (isLow) warnEl.textContent = "团队可用积分偏低（" + fmtNum(j.available) + " ≤ " + fmtNum(low) + "），余额耗尽后检索/上传会被拒绝，请及时充值或联系管理员分配。";
+        if (isLow) warnEl.textContent = "团队可用积分偏低（" + fmtNum(availShown) + " ≤ " + fmtNum(low) + "），余额耗尽后检索 / 上传 / 模型调用都会被拒绝，请及时充值或联系管理员分配。";
       }
       renderTeamLedger(j.rows);
       window.__teamPoints = j;
