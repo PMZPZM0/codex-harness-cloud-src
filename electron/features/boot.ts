@@ -28,7 +28,7 @@ import { BotStreamSession, readBotStreamSettingsSync } from "../bot-stream";
 import { ensureBuiltinSkills, ensureEgoBrowserSkill, ensureExpertSkillsMarketplace } from "../builtin-skills";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { developerInstructionsLine } from "../developer-instructions";
-import { normalizeAutoCompactRatio, readAppSettings, readAppSettingsSync } from "../app-settings";
+import { normalizeAutoCompactRatio, readAppSettings, readAppSettingsSync, saveAppSettings } from "../app-settings";
 import { backupTurnIfEnabled as backupTurnIfEnabledImpl, normalizeBackupDir } from "./change-backup";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { handleRoleMemoryToolCall } from "../role-memory-tool";
@@ -189,6 +189,51 @@ let qqGateway!: any;
 let wecomWebhookGateway!: any;
 let readChannelBot!: any;
 let setWeixinGateway!: (g: any) => void;
+
+/** 启动前自愈 model-catalog.json（10-24 用户报「启动不了：model-catalog.json EOF」）：
+ *  写 catalog 是非原子写，进程被强杀时可能留下空文件；而引擎按 config.toml 的
+ *  model_catalog_json 指向启动，读到空文件整份拒载（用户看到的就是那串 raw 报错）。
+ *  这里赶在 server.start 之前：有自定义模型 → 原子重写；没模型/写不出 → 删坏文件 +
+ *  摘掉 config 引用；修复动作写一条 app-settings 回执，渲染层读一次弹成可见提醒。 */
+async function healModelCatalogBeforeStart(custom: any) {
+  const catalogPath = path.join(codexHome, "model-catalog.json");
+  let broken = false;
+  try {
+    const raw = await fs.readFile(catalogPath, "utf8");
+    if (!raw.trim()) broken = true;
+    else JSON.parse(raw);
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") broken = true;
+  }
+  const noteRepair = async (detail: string): Promise<void> => {
+    try {
+      await saveAppSettings(app.getPath("userData"), {
+        modelCatalogRepairNotice: `检测到模型目录文件损坏，已自动修复（${detail}）。若模型列表仍异常，请到「设置 → 模型」重新选择一次。`,
+      });
+    } catch { /* 提醒写不进不影响启动 */ }
+  };
+  if (custom) {
+    if (broken) {
+      const bad = `${catalogPath}.bad-${Date.now()}`;
+      await fs.rename(catalogPath, bad).catch(async () => { await fs.rm(catalogPath, { force: true }).catch(() => undefined); });
+      await noteRepair(`原文件已备份为 ${path.basename(bad)}`);
+      console.warn(`[boot] model-catalog.json 损坏，已备份为 ${bad} 并按当前供应商重写`);
+    }
+    await writeModelCatalogToml(custom);
+    return;
+  }
+  // 没配自定义模型：config.toml 不应再引用 catalog —— 引用着坏/丢文件 = 引擎整份拒载。
+  const cfgText = await fs.readFile(path.join(codexHome, "config.toml"), "utf8").catch(() => "");
+  const referenced = /model_catalog_json\s*=/.test(cfgText);
+  if (!broken && !referenced) return;
+  await fs.rm(catalogPath, { force: true }).catch(() => undefined);
+  const cleaned = cfgText.replace(/^\s*model_catalog_json\s*=\s*.*(?:\r?\n)?/gm, "");
+  if (cleaned !== cfgText) await fs.writeFile(path.join(codexHome, "config.toml"), cleaned, "utf8");
+  if (broken || referenced) {
+    await noteRepair("config.toml 里的引用已一并摘除");
+    console.warn("[boot] model-catalog.json 缺失/损坏且无自定义模型，已摘除 config 引用");
+  }
+}
 
 export function bindBoot(deps: Record<string, any>) {
   setWeixinGateway = deps.setWeixinGateway;
@@ -387,6 +432,14 @@ export async function bootApp() {
     } catch (error) {
       console.warn("custom-model API key decrypt failed, starting without key:", error);
     }
+  }
+  // ⛔ 10-24 自愈：catalog 坏/空文件会让引擎启动即拒载（见 healModelCatalogBeforeStart 注释）。
+  //    必须赶在 server.start 之前跑 —— 旧版把它放在 server.start 之后，那时引擎已经死了，
+  //    重写 catalog 也救不回来（用户报障现场）。
+  try {
+    await healModelCatalogBeforeStart(custom);
+  } catch (error) {
+    console.warn("[boot] model-catalog self-heal failed (降级继续):", error);
   }
   // 云版/headless 兜底（10-11）：safeStorage 密文可能解不开（无头环境/换机拷贝的 userData），
   // 而引擎对 env_key 是**存在性**校验（上游鉴权由统一通道桥自己管）⇒ 允许显式注入：
