@@ -323,6 +323,117 @@ const CHECKS = [
     },
   },
   {
+    id: "settings-unified",
+    name: "⑳ 设置统一简洁风（全设置页页头不截断 / 无横向溢出 / 一列长卡 / 收藏夹说明单列）",
+    run: async (h) => {
+      // 10-24 用户令：「我框住的这些，你也全部优化一下布局，还有那个收藏夹」「界面都做好看一点，
+      // 风格统一，方便新手」。判据只量**真实布局**：页头是否被滚动位置截断、有没有横向溢出、
+      // 入口卡是否真的长条、收藏夹页脚是否还断成多列。改回旧版式这些数会直接变红。
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(1200);
+      const labels = ["技能", "插件", "组件库", "MCP", "命令", "人格市场", "记忆", "知识库", "自动化", "定时任务", "钩子", "SSH 服务器", "专家/专家团", "使用统计", "数据管理", "收藏夹", "用户中心", "模型", "中转站", "云账号", "OpenAI 订阅", "开发工具", "拓展接口", "会话备份"];
+      const bad = [];
+      const titles = {};
+      for (const label of labels) {
+        const clicked = await h.eval(`(function(){
+          var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()===${JSON.stringify(label)}; });
+          if(!b) return false; b.click(); return true;
+        })()`);
+        // 云助手仓没有「云账号」导航（云端由服务器管理），缺项只跳过，不算版式失败
+        if (!clicked) { console.log(`  (跳过：${label} 不在本仓设置导航里)`); continue; }
+        // 等新页真正挂载（懒加载 chunk 首次可达 1s+）：骨架消失且页头出现再量，
+        // 否则读到的是上一页的页头（旧实现会误报「页头被截断」）。
+        await h.waitFor(`(function(){
+          const c = document.querySelector('.settings-content');
+          return !!c && !c.querySelector('.settings-boot') && !!c.querySelector('.settings-exp-hero, .settings-section > .settings-copy, .settings-section > .settings-block-head, .comp-lib-head');
+        })()`, { label: `${label} 页头`, timeoutMs: 8000 }).catch(() => undefined);
+        await wait(250);
+        const probe = await h.eval(`(function(){
+          const content = document.querySelector('.settings-content');
+          const header = content?.querySelector('.settings-section > .settings-copy, .settings-section > .settings-block-head, .comp-lib-head');
+          const title = header?.querySelector('h2, h3');
+          const cr = content?.getBoundingClientRect();
+          const hr = header?.getBoundingClientRect();
+          return {
+            shell: !!content?.classList.contains('settings-exp-shell'),
+            top: hr && cr ? Math.round(hr.top - cr.top) : -999,
+            overflow: content ? content.scrollWidth - content.clientWidth : 999,
+            display: header ? getComputedStyle(header).display : '',
+            title: (title?.textContent || '').replace(/\\s+/g, ' ').trim(),
+          };
+        })()`);
+        titles[label] = probe?.title ?? "";
+        if (!probe?.shell) bad.push(`${label}: 缺 settings-exp-shell`);
+        if (!(probe?.top >= -1)) bad.push(`${label}: 页头被截断(top=${probe?.top})`);
+        if (!(probe?.overflow <= 2)) bad.push(`${label}: 横向溢出(${probe?.overflow}px)`);
+      }
+      h.check("① 24 页统一壳 + 页头完整 + 无横向溢出", bad.length === 0, bad.slice(0, 5).join(" ∣ "));
+      h.check("② 定时任务页标题正确（不再写成「自动化」）", titles["定时任务"] === "定时任务", `实得「${titles["定时任务"]}」`);
+      h.check("③ 技能页头是两行网格（标题+操作一行、说明整宽一行）", await (async () => {
+        await h.eval(`(function(){
+          const b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()==='技能'; }); b&&b.click();
+          return 1;
+        })()`);
+        await wait(1600);
+        return h.eval(`(function(){
+          const header = document.querySelector('.settings-exp-shell .settings-section > .settings-copy');
+          const p = header?.querySelector('p');
+          return header ? getComputedStyle(header).display === 'grid' && p && getComputedStyle(p).gridRowStart === '2' : false;
+        })()`);
+      })(), "页头应为 grid，说明在第二行");
+      // 自动化 / 专家团的入口卡：真长卡（宽度接近内容区），不是三张小方卡
+      const longCards = async (label) => {
+        await h.eval(`(function(){ var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()===${JSON.stringify(label)}; }); b&&b.click(); return 1; })()`);
+        await wait(1200);
+        return h.eval(`(function(){
+          const cards = [...document.querySelectorAll('.settings-exp-shell .hub-card')];
+          return cards.length ? Math.min(...cards.map(c => Math.round(c.getBoundingClientRect().width))) : 0;
+        })()`);
+      };
+      const autoW = await longCards("自动化");
+      const teamW = await longCards("专家/专家团");
+      h.check("④ 自动化入口卡一列长卡（≥600px，不是方卡网格）", autoW >= 600, `最窄 ${autoW}px`);
+      h.check("⑤ 专家/专家团入口卡一列长卡（≥600px）", teamW >= 600, `最窄 ${teamW}px`);
+      // 记忆内容卡也改成一列长卡
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()==='记忆'; }); b&&b.click(); return 1; })()`);
+      await wait(1200);
+      const memW = await h.eval(`(function(){
+        const cards = [...document.querySelectorAll('.settings-exp-shell .memory-center .settings-cards > .settings-card')];
+        return cards.length ? Math.min(...cards.map(c => Math.round(c.getBoundingClientRect().width))) : 0;
+      })()`);
+      h.check("⑥ 记忆内容卡一列长卡（≥600px）", memW >= 600, `最窄 ${memW}px`);
+      // 收藏夹页脚：display:block（flex 会把文本节点拆成四块，截图断成多列）
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()==='收藏夹'; }); b&&b.click(); return 1; })()`);
+      await wait(1200);
+      const foot = await h.eval(`(function(){
+        const el = document.querySelector('.settings-exp-shell .favorites-settings .fav-foot');
+        if (!el) return { found:false };
+        const cs = getComputedStyle(el);
+        return { found:true, display: cs.display, w: Math.round(el.getBoundingClientRect().width), sw: el.scrollWidth };
+      })()`);
+      h.check("⑦ 收藏夹页脚说明是单列块（不再被 flex 拆成多列）", foot?.found && foot.display === "block" && foot.sw <= foot.w + 2, JSON.stringify(foot));
+      // 简洁风：页头必须是纯标题（无卡片/渐变），模型供应商是一列白卡（不是彩色方卡）
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()==='模型'; }); b&&b.click(); return 1; })()`);
+      await wait(1400);
+      const flat = await h.eval(`(function(){
+        const header = document.querySelector('.settings-exp-shell .settings-section > .settings-copy');
+        const card = document.querySelector('.settings-exp-shell .provider-card');
+        const grid = document.querySelector('.settings-exp-shell .provider-card-grid');
+        const hcs = header ? getComputedStyle(header) : null;
+        const ccs = card ? getComputedStyle(card) : null;
+        const cols = grid ? getComputedStyle(grid).gridTemplateColumns : '';
+        return {
+          headerBg: hcs?.backgroundImage ?? 'missing', headerPad: hcs?.paddingTop ?? '',
+          cardBg: ccs?.backgroundImage ?? 'missing',
+          cardW: card ? Math.round(card.getBoundingClientRect().width) : 0,
+          cols, colCount: cols ? cols.split(' ').length : 0,
+        };
+      })()`);
+      h.check("⑧ 简洁风：页头无卡片/渐变，模型供应商一列白卡", flat.headerBg === "none" && flat.headerPad === "0px" && flat.cardBg === "none" && flat.cardW >= 600 && flat.colCount === 1, JSON.stringify(flat));
+    },
+  },
+  {
     id: "plugin-market-gitee",
     name: "⑲ 插件市场换源（Gitee 官方镜像 / 48 个 Codex 兼容插件 / 分类与文案）",
     run: async (h) => {
@@ -4481,6 +4592,7 @@ const LATEST_ROUND = "10-24";   // 10-24 轮：供应商自动配置（登录/�
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
   "provider-autosetup": "10-24",   // 10-24 轮：模型页自动配置大弹窗（检测/全选/保存/旧供应商停用，本地 mock 网关真链路）
+  "settings-unified": "10-24",   // 10-24 轮：设置统一简洁风（24 页 / 页头两行 / 无溢出 / 一列长卡）
   "file-cards": "10-22",   // 10-22 轮：Qoder 式本轮产物文件卡 + 右栏工作区文件预览
   "panel-tabs": "10-22",   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "voice-toggle": "10-22",   // 10-22 轮：回合头 📢 会话级播报开关（名字后图标 / 每会话独立 / 与悬浮球同步）
