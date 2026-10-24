@@ -128,6 +128,16 @@
   #themeSwitch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
   .side-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
   .side-foot b { color: var(--text); font-weight: 600; }
+  /* ⛔ 10-24 用户实测：菜单项一多就超出 100vh 且没有滚动条（「邀请管理」被裁、「团队管理」压到账号信息上）。
+     侧栏改成三段：品牌固定 / 中间导航独立滚动 / 底部账号固定。 */
+  .side > .brand, .side > .side-foot { flex: none; }
+  .side-nav {
+    flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 6px;
+    overflow-y: auto; overflow-x: hidden; margin-right: -6px; padding-right: 6px; scrollbar-width: thin;
+  }
+  .side-nav::-webkit-scrollbar { width: 8px; }
+  .side-nav::-webkit-scrollbar-thumb { background: rgba(120,120,140,.35); border-radius: 4px; }
+  .side-nav::-webkit-scrollbar-track { background: transparent; }
 
   .main { padding: 28px 32px 64px; max-width: none; width: 100%; }
   .page-head { margin-bottom: 18px; }
@@ -229,9 +239,15 @@
 
   @media (max-width: 760px) {
     .shell { grid-template-columns: 1fr; }
-    .side { position: static; height: auto; flex-direction: row; align-items: center; gap: 8px; overflow-x: auto; padding: 12px 12px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
+    .side { position: static; height: auto; flex-direction: row; align-items: center; gap: 8px; overflow-x: hidden; padding: 12px 12px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
     .brand { padding: 0 10px 0 4px; flex: none; }
     .nav-item { width: auto; white-space: nowrap; padding: 8px 12px; }
+    /* 移动端侧栏横排：导航容器横向滚动，分组也横排、隐藏分组标题。
+       ⛔ 必须带 .side 前缀：基础规则 `.side .nav-group` 在文件后部，同特异性会压过媒体查询（实测仍纵向排列）。 */
+    .side .side-nav { flex-direction: row; align-items: center; overflow-x: auto; overflow-y: hidden; margin: 0; padding: 0; gap: 2px; }
+    .side .side-nav .nav-group { flex-direction: row; align-items: center; gap: 2px; }
+    .side .side-nav .nav-group + .nav-group { margin: 0 0 0 8px; padding: 0 0 0 8px; border-top: 0; border-left: 1px solid var(--line-soft); }
+    .side .side-nav .nav-group-title { display: none; }
     .side-foot { margin: 0; padding: 0 0 0 10px; border-top: 0; border-left: 1px solid var(--line-soft); flex-direction: row; align-items: center; gap: 12px; }
     .main { padding: 18px 16px 56px; }
     .kv { grid-template-columns: 76px 1fr; }
@@ -664,6 +680,7 @@
     <!-- 10-23 用户令：「左边菜单栏做一下大分类，用户和管理员菜单分类」⇒ 两组分开：
          用户组（所有人可见）/ 管理员组（整组 hidden，isAdmin 时去掉）。
          ⛔ 管理组里按钮**不要**各自加 hidden —— 由组容器统一控制，否则 JS 要逐个管、容易漏。 -->
+    <div class="side-nav">
     <nav class="nav-group" aria-label="用户功能">
       <h3 class="nav-group-title">用户</h3>
       <button class="nav-item" data-tab="product"><span class="dot"></span>产品首页</button>
@@ -695,6 +712,7 @@
       <button class="nav-item" data-tab="adminInvite" id="navAdminInvite"><span class="dot"></span>邀请管理</button>
       <button class="nav-item" data-tab="adminTeams" id="navAdminTeams"><span class="dot"></span>团队管理</button>
     </nav>
+    </div>
     <div class="side-foot">
       <span id="whoami">读取中…</span>
       <span id="sidePoints" class="hint">积分 —</span>
