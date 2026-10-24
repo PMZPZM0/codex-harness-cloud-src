@@ -2084,6 +2084,44 @@ const CHECKS = [
     },
   },
   {
+    id: "effort-slider",
+    name: "🎚 思考强度四档渐变滑杆（低/中/高/极高 / 白色圆点常显 / 绿→蓝）",
+    run: async (h) => {
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "主界面", timeoutMs: 30000 });
+      await wait(1500);
+      const opened = await h.eval(`(function(){ const b=document.querySelector('.effort-trigger'); if(!b) return false; b.click(); return true; })()`);
+      await wait(500);
+      const ui = await h.eval(`(function(){
+        const pop=document.querySelector('.effort-picker-pop');
+        if(!pop) return { found:false };
+        const ticks=[...pop.querySelectorAll('.effort-tick')].map(b=>(b.textContent||'').trim());
+        const fill=pop.querySelector('.effort-picker-fill');
+        const thumb=pop.querySelector('.effort-picker-thumb');
+        return {
+          found:true, ticks,
+          current:(pop.querySelector('.effort-picker-current')?.textContent||'').trim(),
+          bg:fill?getComputedStyle(fill).backgroundImage:'',
+          thumbOpacity:thumb?getComputedStyle(thumb).opacity:'',
+          thumbW:thumb?getComputedStyle(thumb).width:'',
+        };
+      })()`);
+      h.check("① 打开后只有低/中/高/极高四个档位", Boolean(opened && ui.found && JSON.stringify(ui.ticks) === JSON.stringify(["低","中","高","极高"])), JSON.stringify(ui));
+      h.check("② 白色圆点常显（22px，不靠 hover）", ui.thumbOpacity === "1" && ui.thumbW === "22px", JSON.stringify(ui));
+      h.check("③ 轨道是绿→蓝连续渐变", /rgb\(22, 163, 74\)/.test(ui.bg) && /rgb\(14, 165, 233\)/.test(ui.bg), ui.bg);
+      const picked = await h.eval(`(async function(){
+        const pop=document.querySelector('.effort-picker-pop');
+        const tick=[...(pop?.querySelectorAll('.effort-tick')||[])].find(b=>(b.textContent||'').trim()==='极高');
+        tick?.click(); await new Promise(r=>setTimeout(r,400));
+        const label=(document.querySelector('.effort-trigger-label')?.textContent||'').trim();
+        const mid=[...(pop?.querySelectorAll('.effort-tick')||[])].find(b=>(b.textContent||'').trim()==='中');
+        mid?.click(); await new Promise(r=>setTimeout(r,300));
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+        return { label };
+      })()`).catch(() => null);
+      h.check("④ 点「极高」真切档（触发器显示极高，随后还原中档）", String(picked?.label ?? "").includes("极高"), JSON.stringify(picked));
+    },
+  },
+  {
     id: "provider-autosetup",
     name: "🧭 供应商自动配置：检测 → 全选 → 保存启用 → 旧供应商自动停用（10-24）",
     run: async (h) => {
@@ -4904,6 +4942,7 @@ const ROUND_OF = {
   "settings-unified": "10-24",   // 10-24 轮：设置统一简洁风（24 页 / 页头两行 / 无溢出 / 一列长卡）
   "updates-simplified": "10-24",   // 10-24 轮：技能/插件更新收口（两个总开关 / 删四块面板 / 已安装单个检查更新）
   "skills-bulk": "10-24",   // 10-24 轮：技能本地导入批量管理（位置/范围/样式）
+  "effort-slider": "10-24",   // 10-24 轮：思考强度四档渐变滑杆（低/中/高/极高 + 白点 + 绿→蓝）
   "file-cards": "10-22",   // 10-22 轮：Qoder 式本轮产物文件卡 + 右栏工作区文件预览
   "panel-tabs": "10-22",   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "voice-toggle": "10-22",   // 10-22 轮：回合头 📢 会话级播报开关（名字后图标 / 每会话独立 / 与悬浮球同步）

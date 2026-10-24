@@ -3,7 +3,6 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "../../../../../lib/effort";
 import { RelayBalanceBadge, RelayCenterPage } from "../../../../relay";
 import { OpenaiBalanceBadge, OpenaiSubscriptionPage } from "../../../../openai";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../../lib/entity-avatar";
@@ -589,8 +588,8 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                                   声明过滤 —— 档位是会话级选择），不支持的档位由发送失败自动降档兜底
                                   （effort-support.ts）。拖动中只跟手、释放才提交，原因见 EffortPicker 注释。 */}
                               <EffortPicker
-                                levels={[...ALL_EFFORTS]}
-                                value={effort}
+                                levels={["low", "medium", "high", "xhigh"]}
+                                value={effort === "minimal" ? "low" : effort === "ultra" || effort === "max" ? "xhigh" : effort}
                                 labels={effortLabels}
                                 modelId={currentModelId}
                                 autoMode={effortAuto}
