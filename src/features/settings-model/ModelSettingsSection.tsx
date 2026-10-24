@@ -59,12 +59,12 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
       if (!ids.length) throw new Error("没有拉到可用模型，请检查 API 地址与密钥");
       const fetched = new Set(ids);
       const currentIds = (draft.models ?? []).map((m: any) => m.id);
-      const addedIds = ids.filter((id) => !currentIds.includes(id));
-      const removed = currentIds.filter((id) => !fetched.has(id)).length;
+      const addedIds = ids.filter((id: string) => !currentIds.includes(id));
+      const removed = currentIds.filter((id: string) => !fetched.has(id)).length;
       const changed = addedIds.length > 0 || removed > 0;
       const models = [
         ...(draft.models ?? []).filter((m: any) => fetched.has(m.id)).map((m: any) => ({ ...m })),
-        ...addedIds.map((id) => ({ id, enabled: true, contextWindow: Number(p.contextWindow) || 128000 })),
+        ...addedIds.map((id: string) => ({ id, enabled: true, contextWindow: Number(p.contextWindow) || 128000 })),
       ];
       if (changed) {
         const saved = await saveCustomDraft({ ...draft, models });
