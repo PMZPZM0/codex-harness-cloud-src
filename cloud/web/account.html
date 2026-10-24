@@ -1077,6 +1077,7 @@
               <span class="hint" id="tmPointsUnit">积分</span></div>
             <div class="hint" id="tmPointsBreak" style="margin-top:6px">—</div>
             <div class="hint" id="tmPointsWarn" style="margin-top:4px;color:#c0392b" hidden></div>
+            <div class="hint" style="margin-top:6px">团队模式下<b>模型调用也从这里扣</b>（1 点 = 1 个个人积分额度）；没进入团队模式则扣个人积分。</div>
             <!-- 10-24：团队积分是共享池，用户问「谁用的」——流水不再只留后端，摊开给成员看 -->
             <details class="tm-ledger" id="tmLedgerBox" style="margin-top:10px">
               <summary>积分消耗明细（最近 50 条）</summary>
@@ -1367,6 +1368,7 @@
         <p class="hint" style="margin:0 0 12px">消耗单价（点/次、点/MB）+ 低余额提醒阈值。改完下一次调用即按新价扣。</p>
         <div class="pol-grid">
           <div class="pol-field"><label>知识库检索（点/次）</label><input class="field" id="atPriceSearch" type="number" min="0" step="1" /></div>
+          <div class="pol-field"><label>模型调用（点/积分）</label><input class="field" id="atPriceModel" type="number" min="0" step="1" /></div>
           <div class="pol-field"><label>知识库上传（点/MB）</label><input class="field" id="atPriceUpload" type="number" min="0" step="1" /></div>
           <div class="pol-field"><label>记忆写入（点/条）</label><input class="field" id="atPriceMemW" type="number" min="0" step="1" /></div>
           <div class="pol-field"><label>记忆检索（点/次）</label><input class="field" id="atPriceMemS" type="number" min="0" step="1" /></div>
@@ -7660,7 +7662,7 @@
 
   /* 购买积分包（owner）：拉在售包 → 弹窗选择 → 下单跳支付 */
   /* 团队积分流水（10-24）：只列消耗/退还 —— 赠分与配额行属于"进账"，不该混在消耗里。 */
-  var LEDGER_SCENE = { kb_search: "团队库检索", kb_upload: "团队库上传", memory_write: "记忆写入", memory_search: "记忆检索" };
+  var LEDGER_SCENE = { kb_search: "团队库检索", kb_upload: "团队库上传", memory_write: "记忆写入", memory_search: "记忆检索", model: "模型调用" };
   function renderTeamLedger(rows) {
     var box = $("tmLedgerRows");
     if (!box) return;
@@ -8210,6 +8212,7 @@
       var p = j.policy || {};
       var pr = p.prices || {};
       if ($("atPriceSearch")) $("atPriceSearch").value = pr.kb_search != null ? pr.kb_search : 1;
+      if ($("atPriceModel")) $("atPriceModel").value = pr.model != null ? pr.model : 1;
       if ($("atPriceUpload")) $("atPriceUpload").value = pr.kb_upload != null ? pr.kb_upload : 2;
       if ($("atPriceMemW")) $("atPriceMemW").value = pr.memory_write != null ? pr.memory_write : 1;
       if ($("atPriceMemS")) $("atPriceMemS").value = pr.memory_search != null ? pr.memory_search : 1;
@@ -8563,6 +8566,7 @@
       body: {
         prices: {
           kb_search: Number(($("atPriceSearch") || {}).value) || 0,
+          model: Number(($("atPriceModel") || {}).value) || 0,
           kb_upload: Number(($("atPriceUpload") || {}).value) || 0,
           memory_write: Number(($("atPriceMemW") || {}).value) || 0,
           memory_search: Number(($("atPriceMemS") || {}).value) || 0
