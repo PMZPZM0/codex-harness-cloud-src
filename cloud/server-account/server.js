@@ -4291,7 +4291,9 @@ const server = http.createServer(async (req, res) => {
     };
     persist();
     /* actor 一并带出：退费要按原路归属到**发起者**，不能全记成 system（成员看不到自己的退还）。 */
-    return { ok: true, cost, quotaPart, poolPart, overdraft: negative, ref: r, scene: String(scene), actor: String(actor || ""), available: teamPointsSummary(teamId).available };
+    /* period / at 一并带出：退款必须落回**原账期**（10-24 审查），否则跨月或在途期间被
+       重新开通套餐时，退款会去减新一期的配额（钱对、配额账错，页面出现负的「本期已用」）。 */
+    return { ok: true, cost, quotaPart, poolPart, overdraft: negative, ref: r, scene: String(scene), actor: String(actor || ""), period, at: Date.now(), available: teamPointsSummary(teamId).available };
   }
   /** 退费：按原路退回（配额恢复 used、余额加回）。幂等：同 ref 已退则跳过。 */
   function teamRefund(teamId, charge, reason) {
@@ -4299,18 +4301,25 @@ const server = http.createServer(async (req, res) => {
     const map = (db.teamPointsLedger[teamId] = db.teamPointsLedger[teamId] || {});
     const rref = String(charge.ref || "") + ":refund";
     if (Object.values(map).some((x) => x && x.ref === rref)) return false;
-    const period = teamPeriod(Date.now());
+    /* ⛔ 10-24 审查：退款要落回**扣费时那一期**（`charge.period`），不能按「现在」算。
+       否则跨月、或扣费请求在途期间被重新开通/升级套餐（配额 used 归零、起点后移）时，
+       退款会把**新一期**的配额减掉：钱退对了，配额账错，页面还会出现负的「本期已用」。
+       判定「同一窗口」= 同期 + 扣费时间在新起点之后；不满足时只退余额部分，
+       配额部分已随窗口过期（`note` 里写明，账上看得见）。 */
+    const q = teamQuotaOf(teamId);
+    const period = String(charge.period || "") || teamPeriod(Date.now());
+    const sameWindow = period === (q.period || teamPeriod(Date.now()))
+      && (!q.startedAt || Number(charge.at || 0) >= Number(q.startedAt));
     const quotaPart = Math.max(0, Number(charge.quotaPart) || 0);
     const poolPart = Math.max(0, Number(charge.poolPart) || 0);
-    if (quotaPart > 0) {
-      const q = teamQuotaOf(teamId);
-      q.used = Math.max(0, Number(q.used || 0) - quotaPart);
-    }
+    const keepQuota = quotaPart > 0 && sameWindow;
+    if (keepQuota) q.used = Math.max(0, Number(q.used || 0) - quotaPart);
     const id = "TR" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
     map[id] = {
-      id, at: Date.now(), delta: poolPart > 0 ? poolPart : 0, quotaCost: quotaPart > 0 ? -quotaPart : 0,
+      id, at: Date.now(), delta: poolPart > 0 ? poolPart : 0, quotaCost: keepQuota ? -quotaPart : 0,
       kind: "refund", scene: String(charge.scene || ""), ref: rref,
-      note: String(reason || "上游失败退分"), actor: String((charge && charge.actor) || "system"), period,
+      note: String(reason || "上游失败退分") + (quotaPart > 0 && !sameWindow ? "（配额已过窗口，" + quotaPart + " 点不退回）" : ""),
+      actor: String((charge && charge.actor) || "system"), period,
     };
     persist();
     return true;
@@ -5294,14 +5303,18 @@ const server = http.createServer(async (req, res) => {
     if (!charge.ok) {
       return send(402, { ok: false, error: charge.error, need: charge.need, available: charge.available, message: "团队积分不足，写入/检索被拒绝" });
     }
-    /* 单价为 0 时也留一条计数行（后台能看到"谁在用、用了多少"，将来改价有基线） */
+    /* 单价为 0 时也留一条计数行（后台能看到"谁在用、用了多少"，将来改价有基线）。
+       ⛔ 10-24 审查：这条路径原先**没有幂等判定** —— 客户端重试同一个 ref 会一次次写计数行
+       （扣费的路径有 dup 检查，免费路径漏了）。同 ref 已存在就不重复记。 */
     if (!charge.cost) {
       const map = (db.teamPointsLedger[teamId] = db.teamPointsLedger[teamId] || {});
-      const id = "TM" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
-      const period = teamPeriod(Date.now());
-      map[id] = { id, at: Date.now(), delta: 0, quotaCost: 0, kind: "consume", scene, ref,
-        note: scene + " 计量 " + qty + " 次（单价 0，免费）", actor: who.username, period };
-      persist();
+      if (!Object.values(map).some((x) => x && String(x.ref || "") === ref)) {
+        const id = "TM" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+        const period = teamPeriod(Date.now());
+        map[id] = { id, at: Date.now(), delta: 0, quotaCost: 0, kind: "consume", scene, ref,
+          note: scene + " 计量 " + qty + " 次（单价 0，免费）", actor: who.username, period };
+        persist();
+      }
     }
     console.log("[team] " + who.username + " 上报 " + scene + " ×" + qty + "（团队 " + teamId + "，扣 " + charge.cost + "）");
     return send(200, { ok: true, cost: charge.cost, duplicate: Boolean(charge.duplicate), points: teamPointsSummary(teamId) });
