@@ -421,22 +421,35 @@
   .admin-head h1 { margin: 0 0 4px; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
   .admin-head p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; max-width: 78ch; }
 
-  /* ── 管理端「配置教程」（10-24 用户令「管理员里面的功能都加一个配置教程，我看不懂」）──
-     ⛔ 默认展开：第一眼就要看见步骤；点「收起」后写 localStorage，之后所有管理页统一收起，
-        不长期占屏（两个诉求同时满足）。折叠态只用 ::after 切字，不额外加 JS 监听。 */
-  .cfg-guide { margin: 0 0 16px; border: 1px solid var(--line); border-left: 3px solid var(--brand); border-radius: 12px; background: var(--card); }
-  .cfg-guide > summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 11px 14px;
-    cursor: pointer; list-style: none; font-size: 13px; font-weight: 600; border-radius: 12px; transition: background var(--dur); }
-  .cfg-guide > summary::-webkit-details-marker { display: none; }
-  .cfg-guide > summary:hover { background: var(--field); }
-  .cfg-guide[open] > summary { border-radius: 12px 12px 0 0; border-bottom: 1px solid var(--line-soft); background: var(--field); }
-  .cfg-guide .cg-badge { padding: 2px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-ink); font-size: 11px; font-weight: 600; }
-  .cfg-guide .cg-sum { font-weight: 400; color: var(--muted); font-size: 12px; }
-  .cfg-guide > summary::after { content: "展开"; margin-left: auto; color: var(--faint); font-size: 11.5px; font-weight: 400; white-space: nowrap; }
-  .cfg-guide[open] > summary::after { content: "收起"; }
-  .cfg-body { padding: 13px 16px 16px; font-size: 12.5px; line-height: 1.85; color: var(--muted); }
+  /* ── 管理端「配置教程」二级弹窗（10-24 用户令「做成二级弹窗，不要占主界面」）────
+     ⛔ 层级 900：低于 toast（9999）/ 页面内浮层（1300），高于正文 —— 对应项目弹窗约定
+        「引导 / 帮助类 = 900 系」。
+     ⛔ 必须显式 `.cfg-modal[hidden]{display:none}`：[hidden] 只是 UA 的 display:none，
+        压不过下面这条 `display:flex`（本项目在多个块上踩过）。 */
+  .cfg-open { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .cfg-open::before { content: "?"; display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; border-radius: 50%; background: var(--brand-soft); color: var(--brand-ink);
+    font-size: 10px; font-weight: 700; line-height: 1; }
+  .cfg-modal { position: fixed; inset: 0; z-index: 900; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .cfg-modal[hidden] { display: none; }
+  .cfg-mask { position: absolute; inset: 0; background: rgba(12,10,20,.5); }
+  .cfg-dialog { position: relative; display: flex; flex-direction: column; width: min(860px, 100%);
+    max-height: min(86vh, 940px); background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; box-shadow: 0 28px 70px rgba(0,0,0,.32); overflow: hidden; }
+  .cfg-dialog-head { position: relative; flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 13px 52px 13px 16px; border-bottom: 1px solid var(--line-soft); background: var(--field); }
+  .cfg-dialog-head .cg-title { font-size: 14px; font-weight: 700; color: var(--text); }
+  /* ⛔ 绝对定位到右上角，而不是 flex + margin-left:auto：窄屏标题换行时它会掉到第二行中间 */
+  .cfg-x { position: absolute; top: 9px; right: 10px; width: 30px; height: 30px; border-radius: 8px;
+    border: 1px solid transparent; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+  .cfg-x:hover { background: var(--line-soft); color: var(--text); }
+  .cfg-x:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+  .cg-badge { padding: 2px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-ink); font-size: 11px; font-weight: 600; }
+  .cg-sum { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .cfg-body { padding: 14px 20px 20px; font-size: 12.5px; line-height: 1.85; color: var(--muted);
+    overflow: auto; overscroll-behavior: contain; flex: 1 1 auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
   .cfg-body > *:first-child { margin-top: 0; }
-  .cfg-body h4 { margin: 14px 0 5px; font-size: 12.5px; font-weight: 700; color: var(--text); }
+  .cfg-body h4 { margin: 16px 0 5px; font-size: 12.5px; font-weight: 700; color: var(--text); }
   .cfg-body h4:first-child { margin-top: 0; }
   .cfg-body ol, .cfg-body ul { margin: 0 0 4px; padding-left: 21px; }
   .cfg-body li { margin: 3px 0; }
@@ -452,10 +465,19 @@
   .cfg-tbl td:first-child { color: var(--text); white-space: nowrap; }
   .cfg-note { margin: 10px 0 0; padding: 9px 12px; border-radius: 9px; background: var(--warn-soft); border: 1px solid var(--line-soft); }
   .cfg-note + .cfg-note { margin-top: 8px; }
+  /* 弹窗打开时锁背景滚动（html 与 body 都要锁） */
+  html.cfg-lock, html.cfg-lock body { overflow: hidden; }
+  /* 页面标题行：标题在左、教程按钮在右（8 个管理页统一） */
+  .ah-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 4px; }
+  .ah-row h1 { margin: 0; }
+  .ah-row .cfg-open { margin-left: auto; }
   @media (max-width: 720px) {
-    .cfg-body { padding: 11px 12px 14px; }
-    .cfg-guide > summary { padding: 10px 12px; }
-    .cfg-guide .cg-sum { flex-basis: 100%; order: 3; }
+    .cfg-modal { padding: 10px; align-items: flex-end; }
+    .cfg-dialog { max-height: 92vh; border-radius: 14px; }
+    .cfg-dialog-head { padding: 11px 46px 11px 12px; }
+    .cfg-x { top: 7px; right: 7px; }
+    .cfg-body { padding: 12px; }
+    .ah-row { gap: 8px; }
   }
 
   #svcMemCard .svc-top, #svcKbCard .svc-top, #svcWbmCard .svc-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
@@ -1218,9 +1240,25 @@
 
     <!-- ── 管理员：团队管理（开通条件 + 全站团队 + 团队套餐）── -->
     <section class="tab" data-tab="adminTeams" hidden>
-      <details class="cfg-guide" open>
-        <summary><span class="cg-badge">配置教程</span>团队管理怎么配<span class="cg-sum">四层闸门：平台开关 → 能力开关 → 按人开通 → 套餐积分</span></summary>
-        <div class="cfg-body">
+      <div class="admin-head">
+        <div class="ah-row">
+          <h1>团队管理</h1>
+          <button class="btn sm cfg-open" type="button" data-cfg="adminTeams">配置教程</button>
+        </div>
+        <p>开通条件、按人开通、积分单价与套餐、全站团队与操作审计 —— 团队是按人开通的，不是注册就有。</p>
+      </div>
+      <!-- 管理端配置教程（10-24）：二级弹窗，不占主界面 —— 按钮在页面标题行右侧。
+           ⛔ 关闭按钮 / 遮罩 / Esc 三路都能关；打开时锁背景滚动。 -->
+      <div class="cfg-modal" id="cfgModal-adminTeams" hidden>
+        <div class="cfg-mask" data-cfg-close></div>
+        <div class="cfg-dialog" role="dialog" aria-modal="true" aria-label="团队管理怎么配">
+          <div class="cfg-dialog-head">
+            <span class="cg-badge">配置教程</span>
+            <b class="cg-title">团队管理怎么配</b>
+            <span class="cg-sum">四层闸门：平台开关 → 能力开关 → 按人开通 → 套餐积分</span>
+            <button class="cfg-x" type="button" data-cfg-close aria-label="关闭教程">×</button>
+          </div>
+          <div class="cfg-body">
           <h4>这页在配什么</h4>
           <p>团队是<b>按人开通</b>的能力，不是注册就有的。四层从宽到严，缺一层就用不了：</p>
           <ol>
@@ -1270,7 +1308,8 @@
             <li><b>体验套餐领不了</b> → 每团队限一次；已有生效套餐的团队不能再领。</li>
           </ul>
         </div>
-      </details>
+        </div>
+      </div>
       <div class="card">
         <h2>团队开通条件</h2>
         <p class="hint" style="margin:0 0 12px">三层闸门：平台开关 → 能力开关（记忆 / 知识库）→ 团队级开通（建空间）。关闭能力后，成员调用对应接口会直接 403。</p>
@@ -1413,9 +1452,23 @@
 
     <!-- ── 邀请管理（10-23）：奖励配置 + 每位用户的邀请数与明细 ── -->
     <section class="tab" data-tab="adminInvite" hidden>
-      <details class="cfg-guide" open>
-        <summary><span class="cg-badge">配置教程</span>邀请管理怎么配<span class="cg-sum">老带新的奖励规则 —— 和「用户管理 → 邀请码」不是同一件事</span></summary>
-        <div class="cfg-body">
+      <div class="admin-head">
+        <div class="ah-row">
+          <h1>邀请管理</h1>
+          <button class="btn sm cfg-open" type="button" data-cfg="adminInvite">配置教程</button>
+        </div>
+        <p>老带新的奖励规则，以及每位用户拉了多少人、每个人到账多少积分。</p>
+      </div>
+      <div class="cfg-modal" id="cfgModal-adminInvite" hidden>
+        <div class="cfg-mask" data-cfg-close></div>
+        <div class="cfg-dialog" role="dialog" aria-modal="true" aria-label="邀请管理怎么配">
+          <div class="cfg-dialog-head">
+            <span class="cg-badge">配置教程</span>
+            <b class="cg-title">邀请管理怎么配</b>
+            <span class="cg-sum">老带新的奖励规则 —— 和「用户管理 → 邀请码」不是同一件事</span>
+            <button class="cfg-x" type="button" data-cfg-close aria-label="关闭教程">×</button>
+          </div>
+          <div class="cfg-body">
           <h4>这页在配什么</h4>
           <p>定<b>拉一个人奖励多少积分</b>，然后看谁拉得多。每个用户有一条自己的专属邀请链接，别人通过链接注册成功后，<b>邀请人自动加分</b>。</p>
 
@@ -1451,7 +1504,8 @@
             <li><b>统计人数和实际不符</b> → 统计的是<b>关系记录</b>，被删掉的账号仍会留在历史里。</li>
           </ul>
         </div>
-      </details>
+        </div>
+      </div>
       <div class="card">
         <h2>邀请奖励配置</h2>
         <p class="hint" style="margin:0 0 12px">被邀请人通过任一用户的专属邀请链接注册成功后，自动给邀请人加分。</p>
@@ -1477,9 +1531,23 @@
 
     <!-- ── 订阅与充值（10-23 用户定稿三板块）：余额充值配置 / 订阅套餐设置 / 支付设置 ── -->
     <section class="tab" data-tab="adminBilling" hidden>
-      <details class="cfg-guide" open>
-        <summary><span class="cg-badge">配置教程</span>订阅与充值怎么配<span class="cg-sum">钱从哪进、套餐卖什么、掉单怎么补 —— 四张卡片按顺序来</span></summary>
-        <div class="cfg-body">
+      <div class="admin-head">
+        <div class="ah-row">
+          <h1>订阅与充值</h1>
+          <button class="btn sm cfg-open" type="button" data-cfg="adminBilling">配置教程</button>
+        </div>
+        <p>充值比例、套餐、支付通道与掉单补单 —— 改动立即对用户生效。</p>
+      </div>
+      <div class="cfg-modal" id="cfgModal-adminBilling" hidden>
+        <div class="cfg-mask" data-cfg-close></div>
+        <div class="cfg-dialog" role="dialog" aria-modal="true" aria-label="订阅与充值怎么配">
+          <div class="cfg-dialog-head">
+            <span class="cg-badge">配置教程</span>
+            <b class="cg-title">订阅与充值怎么配</b>
+            <span class="cg-sum">钱从哪进、套餐卖什么、掉单怎么补 —— 四张卡片按顺序来</span>
+            <button class="cfg-x" type="button" data-cfg-close aria-label="关闭教程">×</button>
+          </div>
+          <div class="cfg-body">
           <h4>这页在配什么</h4>
           <p>四件事，按卡片从上到下就是正确顺序：<b>① 充值比例 → ② 支付通道 → ③ 卖什么套餐 → ④ 出问题怎么补单</b>。</p>
 
@@ -1528,7 +1596,8 @@
             <li><b>免费套餐领不了</b> → 每个账号限领一次；已有生效套餐的也领不了。</li>
           </ul>
         </div>
-      </details>
+        </div>
+      </div>
       <div class="card">
         <h2>余额充值配置</h2>
         <div class="sub-hero-top" style="margin-bottom:12px">
@@ -1722,14 +1791,24 @@
        原一长条 admin tab 拆成 4 个中心，导航项全部只对管理员显示（isAdmin 时才去掉 hidden）。 -->
 <div class="tab" data-tab="adminUser" id="adminUserTab" hidden>
   <div class="admin-head">
-    <h1>用户管理</h1>
+    <div class="ah-row">
+      <h1>用户管理</h1>
+      <button class="btn sm cfg-open" type="button" data-cfg="adminUser">配置教程</button>
+    </div>
     <p>服务器基础设置、站点外观、用户与权益、邀请码 —— 这里的改动会影响所有用户。</p>
   </div>
   <!-- 10-24 配置教程（用户令「每个功能都加一个，我看不懂」）：8 个管理页各一块，
        写法统一 = 这页做什么 / 按顺序点哪儿 / 字段填什么 / 怎么验收 / 出问题先看。 -->
-  <details class="cfg-guide" open>
-    <summary><span class="cg-badge">配置教程</span>用户管理怎么配<span class="cg-sum">含「管理端整体顺序」—— 第一次用先看这里</span></summary>
-    <div class="cfg-body">
+  <div class="cfg-modal" id="cfgModal-adminUser" hidden>
+    <div class="cfg-mask" data-cfg-close></div>
+    <div class="cfg-dialog" role="dialog" aria-modal="true" aria-label="用户管理怎么配">
+      <div class="cfg-dialog-head">
+        <span class="cg-badge">配置教程</span>
+        <b class="cg-title">用户管理怎么配</b>
+        <span class="cg-sum">含「管理端整体顺序」—— 第一次用先看这里</span>
+        <button class="cfg-x" type="button" data-cfg-close aria-label="关闭教程">×</button>
+      </div>
+      <div class="cfg-body">
       <h4>管理端整体只有 4 件事，按这个顺序做</h4>
       <ol>
         <li><b>先有模型</b>：到「模型管理」填上游地址 + 密钥 → 同步目录 → 勾选对用户开放的模型。模型不通，后面所有功能都是空的。</li>
@@ -1773,7 +1852,8 @@
         <li>「检查更新」说已是最新但界面没变 → 先看版本徽标对不对，再按 Ctrl+F5 强制刷新。</li>
       </ul>
     </div>
-  </details>
+    </div>
+  </div>
 <div class="card" id="updCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">部署与更新
         <!-- 版本徽标（10-18 用户令「加一个版本号」）：一眼看到当前跑的到底是哪个版本 -->
@@ -1998,12 +2078,22 @@
 
 <div class="tab" data-tab="adminModel" id="adminModelTab" hidden>
   <div class="admin-head">
-    <h1>模型管理</h1>
+    <div class="ah-row">
+      <h1>模型管理</h1>
+      <button class="btn sm cfg-open" type="button" data-cfg="adminModel">配置教程</button>
+    </div>
     <p>上游网关地址与密钥、模型目录与倍率、闲时时段，以及对用户开放的模型。</p>
   </div>
-  <details class="cfg-guide" open>
-    <summary><span class="cg-badge">配置教程</span>模型管理怎么配<span class="cg-sum">先让服务器有模型可用 —— 这是所有功能的地基</span></summary>
-    <div class="cfg-body">
+  <div class="cfg-modal" id="cfgModal-adminModel" hidden>
+    <div class="cfg-mask" data-cfg-close></div>
+    <div class="cfg-dialog" role="dialog" aria-modal="true" aria-label="模型管理怎么配">
+      <div class="cfg-dialog-head">
+        <span class="cg-badge">配置教程</span>
+        <b class="cg-title">模型管理怎么配</b>
+        <span class="cg-sum">先让服务器有模型可用 —— 这是所有功能的地基</span>
+        <button class="cfg-x" type="button" data-cfg-close aria-label="关闭教程">×</button>
+      </div>
+      <div class="cfg-body">
       <h4>这页在配什么</h4>
       <p>三件事：<b>从哪儿拿模型</b>（上游地址 + 密钥）、<b>每个模型扣多少积分</b>（倍率）、<b>哪些模型给用户选</b>。</p>
 
@@ -2049,7 +2139,8 @@
         <li><b>用户端看不到模型</b> → 底部「对用户开放的模型」没勾，或勾了没点保存。</li>
       </ul>
     </div>
-  </details>
+    </div>
+  </div>
 <div class="card" id="upstreamCard">
       <h2>上游 API <span class="pill ok">热生效</span></h2>
       <p class="hint" id="auInfo">读取中…</p>
@@ -2192,12 +2283,22 @@
 
 <div class="tab" data-tab="adminMem" id="adminMemTab" hidden>
   <div class="admin-head">
-    <h1>记忆空间管理</h1>
+    <div class="ah-row">
+      <h1>记忆空间管理</h1>
+      <button class="btn sm cfg-open" type="button" data-cfg="adminMem">配置教程</button>
+    </div>
     <p>本机部署的腾讯记忆空间（Memory Hub）：面板入口、记忆服务地址与模型代理。</p>
   </div>
-  <details class="cfg-guide" open>
-    <summary><span class="cg-badge">配置教程</span>记忆空间怎么配<span class="cg-sum">接线两步 + 给人开通，最容易填错的是「检索代理」</span></summary>
-    <div class="cfg-body">
+  <div class="cfg-modal" id="cfgModal-adminMem" hidden>
+    <div class="cfg-mask" data-cfg-close></div>
+    <div class="cfg-dialog" role="dialog" aria-modal="true" aria-label="记忆空间怎么配">
+      <div class="cfg-dialog-head">
+        <span class="cg-badge">配置教程</span>
+        <b class="cg-title">记忆空间怎么配</b>
+        <span class="cg-sum">接线两步 + 给人开通，最容易填错的是「检索代理」</span>
+        <button class="cfg-x" type="button" data-cfg-close aria-label="关闭教程">×</button>
+      </div>
+      <div class="cfg-body">
       <h4>这页在配什么</h4>
       <p>把<b>跑在本机的记忆空间</b>接到本服务上（地址 + 密钥），然后决定<b>谁能用、用多少</b>。记忆空间本身不在本服务里，它是独立部署的一套服务。</p>
 
@@ -2243,7 +2344,8 @@
         <li><b>「清理已过期」</b> 是<b>真删除</b>（删远端记忆），只对已过期且过了宽限期的人生效，点前先看清楚。</li>
       </ul>
     </div>
-  </details>
+    </div>
+  </div>
     <div class="card" id="svcMemCard">
       <div class="svc-top">
         <h2>记忆空间服务 <span class="pill ok">热生效</span></h2>
@@ -2359,12 +2461,22 @@
 
 <div class="tab" data-tab="adminKb" id="adminKbTab" hidden>
   <div class="admin-head">
-    <h1>知识库管理</h1>
+    <div class="ah-row">
+      <h1>知识库管理</h1>
+      <button class="btn sm cfg-open" type="button" data-cfg="adminKb">配置教程</button>
+    </div>
     <p>本机部署的腾讯知识库（WeKnora）：后台入口、知识库 API 与问答 / 向量模型。</p>
   </div>
-  <details class="cfg-guide" open>
-    <summary><span class="cg-badge">配置教程</span>知识库怎么配<span class="cg-sum">三步：接服务 → 给它模型 → 给人开通（缺嵌入模型会传不了文档）</span></summary>
-    <div class="cfg-body">
+  <div class="cfg-modal" id="cfgModal-adminKb" hidden>
+    <div class="cfg-mask" data-cfg-close></div>
+    <div class="cfg-dialog" role="dialog" aria-modal="true" aria-label="知识库怎么配">
+      <div class="cfg-dialog-head">
+        <span class="cg-badge">配置教程</span>
+        <b class="cg-title">知识库怎么配</b>
+        <span class="cg-sum">三步：接服务 → 给它模型 → 给人开通（缺嵌入模型会传不了文档）</span>
+        <button class="cfg-x" type="button" data-cfg-close aria-label="关闭教程">×</button>
+      </div>
+      <div class="cfg-body">
       <h4>这页在配什么</h4>
       <p>知识库（WeKnora）是独立部署的一套服务。<b>它只会「用」模型，不会自带模型</b> —— 所以这里要做两段接线：先接上知识库本身，再把上游模型写给它。最后才是给人开通。</p>
 
@@ -2415,7 +2527,8 @@
         <li><b>成员登录后没有库</b> → 到成员表点「补齐 / 重建库」。</li>
       </ul>
     </div>
-  </details>
+    </div>
+  </div>
     <div class="card" id="svcKbCard">
       <div class="svc-top">
         <h2>知识库服务 <span class="pill ok">热生效</span></h2>
@@ -2620,12 +2733,22 @@
         它提供模型 → 本服务「模型通道的上游」指向它的 /v1 → 客户端才走得到模型。 -->
 <div class="tab" data-tab="adminWbm" id="adminWbmTab" hidden>
   <div class="admin-head">
-    <h1>WorkBuddy Manager</h1>
+    <div class="ah-row">
+      <h1>WorkBuddy Manager</h1>
+      <button class="btn sm cfg-open" type="button" data-cfg="adminWbm">配置教程</button>
+    </div>
     <p>模型池网关（上游账号池）：它出模型，模型通道的上游指到它的 <code>/v1</code>，客户端才有模型可用。</p>
   </div>
-  <details class="cfg-guide" open>
-    <summary><span class="cg-badge">配置教程</span>Manager 怎么配<span class="cg-sum">它是「模型的来源」；本服务只是把上游指过去</span></summary>
-    <div class="cfg-body">
+  <div class="cfg-modal" id="cfgModal-adminWbm" hidden>
+    <div class="cfg-mask" data-cfg-close></div>
+    <div class="cfg-dialog" role="dialog" aria-modal="true" aria-label="Manager 怎么配">
+      <div class="cfg-dialog-head">
+        <span class="cg-badge">配置教程</span>
+        <b class="cg-title">Manager 怎么配</b>
+        <span class="cg-sum">它是「模型的来源」；本服务只是把上游指过去</span>
+        <button class="cfg-x" type="button" data-cfg-close aria-label="关闭教程">×</button>
+      </div>
+      <div class="cfg-body">
       <h4>这页在配什么</h4>
       <p>WorkBuddy Manager 是<b>模型池网关</b>：它自己管着一批上游账号，对外提供一个统一的 <code>/v1</code>。
         本服务不生产模型，只是把「模型管理」里的上游地址<b>指向它</b>。所以顺序永远是：<b>先配 Manager → 再指过来 → 最后同步目录</b>。</p>
@@ -2670,7 +2793,8 @@
         <li><b>Manager 里一个账号都没纳管</b> → 模型池是空的，先去面板扫码 / 导入。</li>
       </ul>
     </div>
-  </details>
+    </div>
+  </div>
   <div class="card" id="svcWbmCard">
     <div class="svc-top">
       <h2>Manager 服务 <span class="pill plain" id="svcWbmState">检测中…</span></h2>
@@ -2724,29 +2848,40 @@
 
   <script> void 0; </script>
 <script>
-/* 管理端配置教程（10-24）：默认全展开 —— 用户原话「我看不懂」，第一眼就要看到步骤。
-   点一次「收起」后记住选择，8 个管理页统一收起，不再长期挡配置区。
+/* 管理端配置教程（10-24）：二级弹窗 —— 默认不占主界面，点标题行右侧「配置教程」才打开。
    ⛔ 自包含 IIFE：别的 <script> 里的 $ / api 在这里看不见（踩过「跨块不可见」的坑）。
-   ⛔ 监听 summary 的 click 而不是 details 的 toggle：后者由浏览器**异步派发**，
-      程序自己设 d.open 也会触发，会误判成用户操作写脏存储。 */
+   ⛔ 三路关闭：右上角 ×、点遮罩、Esc；打开时锁背景滚动，关闭后焦点回到触发按钮。 */
 (function () {
-  var KEY = "chc.cfgGuide";
-  var list = document.querySelectorAll("details.cfg-guide");
-  if (!list.length) return;
-  var saved = null;
-  try { saved = localStorage.getItem(KEY); } catch (e) { /* 隐私模式下会抛 */ }
-  var initial = saved !== "closed";          /* 没存过 = 展开 */
-  Array.prototype.forEach.call(list, function (d) {
-    d.open = initial;
-    var sum = d.querySelector("summary");
-    if (!sum) return;
-    sum.addEventListener("click", function () {
-      /* 浏览器先翻 open，再轮到我们读 ⇒ 放到下一个任务里 */
-      setTimeout(function () {
-        try { localStorage.setItem(KEY, d.open ? "open" : "closed"); } catch (e) { /* 忽略 */ }
-        Array.prototype.forEach.call(list, function (x) { if (x !== d) x.open = d.open; });
-      }, 0);
-    });
+  function open(id, trigger) {
+    var m = document.getElementById("cfgModal-" + id);
+    if (!m || !m.hidden) return;
+    m.__back = trigger || document.activeElement;
+    m.hidden = false;
+    document.documentElement.classList.add("cfg-lock");
+    var x = m.querySelector(".cfg-x");
+    if (x) x.focus();
+  }
+  function close(m) {
+    if (!m || m.hidden) return;
+    m.hidden = true;
+    document.documentElement.classList.remove("cfg-lock");
+    var back = m.__back;
+    if (back && back.focus) { try { back.focus(); } catch (e) { /* 元素可能已不在文档里 */ } }
+  }
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var opener = t.closest(".cfg-open");
+    if (opener) { open(opener.getAttribute("data-cfg"), opener); return; }
+    var closer = t.closest("[data-cfg-close]");
+    if (closer) close(closer.closest(".cfg-modal"));
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape" && e.key !== "Esc") return;
+    var list = document.querySelectorAll(".cfg-modal:not([hidden])");
+    if (!list.length) return;
+    e.preventDefault();
+    Array.prototype.forEach.call(list, close);
   });
 })();
 </script>
