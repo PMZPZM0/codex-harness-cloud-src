@@ -15,12 +15,11 @@ import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
 import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies } from "../boss-groups/runner";
-import { recordReview, resolveEscalation } from "../boss-groups/state";
+import { normalizeEscalateChoice, recordReview, resolveEscalation } from "../boss-groups/state";
 import { backfillFromGroups, clearBossMemory, listBossSessions, registerBossSession, renameBossSession, unregisterBossSession } from "../boss-groups/session-registry";
-import type { EscalateChoice } from "../boss-groups/types";
 import { broadcastCodexEvent } from "./window-bus";
 
-/** 指挥中枢的角色提示（写进 `<userData>/boss-home/AGENTS.md`，引擎自动注入）。
+/**指挥中枢的角色提示（写进 `<userData>/boss-home/AGENTS.md`，引擎自动注入）。
  *  ⛔ 改内容必须同时抬 BOSS_HOME_AGENTS_VERSION —— 否则老用户的旧文件不会更新（只写一次）。 */
 const BOSS_HOME_AGENTS_VERSION = "v3";
 const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v3"} -->
@@ -86,7 +85,7 @@ export const bossGroupsFeature = defineFeature<null>({
       try { needWrite = !fs.readFileSync(bossAgentsMd, "utf8").includes(stamp); } catch { needWrite = true; }
       if (needWrite) fs.writeFileSync(bossAgentsMd, BOSS_HOME_AGENTS_MD, "utf8");
     } catch { /* 建不了就让引擎报错，别吞 */ }
-    /*指挥中枢身份登记（10-25 用户令：「记忆板块里面加一个指挥中枢记忆板块，跟普通会话完全拆开」）。
+    /*指挥中枢身份登记（10-25 用户令：「记忆板块里面加一个中枢会话记忆板块，跟普通会话完全拆开」）。
        ⛔ **主进程是唯一真相源**：记忆层的读写以 workspace 为键，捕获写入在主进程跑 ——
           渲染层 localStorage 主进程读不到 ⇒ 名单必须落主进程。
        action：list / add / remove / rename */
@@ -140,7 +139,7 @@ export const bossGroupsFeature = defineFeature<null>({
         }
         return latest;
       };
-      /* ⛔ list 的返回形状是**数组**（多处消费方按数组用）⇒ 指挥中枢名单走独立的
+      /* ⛔ list 的返回形状是**数组**（多处消费方按数组用）⇒指挥中枢名单走独立的
          `boss-groups:session`（action=list）通道，⛔ 不在这里夹带。 */
       return Object.values(state.groups).map((group) => ({
         id: group.id,
@@ -222,9 +221,11 @@ export const bossGroupsFeature = defineFeature<null>({
 
     ipcHost.handle("boss-groups:escalate", async (_event, input: any) => {
       const state = await bossStore.load();
-      const choice = String(input?.choice ?? "") as EscalateChoice;
-      if (!["retry-with-other-model", "relax-criteria", "user-takeover"].includes(choice)) {
-        throw new Error(`choice 只能是 retry-with-other-model / relax-criteria / user-takeover（收到「${choice}」）`);
+      /* ⛔ 兼容旧值：账本里可能存着改名前的 `retry-with-other-model`（历史 escalation 快照），
+         用户从旧界面点过来时不能因为改名就报错。 */
+      const choice = normalizeEscalateChoice(input?.choice);
+      if (!choice) {
+        throw new Error(`choice 只能是 retry / relax-criteria / user-takeover（收到「${String(input?.choice ?? "")}」）`);
       }
       const task = resolveEscalation(state, String(input?.taskId ?? ""), choice, String(input?.note ?? ""));
       bossStore.save();
