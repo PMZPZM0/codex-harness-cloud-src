@@ -351,8 +351,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   /* 10-25：项目行的「+」= 在该项目下开新会话。先切 workspace（三处同步：state/ref/localStorage，
      与 chooseWorkspace 同口径），再 startNewThread —— 新会话首条消息的 cwd 取 workspace。 */
   /* BOSS 会话按钮（行为契约；历史与实测依据见 scripts/guards/22-boss-groups.mjs）。 */
+  /* BOSS 会话按钮行为契约（与主仓一致，依据收在 scripts/guards/22-boss-groups.mjs）：
+     ① 先落进 BOSS 欢迎界面（pending + 全新空会话）⇒ 再由欢迎界面消费「自动弹出」标记弹地址对话框；
+     ② ⛔⛔ 在已有 BOSS 会话里再点**也必须能建**（10-25 用户实测：「这种情况我点不了上面 BOSS 会话
+        选项，切不到 BOSS 会话界面」）—— 原来这里第一行 `if (bossOn) return;`，等于当前是 BOSS 会话
+        就点不动（死按钮）。行为对齐「新建任务」：每点一次 = 一条全新 BOSS 会话；
+     ③ 唯一不重复建：已经停在待发消息的 BOSS 欢迎界面（pending 且无 thread id）⇒ 不重置、不重复弹窗。 */
   const openBossSession = () => {
-    if (bossOn) return;
     if (bossThreads.pending && !currentThreadId) return;
     setBossPending(true);
     bossHomePending.current = true;
@@ -572,7 +577,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
                 <button
                   className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossOn ? " boss-open" : ""}`}
-                  title={bossOn ? "当前就是 BOSS 会话（群编排的普通会话）" : "BOSS 会话：打开群编排会话（拉群派活、盯进度、审不过打回重做）"}
+                  title={`新建 BOSS 会话（${bossShortcutLabel()}）：选项目地址后进 BOSS 欢迎界面；可建多个，互不干扰`}
                   aria-pressed={bossOn}
                   onClick={() => openBossSession()}
                 >
