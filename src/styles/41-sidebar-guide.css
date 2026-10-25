@@ -470,19 +470,18 @@
   align-items: center;
   gap: 7px;
   width: 100%;
-  height: 26px;
-  margin-top: 6px;
-  padding: 0 10px;
+  height: 34px;
+  margin-top: -13px;
+  padding: 0 10px 0 5px;
   border: 0;
-  border-top: 1px solid var(--line);
   border-radius: 0;
   /* ⛔ 暗色下原生 button 会按浅色 UA 画成 #efefef 浅底（全站无 color-scheme）⇒ background+appearance 双保险 */
   appearance: none;
   background: transparent;
-  color: var(--muted);
-  font-size: 11.5px;
+  color: var(--text);
+  font-size: 13px;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   text-align: left;
   cursor: pointer;
   transition: color 0.15s ease;
@@ -510,7 +509,10 @@
 }
 /* 7 行并排时行高收一点，给列表留空间（只在底部组生效，顶部快捷胶囊不受影响） */
 .sidebar-nav-bottom .sidebar-cap-row {
-  height: 30px;
+  height: 34px;
+  gap: 8px;
+  padding: 0 10px 0 15px;
+  font-size: 13px;
 }
 
 /* ── 10-25 用户令重排：三行快捷按钮统一**简洁展示**（靠左、无底色，仅 hover 提亮）；
