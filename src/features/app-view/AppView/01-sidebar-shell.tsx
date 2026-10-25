@@ -200,7 +200,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     openFeedbackPage,
     pinnedThreads,
     popoutThreadId,
-    projectFilter,
     projectGroups,
     projectMenu,
     refreshThreads,
@@ -219,7 +218,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     setPaletteOpen,
     setPaletteQuery,
     setPaletteTab,
-    setProjectFilter,
     setProjectMenu,
     setRemoteDevices,
     setRemoteQr,
@@ -527,7 +525,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               />
             )}
             {/* ⛔ 只给前缀文件夹染色：这个 chip 里还有个"关闭 ×"，它是**动作**不是分类。 */}
-            {projectFilter && <button className="filter-chip" title="清除项目筛选" onClick={() => setProjectFilter(null)}><FolderOpen size={12} className="ic-amber" />{basename(projectFilter)}<X size={12} /></button>}
             <div className="view-tabs" role="tablist" aria-label="视图">
               {/* ⛔ 「分组」（按时间）视图已于 09-25 按用户要求删除（原话：「分组可以删了」）。
                   历史偏好值在 part03 里统一回落到「项目」。 */}
@@ -570,7 +567,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                           </button>
                           <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => { event.stopPropagation(); setProjectMenu(projectMenu === cwd ? null : cwd); }}><MoreHorizontal size={14} /></button>
                           {projectMenu === cwd && <div className="project-menu">
-                            <button onClick={() => { setProjectMenu(null); setProjectFilter(cwd); setMobileNav(false); }}><FolderOpen size={14} />只看该项目</button>
                             <button className="danger" onClick={() => { setProjectMenu(null); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />移除（删除全部对话）</button>
                           </div>}
                         </div>
