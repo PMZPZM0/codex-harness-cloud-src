@@ -433,6 +433,18 @@ interface Window {
     respond(id: string | number, result: unknown): Promise<void>;
     getUsername(): Promise<string>;
     getUserData(): Promise<string>;
+    /* 应用锁状态（不含密码/哈希） */
+    appLockStatus(): Promise<{ enabled: boolean; attempts: number; remaining: number; resetRequired: boolean; kind?: "random" | "custom"; createdAt?: number }>;
+    /* 生成一次性密码：确认 enable 前不落盘 */
+    appLockPrepare(input: { mode?: string; password?: string }): Promise<{ ok: boolean; setupId?: string; password?: string; kind?: "random" | "custom"; error?: string }>;
+    /* 用户确认已备份后提交开启 */
+    appLockEnable(setupId: string): Promise<{ ok: boolean; error?: string }>;
+    /* 取消未确认的开启流程 */
+    appLockCancel(setupId: string): Promise<{ ok: boolean }>;
+    /* 锁屏验证；第 10 次错误返回 reset=true */
+    appLockVerify(password: string): Promise<{ ok: boolean; remaining: number; reset?: boolean; error?: string }>;
+    /* 关闭应用锁需当前密码；错误同样计数 */
+    appLockDisable(password: string): Promise<{ ok: boolean; remaining: number; reset?: boolean; error?: string }>;
     setAwake(on: boolean): Promise<boolean>;
     showNotification(title: string, body: string): Promise<boolean>;
     toolStatus(): Promise<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>;
@@ -714,7 +726,7 @@ interface Window {
     engineCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean }>;
     enginePerformUpdate(): Promise<{ ok: boolean; version: string; message: string }>;
     relaunchApp(): Promise<void>;
-    /* 10-25：在软件所在盘根新建 BOSS 会话专属项目目录 */
+    /* 10-25：在软件所在盘根新建指挥中枢专属项目目录 */
     createBossProjectDir(): Promise<string>;
     readBuiltinPlugins(): Promise<{ image?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string }; vision?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string } }>;
     saveBuiltinPlugins(cfg: unknown): Promise<unknown>;
@@ -1186,9 +1198,9 @@ interface Window {
     bossGroupSay(input: any): Promise<any>;
     /* 创世 boss：可拉名单（专家/专家团 + 本机 CLI agent，带探测结果） */
     bossGroupPool(): Promise<any>;
-    /* BOSS 会话身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
+    /* 指挥中枢身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
     bossGroupSession(input: any): Promise<any>;
-    /* 清空某个 BOSS 会话的专属记忆目录（⛔ 只清记忆，不删会话） */
+    /* 清空某个指挥中枢的专属记忆目录（⛔ 只清记忆，不删会话） */
     clearBossMemory(input: any): Promise<any>;
 /* ═══ gen:end ═══ */
 

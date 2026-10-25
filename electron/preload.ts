@@ -85,6 +85,18 @@ contextBridge.exposeInMainWorld("codex", {
   respond: (id: string | number, result: unknown) => __ipc("codex:respond", 2, [id, result]),
   getUsername: () => __ipc("user:name", 0, []),
   getUserData: () => __ipc("app:userData", 0, []),
+  /* 应用锁状态（不含密码/哈希） */
+  appLockStatus: () => __ipc("app-lock:status", 0, []),
+  /* 生成一次性密码：确认 enable 前不落盘 */
+  appLockPrepare: (input: { mode?: string; password?: string }) => __ipc("app-lock:prepare", 1, [input]),
+  /* 用户确认已备份后提交开启 */
+  appLockEnable: (setupId: string) => __ipc("app-lock:enable", 1, [setupId]),
+  /* 取消未确认的开启流程 */
+  appLockCancel: (setupId: string) => __ipc("app-lock:cancel", 1, [setupId]),
+  /* 锁屏验证；第 10 次错误返回 reset=true */
+  appLockVerify: (password: string) => __ipc("app-lock:verify", 1, [password]),
+  /* 关闭应用锁需当前密码；错误同样计数 */
+  appLockDisable: (password: string) => __ipc("app-lock:disable", 1, [password]),
   setAwake: (on: boolean) => __ipc("awake:set", 1, [on]),
   showNotification: (title: string, body: string) => __ipc("notify:show", 2, [title, body]),
   toolStatus: () => __ipc("tools:status", 0, []),
@@ -838,7 +850,7 @@ contextBridge.exposeInMainWorld("codex", {
   bossGroupSay: (input: any) => __ipc("boss-groups:say", 1, [input]),
   /* 创世 boss：可拉名单（专家/专家团 + 本机 CLI agent，带探测结果） */
   bossGroupPool: () => __ipc("boss-groups:pool", 0, []),
-  /*指挥中枢身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
+  /* 指挥中枢身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
   bossGroupSession: (input: any) => __ipc("boss-groups:session", 1, [input]),
   /* 清空某个指挥中枢的专属记忆目录（⛔ 只清记忆，不删会话） */
   clearBossMemory: (input: any) => __ipc("boss-groups:memory", 1, [input]),

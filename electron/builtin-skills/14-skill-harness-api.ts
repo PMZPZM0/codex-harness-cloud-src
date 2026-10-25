@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（97 个能力域 / 533 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（98 个能力域 / 540 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -277,9 +277,9 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 **限时福利**（10-14）：云端账号服务内置的模型供应商（模型目录由 WorkBuddy Manager 同步，逐模型带积分倍率）。这些通道是**宿主管理面**（拉目录 / 取代理令牌 / 同步成本机供应商行），不是模型工具 —— 模型侧永远不调它们；要用它：云端管理面板勾选模型（勾选 = 本机模型下拉框可见）→ 在下拉框里选中的即生效，按倍率扣积分。⛔ 上游真实地址与网关密钥只在服务端，客户端只拿到同源代理路径；代理令牌（wap_ 前缀）明文仅在签发那一次出现。
 通道：limited-benefit:catalog, limited-benefit:token, limited-benefit:status, limited-benefit:apply
 
-### dialog（6 通道）
+### dialog（7 通道）
 文件/目录选择对话框（含跨窗口）
-通道：dialog:directory, dialog:directory-at, dialog:images, dialog:files, dialog:ssh-key, dialog:save-as
+通道：dialog:directory, dialog:directory-at, dialog:images, dialog:files, dialog:ssh-key, dialog:save-as, dialog:project-dir
 
 ### dataDir（2 通道）
 数据目录自定义（userData 重定向 + 启动期自动迁移；改后重启生效）
@@ -316,6 +316,10 @@ MCP 服务器管理（配置/状态）
 ### personalization（6 通道）
 个性化（昵称/自定义指令，落 personalization.json 并写入引擎 AGENTS.md）
 通道：personalization:mark-greeted, personalization:read, personalization:save, personalization:save-identity, personalization:setNickname, personalization:verify
+
+### app-lock（6 通道）
+应用密码锁（设置 → 应用锁，默认关闭）：开启时生成随机或自定义解锁密码，明文只展示一次、磁盘只存 scrypt 盐哈希；启动/重新显示先锁屏。连续 10 次错误会清空应用数据并重置。⛔ 界面门禁，不是磁盘加密；模型侧不调用它
+通道：app-lock:status, app-lock:prepare, app-lock:enable, app-lock:cancel, app-lock:verify, app-lock:disable
 
 ### appSettings（2 通道）
 应用级开关（联网搜索/桌面自动化/下载源等，写 app-settings.json）

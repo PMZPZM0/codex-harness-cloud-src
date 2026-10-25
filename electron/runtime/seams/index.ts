@@ -46,6 +46,8 @@ export type AppHost = {
   getAppPath: () => string;
   isPackaged: () => boolean;
   quit: () => void;
+  /** 强制退出（跳过关窗确认）；应用锁重置时用。 */
+  exit: (code?: number) => void;
   relaunch: (args?: string) => void;
   /**
    * 释放单实例锁（10-14：`app:relaunch` 的前置动作，否则新实例会自杀）。
@@ -124,6 +126,7 @@ const hostCaps: HostCaps = {
     getAppPath: () => app.getAppPath(),
     isPackaged: () => app.isPackaged,
     quit: () => app.quit(),
+    exit: (code = 0) => app.exit(code),
     // ⚠️ `app.isPackaged` 是**属性**不是方法（写 `isPackaged()` 会 TS2349）；
     //    `app.relaunch` 收的是 `{ args?: string[] }` 对象，不是裸字符串数组。
     relaunch: (args) => app.relaunch(typeof args === "string" ? { args: [args] } : undefined),

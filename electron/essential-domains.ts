@@ -24,7 +24,7 @@ export const ESSENTIAL_DOMAINS: readonly string[] = [
   // 身份 / 能力
   "user", "capabilities",
   // 宿主基础能力（对话框、可信根校验、诊断与存储）
-  "app", "dialog", "fs",
+  "app", "app-lock", "dialog", "fs",
   // 引擎与会话主链路
   "engine", "codex", "thread-runtime", "threads",
   // 其他功能的前置
