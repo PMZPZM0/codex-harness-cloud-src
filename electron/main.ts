@@ -9,7 +9,8 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readF
 import path from "node:path";
 import http from "node:http";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
-import { ensureTrustedProject, resolveStartupUserData } from "./data-dir";
+import { defaultUserDataDir, ensureTrustedProject, resolveStartupUserData } from "./data-dir";
+import { consumeResetRequest } from "./app-lock";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { BotPairingService } from "./bot-pairing";
 import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
@@ -170,7 +171,9 @@ protocol.registerSchemesAsPrivileged([
 
 app.setName("Codex Harness Desktop");
 
-app.setPath("userData", resolveStartupUserData());
+let startupUserData = resolveStartupUserData();
+if (consumeResetRequest(defaultUserDataDir(), startupUserData)) startupUserData = defaultUserDataDir();
+app.setPath("userData", startupUserData);
 
 /* ⛔ 域挂载点 = **此处**（userData 已定之后），不是 composition.gen 被 import 时 ——
    10-07 事故：模块体先于句体执行 ⇒ 挂载时的停用域判定用默认目录的 app-settings.json

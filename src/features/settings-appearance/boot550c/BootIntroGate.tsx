@@ -24,9 +24,15 @@ export function BootIntroGate({ stage, done }: { stage: BootStage; done: boolean
     /* ⛔ 只认"有没有这个参数"，不认它是不是空：`?popout=` 也是弹窗（会话 id 缺省时照样是分出去的窗口）。 */
     const popoutWindow =
       typeof location !== "undefined" && new URLSearchParams(location.search).has("popout");
+    let skipForAppLock = false;
+    try {
+      const session = typeof sessionStorage === "undefined" ? null : sessionStorage;
+      skipForAppLock = session?.getItem("app-lock-skip-boot") === "1";
+      if (skipForAppLock) session?.removeItem("app-lock-skip-boot");
+    } catch { /* 忽略 */ }
     const mode = readBootIntroMode(storage);
     return {
-      play: shouldPlayBootIntro(mode, { reducedMotion, petWindow, popoutWindow }),
+      play: !skipForAppLock && shouldPlayBootIntro(mode, { reducedMotion, petWindow, popoutWindow }),
       mode: bootIntroPlayMode(mode),
       scheme: readBootIntroScheme(storage),
     };

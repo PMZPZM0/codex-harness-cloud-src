@@ -51,6 +51,7 @@ import { browserFeature as feat_browser } from "./features/browser-ipc";
 import { gitFeature as feat_git } from "./features/git-ipc";
 import { scratchFeature as feat_scratch } from "./features/scratch-ipc";
 import { pastedTextFeature as feat_pasted_text } from "./features/pasted-text-ipc";
+import { appLockFeature as feat_app_lock } from "./features/app-lock-ipc";
 import { appSettingsFeature as feat_appSettings } from "./features/app-settings-ipc";
 import { personalizationFeature as feat_personalization } from "./features/personalization-ipc";
 import { teamRunsFeature as feat_team_runs } from "./features/team-runs-ipc";
@@ -159,6 +160,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "git", plugin: feat_git as Plugin<unknown>, config: null },
   { id: "scratch", plugin: feat_scratch as Plugin<unknown>, config: null },
   { id: "pasted-text", plugin: feat_pasted_text as Plugin<unknown>, config: null },
+  { id: "app-lock", plugin: feat_app_lock as Plugin<unknown>, config: null },
   { id: "appSettings", plugin: feat_appSettings as Plugin<unknown>, config: null },
   { id: "personalization", plugin: feat_personalization as Plugin<unknown>, config: null },
   { id: "team-runs", plugin: feat_team_runs as Plugin<unknown>, config: null },
