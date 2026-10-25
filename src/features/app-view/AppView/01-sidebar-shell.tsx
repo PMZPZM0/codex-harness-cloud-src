@@ -154,6 +154,7 @@ import { basename } from "../../../lib/basename";
 import { copyTextToClipboard } from "../../../lib/clipboard";
 import { runVisualSwitch, themeLabelOf } from "../../../lib/visual-switch";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
+import { UpdateProgressBar } from "../../../components/UpdateProgressBar";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../../runtime/registry";
@@ -770,6 +771,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     <button className="account-menu-item" onClick={() => void runUpdateCheck()} disabled={updateChecking}>
                       <RefreshCw size={15} className={updateChecking ? "spin" : ""} />
                       <span>{updateChecking ? "检查中…" : "检查更新"}</span>
+                      <UpdateProgressBar active={updateChecking} indeterminate />
                     </button>
                     {updateError ? <div className="account-menu-error">{updateError}</div> : null}
                     {/* ═══ 更新面板（10-11 状态机驱动）═══
@@ -819,6 +821,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                           <button className="account-menu-item primary" onClick={() => void runUpdateDownload()} disabled={updateDownloading}>
                             <Download size={15} className={updateDownloading ? "pulse" : ""} />
                             <span>立即更新</span>
+                            <UpdateProgressBar active={updateDownloading} progress={updateProgress} indeterminate={updateProgress <= 0} />
                           </button>
                           <button className="account-menu-item" onClick={() => void runUpdateSkip()}><CircleSlash size={15} /><span>跳过此版本</span></button>
                         </>;
