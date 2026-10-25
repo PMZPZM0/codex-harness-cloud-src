@@ -86,9 +86,10 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
 
   const popStyle: CSSProperties = (() => {
     const r = btnRef.current?.getBoundingClientRect();
+    const width = 300;
     return r
-      ? { top: r.bottom + 8, right: Math.max(12, window.innerWidth - r.right) }
-      : { top: 60, right: 12 };
+      ? { top: r.bottom + 8, left: Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8)), right: "auto" }
+      : { top: 60, left: Math.max(8, (window.innerWidth - width) / 2), right: "auto" };
   })();
 
   return (
@@ -165,7 +166,7 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
               )}
             </div>
             {removed.length ? <div className="boss-panel-removed">已移出：{removed.map((m) => m.name).join("、")}</div> : null}
-            <div className="boss-members-pop-hint">拉专家 / 本机 CLI agent（zcode、豆包…）走群里对 中枢说「拉 XX 进群」，或用 group_add_member。</div>
+            <div className="boss-members-pop-hint">拉专家 / 本机 CLI agent（zcode、豆包…）走群里对中枢说「拉 XX 进群」，或用 group_add_member。</div>
           </div>,
           document.body,
         )
