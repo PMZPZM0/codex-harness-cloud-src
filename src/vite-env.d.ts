@@ -1184,6 +1184,10 @@ interface Window {
     bossGroupSay(input: any): Promise<any>;
     /* 创世 boss：可拉名单（专家/专家团 + 本机 CLI agent，带探测结果） */
     bossGroupPool(): Promise<any>;
+    /* BOSS 会话身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
+    bossGroupSession(input: any): Promise<any>;
+    /* 清空某个 BOSS 会话的专属记忆目录（⛔ 只清记忆，不删会话） */
+    clearBossMemory(input: any): Promise<any>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

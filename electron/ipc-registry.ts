@@ -30,8 +30,8 @@ export interface IpcDomainEntry {
 }
 
 export const IPC_DOMAINS: IpcDomainEntry[] = [
-  { prefix: "boss-groups", count: 12, status: "in-features", file: "features/boss-groups-ipc.ts",
-    channels: ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:member", "boss-groups:pin", "boss-groups:say", "boss-groups:pool", "boss-groups:rebind"],
+  { prefix: "boss-groups", count: 14, status: "in-features", file: "features/boss-groups-ipc.ts",
+    channels: ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:member", "boss-groups:pin", "boss-groups:say", "boss-groups:pool", "boss-groups:rebind", "boss-groups:session", "boss-groups:memory"],
     note: "10-24 新增：创世 boss 群编排（建群/派活/审查/打回/预算）。规则在 boss-groups/state.ts 纯函数，执行在 runner.ts",
   },
   { prefix: "pet", count: 20, status: "in-features", file: "features/pet-ipc.ts",
