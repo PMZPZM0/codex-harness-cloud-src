@@ -357,9 +357,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
      ③ 唯一不重复建：已经停在待发消息的 BOSS 欢迎界面（pending 且无 thread id）⇒ 不重置、不重复弹窗。 */
   const openBossSession = () => {
     if (bossThreads.pending && !currentThreadId) return;
-    setBossPending(true);
+    /* ⛔⛔ 顺序不能反：`startNewThread()` 是所有「新建普通会话」的统一漏斗，它在开头会
+       `setBossPending(false)`（10-25 用户实测：项目行的 ＋ 不清这个标记 ⇒ 停在 BOSS 欢迎界面时
+       点项目新建，标签页换了、界面却还卡在 BOSS 引导卡）。所以 BOSS 入口必须**在它之后**置 true，
+       否则刚置上就被它清掉、按钮点了进不去欢迎界面。 */
     bossHomePending.current = true;
     startNewThread();
+    setBossPending(true);
     autoOpenBossDirDialog();
   };
   useEffect(() => {
@@ -570,7 +574,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             <div className="sidebar-tabs" role="navigation" aria-label="导航">
               {/* 10-24 用户对照截图：改成整行「新会话」主按钮 + 下面一行「搜索任务」，不再并排胶囊。 */}
               <div className="sidebar-quick">
-                <button className="sidebar-tab sidebar-quick-btn" title={`新建任务（${hk("Ctrl+N")}）`} onClick={() => { setBossPending(false); startNewThread(); }}>
+                <button className="sidebar-tab sidebar-quick-btn" title={`新建任务（${hk("Ctrl+N")}）`} onClick={() => startNewThread()}>
                   <MessageCirclePlus size={16} strokeWidth={2} className="ic-blue" /><span>新建任务</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
                 </button>
                 <button
