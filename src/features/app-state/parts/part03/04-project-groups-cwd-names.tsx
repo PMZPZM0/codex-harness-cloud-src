@@ -129,6 +129,31 @@ bag.toggleProjectExpanded = toggleProjectExpanded as typeof bag.toggleProjectExp
   const [cwdOverrides, setCwdOverrides] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem("thread-cwd-override-v1") || "{}") as Record<string, string>; } catch { return {}; }
   });
+
+  /* 10-25 用户令：「新建完项目，肯定要在项目里面显示出来啊，就是没有会话也要展示出来」：
+     本地维护「已知项目登记表」（localStorage known-projects-v1，新建项目/切 workspace 时登记），
+     projectGroups 把登记表里**还没有会话**的项目以空分组并入 —— 空项目显示占位，不再是"建完就消失"。 */
+  const readKnownProjects = (): string[] => {
+    try { return JSON.parse(localStorage.getItem("known-projects-v1") || "[]").filter((v: unknown) => typeof v === "string" && v); } catch { return []; }
+  };
+  const registerKnownProject = (cwd: string) => {
+    if (!cwd) return;
+    try {
+      const next = [...new Set([cwd, ...readKnownProjects()])];
+      localStorage.setItem("known-projects-v1", JSON.stringify(next.slice(0, 60)));
+    } catch { /* 隐私模式：登记表只影响空项目展示，失败可接受 */ }
+  };
+  bag.registerKnownProject = registerKnownProject as typeof bag.registerKnownProject;
+  /* 10-25 用户令：项目行菜单加「删除项目」—— 从侧栏摘除项目（登记表同步摘除），**会话保留**
+     （归到未分组），与「移除（删除全部对话）」形成两档。 */
+  const unregisterKnownProject = (cwd: string) => {
+    try {
+      localStorage.setItem("known-projects-v1", JSON.stringify(readKnownProjects().filter((v) => v !== cwd)));
+    } catch { /* 隐私模式：摘除失败只影响空项目展示 */ }
+  };
+  bag.unregisterKnownProject = unregisterKnownProject as typeof bag.unregisterKnownProject;
+  useEffect(() => { if (bag.workspace) registerKnownProject(bag.workspace); }, [bag.workspace]);
+
 bag.cwdOverrides = cwdOverrides as typeof bag.cwdOverrides; bag.setCwdOverrides = setCwdOverrides as typeof bag.setCwdOverrides;
 
   const cwdOverridesRef = useRef<Record<string, string>>(bag.cwdOverrides);
@@ -226,14 +251,20 @@ bag.pinnedThreads = pinnedThreads as typeof bag.pinnedThreads; bag.setPinnedThre
   }
 bag.togglePinThread = togglePinThread as typeof bag.togglePinThread;
 
-  const projectGroups = useMemo(() => {
+  /* 10-25 用户令：「新建完项目，肯定要在项目里面显示出来啊，就是没有会话也要展示出来」：
+     本地维护「已知项目登记表」（localStorage known-projects-v1，新建项目/切 workspace 时登记），
+     projectGroups 把登记表里**还没有会话**的项目以空分组并入 —— 空项目显示占位，不再是"建完就消失"。 */
+
+  const projectGroups = useMemo<[string, Thread[]][]>(() => {
     const map = new Map<string, Thread[]>();
     // 分组键 = **有效 cwd**（被调度会话跟随发起调度的会话，见上面的 dispatchCwdMap）
     for (const entry of bag.listThreads) {
       const cwd = dispatchCwdMap[entry.id] ?? entry.cwd;
       map.set(cwd, [...(map.get(cwd) ?? []), entry]);
     }
-    return [...map.entries()].sort((a, b) => Math.max(...b[1].map((entry) => entry.updatedAt)) - Math.max(...a[1].map((entry) => entry.updatedAt)));
+    // 登记表里没有会话的项目 ⇒ 空分组并入（新建即显示，不靠首条会话才出现）
+    for (const cwd of readKnownProjects()) if (!map.has(cwd)) map.set(cwd, []);
+    return [...map.entries()].sort((a, b) => Math.max(0, ...b[1].map((entry) => entry.updatedAt)) - Math.max(0, ...a[1].map((entry) => entry.updatedAt)));
   }, [bag.listThreads, dispatchCwdMap]);
 bag.projectGroups = projectGroups as typeof bag.projectGroups;
 
@@ -335,5 +366,5 @@ bag.teamMemberThreadIds = teamMemberThreadIds as typeof bag.teamMemberThreadIds;
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
-  return { currentModelId, usingCustomModel, providerConfig, listThreads, dispatchCwdMap, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, sourcedThreads, sourcedDispatch, sourcedChildrenOf, sourcedChildIds, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
+  return { currentModelId, usingCustomModel, providerConfig, listThreads, dispatchCwdMap, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, registerKnownProject, unregisterKnownProject, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, sourcedThreads, sourcedDispatch, sourcedChildrenOf, sourcedChildIds, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
 }

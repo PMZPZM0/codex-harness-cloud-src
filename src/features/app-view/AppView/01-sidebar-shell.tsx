@@ -159,6 +159,7 @@ import { Slot } from "../../../runtime/registry";
 import { NewbieGuide } from "../../newbie-guide";
 import { SidebarGuideModal, type SidebarGuideKey, type SidebarGuideTarget } from "./SidebarGuideModal";
 import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal";
+import { NewProjectDialog } from "./NewProjectDialog";
 import { UpdateReadyToast } from "./UpdateReadyToast";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
@@ -207,6 +208,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     }
   }, [currentThreadId]);
   const {
+    registerKnownProject,
+    unregisterKnownProject,
     setWorkspace,
     workspaceRef,
     chooseWorkspace,
@@ -338,6 +341,17 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     if (bossOn) return;
     if (bossThreads.pending && !currentThreadId) return;
     setBossDirDialog(true);
+  };
+
+  /* 10-25：新建项目弹窗（ZCode 式三选一）。选完目录后与 chooseWorkspace 同款落地：
+     workspace 三处同步（state/ref/localStorage）—— 不只改 state，侧栏项目分组才认。 */
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const applyNewProject = (dir: string) => {
+    setNewProjectOpen(false);
+    registerKnownProject(dir);
+    setWorkspace(dir);
+    workspaceRef.current = dir;
+    try { localStorage.setItem("workspace", dir); } catch { /* 隐私模式 */ }
   };
 
   const bagSetWorkspaceForProject = (cwd: string) => {
@@ -530,6 +544,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             {/* 分类视图入口已撤（10-25）：旧偏好 "source" 由 useEffect 一次性回落 projects（见上方）。 */}
             {functionMenu.location === "top" && renderOptionsGroup("top")}
             {guideKey && <SidebarGuideModal guideKey={guideKey} onNavigate={navigateGuideTarget} onClose={() => setGuideKey(null)} />}
+            <NewProjectDialog open={newProjectOpen} onClose={() => setNewProjectOpen(false)} onCreate={applyNewProject} />
             {/* 直达：关弹窗 + 直接开对应设置页（⛔ 不再经「设置 → 账户与模型」多一层） */}
             {loginMgrOpen && (
               <LoginManagerModal
@@ -555,7 +570,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               <div className="view-toolbar">
                 <button className="view-toolbar-btn ic-cyan" title="搜索任务" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={14} /></button>
                 <button className="view-toolbar-btn ic-violet" title={sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={toggleAllSidebarSections} disabled={!projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
-                <button className="view-toolbar-btn ic-green" title="新建项目（选择一个目录作为项目地址）" onClick={() => void chooseWorkspace()}><FolderPlus size={14} /></button>
+                <button className="view-toolbar-btn ic-green" title="新建项目（选择 / 创建 / 输入路径）" onClick={() => setNewProjectOpen(true)}><FolderPlus size={14} /></button>
               </div>
             </div>
             {/* 10-04 渲染层插槽：侧栏顶部（在会话列表之上）。插件放这里 = 常驻可见的入口
@@ -591,7 +606,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                           <button className="project-item-new-btn" title={"在 " + basename(cwd) + " 新建任务"} onClick={(event) => { event.stopPropagation(); bagSetWorkspaceForProject(cwd); }}><CirclePlus size={13} /></button>
                           <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => { event.stopPropagation(); setProjectMenu(projectMenu === cwd ? null : cwd); }}><MoreHorizontal size={14} /></button>
                           {projectMenu === cwd && <div className="project-menu">
-                            <button className="danger" onClick={() => { setProjectMenu(null); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />移除（删除全部对话）</button>
+                            <button className="danger" onClick={() => { setProjectMenu(null); unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />删除项目（含全部会话）</button>
                           </div>}
                         </div>
                         {expanded && <div className="project-item-body">{items.length ? renderDispatchedList(
