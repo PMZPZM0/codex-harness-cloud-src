@@ -486,17 +486,19 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     if (home && (app.threads ?? []).some((t: any) => t.id === home)) { void app.openThread(home); return; }
                     /* 10-25 用户令：BOSS 会话有**独立项目目录**，进去要选（不默认套用当前会话的目录）。
                        选过一次就记住（boss-workspace），之后直接用它。 */
-                    let dir = "";
-                    try { dir = localStorage.getItem("boss-workspace") ?? ""; } catch { /* 隐私模式 */ }
-                    if (!dir) {
+                    let projectDir = "";
+                    try { projectDir = localStorage.getItem("boss-workspace") ?? ""; } catch { /* 隐私模式 */ }
+                    if (!projectDir) {
                       const picked = await window.codex.chooseDirectory();
                       if (!picked) return;                                  // 用户取消 ⇒ 什么都不做
-                      dir = String(picked);
-                      try { localStorage.setItem("boss-workspace", dir); } catch { /* ignore */ }
+                      projectDir = String(picked);
+                      try { localStorage.setItem("boss-workspace", projectDir); } catch { /* ignore */ }
                     }
-                    app.setWorkspace(dir);
-                    app.workspaceRef.current = dir;                         // send 读 ref，必须同步
-                    try { localStorage.setItem("workspace", dir); } catch { /* ignore */ }
+                    /* BOSS 会话本身跑在独立目录；「选的那个」是群干活的项目。 */
+                    const sessionDir = bossThreads.homeDir || projectDir;
+                    app.setWorkspace(sessionDir);
+                    app.workspaceRef.current = sessionDir;
+                    /* ⛔ 不写全局 localStorage("workspace")：普通会话的项目不能被 BOSS 带走。 */
                     bossHomePending.current = true;                         // 全新：新建并记成 home
                     setBossPending(true);                                   // 空态显示 BOSS 引导卡
                     startNewThread();

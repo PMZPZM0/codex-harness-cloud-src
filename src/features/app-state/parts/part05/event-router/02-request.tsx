@@ -8,6 +8,8 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import type { Bag } from "../../bag-types";
 import { createToolCallDedupe } from "../../../../../lib/tool-call-dedupe.mjs";
 import { readStoredCodexAvatar, setCodexIdentity } from "../../../../../lib/codex-identity.mjs";
+import { BUBU_PACK, BUBU_PERSONA, USER_PERSONAS, userPersonaFields } from "../../../../../lib/bubu-pack.mjs";
+import { avatarAsset } from "../../../../../lib/avatar-presets";
 /* 前端开发（10-05，两轮改名：界面草图 → 手机前端UI → 前端开发）：Codex 读写画布走**对方域的 barrel**（域↔域的唯一接口面）。
    会话单例在 ui-sketch 那边持有（iframe 由弹窗 attach），这里只发请求。 */
 import { applySketchDoc, requestSketchDoc, summarizeDoc, validateSketchDoc, waitSketchReady } from "../../../../ui-sketch";
@@ -142,6 +144,42 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 } catch (error: any) {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `保存失败：${error.message}` }], success: false });
                 }
+              } else if (event.params?.tool === "persona_apply") {
+                /* ⛔ 人格切换通道（10-24 用户立项）：Codex 改自己（一二布布）/ 改用户（行业精英库）。
+                   与 identity_update 同一套落点（personalization:save-identity → AGENTS.md），
+                   ⛔ 本会话已注入的旧人格不会热替换，新会话才完整生效 —— 回执里必须写明。 */
+                try {
+                  const target = String(args.target ?? "");
+                  const personaId = String(args.personaId ?? "").trim();
+                  if (target === "self") {
+                    if (personaId !== "yierbubu") {
+                      await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "self 目前只内置 \"yierbubu\"（一二布布）；其它人格请在「用户中心」安装人格包。" }], success: false });
+                      return;
+                    }
+                    await window.codex.saveIdentity({ persona: BUBU_PERSONA, soulSlug: "yierbubu", assistantName: BUBU_PACK.assistantName });
+                    setCodexIdentity({ name: BUBU_PACK.assistantName, avatar: { type: "image", value: avatarAsset("codex-bubu.png") } });
+                    bag.showToast("已切换为一二布布", "头像与名字已生效；人格/表情包下一个新会话开始");
+                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "已切换为一二布布人格：名字与头像已生效；人格全文与表情包触发表从下一个新会话开始完全生效（本会话回复可能仍带旧语气）。表情包按触发表在情绪到位时插入 `![一二布布·<label>](bubu://<id>)`。" }], success: true });
+                    return;
+                  }
+                  if (target === "user") {
+                    const fields = personaId === "default" ? { occupation: "", userContext: "" } : userPersonaFields(personaId);
+                    if (!fields) {
+                      await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `未知用户人格 id：${personaId}。可选：${USER_PERSONAS.map((p) => p.id).join(" / ")}，或 default 恢复空白。` }], success: false });
+                      return;
+                    }
+                    await window.codex.saveIdentity(fields);
+                    const hit = USER_PERSONAS.find((p) => p.id === personaId);
+                    bag.showToast("用户人格已更新", hit ? hit.label : "已恢复空白");
+                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: hit
+                      ? `已应用用户人格「${hit.label}」：职业与背景写进档案（${fields.occupation}）。配套工具建议：${hit.tools.join("、")}（未自动开启，需要时按需安装）。`
+                      : "已恢复空白用户人格（职业与背景已清空）。" }], success: true });
+                    return;
+                  }
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "target 必须是 \"self\" 或 \"user\"。" }], success: false });
+                } catch (error: any) {
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `人格切换失败：${error.message}` }], success: false });
+                }
               } else if (["group_create", "group_assign", "group_status", "group_review", "group_escalate", "group_add_member", "group_remove_member", "group_browser_setup"].includes(String(event.params?.tool))) {
                 /* 创世 boss 的群编排（10-24）：六个工具共用一条分支。
                    ⛔ 规则不在这里：状态机在 electron/boss-groups/state.ts（纯函数 + 守卫真跑），
@@ -156,7 +194,8 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       .filter((m: any) => m.name && m.role);
                     const res = await window.codex.createBossGroup({
                       name: String(args.name ?? ""),
-                      workspace: String(args.workspace ?? bag.workspace ?? ""),
+                      /* ⛔ BOSS 会话跑在 <userData>/boss-home（记忆独立），群干活的项目取 boss-workspace。 */
+                      workspace: String(args.workspace ?? (() => { try { return localStorage.getItem("boss-workspace") ?? ""; } catch { return ""; } })() ?? bag.workspace ?? ""),
                       // ⛔ boss 身份取引擎下发的 threadId（模型伪造不了），群事件靠它回投
                       bossThreadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
                       members,
@@ -182,8 +221,15 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                   } else if (tool === "group_status") {
                     const groupId = String(args.groupId ?? "");
                     if (!groupId) {
-                      const list = await window.codex.listBossGroups();
-                      await ok(`共 ${list?.length ?? 0} 个群：${(list ?? []).map((g: any) => `${g.name}(id=${g.id}${g.paused ? "，已暂停" : ""})`).join("；") || "（无）"}`);
+                      const [list, pool] = await Promise.all([
+                        window.codex.listBossGroups(),
+                        window.codex.bossGroupPool().catch(() => null),
+                      ]);
+                      const poolText = pool
+                        ? `\n可拉专家：${(pool.experts ?? []).map((x: any) => `${x.name}[${x.teamName}]`).join("、") || "（无）"}`
+                          + `\n可拉本机 CLI agent：${(pool.cliAgents ?? []).map((x: any) => `${x.name}${x.detected ? "✓" : "（未检测到命令）"}`).join("、")}`
+                        : "";
+                      await ok(`共 ${list?.length ?? 0} 个群：${(list ?? []).map((g: any) => `${g.name}(id=${g.id}${g.paused ? "，已暂停" : ""})`).join("；") || "（无）"}${poolText}`);
                     } else {
                       const snap = await window.codex.bossGroupStatus(groupId);
                       await ok(JSON.stringify(snap).slice(0, 6000));
@@ -204,9 +250,20 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                     });
                     await ok(`升级已处理：任务 ${res?.taskId} 现在 ${res?.status}${res?.dispatched ? "，已重新派活" : ""}${res?.error ? `（${res.error}）` : ""}`);
                   } else if (tool === "group_add_member") {
-                    const res = await window.codex.bossGroupMember({ groupId: String(args.groupId ?? ""), action: "add", name: String(args.name ?? ""), role: String(args.role ?? ""), systemPrompt: args.systemPrompt ? String(args.systemPrompt) : undefined, model: args.model ? String(args.model) : undefined, effort: args.effort ? String(args.effort) : undefined });
+                    const res = await window.codex.bossGroupMember({
+                      groupId: String(args.groupId ?? ""), action: "add",
+                      name: String(args.name ?? ""), role: String(args.role ?? ""),
+                      systemPrompt: args.systemPrompt ? String(args.systemPrompt) : undefined,
+                      model: args.model ? String(args.model) : undefined,
+                      effort: args.effort ? String(args.effort) : undefined,
+                      from: args.from ? String(args.from) : undefined,
+                      expertTeamId: args.expertTeamId ? String(args.expertTeamId) : undefined,
+                      expertMemberId: args.expertMemberId ? String(args.expertMemberId) : undefined,
+                      cliName: args.cliName ? String(args.cliName) : undefined,
+                      cliCommand: args.cliCommand ? String(args.cliCommand) : undefined,
+                    });
                     if (!res?.ok) await bad(`加人失败：${res?.error ?? "未知原因"}`);
-                    else await ok(`新成员进群：${res.member?.name}（${res.member?.role}，id=${res.member?.id}）`);
+                    else await ok(`新成员进群：${res.member?.name}（${res.member?.role}${res.member?.source === "cli" ? "，本机 CLI agent" : ""}，id=${res.member?.id}）。TA 第一次被派活时才建执行体；用 group_assign 指派时传这个 id。`);
                   } else if (tool === "group_remove_member") {
                     const res = await window.codex.bossGroupMember({ groupId: String(args.groupId ?? ""), action: "remove", memberId: String(args.memberId ?? "") });
                     if (!res?.ok) await bad(`移人失败：${res?.error ?? "未知原因"}`);
@@ -238,6 +295,20 @@ ${st.hint}`);
               //    已整体删除（它与调度开关脱钩、还让专家/专家团永远被绕过），⛔ 不许加回来。
               else if (event.params?.tool === "agent_invoke") {
                 const dispatchOrigin = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
+                /* ⛔ BOSS 群会话不用调度工具（10-25 用户令）：群里的派遣只有 group_assign 一条路，
+                   否则两套派遣并行会把账本撕裂。拒绝时告诉模型正确工具。 */
+                const bossHit = await (async () => {
+                  try {
+                    const list = await window.codex.listBossGroups();
+                    return (list ?? []).some((g: any) => g.bossThreadId === dispatchOrigin);
+                  } catch { return false; }
+                })();
+                if (bossHit) {
+                  await toolCallRespond.send(event.id!, {
+                    contentItems: [{ type: "inputText", text: "你是群里的 BOSS：不用 agent_invoke 调度，改用 group_assign 派活（验收标准 criteria 必填）。" }],
+                    success: false,
+                  });
+                } else {
                 // kind 是联合类型：非法值**不硬塞**（先校验再断言，断言因此可证安全），
                 // 当场回一条可读的拒绝，而不是让 IPC 抛类型错——模型据此立刻改参数。
                 const kindRaw = String(args.kind ?? "");
@@ -256,6 +327,7 @@ ${st.hint}`);
                   contentItems: [{ type: "inputText", text: delegated?.ok ? String(delegated.output ?? "") : `调度被拒绝：${delegated?.error ?? "未知原因"}` }],
                   success: delegated?.ok === true,
                 });
+                }
               } else if (event.params?.tool === "agent_archive_sessions") {
                 const dispatchOrigin = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
                 const archived: any = await window.codex.archiveDelegates({
