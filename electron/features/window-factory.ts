@@ -244,13 +244,30 @@ export function showMainWindow() {
   win.focus();
 }
 
+/* ⛔ 独立弹窗的「待建」旗（10-16 云助手形态）。
+   ⛔ `browser-window-created` 在 `new BrowserWindow()` **构造期**同步触发，晚于构造返回
+   ⇒ 不能事后比对窗口，只能用**旗**（与 assistant-window.ts 的 pendingAssistantWindow 同款）。
+   用途：云助手形态下，独立弹窗要**保持可见 + 上任务栏**（用户令「不要打开网页」），
+   而桌面版形态下它要隐藏 + 摘任务栏 ⇒ 靠这个旗区分。 */
+let popoutPending = false;
+
+/** 这个窗口是不是「刚要建的独立弹窗」？（headless.ts 的 browser-window-created 调用） */
+export function isPopoutWindowPending(): boolean {
+  return popoutPending;
+}
+
 export function createPopoutWindow(threadId: string) {
   const windowIcon = path.join(
     app.getAppPath(),
     "build",
     process.platform === "win32" ? "icon.ico" : "icon.png",
   );
-  const win = new BrowserWindow({
+  /* ⛔ 置旗：`browser-window-created` 在下面 new BrowserWindow() 的**构造期**同步触发
+     ⇒ 旗必须在那之前置上（与助手主窗同理）。 */
+  popoutPending = true;
+  let win: BrowserWindow;
+  try {
+    win = new BrowserWindow({
     // 1120 而非 1080：主布局在 ≤1080px 时隐藏消息刻度尺（media query），弹窗初始宽度
     // 必须避开这个断点，否则弹窗里看不到刻度线（用户截图反馈）。
     width: 1120,
@@ -280,7 +297,12 @@ export function createPopoutWindow(threadId: string) {
       // 弹窗只渲染对话区，不需要 webview 标签
       webviewTag: false,
     },
-  });
+    });
+  } finally {
+    /* ⛔ 清旗（构造结束，无论成败）—— 旗只对**这一次**建窗有效，
+       否则之后建的任何窗口都会被当成独立弹窗（headless 的 browser-window-created 会放行它）。 */
+    popoutPending = false;
+  }
   // Windows 11 原生圆角（仅 win32；其余平台函数内静默跳过）。
   applyRoundedCorners(win);
   // ⛔ 导航收敛与主窗口同规则：弹窗永不导航，新窗口一律拒绝并转系统浏览器。
