@@ -1436,8 +1436,8 @@
     {
       "name": "saveIdentity",
       "channel": "personalization:save-identity",
-      "paramsImpl": "input: Record<string, string>",
-      "paramsDecl": "input: Record<string, string>",
+      "paramsImpl": "input: Record<string, unknown>",
+      "paramsDecl": "input: Record<string, unknown>",
       "returns": "Promise<unknown>",
       "invokeArgs": "input",
       "cast": null,
