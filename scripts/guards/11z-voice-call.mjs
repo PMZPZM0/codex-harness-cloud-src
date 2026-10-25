@@ -126,8 +126,9 @@ ok(/announce: \{ enabled: true \}/.test(voiceSettings),
   "默认值：`announce.enabled = true`（与旧结构 live 的默认一致 —— 播报默认开着）");
 ok(/announce: \{ enabled: announceEnabled \}/.test(voiceSettings) && /announceRaw\?\.live !== false \|\| announceRaw\?\.summary === true/.test(voiceSettings),
   "mergeSettings **显式映射** announce.enabled，且把旧档案的 {live, summary} 平移过来（漏映射 = 用户改了不生效且不报错 —— 本文件已 N 次同款）");
-ok(/VOICE_SETTINGS_VERSION = 6/.test(voiceSettings) && /if \(version < 4\)/.test(voiceSettings) && /if \(version < 5\)/.test(voiceSettings) && /if \(version < 6\)/.test(voiceSettings),
-  "版本 3 → 4（两个开关收成一个）→ 5（语速默认 1.0→1.25）→ 6（新增 tts.numSteps 音质档）且**各带迁移** —— 不迁移的话老档案读出来是旧值/undefined");
+ok(/VOICE_SETTINGS_VERSION = 7/.test(voiceSettings) && /if \(version < 4\)/.test(voiceSettings) && /if \(version < 5\)/.test(voiceSettings) && /if \(version < 6\)/.test(voiceSettings)
+  && /if \(version < 7\)/.test(voiceSettings) && /source\.announce = \{ enabled: true \}/.test(voiceSettings),
+  "版本 3 → 4（两个开关收成一个）→ 5（语速）→ 6（音质档）→ 7（总开关历史 false 一次性打开）且**各带迁移**");
 /* ⛔ 10-21 用户令「语音播报速度默认改成 1.25×」：常量与迁移必须同轮落地（只改常量对老用户无效，
    只写迁移不改常量对新用户无效 —— 两边缺一都等于这次默认值改动没生效）。 */
 /* ⛔ 默认值块中间夹着长注释（解释 2 步为什么发沙），夹取窗口给足 1200 字符；
@@ -772,18 +773,23 @@ ok(/<span className="turn-head-name">\{codexName\}<\/span>\s*<SessionAnnounceTog
   && turnToggleIdx > turnHeadIdx,
   "📢 开关就渲染在回合头的 Codex 名字**后面**（不是别处；顺序错了用户找不到）");
 ok(/const muted = useSyncExternalStore\(/.test(announceToggleTsx)
-  && /isAnnounceMutedForThread\(threadId\)/.test(announceToggleTsx)
+  && /const globalOn = useSyncExternalStore\(/.test(announceToggleTsx)
+  && /const enabled = globalOn && !muted/.test(announceToggleTsx)
   && /function AnnounceIcon\(/.test(announceToggleTsx)
   && /announce-slash/.test(announceToggleTsx)
-  && /aria-pressed=\{!muted\}/.test(announceToggleTsx)
+  && /aria-pressed=\{enabled\}/.test(announceToggleTsx)
+  && /<AnnounceIcon muted=\{!enabled\}/.test(announceToggleTsx)
+  && /disabled=\{!globalOn\}/.test(announceToggleTsx)
+  && /is-off/.test(announceToggleTsx)
+  && /语音播报总开关已关闭 —— 去「设置 → 语音通话 → 语音播报」打开/.test(announceToggleTsx)
   && /requestAnnounceStop\(threadId\)/.test(announceToggleTsx)
   && /requestAnnounceResume\(threadId\)/.test(announceToggleTsx),
-  "📢 是真实开关：同一 threadId 调停止/恢复，图标随状态切换，aria-pressed 反映开态");
+  "📢 反映**有效状态**（总开关 ∧ 未静音）：总开关关掉时置灰不可点，tooltip 指路「设置 → 语音通话 → 语音播报」");
 ok(/subscribeAnnounceStatus/.test(announceToggleTsx)
-  && /const playing = !muted && status\.active/.test(announceToggleTsx)
+  && /const playing = enabled && status\.active/.test(announceToggleTsx)
   && /is-playing/.test(announceToggleTsx)
   && /announce-waves/.test(announceToggleTsx),
-  "喇叭播放特效：只在**正在播报且未静音**时点亮声波（10-22 用户「做个好看一点的图标和喇叭播放特效」）");
+  "喇叭播放特效：只在**正在播报且有效开启**时点亮声波（10-22 用户「做个好看一点的图标和喇叭播放特效」）");
 ok(/turn-head-announce-toast/.test(announceToggleTsx)
   && /已开启当前会话语音播报/.test(announceToggleTsx)
   && /已关闭当前会话语音播报/.test(announceToggleTsx)
@@ -798,12 +804,16 @@ ok(/<MemoTurnView turn=\{turn\} threadId=\{thread\?\.id \?\? ""\}/.test(timeline
   "会话 id 一路传到回合视图（⛔ 不传 = 所有会话共用空 id，开关会退化成全局）");
 ok(/\.turn-head-announce\s*\{[^}]*appearance:\s*none/.test(codeOnlyCss(turnHeadCss))
   && /\.turn-head-announce:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--accent\)/.test(codeOnlyCss(turnHeadCss))
-  && /\.turn-head-announce\.muted\s*\{[^}]*background:\s*var\(--panel-2\)/.test(codeOnlyCss(turnHeadCss)),
-  "📢 按钮走项目变量（appearance:none 防暗色 UA 浅底 / focus-visible 焦点环 / 关态有底色，不只换色）");
+  && /\.turn-head-announce\.muted\s*\{[^}]*background:\s*var\(--panel-2\)/.test(codeOnlyCss(turnHeadCss))
+  && /\.turn-head-announce\.is-off\s*\{[^}]*opacity:\s*0\.45/.test(codeOnlyCss(turnHeadCss))
+  && /\.turn-head-announce\.is-off\s*\{[^}]*cursor:\s*not-allowed/.test(codeOnlyCss(turnHeadCss)),
+  "📢 按钮走项目变量（appearance:none 防暗色 UA 浅底 / focus-visible 焦点环 / 关态有底色）；总开关关 = 置灰不可点");
 ok(/const announceMuted = useSyncExternalStore\(/.test(floatTsx)
-  && /if \(announceMuted\) requestAnnounceResume\(threadId\);\s*else requestAnnounceStop\(threadId\);/.test(floatTsx)
-  && /announceMuted \? "恢复播报" : "停止播报"/.test(floatTsx),
-  "悬浮球右键菜单与 📢 共用同一份会话状态：显示「停止/恢复」并按同一 threadId 操作");
+  && /const announceGlobalOn = useSyncExternalStore\(/.test(floatTsx)
+  && /if \(!announceGlobalOn\) requestVoiceOpenSettings\(\)/.test(floatTsx)
+  && /else if \(announceMuted\) requestAnnounceResume\(threadId\);\s*else requestAnnounceStop\(threadId\);/.test(floatTsx)
+  && /!announceGlobalOn \? "去设置开启播报" : announceMuted \? "恢复播报" : "停止播报"/.test(floatTsx),
+  "悬浮球右键菜单与 📢 共用同一份有效状态：总开关关 = 指路去设置，会话静音 = 「恢复播报」");
 /* ── ⑱′ 静音状态必须到模型（10-22 用户：「我关掉了，codex 还说你播报，实际是播报不了的」）──
    只在本机拦播放不够：模型看得到全局 voice-settings.json 的 announce.enabled=true，于是继续
    声称「这条回复会被播报」，还白写 voice 播报稿。修法 = 把会话级 mute 写进该会话的
