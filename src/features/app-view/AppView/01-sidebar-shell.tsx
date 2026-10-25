@@ -141,7 +141,7 @@ import {
   Calculator,
   Telescope,
   CircleHelp,
-  CirclePlus,
+  MessageCirclePlus,
   Video,
   Bell,
   CheckCheck,
@@ -524,7 +524,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               {/* 10-24 用户对照截图：改成整行「新会话」主按钮 + 下面一行「搜索任务」，不再并排胶囊。 */}
               <div className="sidebar-quick">
                 <button className="sidebar-tab sidebar-quick-btn" title={`新建任务（${hk("Ctrl+N")}）`} onClick={() => { setBossPending(false); startNewThread(); }}>
-                  <CirclePlus size={16} strokeWidth={2} className="ic-blue" /><span>新建任务</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
+                  <MessageCirclePlus size={16} strokeWidth={2} className="ic-blue" /><span>新建任务</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
                 </button>
                 <button
                   className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossOn ? " boss-open" : ""}`}
@@ -603,7 +603,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                           </button>
                           {/* 10-25 用户令（对照 ZCode）：项目行加「新建会话」图标（··· 之前）——
                               点击 = 切 workspace 到该项目 → 开新会话（首条消息发出时 cwd 落到该项目）。 */}
-                          <button className="project-item-new-btn" title={"在 " + basename(cwd) + " 新建任务"} onClick={(event) => { event.stopPropagation(); bagSetWorkspaceForProject(cwd); }}><CirclePlus size={13} /></button>
+                          <button className="project-item-new-btn" title={"在 " + basename(cwd) + " 新建任务"} onClick={(event) => { event.stopPropagation(); bagSetWorkspaceForProject(cwd); }}><MessageCirclePlus size={13} /></button>
                           <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => { event.stopPropagation(); setProjectMenu(projectMenu === cwd ? null : cwd); }}><MoreHorizontal size={14} /></button>
                           {projectMenu === cwd && <div className="project-menu">
                             <button className="danger" onClick={() => { setProjectMenu(null); unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />删除项目（含全部会话）</button>
