@@ -60,7 +60,7 @@ export async function postToBoss(group: BossGroup, text: string): Promise<boolea
 
 /**
  * 你在群对话框里说的话 → boss 线程（turn/start，等 boss 回）。
- * ⛔ 这就是「点击 BOSS 会话直接进入对话框」的落点：说话不新建会话、不新建回合入口，
+ * ⛔ 这就是「点击指挥中枢直接进入对话框」的落点：说话不新建会话、不新建回合入口，
  *    boss 的回复由 watchBossReplies 镜像进群流。
  */
 export async function sayToGroup(input: { groupId: string; text: string }): Promise<{ ok: boolean; error?: string }> {
@@ -269,7 +269,7 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
     bossStore.save();
     const attempt = task.attempts[task.attempts.length - 1];
     /* ⛔ CLI 成员（本机外部 agent）没有引擎会话：起子进程跑命令行，stdout 就是它的成品，
-        走同一条 交活→BOSS 自评 流水。 */
+        走同一条 交活→中枢自评 流水。 */
     if (member.source === "cli") {
       markRunning(state, task.id, { threadId: `cli:${member.name}` });
       bossStore.save();
@@ -345,7 +345,7 @@ export async function settleSubmission(taskId: string, output: string): Promise<
   });
   bossStore.save();
   emit({ type: "boss-group", phase: "task", groupId: group.id, taskId, status: "reviewing" });
-  /* 成品**汇总到主对话**（BOSS 会话）—— 这是群聊的本体：成员干完活，成果出现在群里。 */
+  /* 成品**汇总到主对话**（指挥中枢）—— 这是群聊的本体：成员干完活，成果出现在群里。 */
   const deliverer = memberOf(group, task.assignee);
   await postToBoss(group, `[群事件] ${deliverer.name} 交活：「${task.title}」\n${deliverable.slice(0, 4000)}`);
   if (alreadyLeftRunning) await reviewTask(taskId);   // 重复回调（已不在 running）⇒ 不再审
@@ -355,7 +355,7 @@ export async function settleSubmission(taskId: string, output: string): Promise<
 /** 同一任务同时只允许一次评审（settleSubmission 重复回调 / 人工与自动撞车 ⇒ 后到的直接跳过）。 */
 const inFlightReviews = new Set<string>();
 
-/** 评审：**不再另开会话**（10-25 用户令：评审由会话自己用技能做）。这里只把交活回投给 BOSS。 */
+/** 评审：**不再另开会话**（10-25 用户令：评审由会话自己用技能做）。这里只把交活回投给 中枢。 */
 export async function reviewTask(taskId: string): Promise<{ ok: boolean; verdict?: "approved" | "rejected"; error?: string }> {
   if (inFlightReviews.has(taskId)) return { ok: false, error: "该任务已有一轮评审在进行，跳过重复触发" };
   const state = await bossStore.load();
@@ -384,7 +384,7 @@ async function runReview(state: BossState, taskId: string): Promise<{ ok: boolea
     /* ⛔⛔ 10-25 用户令：「这个子成员都触发一次评审？评审机制有问题…评审上下文子智能体不要默认，
        删掉了，让 codex 自己创建」。
        原来这里 thread/start 开一个**新鲜上下文的评审会话**（侧栏一堆独立评审会话）。
-       ⇒ 改成：把验收标准 + 成品**回投给 BOSS 会话**，由 Codex 自己判断；
+       ⇒ 改成：把验收标准 + 成品**回投给指挥中枢**，由 Codex 自己判断；
          要独立上下文/子智能体时**它自己创建**（系统不再自动开评审会话）。
        ⇒ 结论由 Codex 调 group_review 回填（该通道已含 recordReview + 换人重做 + 回投，闭环不断）。 */
     await postToBoss(group, `[群事件] 任务「${task.title}」已交活，请**用你自己的评审技能**判一下。
@@ -514,8 +514,8 @@ export async function memberForBoss(input: {
     const group = groupOf(state, String(input.groupId ?? ""));
     emit({ type: "boss-group", phase: "member", groupId: group.id, memberId: member.id, status: member.status });
     /* ⛔⛔ 10-25 用户实测：「用户移除的群成员没有真实生效，Codex 不知道我移除了」。
-       成员变动必须**回投给 BOSS 会话**，否则模型只在自己查 group_status 时才可能看到，
-       而且那是旧口径（会把 removed 也数进去）。这里把增/移都主动告诉 BOSS。 */
+       成员变动必须**回投给指挥中枢**，否则模型只在自己查 group_status 时才可能看到，
+       而且那是旧口径（会把 removed 也数进去）。这里把增/移都主动告诉 中枢。 */
     if (input.action === "add") {
       void postToBoss(group, `[群事件] 新成员进群：${member.name}（${member.role}${member.source === "cli" ? "，本机 CLI agent" : ""}，id=${member.id}）。`);
     } else {

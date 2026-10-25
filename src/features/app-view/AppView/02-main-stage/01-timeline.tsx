@@ -184,7 +184,7 @@ import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago,
 import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 
 export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
-  /* 10-25 用户令：BOSS 会话的空态要有自己的引导语（「你好 BOSS…」），发送后自然消失。
+  /* 10-25 用户令：指挥中枢的空态要有自己的引导语（「你好 中枢…」），发送后自然消失。
      ⛔ 用共享 store 判断，别在这里再拉一次 listBossGroups。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const {
@@ -401,7 +401,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     while (j < win.visible.length && !hasUser(win.visible[j])) j += 1;
     return { turnId: j < win.visible.length ? String(win.visible[j]?.id ?? "") : "", atEnd: j >= win.visible.length };
   })();
-  /* BOSS 会话的空态判定（10-25）：三种入口都算 —— pending（刚点开还没落 id）/ 群 boss 线程 /
+  /*指挥中枢的空态判定（10-25）：三种入口都算 —— pending（刚点开还没落 id）/ 群 boss 线程 /
      home 锚点会话（还没建群时那个普通会话）。⛔ 不能只看 isEmpty：它要求 thread 为 null，
      而「会话已建出来但一条消息都没有」时 thread 存在 ⇒ 空态分支进不去 ⇒ 整片空白。 */
   const noTurns = (thread?.turns ?? []).length === 0;
@@ -412,7 +412,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
-                  {/* BOSS 会话的空白态：与 timeline 同级（绝对定位相对 .timeline-wrap），
+                  {/*指挥中枢的空白态：与 timeline 同级（绝对定位相对 .timeline-wrap），
                      不进滚动内容流 —— 普通会话完全不受影响。 */}
                   {isBossEmpty ? <BossThreadIntro /> : null}
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>

@@ -171,13 +171,13 @@ ok(
     "工作区菜单含「打开项目地址」行 → shellReveal(topbarDir)（目录走 openPath 在文件管理器打开；10-06 夜八轮用户点名加；10-25 改按会话取值）");
   ok(/const topbarDir = bossDirContext/.test(appViewCode)
     && !/<span>\{workspace \|\| "尚未选择工作区"\}<\/span>/.test(appViewCode),
-    "⛔ 顶栏项目名读的是**本会话**的目录（BOSS 会话没选地址 ⇒ 显示「尚未选择项目地址」），⛔ 不读全局 workspace");
-  /* ⛔ 不出现「点了没反应的菜单项」：BOSS 会话已启动后 cwd 就定死了（引擎用它起的会话），
+    "⛔ 顶栏项目名读的是**本会话**的目录（指挥中枢没选地址 ⇒ 显示「尚未选择项目地址」），⛔ 不读全局 workspace");
+  /* ⛔ 不出现「点了没反应的菜单项」：指挥中枢已启动后 cwd 就定死了（引擎用它起的会话），
      再选一次只写进 dirByThread[已存在会话]，而**没有任何读取方**（part08/01-seg 只在建会话时取值）
      ⇒ 必须收起那一项，别让用户点了以为换了地址。 */
   ok(/const canPickDir = !bossDirContext \|\| !topbarDir/.test(appViewCode)
     && /\{canPickDir && <button/.test(appViewCode),
-    "⛔ BOSS 会话已有地址时「选择目录」收起（避免写进无人读取的 dirByThread ⇒ 点了没反应）");
+    "⛔ 指挥中枢已有地址时「选择目录」收起（避免写进无人读取的 dirByThread ⇒ 点了没反应）");
   ok(/addEventListener\("mousedown", onDown\)/.test(segCode)
     && /target\?\.closest\?\.\("\.ctx-menu"\)/.test(segCode)
     && /ctxBtnRef\.current\?\.contains\(target as Node\)/.test(segCode)

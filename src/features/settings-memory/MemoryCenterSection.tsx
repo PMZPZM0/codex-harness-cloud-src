@@ -136,8 +136,8 @@ return (
                       </SettingsDialog>
                     )}
                     {openCard === "boss" && openMeta && (
-                      <SettingsDialog title="BOSS 会话记忆" icon={<Crown size={15} />} hint="每个 BOSS 会话一份 · 与项目、普通会话完全拆开" size="lg" onClose={() => setOpenCard(null)}>
-                        {/* ⛔ 独立板块（10-25 用户令）：BOSS 会话的记忆不在任何项目里 ——
+                      <SettingsDialog title="指挥中枢记忆" icon={<Crown size={15} />} hint="每个指挥中枢一份 · 与项目、普通会话完全拆开" size="lg" onClose={() => setOpenCard(null)}>
+                        {/* ⛔ 独立板块（10-25 用户令）：指挥中枢的记忆不在任何项目里 ——
                             放「项目共享记忆库」里既找不到、也会让人误以为它属于某个项目。 */}
                         <BossMemoryPanel threads={threads} onOpenThread={(id: string) => { setOpenCard(null); openThread?.(id); }} onNotice={app.setNotice} />
                       </SettingsDialog>
