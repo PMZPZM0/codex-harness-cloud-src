@@ -205,14 +205,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     finally { setBossDirBusy(false); }
   };
   const currentThreadId = app.thread?.id ?? "";
-  /* 选中态：群 boss 线程 **或** 还没建群时的 home 锚点会话（否则点进去按钮不亮、看着像没进）。 */
-  /* 选中态：**当前这个会话**是不是 BOSS 会话（10-25 用户实测：「如果我当前选的是下面已经创建的
-     BOSS 会话选项，上面这个会话 BOSS 会话也会跟着亮」⇒ 那是**两个不同的 BOSS 会话**，
-     上面那个按钮是「**新建**一个 BOSS 会话」的入口，不该跟着别的 BOSS 会话亮）。
-     ⇒ 判据只认「当前会话自己的身份」（bossIds / sessionIds），⛔ 不认 homeId 兜底
-        （homeId 是**最近一个** BOSS 会话，与当前选中的那个无关 ⇒ 串项）。 */
-  const bossOn = Boolean(currentThreadId)
-    && (bossThreads.bossIds.includes(currentThreadId) || (bossThreads.sessionIds ?? []).includes(currentThreadId));
+  /* ⛔⛔ 10-25 用户令：「我选中下面已建的 BOSS 会话时候，上面那个 BOSS 会话选项不要亮」
+     —— 顶部这个按钮是**动作**（新建一条 BOSS 会话），不是**状态**（我在不在 BOSS 会话里）。
+     把「当前会话是 BOSS」映射成按钮高亮 / aria-pressed，选下面任意一条老 BOSS 会话它就跟着亮。
+     ⇒ 按钮恒为普通态；当前在哪个会话只由**会话列表的选中行**表达。
+     ⛔ 别再引入任何 `bossOn` 之类的派生高亮。 */
   /* 点「BOSS 会话」新建的那个会话，等它拿到 id 后记成 home（首条消息发出后引擎才分配）。 */
   const bossHomePending = useRef(false);
   useEffect(() => {
@@ -379,7 +376,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bossOn, bossThreads.pending, currentThreadId]);
+  }, [bossThreads.pending, currentThreadId]);
 
   /* 10-25：新建项目弹窗（ZCode 式三选一）。选完目录后与 chooseWorkspace 同款落地：
      workspace 三处同步（state/ref/localStorage）—— 不只改 state，侧栏项目分组才认。 */
@@ -576,9 +573,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   <MessageCirclePlus size={16} strokeWidth={2} className="ic-blue" /><span>新建任务</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
                 </button>
                 <button
-                  className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossOn ? " boss-open" : ""}`}
+                  className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber"
                   title={`新建 BOSS 会话（${bossShortcutLabel()}）：选项目地址后进 BOSS 欢迎界面；可建多个，互不干扰`}
-                  aria-pressed={bossOn}
                   onClick={() => openBossSession()}
                 >
                   <Crown size={15} /><span>BOSS 会话</span><kbd className="quick-kbd">{bossShortcutLabel()}</kbd>
