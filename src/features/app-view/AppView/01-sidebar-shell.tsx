@@ -333,6 +333,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   useEffect(() => { if (viewTab === "source") setViewTab("projects"); }, [viewTab, setViewTab]);
   /* 10-25：项目行的「+」= 在该项目下开新会话。先切 workspace（三处同步：state/ref/localStorage，
      与 chooseWorkspace 同口径），再 startNewThread —— 新会话首条消息的 cwd 取 workspace。 */
+  /* BOSS 会话按钮（行为契约；历史与实测依据见 scripts/guards/22-boss-groups.mjs）。 */
+  const openBossSession = () => {
+    if (bossOn) return;
+    if (bossThreads.pending && !currentThreadId) return;
+    setBossDirDialog(true);
+  };
+
   const bagSetWorkspaceForProject = (cwd: string) => {
     setWorkspace(cwd);
     workspaceRef.current = cwd;
@@ -505,30 +512,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 <button className="sidebar-tab sidebar-quick-btn" title={`新建任务（${hk("Ctrl+N")}）`} onClick={() => { setBossPending(false); startNewThread(); }}>
                   <CirclePlus size={16} strokeWidth={2} className="ic-blue" /><span>新建任务</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
                 </button>
-                {/* 10-25 用户令：BOSS 会话在搜索任务**上面**（不进拓展功能菜单）；
-                    拓展功能（top 位置）自适应排在搜索任务之后。
-                    10-25 用户令：点它 = 打开那个 boss 会话（**正常对话框**），不再切专属界面。 */}
                 <button
                   className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossOn ? " boss-open" : ""}`}
                   title={bossOn ? "当前就是 BOSS 会话（群编排的普通会话）" : "BOSS 会话：打开群编排会话（拉群派活、盯进度、审不过打回重做）"}
                   aria-pressed={bossOn}
-                  onClick={async () => {
-                    if (bossOn) return;                                   // 已在这个会话里，再点无动作
-                    /* 已经是「刚点开、还没发消息」的 BOSS 空会话（还没有 thread id）⇒ 别再新建一个。 */
-                    if (bossThreads.pending && !currentThreadId) return;
-                    /* ⛔⛔ 10-25 用户令 + 实测（这一段的行为只由用户令决定，不看数据状态）：
-                       ① 每次新建都是**全新会话**，不回到上一次的（home 只当身份标记）；
-                       ② BOSS 会话**完全独立** —— 项目记忆 / 技能 / logs 都不跟任何项目共享；
-                       ③ 项目地址**不自动同步其它会话**，每次新建都要定 ⇒ 弹应用内对话框
-                          （选目录 / 在软件所在盘自动新建），⛔ 不沿用上一次的。
-                       ⛔⛔ 实测「为啥主仓没这个弹窗，PPCODE弹了」：原来这里「有群 ⇒ 直接跳旧群的
-                          boss 线程」⇒ **行为随有没有群而变**（新装用户看得到弹窗、老用户被跳走）。
-                          ⛔ 那不是两仓的差异，是**同一段代码被数据状态分叉了**。
-                          ⇒ 现在**一律**弹对话框新建；已有群从侧栏里它自己的会话进去。
-                       ⛔ 这里**只弹对话框**、不新建会话 —— 原来建一次、选完地址又建一次 ⇒ 两个空会话，
-                          而且点「取消」也留下一个「未命名任务」。会话在**选定地址之后**才建。 */
-                    setBossDirDialog(true);
-                  }}
+                  onClick={() => openBossSession()}
                 >
                   <Crown size={15} /><span>BOSS 会话</span>
                 </button>
