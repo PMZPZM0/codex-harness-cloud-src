@@ -3,7 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { getBossThreads, setBossHomeThreadId, setBossPending, subscribeBossThreads } from "../../boss-group-view";
+import { BossProjectDirDialog, getBossThreads, setBossHomeThreadId, setBossPending, subscribeBossThreads } from "../../boss-group-view";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { FileTrustDialog } from "../../../components/FileTrustDialog";
@@ -169,6 +169,31 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
      ⇒ 「选中效果」是**派生量**（当前会话 id 命中某个群的 boss 线程），⛔ 不再用 store 的
         stage 布尔值 —— 那个布尔值和真实会话状态会对不上（用户实测：切走了按钮还亮着）。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
+  /* 10-25：新建 BOSS 会话时弹**应用内**对话框选项目地址（两个选项），⛔ 不用系统弹窗 / 内联 toast。 */
+  const [bossDirDialog, setBossDirDialog] = useState(false);
+  const [bossDirBusy, setBossDirBusy] = useState(false);
+  const onBossProjectDir = async (choice: "pick" | "auto" | "cancel") => {
+    if (choice === "cancel") { setBossDirDialog(false); return; }
+    setBossDirBusy(true);
+    try {
+      let dir = "";
+      if (choice === "pick") {
+        const picked = await window.codex.chooseDirectory();
+        if (!picked) return;                       // 取消目录选择 ⇒ 对话框继续开着
+        dir = String(picked);
+      } else {
+        dir = String(await window.codex.createBossProjectDir());
+      }
+      /* ⛔ 不写全局 localStorage("workspace")：普通会话的项目不能被 BOSS 带走。 */
+      app.setWorkspace(dir);
+      app.workspaceRef.current = dir;
+      setBossDirDialog(false);
+      setBossPending(true);
+      bossHomePending.current = true;
+      startNewThread();                            // ⛔ 每次都是全新会话
+    } catch { /* 目录没选成：对话框继续开着 */ }
+    finally { setBossDirBusy(false); }
+  };
   const currentThreadId = app.thread?.id ?? "";
   /* 选中态：群 boss 线程 **或** 还没建群时的 home 锚点会话（否则点进去按钮不亮、看着像没进）。 */
   const bossOn = Boolean(currentThreadId)
@@ -318,6 +343,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       折叠态共用一个持久值（本地记录），高度过渡由 `.sidebar-options-body` 的 grid 动画完成。 */
   const renderOptionsGroup = (menuLocation: "top" | "bottom") => (
     <div className={`sidebar-options ${menuLocation === "top" ? "sidebar-options-top" : ""}`}>
+      {/* 新建 BOSS 会话：项目地址对话框（应用内模态） */}
+      <BossProjectDirDialog open={bossDirDialog} busy={bossDirBusy} onChoose={(choice) => void onBossProjectDir(choice)} />
       <button
         type="button"
         className="sidebar-options-toggle"
@@ -480,25 +507,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     if (bossThreads.pending && !currentThreadId) return;
                     const groupBoss = bossThreads.bossIds[0];
                     if (groupBoss) { void app.openThread(groupBoss); return; }   // 有群 ⇒ 打开它的 boss 线程
-                    const home = bossThreads.homeId;                       // 还没群 ⇒ 回到固定的那个 BOSS 会话
-                    if (home && (app.threads ?? []).some((t: any) => t.id === home)) { void app.openThread(home); return; }
-                    /* 10-25 用户令：BOSS 会话有**独立项目目录**，进去要选（不默认套用当前会话的目录）。
-                       选过一次就记住（boss-workspace），之后直接用它。 */
-                    let projectDir = "";
-                    try { projectDir = localStorage.getItem("boss-workspace") ?? ""; } catch { /* 隐私模式 */ }
-                    if (!projectDir) {
-                      const picked = await window.codex.chooseDirectory();
-                      if (!picked) return;                                  // 用户取消 ⇒ 什么都不做
-                      projectDir = String(picked);
-                      try { localStorage.setItem("boss-workspace", projectDir); } catch { /* ignore */ }
-                    }
-                    /* BOSS 会话本身跑在独立目录；「选的那个」是群干活的项目。 */
-                    const sessionDir = bossThreads.homeDir || projectDir;
-                    app.setWorkspace(sessionDir);
-                    app.workspaceRef.current = sessionDir;
-                    /* ⛔ 不写全局 localStorage("workspace")：普通会话的项目不能被 BOSS 带走。 */
-                    bossHomePending.current = true;                         // 全新：新建并记成 home
-                    setBossPending(true);                                   // 空态显示 BOSS 引导卡
+                    const home = bossThreads.homeId;                                   /* ⛔ 10-25：BOSS 会话的项目地址**不自动同步其他会话**，每次新建都要定
+                       ⇒ 弹应用内对话框（选目录 / 在软件所在盘自动新建），⛔ 不沿用上一次的。 */
+                    setBossDirDialog(true);
                     startNewThread();
                   }}
                 >

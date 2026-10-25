@@ -6,6 +6,7 @@
  *    每个名字要么是本段刚声明的局部，要么走 bag（跨 part 用），要么由段末 return 交给组合根转交 App。
  *    改动后请重跑预检【92】与保真脚本（口径见 docs/archive/REFACTOR-PLAN-2026-09-21.md §10.2）。
  */
+import { removeBossSessionId } from "../../../boss-group-view";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../lib/session-scope.mjs";
@@ -329,6 +330,9 @@ bag.deleteThreadCore = deleteThreadCore as typeof bag.deleteThreadCore;
     bag.setOpeningThread(id);
     try {
       await bag.deleteThreadCore(id);
+      /* ⛔ 10-25：BOSS 会话被删 ⇒ 从身份登记里摘掉（用户会频繁删了重建；
+         不摘的话旧 id 留着，新建的那个会被当成"旧的 BOSS 会话"）。 */
+      removeBossSessionId(id);
     } catch (error: any) {
       bag.setNotice(`删除任务失败：${error.message}`);
     } finally {
@@ -632,6 +636,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
          之后模型想改名字**没有任何工具** ⇒ 它只能写进记忆，界面上的名字永远不变。
          本工具每个会话都下发（描述里点名「不要只写进记忆」），落点是 personalization.json + AGENTS.md。 */
       IDENTITY_UPDATE_TOOL,
+      /* 用户人格切换（10-24 用户立项）：把用户人格库里的职业与背景写进档案 */
       PERSONA_APPLY_TOOL,
       /* 创世 boss 的群编排面（10-24）：建群 → 派活 → 查账 → 审查覆盖 / 升级 → 浏览器能力检查。
          ⛔ 只给带队会话用：成员会话不挂（成员不许拉人、不许审人）。

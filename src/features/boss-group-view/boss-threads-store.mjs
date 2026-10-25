@@ -17,13 +17,19 @@
  */
 const HOME_KEY = "boss-home-thread";
 
-let state = { groups: [], bossIds: [], memberIds: [], homeId: "", homeDir: "", pending: false, loaded: false };
+let state = { groups: [], bossIds: [], memberIds: [], homeId: "", sessionIds: [], homeDir: "", pending: false, loaded: false };
 const listeners = new Set();
 let timer = null;
 let off = null;
 
 function emit() { for (const fn of listeners) fn(); }
 
+function readSessionIds() {
+  try {
+    const raw = JSON.parse(String(localStorage.getItem("boss-session-ids") || "[]"));
+    return Array.isArray(raw) ? raw.map((x) => String(x)).filter(Boolean) : [];
+  } catch { return []; }
+}
 function readHome() {
   try { return localStorage.getItem(HOME_KEY) ?? ""; } catch { return ""; }
 }
@@ -33,9 +39,46 @@ export function setBossHomeThreadId(id) {
   try {
     if (next) localStorage.setItem(HOME_KEY, next);
     else localStorage.removeItem(HOME_KEY);
+    /* 10-25 用户令：「我每次新建，就是全新的，跟旧的不要有任何关系」⇒ homeId **只当身份标记**
+       （最近那个 BOSS 会话），**不再用于复用**。这里把 id 登记进 sessionIds：哪些会话是 BOSS 会话。 */
+    if (next) {
+      const ids = readSessionIds().filter((x) => x !== next);
+      ids.push(next);
+      localStorage.setItem("boss-session-ids", JSON.stringify(ids.slice(-50)));
+      state = { ...state, sessionIds: ids };
+    }
   } catch { /* 隐私模式：忽略 */ }
   state = { ...state, homeId: next, pending: false };
   emit();
+}
+
+/** 删除 BOSS 会话时把它从身份登记里摘掉（10-25 用户令：「我要经常删了 BOSS 会话，重新建」——
+ *  不摘的话旧 id 会一直留在 sessionIds 里，新建的会话就被当成"旧的"）。 */
+export function removeBossSessionId(id) {
+  const target = String(id || "");
+  if (!target) return;
+  try {
+    const ids = readSessionIds().filter((x) => x !== target);
+    localStorage.setItem("boss-session-ids", JSON.stringify(ids));
+    if (readHome() === target) localStorage.setItem(HOME_KEY, ids[ids.length - 1] ?? "");
+    state = { ...state, sessionIds: ids, homeId: ids[ids.length - 1] ?? "" };
+    emit();
+  } catch { /* 隐私模式：忽略 */ }
+}
+
+/** 会话重建（rollout 丢失自愈）时把身份登记从旧 id 换成新 id。 */
+export function renameBossSessionId(previousId, nextId) {
+  const prev = String(previousId || "");
+  const next = String(nextId || "");
+  if (!prev || !next) return;
+  try {
+    const ids = readSessionIds().filter((x) => x !== prev);
+    ids.push(next);
+    localStorage.setItem("boss-session-ids", JSON.stringify(ids.slice(-50)));
+    if (readHome() === prev) localStorage.setItem(HOME_KEY, next);
+    state = { ...state, sessionIds: ids, homeId: readHome() };
+    emit();
+  } catch { /* 隐私模式：忽略 */ }
 }
 
 /** 「刚点 BOSS 会话、还没群也没 home」的过渡态：空会话要显示 BOSS 欢迎语（10-25 用户令）。 */
@@ -63,6 +106,7 @@ async function load() {
       /* 群成员会话 id：侧栏据此打「BOSS 调度」标签（成员会话由派活时新建，不走 delegate 通道） */
       memberIds: groups.flatMap((g) => (Array.isArray(g.memberThreadIds) ? g.memberThreadIds : []).map(String)),
       homeId: readHome(),
+      sessionIds: readSessionIds(),
       homeDir: homeDir || state.homeDir,
       pending: state.pending,
       loaded: true,
