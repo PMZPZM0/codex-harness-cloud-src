@@ -3,7 +3,8 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { BossProjectDirDialog, getBossThreads, setBossHomeThreadId, setBossPending, subscribeBossThreads } from "../../boss-group-view";
+import { BossProjectDirDialog, autoOpenBossDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
+import { isMacPlatform } from "../../../lib/is-mac-platform";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { FileTrustDialog } from "../../../components/FileTrustDialog";
@@ -171,10 +172,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         stage 布尔值 —— 那个布尔值和真实会话状态会对不上（用户实测：切走了按钮还亮着）。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   /* 10-25：新建 BOSS 会话时弹**应用内**对话框选项目地址（两个选项），⛔ 不用系统弹窗 / 内联 toast。 */
-  const [bossDirDialog, setBossDirDialog] = useState(false);
+  const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
+  const bossDirOpen = bossDirState.open;
   const [bossDirBusy, setBossDirBusy] = useState(false);
   const onBossProjectDir = async (choice: "pick" | "auto" | "cancel") => {
-    if (choice === "cancel") { setBossDirDialog(false); return; }
+    if (choice === "cancel") { closeBossDirDialog(); return; }
     setBossDirBusy(true);
     try {
       let dir = "";
@@ -186,19 +188,31 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         dir = String(await window.codex.createBossProjectDir());
       }
       /* ⛔ 不写全局 localStorage("workspace")：普通会话的项目不能被 BOSS 带走。 */
-      app.setWorkspace(dir);
-      app.workspaceRef.current = dir;
-      setBossDirDialog(false);
+      /* ⛔⛔⛔ **不写全局 workspace**（10-25 用户实测：「下面已经自动选了别的会话的项目地址，
+         你这还有别的」「每次 BOSS 会话都不要自动选择旧的会话项目地址」）：
+         BOSS 的目录是**它自己会话的 cwd**，写进全局 workspace 会让：
+           ① 普通会话的顶栏/项目地址芯片显示成 BOSS 的目录（串项）；
+           ② 下一个新会话继承 BOSS 的目录。
+         ⇒ 这里只把目录记到 BOSS 会话自己的登记表（setBossDirChosen），
+            发首条消息建会话时由 createEmptyThread 用它当 cwd（见 part08/01-seg.tsx）。 */
+      closeBossDirDialog();
+      setBossDirChosen(dir, currentThreadId);
       setBossPending(true);
       bossHomePending.current = true;
-      startNewThread();                            // ⛔ 每次都是全新会话
+      /* ⛔ 这里**不再调 startNewThread()**：进入欢迎界面时已经起过一个新的空会话了，
+         再调一次会把用户刚在欢迎界面上打的提示词清掉（saveDraft + setPrompt("")）。 */
     } catch { /* 目录没选成：对话框继续开着 */ }
     finally { setBossDirBusy(false); }
   };
   const currentThreadId = app.thread?.id ?? "";
   /* 选中态：群 boss 线程 **或** 还没建群时的 home 锚点会话（否则点进去按钮不亮、看着像没进）。 */
+  /* 选中态：**当前这个会话**是不是 BOSS 会话（10-25 用户实测：「如果我当前选的是下面已经创建的
+     BOSS 会话选项，上面这个会话 BOSS 会话也会跟着亮」⇒ 那是**两个不同的 BOSS 会话**，
+     上面那个按钮是「**新建**一个 BOSS 会话」的入口，不该跟着别的 BOSS 会话亮）。
+     ⇒ 判据只认「当前会话自己的身份」（bossIds / sessionIds），⛔ 不认 homeId 兜底
+        （homeId 是**最近一个** BOSS 会话，与当前选中的那个无关 ⇒ 串项）。 */
   const bossOn = Boolean(currentThreadId)
-    && (bossThreads.bossIds.includes(currentThreadId) || currentThreadId === bossThreads.homeId);
+    && (bossThreads.bossIds.includes(currentThreadId) || (bossThreads.sessionIds ?? []).includes(currentThreadId));
   /* 点「BOSS 会话」新建的那个会话，等它拿到 id 后记成 home（首条消息发出后引擎才分配）。 */
   const bossHomePending = useRef(false);
   useEffect(() => {
@@ -340,10 +354,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const openBossSession = () => {
     if (bossOn) return;
     if (bossThreads.pending && !currentThreadId) return;
-    setBossDirDialog(true);
+    setBossPending(true);
+    bossHomePending.current = true;
+    startNewThread();
+    autoOpenBossDirDialog();
   };
   useEffect(() => {
-    const mac = /mac/i.test(navigator.platform);
+    const mac = isMacPlatform();
     const onKey = (event: KeyboardEvent) => {
       const mod = mac ? event.metaKey : event.ctrlKey;
       if (!mod || event.altKey || (mac ? event.ctrlKey : event.metaKey)) return;
@@ -406,7 +423,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const renderOptionsGroup = (menuLocation: "top" | "bottom") => (
     <div className={`sidebar-options ${menuLocation === "top" ? "sidebar-options-top" : ""}`}>
       {/* 新建 BOSS 会话：项目地址对话框（应用内模态） */}
-      <BossProjectDirDialog open={bossDirDialog} busy={bossDirBusy} onChoose={(choice) => void onBossProjectDir(choice)} />
+      <BossProjectDirDialog open={bossDirOpen} busy={bossDirBusy} onChoose={(choice) => void onBossProjectDir(choice)} />
       <button
         type="button"
         className="sidebar-options-toggle"
@@ -559,7 +576,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   aria-pressed={bossOn}
                   onClick={() => openBossSession()}
                 >
-                  <Crown size={15} /><span>BOSS 会话</span><kbd className="quick-kbd">{hk(/mac/i.test(navigator.platform) ? "Ctrl+Shift+B" : "Ctrl+M")}</kbd>
+                  <Crown size={15} /><span>BOSS 会话</span><kbd className="quick-kbd">{bossShortcutLabel()}</kbd>
                 </button>
                 {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
                     搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}
