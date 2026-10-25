@@ -442,6 +442,10 @@ contextBridge.exposeInMainWorld("codex", {
   voiceResourceDelete: (input: { kind: string }) => __ipc("voice:resource-delete", 1, [input]) as Promise<{ ok: boolean; error?: string }>,
   /* 10-03 单个资源的启用状态与占用 */
   voiceResourceStatus: (input: { kind: string }) => __ipc("voice:resource-status", 1, [input]) as Promise<any>,
+  /* 10-26 可选合成引擎包（kokoro / emotivoice）按需下载；进度事件 voice:event 带 target=pack */
+  voiceTtsPackInstall: (pack: string) => __ipc("voice:tts-pack-install", 1, [pack]) as Promise<any>,
+  /* 10-26 取消当前引擎包下载 */
+  voiceTtsPackCancel: () => __ipc("voice:tts-pack-cancel", 0, []) as Promise<any>,
   voiceStop: () => __ipc("voice:stop", 0, []) as Promise<{ ok: boolean }>,
   voiceProfilesImport: () => __ipc("voice:profiles-import", 0, []) as Promise<any>,
   /* 10-08 音色上传接口：source=base64/file 已实现；pack（音色包）**预留**、明确返回未开放。走与导入同一条草稿链（落盘→ASR 转写参考文本→用户校对） */
