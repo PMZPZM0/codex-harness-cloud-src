@@ -414,7 +414,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
                   {/* BOSS 会话的空白态：与 timeline 同级（绝对定位相对 .timeline-wrap），
                      不进滚动内容流 —— 普通会话完全不受影响。 */}
-                  {isBossEmpty ? <BossThreadIntro onPick={(text) => { app.setPrompt(text); app.composerInputRef?.current?.focus(); }} /> : null}
+                  {isBossEmpty ? <BossThreadIntro cwd={thread?.cwd ?? ""} /> : null}
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>
                   {isEmpty && !isBossEmpty ? (
                     <div className="welcome-state">

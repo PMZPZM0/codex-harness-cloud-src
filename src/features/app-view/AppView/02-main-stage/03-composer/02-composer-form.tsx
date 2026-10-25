@@ -2,10 +2,13 @@
  * ComposerComposerForm —— MainStageComposer 的 JSX 第 2 段（09-22 从 03-composer.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { RelayBalanceBadge, RelayCenterPage } from "../../../../relay";
 import { OpenaiBalanceBadge, OpenaiSubscriptionPage } from "../../../../openai";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../../lib/entity-avatar";
+/* BOSS 会话上下文（域间只走 barrel）—— ⛔ BOSS 会话的项目地址由**欢迎界面**独占设置，
+   输入框上方那枚「项目地址」芯片不能出现（它读的是全局 workspace ⇒ 会串到别的会话的目录）。 */
+import { getBossThreads, isBossSessionContext, subscribeBossThreads } from "../../../../boss-group-view";
 import {
   AlertTriangle,
   Archive,
@@ -153,6 +156,11 @@ import type { HarnessAppApi } from "../../../../app-state/useHarnessApp";
 import { Slot } from "../../../../../runtime/Slot";
 
 export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
+  /* BOSS 会话上下文：⛔ BOSS 会话里输入框上方那枚「项目地址」芯片**不渲染** ——
+     它显示的是全局 workspace（别的会话的目录），会让 BOSS 会话看起来装在别人的项目里。
+     BOSS 会话的项目地址改由**欢迎界面**上的按钮独占设置（10-25 用户实测）。 */
+  const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
+  const isBossSession = isBossSessionContext(bossThreads, app.thread?.id);
   const {
     activeThreadRunning,
     addContextItem,
@@ -375,7 +383,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                             （sidebar-tabs），那里才是配置类功能的固定位置。别再把它塞回输入框。 */}
             {/* 欢迎页「项目地址」选择（仅空态显示，发送首条消息后随欢迎态消失）：
                             与右上角 📁 同一全局 workspace 联动；「无项目」模式每次自动新建独立临时目录 */}
-                        {isEmpty && (
+                        {isEmpty && !isBossSession && (
                           <div className="welcome-cwd-picker">
                             <button type="button" className={`welcome-cwd-chip ${welcomeScratchDir ? "scratch" : ""}`} title={welcomeScratchDir ? "无项目 · 本会话使用独立临时目录（点击更改）" : "项目地址：" + (workspace || "未选择（点击选择）")} onClick={() => setWelcomeCwdMenuOpen((open) => !open)}>
                               {welcomeScratchDir ? <FileQuestion size={12} /> : <FolderOpen size={12} />}
