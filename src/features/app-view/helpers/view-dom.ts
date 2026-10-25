@@ -1,3 +1,4 @@
+let dragCaret: HTMLElement | null = null;
 /**
  * app-view/helpers/view-dom（09-22 架构改造：从 helpers.tsx 按功能域拆出，纯搬迁）
  *
