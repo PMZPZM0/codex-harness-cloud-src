@@ -170,7 +170,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         stage 布尔值 —— 那个布尔值和真实会话状态会对不上（用户实测：切走了按钮还亮着）。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const currentThreadId = app.thread?.id ?? "";
-  const bossOn = Boolean(currentThreadId) && bossThreads.bossIds.includes(currentThreadId);
+  /* 选中态：群 boss 线程 **或** 还没建群时的 home 锚点会话（否则点进去按钮不亮、看着像没进）。 */
+  const bossOn = Boolean(currentThreadId)
+    && (bossThreads.bossIds.includes(currentThreadId) || currentThreadId === bossThreads.homeId);
   /* 点「BOSS 会话」新建的那个会话，等它拿到 id 后记成 home（首条消息发出后引擎才分配）。 */
   const bossHomePending = useRef(false);
   useEffect(() => {

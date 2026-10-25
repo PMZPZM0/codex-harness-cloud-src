@@ -294,6 +294,14 @@ if (state) {
   const timeline = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
   ok(/BossThreadIntro/.test(timeline) && /isEmpty && !isBossEmpty/.test(timeline),
     "BOSS 会话空态走自己的组件（BossThreadIntro），普通欢迎页只给非 BOSS 会话");
+  /* ⛔⛔ 10-25 实测：用 isEmpty 判 BOSS 空态会漏 —— 它要求 thread 为 null，而「会话已建出来但
+     一条消息都没有」时 thread 存在 ⇒ isEmpty 恒 false ⇒ 卡片不渲染 ⇒ 整片空白（用户截图）。 */
+  ok(/const noTurns = \(thread\?\.turns \?\? \[\]\)\.length === 0/.test(timeline)
+    && /isBossHome = Boolean\(thread\?\.id\)/.test(timeline)
+    && /isBossEmpty = \(bossThreads\.pending \|\| isBossThreadNow \|\| isBossHome\) && noTurns/.test(timeline),
+    "BOSS 空态按「0 回合」判定，且三种入口都算（pending / 群 boss 线程 / home 锚点会话）");
+  ok(/\{isBossEmpty \? <BossThreadIntro/.test(timeline),
+    "BOSS 引导卡只在 isBossEmpty 时挂载（普通欢迎页条件保持 isEmpty && !isBossEmpty）");
   ok(!/boss-welcome/.test(read("src/styles/47-boss-group-view.css")) && /boss-intro-card/.test(read("src/styles/47-boss-group-view.css")),
     "BOSS 空态样式是独立的卡片（⛔ 不复用 .welcome-state 那套）");
   ok(/isEmpty && !\(bossThreads\.pending/.test(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx")),
