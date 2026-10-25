@@ -10,6 +10,8 @@ import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { FileTrustDialog } from "../../../components/FileTrustDialog";
 import { CloudManageDialog } from "../../../components/CloudManageDialog";
 import { hk } from "../../../lib/hk";
+import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
+import { EntityTagEditorHost } from "../../../components/EntityTagEditor";
 import {
   AlertTriangle,
   Archive,
@@ -172,6 +174,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
      ⇒ 「选中效果」是**派生量**（当前会话 id 命中某个群的 boss 线程），⛔ 不再用 store 的
         stage 布尔值 —— 那个布尔值和真实会话状态会对不上（用户实测：切走了按钮还亮着）。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
+  const entityTags = useSyncExternalStore(subscribeEntityTags, getEntityTagState, getEntityTagState);
   /* 10-25：新建指挥中枢时弹**应用内**对话框选项目地址（两个选项），⛔ 不用系统弹窗 / 内联 toast。 */
   const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
   const bossDirOpen = bossDirState.open;
@@ -647,6 +650,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 <div className="project-list">
                   {projectGroups.length ? projectGroups.map(([cwd, items]) => {
                     const expanded = expandedProjects.has(cwd);
+                    const projectTag = entityTags.projects[cwd];
                     return (
                       <div key={cwd} className={`project-item ${expanded ? "expanded" : "collapsed"} ${projectMenu === cwd ? "menu-open" : ""} ${items.length ? "" : "is-empty"}`}>
                         <div className="project-item-head" onMouseLeave={() => setProjectMenu((current) => current === cwd ? null : current)}>
@@ -662,6 +666,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                           <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => { event.stopPropagation(); setProjectMenu(projectMenu === cwd ? null : cwd); }}><MoreHorizontal size={14} /></button>
                           {projectMenu === cwd && <div className="project-menu">
                             <button onClick={() => { setProjectMenu(null); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
+                            <button onClick={() => { setProjectMenu(null); openTagEditor({ kind: "project", id: cwd, title: projectNameOf(cwd), value: projectTag ?? null }); }}><Tag size={14} />{projectTag ? "编辑标签" : "添加标签"}</button>
                             <button onClick={() => { setProjectMenu(null); void window.codex.shellReveal(cwd).catch(() => undefined); }}><FolderOpen size={14} />打开项目文件</button>
                             <button className="danger" onClick={() => { setProjectMenu(null); unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />删除项目（含全部会话）</button>
                           </div>}
