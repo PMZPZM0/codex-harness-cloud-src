@@ -364,16 +364,16 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         className="sidebar-options-toggle"
         aria-expanded={!optionsCollapsed}
         aria-controls="sidebar-options-body"
-        title={optionsCollapsed ? "展开拓展功能" : "收起拓展功能"}
+        title={optionsCollapsed ? "展开功能入口" : "收起功能入口"}
         onMouseEnter={(event) => maybeShowFunctionMenuTour(menuLocation, event.currentTarget)}
         onClick={toggleOptions}
       >
-        <LayoutGrid size={15} />
-        <span>拓展功能</span>
+        <LayoutGrid size={15} className="ic-violet" />
+        <span>功能入口</span>
         <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
       </button>
       <div className={`sidebar-options-body ${optionsCollapsed ? "is-collapsed" : ""}`}>
-        <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="拓展功能" aria-hidden={optionsCollapsed}>
+        <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" aria-hidden={optionsCollapsed}>
           <FunctionMenu location={menuLocation} />
         </div>
       </div>
@@ -529,7 +529,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
                     搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}
                 <button className="sidebar-tab sidebar-quick-btn sidebar-quick-search ic-pink" title="技能 · 插件 · MCP：查看教程与入口" onClick={() => setGuideKey("extensions")}>
-                  <Zap size={15} className="ic-pink" /><span>拓展功能</span>
+                  <Zap size={15} className="ic-pink" /><span>功能入口</span>
                 </button>
               </div>
             </div>

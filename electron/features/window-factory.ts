@@ -8,42 +8,32 @@
  * 会被重新赋值的符号经 `mutableState` 访问器读写（ESM 里 import 的绑定不可赋值）。
  */
 import path from "node:path";
-import { pathToFileURL, fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, dialog, shell } from "electron";
-import { isAssistantRuntime } from "../updates";
-import { showAssistantWindow } from "../assistant-window";
 import { existsSync } from "node:fs";
 import { applyRoundedCorners } from "../window/win-rounded-corners";
-import { resolveWindowIcon } from "../app-icon";
+import { sendToWindow } from "./window-bus";
 import { popoutBusWindows, registerBusWindow, unregisterBusWindow } from "../features/window-bus";
 import { flushBootTiming, markBoot } from "../boot-timing";
 import { installContextMenu } from "../main/10-window-menu";
-import { applyThemeToWindow, closeToTrayEnabled, closePromptSeen, closeConfirmBridge, engineActiveTurnIds, notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions } from "../runtime-refs";
+import { applyThemeToWindow, closeToTrayEnabled, closePromptSeen, closeConfirmBridge, engineActiveTurnIds, notifyPopoutClosed, popoutThreadIds } from "../runtime-refs";
 import { closePetWindow } from "./pet-window";
-import { mutableState } from "../main";
+import { mutableState, titleBarOverlayOptions } from "../main";
 import { isInsideTrustedRoots } from "../runtime-refs";
 export function createWindow() {
-  // ⛔⛔ 助手形态（headless）：**根本不创建桌面版主窗**。
-  //   10-12 幽灵窗口事故：此前助手形态照样创建主窗、靠「创建后 hide + 短路 win.show/focus」按住它，
-  //   一旦有别的路径把它叫出来（second-instance → showMainWindow、托盘「显示主窗口」）就露出来，
-  //   而它的任务栏标志早被摘掉 ⇒ **窗口在、任务栏没有**的幽灵形态；再叠加助手自己的可见窗口
-  //   就成了"两层窗口"。**不可见性必须由「压根不创建」保证，不能靠创建后按住。**
-  //   助手的界面统一由 electron/assistant-window.ts 自管（加载 http://127.0.0.1:PORT/）。
-  if (isAssistantRuntime()) {
-    void showAssistantWindow();
-    return;
-  }
   /* ⛔⛔ 防重入（10-22 用户实测「应用还能重复打开」= 两个一模一样的主窗口）：
      `second-instance` 可能在 boot 的 `createWindow()` **之前**到达（连点两次图标 / 启动过程中再点一次），
      那条链路是 `second-instance → showMainWindow → createWindow`，于是先建一个窗口；
-     boot 随后照建不误 —— 同一进程两个主窗口。
-     ⇒ 已经有**未销毁**的主窗口就直接复用它（还原 / 显示 / 聚焦），绝不再 `new BrowserWindow`。 */
+     boot 随后照建不误 —— 同一进程两个主窗口，两份渲染层共享同一份引擎与会话状态。
+     ⇒ 已经有**未销毁**的主窗口就直接复用它（还原 / 显示 / 聚焦），绝不再 `new BrowserWindow`。
+     ⛔ 别把这段改成"总是新建"：托盘「显示主窗口」/ mac activate 也走这条链，重复新建同样是两个窗口。 */
   const alive = mutableState.mainWindow;
   if (alive && !alive.isDestroyed()) {
     if (alive.isMinimized()) alive.restore();
     if (!alive.isVisible()) alive.show();
     alive.focus();
-    return;
+    return alive;
   }
   // Windows 任务栏图标必须用 .ico 才可靠（PNG 会被 electron.exe 默认图标顶掉）；
   // ⛔ 资源定位锚在 app.getAppPath()（dev = 仓库根 / 打包 = app.asar 根），**不要用 __dirname**：
@@ -57,10 +47,15 @@ export function createWindow() {
   //    ⇒ 窗口图标失效 ⇒ dev 下没有 AUMID 兜底 ⇒ 任务栏回退 Electron 原子图标。
   //    ⇒ 依次尝试 appPath / execPath 上溯 / cwd，**取第一个真实存在的**；都对才放弃。
   const iconName = process.platform === "win32" ? "icon.ico" : "icon.png";
-  // ⛔ 图标链路真相源 = ../app-icon.ts（10-12 抽出）：dev 从快捷方式启动时 appPath = 入口脚本
-  //    所在目录（dist-electron），下面这条单一路径必空 ⇒ 任务栏回退 Electron 默认原子（用户实证）。
-  //    多源兜底（appPath / __dirname 上溯 / execPath 上溯 / cwd）收在那一个模块里。
-  const windowIcon = resolveWindowIcon() ?? path.join(app.getAppPath(), "build", iconName);
+  const iconCandidates = [
+    path.join(app.getAppPath(), "build", iconName),
+    // execPath 上溯（dev: node_modules/electron/dist/electron.exe → 仓库根 / electron 子目录）
+    path.resolve(path.dirname(process.execPath), "..", "..", "..", "..", "build", iconName),
+    path.resolve(path.dirname(process.execPath), "..", "..", "..", "build", iconName),
+    // 进程 cwd（dev 从仓库根启动时命中）
+    path.join(process.cwd(), "build", iconName),
+  ];
+  const windowIcon = iconCandidates.find((candidate) => existsSync(candidate)) ?? iconCandidates[0];
   mutableState.mainWindow = new BrowserWindow({
     // 默认桌面尺寸要容纳展开侧栏和完整输入工具栏；小屏仍由响应式布局处理。
     width: 1280,
@@ -79,14 +74,7 @@ export function createWindow() {
     ...(process.platform === "win32"
       ? {
         titleBarStyle: "hidden" as const,
-        titleBarOverlay: {
-          // 让 `.topbar { background: var(--bg) }` 自己穿过来——钮不再"浮在自己的色条上"，
-          // 也无需枚举每个主题调色；亮/暗主题都能干净。符号色在 theme:apply 里跟着主题切。
-          color: "#00000000",
-          symbolColor: titleBarOverlayOptions().symbolColor,
-          // 43 而非 44：底下留 1px 给 .topbar::after 分隔线，线可贯通窗口钮下方
-          height: 43,
-        },
+        titleBarOverlay: { color: "#00000000", symbolColor: titleBarOverlayOptions().symbolColor, height: 43 },
       }
       : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
@@ -110,6 +98,10 @@ export function createWindow() {
   }
   // Windows 11 原生圆角（仅 win32；其余平台函数内静默跳过）。
   applyRoundedCorners(mutableState.mainWindow);
+  // 无边框窗最大化状态推给渲染层（顶栏自定义按钮 + 圆角边距切换）
+  const pushMax = () => sendToWindow("harness:event", { type: "shell:maximized", maximized: Boolean(mutableState.mainWindow?.isMaximized()) });
+  mutableState.mainWindow.on("maximize", pushMax);
+  mutableState.mainWindow.on("unmaximize", pushMax);
   // 登记进窗口广播总线：主窗口 ⇒ sendToWindow 只发它，broadcast* 发全部窗口（见 features/window-bus）
   registerBusWindow(mutableState.mainWindow, { primary: true });
   // ⛔ 导航与新窗口收敛（09-13 审计 S5）：全仓此前 `will-navigate` / `setWindowOpenHandler`
@@ -132,9 +124,11 @@ export function createWindow() {
     delete (webPreferences as any).preload;
     (webPreferences as any).nodeIntegration = false;
     (webPreferences as any).contextIsolation = true;
-    /* ⛔⛔ guest 的 src 收敛：http(s) 放行；**可信本地 HTML 也放行**（10-17 同步自主仓 997efc2 ——
-       文件预览「浏览器打开」空白页的根因：file: 的 src 在此被删 ⇒ guest 从未导航 ⇒ 空白无事件）。
-       口径与 external:open 一致：.html + fileURLToPath 可解 + isInsideTrustedRoots 之内；其余照旧删 src。 */
+    /* ⛔⛔ guest 的 src 收敛（09-13 审计）：http(s) 放行；
+       **可信本地 HTML 也放行**（10-17 用户令「文件预览『浏览器打开』空白页」的根因 ——
+       此前 file: 的 src 在这里被删 ⇒ guest 从未导航 ⇒ 空白且无任何失败事件）。
+       ⛔ 不是放开 file: —— 与 external:open 同一把闸的口径：.html + fileURLToPath 可解 +
+       isInsideTrustedRoots（会话 cwd / userData / 用户亲选路径之内），其余照旧删 src。 */
     const attachSrc = String(params.src ?? "");
     if (/^https?:/i.test(attachSrc)) return;
     if (/^file:/i.test(attachSrc)) {
@@ -240,11 +234,6 @@ export function createWindow() {
  * ⛔ 三处都别自己写 `mainWindow?.show()`：窗口被销毁后它只是 no-op，用户点了「显示主窗口」却什么都没发生。
  */
 export function showMainWindow() {
-  // 助手形态没有「桌面版主窗」⇒ 一律指向助手窗口（second-instance / 托盘「显示主窗口」都会走到这）
-  if (isAssistantRuntime()) {
-    void showAssistantWindow();
-    return;
-  }
   const win = mutableState.mainWindow;
   if (!win || win.isDestroyed()) {
     createWindow();
@@ -255,20 +244,12 @@ export function showMainWindow() {
   win.focus();
 }
 
-/** 独立窗口「建窗中」旗（10-16）：browser-window-created 在 `new BrowserWindow()` 内**同步**
- *  触发，那时还没有窗口实例可比对 ⇒ 只能用旗区分（与 assistant-window 的 pending 同一套办法）。
- *  用途：无头形态下 headless 要按它**放行可见**（独立窗口是给用户看的真窗口，
- *  不像桌面版主窗 / 宠物 / 截图遮罩那样必须藏起来）。 */
-let pendingPopout = false;
-export function isPopoutWindowPending(): boolean { return pendingPopout; }
-
 export function createPopoutWindow(threadId: string) {
   const windowIcon = path.join(
     app.getAppPath(),
     "build",
     process.platform === "win32" ? "icon.ico" : "icon.png",
   );
-  pendingPopout = true;
   const win = new BrowserWindow({
     // 1120 而非 1080：主布局在 ≤1080px 时隐藏消息刻度尺（media query），弹窗初始宽度
     // 必须避开这个断点，否则弹窗里看不到刻度线（用户截图反馈）。
@@ -284,7 +265,11 @@ export function createPopoutWindow(threadId: string) {
     ...(process.platform === "win32"
       ? {
         titleBarStyle: "hidden" as const,
-        titleBarOverlay: titleBarOverlayOptions(),
+        titleBarOverlay: {
+          color: "#00000000",
+          symbolColor: titleBarOverlayOptions().symbolColor,
+          height: 43,
+        },
       }
       : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
@@ -296,7 +281,6 @@ export function createPopoutWindow(threadId: string) {
       webviewTag: false,
     },
   });
-  pendingPopout = false;
   // Windows 11 原生圆角（仅 win32；其余平台函数内静默跳过）。
   applyRoundedCorners(win);
   // ⛔ 导航收敛与主窗口同规则：弹窗永不导航，新窗口一律拒绝并转系统浏览器。
@@ -318,9 +302,8 @@ export function createPopoutWindow(threadId: string) {
   });
   registerBusWindow(win);
   popoutThreadIds.set(win, threadId);
-  /* ⛔ 弹窗原生外观（暗色下右上角系统钮看不见的真修法）：构造参数里那次
-     titleBarOverlayOptions() 是**读一次**，而 Windows 会在窗口首次显示时做边框延展、
-     把构造期设好的属性覆盖回系统值 ⇒ 补设两次（建窗 + show 之后），见 runtime-refs.applyThemeToWindow。 */
+  /* ⛔ 弹窗原生外观（暗色下右上角系统钮看不见的真修法）：构造参数里那次() 是**读一次**，而 Windows 会在窗口首次显示时做边框延展、
+    把构造期设好的属性覆盖回系统值 ⇒ 补设两次（建窗 + show 之后），见 runtime-refs.applyThemeToWindow。 */
   applyThemeToWindow(win);
   win.once("show", () => applyThemeToWindow(win));
   const devUrl = process.env.VITE_DEV_SERVER_URL;
@@ -328,14 +311,6 @@ export function createPopoutWindow(threadId: string) {
   if (devUrl) {
     const sep = devUrl.includes("?") ? "&" : "?";
     void win.loadURL(devUrl + sep + query.slice(1));
-  } else if (process.env.HARNESS_ASSISTANT === "1") {
-    /* ⛔ 助手形态（10-16 用户令「这个云助手，不要打开网页啊」）：独立窗口 = **可见的真窗口**，
-       加载与助手主窗**同一个 http origin**。同源 ⇒ 与助手窗共享 localStorage ⇒
-       主题天然一致；此前"弹浏览器标签页"或"加载 file:// 本地 dist"都会各带一份
-       自己的主题，挂载时的 themeApply 会把主窗的标题栏符号色刷反（深色顶栏上 = 右上角看不见）。
-       可见性由 headless 的 browser-window-created 按 isPopoutWindowPending() 放行。 */
-    const port = Number(process.env.HARNESS_HEADLESS_PORT || 8917);
-    void win.loadURL(`http://127.0.0.1:${port}/${query}`);
   } else {
     void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { popout: threadId } });
   }
