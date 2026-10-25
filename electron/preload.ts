@@ -259,7 +259,7 @@ contextBridge.exposeInMainWorld("codex", {
   writeClipboard: (text: string) => __ipc("clipboard:write", 1, [text]),
   createScratchDir: () => __ipc("scratch:create", 0, []),
   /* ⛔ d.ts 历史上本有两处声明（宽口径 Record<string,string> 与窄口径 3 字段），提取去重保留宽口径 —— identity_onboard 调用点传 8 个字段，窄口径会爆 excess-property。 */
-  saveIdentity: (input: Record<string, string>) => __ipc("personalization:save-identity", 1, [input]),
+  saveIdentity: (input: Record<string, unknown>) => __ipc("personalization:save-identity", 1, [input]),
   applyCustomModel: () => __ipc("custom-model:apply", 0, []),
   upsertProviderModel: (input: { provider: string; model: unknown }) => __ipc("custom-model:upsert-model", 1, [input]),
   removeProviderModel: (input: { provider: string; modelId: string }) => __ipc("custom-model:remove-model", 1, [input]),
