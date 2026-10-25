@@ -366,7 +366,7 @@ contextBridge.exposeInMainWorld("codex", {
   engineCheckUpdate: () => __ipc("engine:check-update", 0, []),
   enginePerformUpdate: () => __ipc("engine:perform-update", 0, []),
   relaunchApp: () => __ipc("app:relaunch", 0, []),
-  /* 10-25：在软件所在盘根新建 BOSS 会话专属项目目录 */
+  /* 10-25：在软件所在盘根新建指挥中枢专属项目目录 */
   createBossProjectDir: () => __ipc("app:boss-project-dir", 0, []),
   readBuiltinPlugins: () => __ipc("builtin:read", 0, []),
   saveBuiltinPlugins: (cfg: unknown) => __ipc("builtin:save", 1, [cfg]),
@@ -838,9 +838,9 @@ contextBridge.exposeInMainWorld("codex", {
   bossGroupSay: (input: any) => __ipc("boss-groups:say", 1, [input]),
   /* 创世 boss：可拉名单（专家/专家团 + 本机 CLI agent，带探测结果） */
   bossGroupPool: () => __ipc("boss-groups:pool", 0, []),
-  /* BOSS 会话身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
+  /*指挥中枢身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
   bossGroupSession: (input: any) => __ipc("boss-groups:session", 1, [input]),
-  /* 清空某个 BOSS 会话的专属记忆目录（⛔ 只清记忆，不删会话） */
+  /* 清空某个指挥中枢的专属记忆目录（⛔ 只清记忆，不删会话） */
   clearBossMemory: (input: any) => __ipc("boss-groups:memory", 1, [input]),
   /* ═══ gen:end ═══ */
 

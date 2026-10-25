@@ -1,14 +1,14 @@
 /**
- * BOSS 会话身份登记表（**唯一真相源**，落盘 `<userData>/boss-sessions.json`）
+ *指挥中枢身份登记表（**唯一真相源**，落盘 `<userData>/boss-sessions.json`）
  *
  * ⛔⛔ 为什么必须放在主进程（而不是渲染层 localStorage）：
  *   记忆层的读写**全部以 workspace 为键**（`<workspace>/.codex-harness/memory/…`），
- *   而「这个 thread 是不是 BOSS 会话」必须在**主进程**知道 —— 因为自动捕获
+ *   而「这个 thread 是不是指挥中枢」必须在**主进程**知道 —— 因为自动捕获
  *   （boot.ts 的 `memoryStore.captureTurn`）在主进程跑，它得知道该往哪个目录写。
  *   渲染层 localStorage 主进程读不到 ⇒ 记忆会被写进普通项目目录 ⇒ 与普通会话混在一起。
  *   ⇒ 名单落主进程，渲染层通过 `boss-groups:session` 通道读/写，两边同一份。
  *
- * ⛔ 每个 BOSS 会话一个**专属记忆目录**（`<userData>/boss-home/memories/<threadId>`）：
+ * ⛔ 每个指挥中枢一个**专属记忆目录**（`<userData>/boss-home/memories/<threadId>`）：
  *   记忆层核心（memory-layers.ts / memory-fabric.ts）不用改一个字 —— 它们只认 workspace，
  *   换 workspace 就换目录 ⇒ 与任何项目、任何普通会话完全拆开。
  *
@@ -40,7 +40,7 @@ function registryFile(): string {
   return path.join(app.getPath("userData"), FILE_NAME);
 }
 
-/** BOSS 会话的专属记忆目录（= 该会话记忆层的 workspace 键）。 */
+/** 指挥中枢的专属记忆目录（= 该会话记忆层的 workspace 键）。 */
 export function bossMemoryWorkspace(threadId: string): string {
   const id = safeId(threadId);
   if (!id) return "";
@@ -71,7 +71,7 @@ async function readRegistry(): Promise<RegistryFile> {
 }
 
 async function writeRegistry(next: RegistryFile): Promise<void> {
-  /* ⛔ 落盘前统一去重（同一 id 只留一条）—— 名单是「哪些会话是 BOSS 会话」的集合，
+  /* ⛔ 落盘前统一去重（同一 id 只留一条）—— 名单是「哪些会话是指挥中枢」的集合，
      重复条目会让面板列出两个同名会话、删一个另一个还在（10-25 实测）。 */
   const merged = new Map<string, BossSessionRecord>();
   for (const s of next.sessions) if (!merged.has(s.id)) merged.set(s.id, s);
@@ -88,13 +88,13 @@ async function writeRegistry(next: RegistryFile): Promise<void> {
   }
 }
 
-/** 列出全部 BOSS 会话（附各自的记忆目录）。 */
+/** 列出全部指挥中枢（附各自的记忆目录）。 */
 export async function listBossSessions(): Promise<Array<{ id: string; createdAt: number; memoryDir: string }>> {
   const reg = await readRegistry();
   return reg.sessions.map((s) => ({ ...s, memoryDir: bossMemoryWorkspace(s.id) }));
 }
 
-/** 登记一个 BOSS 会话（幂等）。 */
+/** 登记一个指挥中枢（幂等）。 */
 export async function registerBossSession(id: string): Promise<{ id: string; createdAt: number; memoryDir: string } | null> {
   const key = String(id ?? "").trim();
   if (!key) return null;
@@ -111,7 +111,7 @@ export async function registerBossSession(id: string): Promise<{ id: string; cre
   return { ...entry, memoryDir: bossMemoryWorkspace(entry.id) };
 }
 
-/** 注销一个 BOSS 会话，并删掉它专属的记忆目录（会话都没了，记忆留着只是垃圾）。 */
+/** 注销一个指挥中枢，并删掉它专属的记忆目录（会话都没了，记忆留着只是垃圾）。 */
 export async function unregisterBossSession(id: string): Promise<{ ok: boolean; removedDir: boolean }> {
   const key = String(id ?? "").trim();
   const reg = await readRegistry();
@@ -145,7 +145,7 @@ export async function renameBossSession(previousId: string, nextId: string): Pro
   return true;
 }
 
-/** 这个 thread 是不是 BOSS 会话？（主进程捕获写入时判路由用） */
+/** 这个 thread 是不是指挥中枢？（主进程捕获写入时判路由用） */
 export async function isBossSession(threadId: string): Promise<boolean> {
   const key = String(threadId ?? "").trim();
   if (!key) return false;
@@ -153,8 +153,8 @@ export async function isBossSession(threadId: string): Promise<boolean> {
   return reg.sessions.some((s) => s.id === key);
 }
 
-/** 启动时从群账本**补登**（老用户的 BOSS 会话可能只在 boss-groups.json 里）。
- *  ⛔ 只补进群账本的 bossThreadId；没建群的「孤儿」BOSS 会话补不回来（那是 10-25 前的旧数据）。 */
+/** 启动时从群账本**补登**（老用户的指挥中枢可能只在 boss-groups.json 里）。
+ *  ⛔ 只补进群账本的 bossThreadId；没建群的「孤儿」指挥中枢补不回来（那是 10-25 前的旧数据）。 */
 export async function backfillFromGroups(bossThreadIds: string[]): Promise<number> {
   const reg = await readRegistry();
   const known = new Set(reg.sessions.map((s) => s.id));
@@ -166,7 +166,7 @@ export async function backfillFromGroups(bossThreadIds: string[]): Promise<numbe
   return add.length;
 }
 
-/** 清空某个 BOSS 会话的专属记忆目录（⛔ 只清记忆，**不删会话**）。 */
+/** 清空某个指挥中枢的专属记忆目录（⛔ 只清记忆，**不删会话**）。 */
 export async function clearBossMemory(memoryDir: string): Promise<{ ok: boolean; error?: string }> {
   const dir = String(memoryDir ?? "").trim();
   if (!dir) return { ok: false, error: "缺 memoryDir" };
@@ -175,7 +175,7 @@ export async function clearBossMemory(memoryDir: string): Promise<{ ok: boolean;
   const root = path.join(app.getPath("userData"), "boss-home", "memories");
   const resolved = path.resolve(dir);
   if (resolved !== path.resolve(root) && !resolved.startsWith(path.resolve(root) + path.sep)) {
-    return { ok: false, error: "拒绝清理该路径（不在 BOSS 记忆目录内）" };
+    return { ok: false, error: "拒绝清理该路径（不在 中枢记忆目录内）" };
   }
   try {
     await fs.rm(resolved, { recursive: true, force: true });

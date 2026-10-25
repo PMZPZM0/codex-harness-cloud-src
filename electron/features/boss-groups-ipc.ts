@@ -20,11 +20,11 @@ import { backfillFromGroups, clearBossMemory, listBossSessions, registerBossSess
 import type { EscalateChoice } from "../boss-groups/types";
 import { broadcastCodexEvent } from "./window-bus";
 
-/** BOSS 会话的角色提示（写进 `<userData>/boss-home/AGENTS.md`，引擎自动注入）。
+/** 指挥中枢的角色提示（写进 `<userData>/boss-home/AGENTS.md`，引擎自动注入）。
  *  ⛔ 改内容必须同时抬 BOSS_HOME_AGENTS_VERSION —— 否则老用户的旧文件不会更新（只写一次）。 */
 const BOSS_HOME_AGENTS_VERSION = "v3";
 const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v3"} -->
-# 你是 BOSS（主控），不亲自干活
+# 你是 中枢（主控），不亲自干活
 
 用户在这里提需求。你的职责**只有六件**：拆需求 → 组队 → 拉群 → 派活 → 推进 → 监督与验收。
 ⛔ **你不亲自执行任何任务**：不写代码、不改文件、不跑命令、不做实现、不"顺手帮你改一下"。
@@ -68,7 +68,7 @@ export const bossGroupsFeature = defineFeature<null>({
 
     setBossEventSink((payload) => broadcastCodexEvent(payload));
 
-    /* ⛔ 10-25 用户令：BOSS 会话要**完全独立**（项目记忆 / 技能 / logs 都不跟普通会话共享）。
+    /* ⛔ 10-25 用户令：指挥中枢要**完全独立**（项目记忆 / 技能 / logs 都不跟普通会话共享）。
        做法 = 它跑在自己的目录 `<userData>/boss-home`（那里没有 AGENTS.md、没有项目 .codex）
        ⇒ 项目级记忆天然为空；群成员仍在用户选的项目目录里干活（group.workspace）。
        目录在这里顺手建好（复用 list 通道，⛔ 不为它新开一条 IPC）。 */
@@ -76,7 +76,7 @@ export const bossGroupsFeature = defineFeature<null>({
     try {
       fs.mkdirSync(bossHomeDir, { recursive: true });
       /* 10-25 用户令：「内置注入好提示词，让 Codex 知道」。
-         BOSS 会话的 cwd 就是这里 ⇒ 引擎自己会读这份 AGENTS.md，零额外注入通道。
+        指挥中枢的 cwd 就是这里 ⇒ 引擎自己会读这份 AGENTS.md，零额外注入通道。
          ⛔ 只写一次（用户可能自己改过，绝不覆盖）。 */
       const bossAgentsMd = path.join(bossHomeDir, "AGENTS.md");
       /* ⛔ 版本化：内容升级（BOSS_HOME_AGENTS_VERSION 变了）就覆盖，否则只写一次。
@@ -86,7 +86,7 @@ export const bossGroupsFeature = defineFeature<null>({
       try { needWrite = !fs.readFileSync(bossAgentsMd, "utf8").includes(stamp); } catch { needWrite = true; }
       if (needWrite) fs.writeFileSync(bossAgentsMd, BOSS_HOME_AGENTS_MD, "utf8");
     } catch { /* 建不了就让引擎报错，别吞 */ }
-    /* BOSS 会话身份登记（10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」）。
+    /*指挥中枢身份登记（10-25 用户令：「记忆板块里面加一个指挥中枢记忆板块，跟普通会话完全拆开」）。
        ⛔ **主进程是唯一真相源**：记忆层的读写以 workspace 为键，捕获写入在主进程跑 ——
           渲染层 localStorage 主进程读不到 ⇒ 名单必须落主进程。
        action：list / add / remove / rename */
@@ -107,27 +107,27 @@ export const bossGroupsFeature = defineFeature<null>({
       return { ok: true, sessions: await listBossSessions() };
     });
 
-    /* 启动补登（10-25）：老用户的 BOSS 会话可能只存在于群账本（boss-groups.json）里，
+    /* 启动补登（10-25）：老用户的指挥中枢可能只存在于群账本（boss-groups.json）里，
        名单文件是新建的 ⇒ 拿群账本的 bossThreadId 补进来，别让他们的记忆路由失效。 */
     void (async () => {
       try {
         const state = await bossStore.load();
         const ids = Object.values(state.groups ?? {}).map((g: any) => String(g?.bossThreadId ?? "")).filter(Boolean);
         const added = await backfillFromGroups(ids);
-        if (added) console.log("[boss-groups] 补登 BOSS 会话身份：", added);
+        if (added) console.log("[boss-groups] 补登指挥中枢身份：", added);
       } catch (error: any) {
         console.warn("[boss-groups] 补登失败：", String(error?.message ?? error).slice(0, 160));
       }
     })();
 
-    /* 清空某个 BOSS 会话的专属记忆（⛔ 只清记忆目录，不删会话本身）。 */
+    /* 清空某个指挥中枢的专属记忆（⛔ 只清记忆目录，不删会话本身）。 */
     ipcHost.handle("boss-groups:memory", async (_event, input: any) => {
       return clearBossMemory(String(input?.memoryDir ?? ""));
     });
 
     ipcHost.handle("boss-groups:list", async () => {
       const state = await bossStore.load();
-      /* 10-25 用户实测：「成员也没有更新，完全看不懂」—— 同一个 BOSS 会话里建过两个群
+      /* 10-25 用户实测：「成员也没有更新，完全看不懂」—— 同一个指挥中枢里建过两个群
          （旧的成员全被移出、新的在跑），弹窗取的是**第一个匹配**的旧群。
          ⇒ 按**最近活动**排序，弹窗/下拉取到的第一个匹配就是"现在这个群"。 */
       const lastActivityAt = (groupId: string, createdAt: number) => {
@@ -140,7 +140,7 @@ export const bossGroupsFeature = defineFeature<null>({
         }
         return latest;
       };
-      /* ⛔ list 的返回形状是**数组**（多处消费方按数组用）⇒ BOSS 会话名单走独立的
+      /* ⛔ list 的返回形状是**数组**（多处消费方按数组用）⇒ 指挥中枢名单走独立的
          `boss-groups:session`（action=list）通道，⛔ 不在这里夹带。 */
       return Object.values(state.groups).map((group) => ({
         id: group.id,
@@ -148,7 +148,7 @@ export const bossGroupsFeature = defineFeature<null>({
         createdAt: group.createdAt,
         paused: Boolean(group.paused),
         bossThreadId: group.bossThreadId,
-        /* 群成员的会话 id（10-25 用户令：侧栏给它们打「BOSS 调度」标签）。
+        /* 群成员的会话 id（10-25 用户令：侧栏给它们打「中枢调度」标签）。
            ⛔ 成员会话是派活时新建的，不走 delegate 登记 ⇒ 只能从这里回给渲染层。 */
         memberThreadIds: group.members.map((member) => member.threadId).filter(Boolean),
         /* 10-25：**在群成员数**（不含被移出的）—— 被移出的那位不算群成员
@@ -160,9 +160,9 @@ export const bossGroupsFeature = defineFeature<null>({
       })).sort((a: any, b: any) => Number(b.lastActivityAt ?? 0) - Number(a.lastActivityAt ?? 0));
     });
 
-    /* BOSS 会话的会话 id 重绑（10-25）：rollout 丢了的会话引擎无法继续，渲染层会重建一个会话
+    /*指挥中枢的会话 id 重绑（10-25）：rollout 丢了的会话引擎无法继续，渲染层会重建一个会话
        把消息发过去 —— 这里把群账本的 bossThreadId 改到新会话，群事件才回得到它。
-       ⛔ 不重绑 = 每次发消息侧栏多一个会话、群事件回不到 BOSS（用户点名「不要新建会话」）。 */
+       ⛔ 不重绑 = 每次发消息侧栏多一个会话、群事件回不到 中枢（用户点名「不要新建会话」）。 */
     ipcHost.handle("boss-groups:rebind", async (_event, input: any) => {
       const previous = String(input?.previousThreadId ?? "");
       const next = String(input?.threadId ?? "");
