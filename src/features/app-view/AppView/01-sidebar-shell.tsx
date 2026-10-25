@@ -3,7 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { BossProjectDirDialog, autoOpenBossDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
+import { BossProjectDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
 import { isMacPlatform } from "../../../lib/is-mac-platform";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
@@ -364,7 +364,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     bossHomePending.current = true;
     startNewThread();
     setBossPending(true);
-    autoOpenBossDirDialog();
+    /* ⛔⛔ 10-25 用户令：「不要进 BOSS 会话欢迎界面就弹，改成点击那个选项再弹」
+       ⇒ 这里**不再**自动弹项目地址对话框；入口在输入框左上角那枚项目地址 chip
+         （`02-composer-form.tsx` 的 `boss-cwd-chip`，位置与普通会话欢迎界面一致），点它才弹。 */
   };
   useEffect(() => {
     const mac = isMacPlatform();
