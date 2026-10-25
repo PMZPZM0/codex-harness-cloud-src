@@ -346,8 +346,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     const mac = /mac/i.test(navigator.platform);
     const onKey = (event: KeyboardEvent) => {
       const mod = mac ? event.metaKey : event.ctrlKey;
-      if (!mod || !event.shiftKey || event.altKey || (mac ? event.ctrlKey : event.metaKey)) return;
-      if (event.key.toLowerCase() !== "b") return;
+      if (!mod || event.altKey || (mac ? event.ctrlKey : event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (mac) {
+        if (!event.shiftKey || key !== "b") return;
+      } else if (event.shiftKey || key !== "m") return;
       event.preventDefault();
       openBossSession();
     };
@@ -545,7 +548,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   aria-pressed={bossOn}
                   onClick={() => openBossSession()}
                 >
-                  <Crown size={15} /><span>BOSS 会话</span><kbd className="quick-kbd">{hk("Ctrl+Shift+B")}</kbd>
+                  <Crown size={15} /><span>BOSS 会话</span><kbd className="quick-kbd">{hk(/mac/i.test(navigator.platform) ? "Ctrl+Shift+B" : "Ctrl+M")}</kbd>
                 </button>
                 {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
                     搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}
