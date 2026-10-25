@@ -221,7 +221,9 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const bossSnap = getBossThreads();
     const isBossMemberThread = bossSnap.memberIds.includes(entry.id);
     /* 10-25 用户令：自动新建的 BOSS 会话要**打标签**，跟普通会话一眼区分开。 */
-    const isBossOwnThread = bossSnap.bossIds.includes(entry.id) || entry.id === bossSnap.homeId;
+    /* ⛔ 统一口径：群 boss 线程 **或** 已登记的 BOSS 会话（sessionIds）⇒ 徽标/图标/注入三处一致，
+       不会出现"被当成 BOSS 却没有 BOSS 徽标"这种串台。 */
+    const isBossOwnThread = bossSnap.bossIds.includes(entry.id) || (bossSnap.sessionIds ?? []).includes(entry.id);
     const sourceBadge = isBossOwnThread
       ? { tone: "boss", label: "BOSS" }
       : isBossMemberThread
@@ -254,7 +256,11 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${bag.pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={bag.pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); bag.togglePinThread(entry.id); }}><Pin size={13} /></button>
+        {/* ⛔ 10-25 用户令：「BOSS 会话不要归档功能，有删除会话功能就行了」⇒ BOSS 会话不挂归档按钮
+            （删除在「⋯」菜单里）。普通会话不受影响。 */}
+        {isBossOwnThread ? null : (
         <button className="thread-archive-button" title="归档会话" onClick={(event) => { event.stopPropagation(); void bag.archiveThread(entry.id); }}><Archive size={13} /></button>
+        )}
         <button className="thread-more-button" title="会话操作" aria-expanded={bag.threadRowMenu?.id === entry.id} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const menuHeight = 250; bag.setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menuHeight - 8)), right: Math.max(8, window.innerWidth - rect.right) }); }}><MoreHorizontal size={14} /></button>
         {extras?.actions}
         {/* ⛔⛔ 2026-10-04 用户指定换成 Uiverse「serious-mule-65」8 点旋转 spinner。
