@@ -136,9 +136,12 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   /* 10-15：限时福利由云端管理面板接管，模型配置里只做渲染层过滤（不删档案）。 */
   const visibleProviders = providersList.filter((p: any) => p.provider !== "limited-benefit");
   const realPptoken = visibleProviders.some((p: any) => p.provider === "pptoken");
-  const displayProviders = realPptoken
-    ? [...visibleProviders].sort((a: any, b: any) => (a.provider === "pptoken" ? 0 : 1) - (b.provider === "pptoken" ? 0 : 1))
-    : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...visibleProviders];
+  /* 10-25 用户令：PPtoken 卡与云端模型卡默认置顶，后续新增的卡片都排它们下面（稳定排序，同层级保持原顺序）。 */
+  const PINNED_PROVIDER_ORDER: Record<string, number> = { pptoken: 0, cloud: 1 };
+  const displayProviders = (realPptoken
+    ? [...visibleProviders]
+    : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...visibleProviders]
+  ).sort((a: any, b: any) => (PINNED_PROVIDER_ORDER[a.provider] ?? 2) - (PINNED_PROVIDER_ORDER[b.provider] ?? 2));
   const draftForProvider = (p: any) => ({
     provider: p.provider,
     name: p.name,
