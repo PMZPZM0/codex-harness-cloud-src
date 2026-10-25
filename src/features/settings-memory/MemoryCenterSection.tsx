@@ -17,10 +17,11 @@ import { useState } from "react";
 import { PyramidPanel } from "./PyramidPanel";
 import { SharedLibraryPanel } from "./SharedLibraryPanel";
 import { BackendConsolePanel } from "./BackendConsolePanel";
+import { BossMemoryPanel } from "./BossMemoryPanel";
 import { LayerRulesPane, MemoryEntriesPane, MemoryModePane, MemorySearchPane, MemorySourcesPane, ResidentMemoryPane } from "./MemoryPanes";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { PageInfo } from "../../components/SettingsHead";
-import { BookOpen, Database, Layers } from "lucide-react";
+import { BookOpen, Crown, Database, Layers } from "lucide-react";
 import { MemoryConfigModal } from "../../features/memory";
 import type { HarnessAppApi } from "../app-view/types";
 export type MemoryCenterSectionProps = {
@@ -132,6 +133,13 @@ return (
                             只对 builtin 有意义 —— MCP 用自己的 memory.db、云端后端走 memapi，
                             在它们下面渲染等于给了两套互相打架的「存哪儿」。⇒ 只在 builtin 下出现。 */}
                         {app.memoryBackend === "builtin" ? <MemoryModePane app={app} /> : null}
+                      </SettingsDialog>
+                    )}
+                    {openCard === "boss" && openMeta && (
+                      <SettingsDialog title="BOSS 会话记忆" icon={<Crown size={15} />} hint="每个 BOSS 会话一份 · 与项目、普通会话完全拆开" size="lg" onClose={() => setOpenCard(null)}>
+                        {/* ⛔ 独立板块（10-25 用户令）：BOSS 会话的记忆不在任何项目里 ——
+                            放「项目共享记忆库」里既找不到、也会让人误以为它属于某个项目。 */}
+                        <BossMemoryPanel threads={threads} onOpenThread={(id: string) => { setOpenCard(null); openThread?.(id); }} onNotice={app.setNotice} />
                       </SettingsDialog>
                     )}
   </section>
