@@ -1,4 +1,3 @@
-let dragCaret: HTMLElement | null = null;
 /**
  * app-view/helpers/view-dom（09-22 架构改造：从 helpers.tsx 按功能域拆出，纯搬迁）
  *
@@ -15,6 +14,8 @@ import { COMPOSER_FILE_CHIP_ICON } from "../constants";
 import { imageDisplaySrc } from "../../../lib/image-src.mjs";
 
 
+
+let dragCaret: HTMLElement | null = null;
 
 export /** 生成内联附件 chip（contenteditable=false）：点主体打开/预览，点 X 删除；**按住可拖动排序**。
  *  图片与文件同一套外形：图片用真实缩略图、文件用图标。
