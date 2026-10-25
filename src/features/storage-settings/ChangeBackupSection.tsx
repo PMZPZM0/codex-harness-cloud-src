@@ -11,7 +11,7 @@
  *   （不在本地另存一份 state 真值）。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Archive, FolderOpen, ShieldCheck } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 
 type BackupConfig = {
@@ -92,17 +92,18 @@ export function ChangeBackupSection({ onNotice, openAppConfirm }: {
   if (!config) {
     return (
       <section className="settings-section stack is-settings-flow">
-        <div className="settings-subhead"><Archive size={13} />改动备份</div>
-        <p className="muted">正在读取配置…</p>
+        <div className="settings-exp-group-head"><span>改动备份</span><small>每个回合结束后记录改过的文件与变更内容</small></div>
+        <div className="storage-page-card settings-card"><p className="muted">正在读取配置…</p></div>
       </section>
     );
   }
 
   return (
     <section className="settings-section stack is-settings-flow">
-      <div className="settings-subhead"><Archive size={13} />改动备份</div>
-
-      {/* 功能开关 —— 默认关（用户没主动开之前不产生任何磁盘产物） */}
+      <div className="settings-exp-group-head"><span>改动备份</span><small>每个回合结束后记录改过的文件与变更内容</small></div>
+      {/* 10-24 用户令「整齐划一」：开关 / 目录 / 产物概览收进同一张白卡（去内联样式） */}
+      <div className="storage-page-card settings-card">
+        {/* 功能开关 —— 默认关（用户没主动开之前不产生任何磁盘产物） */}
       <div className="storage-row">
         <div className="storage-meta">
           <strong>启用改动自动备份</strong>
@@ -120,13 +121,13 @@ export function ChangeBackupSection({ onNotice, openAppConfirm }: {
         />
       </div>
 
-      {/* 备份目录 —— 空 = 默认；非法路径会被主进程回退并在此显示警示 */}
-      <div className="settings-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
-        <div className="storage-meta">
-          <strong>备份目录</strong>
-          <span>留空则使用默认目录（应用数据目录下 change-backups）；目录不存在会在启用时自动创建</span>
-        </div>
-        <div className="settings-actions" style={{ flexWrap: "nowrap", gap: 8 }}>
+        {/* 备份目录 —— 空 = 默认；非法路径会被主进程回退并在此显示警示 */}
+        <div className="storage-dir-row">
+          <div className="storage-meta">
+            <strong>备份目录</strong>
+            <span>留空则使用默认目录（应用数据目录下 change-backups）；目录不存在会在启用时自动创建</span>
+          </div>
+          <div className="storage-dir-line">
           <input
             className="account-menu-input"
             type="text"
@@ -149,34 +150,33 @@ export function ChangeBackupSection({ onNotice, openAppConfirm }: {
           >
             <FolderOpen size={13} />
           </button>
+          </div>
+          {/* 生效目录 + 回退警示 */}
+          <p className="muted mono storage-dir-effective">
+            实际生效：{config.dir}{config.dirExists ? "" : "（尚未创建）"}
+          </p>
+          {config.fallback ? (
+            <p className="muted storage-dir-warn">
+              ⚠ 你填的路径无效（需为绝对路径，且不能是磁盘根目录），已回退到默认目录。
+            </p>
+          ) : null}
         </div>
-      </div>
 
-      {/* 生效目录 + 回退警示 */}
-      <p className="muted mono" style={{ wordBreak: "break-all" }}>
-        实际生效：{config.dir}{config.dirExists ? "" : "（尚未创建）"}
-      </p>
-      {config.fallback ? (
-        <p className="muted" style={{ color: "var(--warn, #d08700)" }}>
-          ⚠ 你填的路径无效（需为绝对路径，且不能是磁盘根目录），已回退到默认目录。
+        {/* 产物概览 */}
+        <div className="storage-row">
+          <div className="storage-meta">
+            <strong>已备份：{summary?.conversations ?? 0} 个会话 · {summary?.changes ?? 0} 条变更</strong>
+            <span>{formatBytes(summary?.bytes ?? 0)}（索引 + 明细）</span>
+          </div>
+          <button className="danger-setting" disabled={busy} onClick={() => void clear()}>
+            {busy ? "处理中…" : "清空备份"}
+          </button>
+        </div>
+        <p className="muted storage-structure-note">
+          与 WorkBuddy 的改动备份同构：索引在 <span className="mono">changes-index/&lt;会话 id&gt;.json</span>，
+          含变更块全文的明细在 <span className="mono">changes-detail/&lt;会话 id&gt;/</span>。
         </p>
-      ) : null}
-
-      {/* 产物概览 */}
-      <div className="settings-subhead"><ShieldCheck size={13} />已备份</div>
-      <div className="storage-row">
-        <div className="storage-meta">
-          <strong>{summary?.conversations ?? 0} 个会话 · {summary?.changes ?? 0} 条变更</strong>
-          <span>{formatBytes(summary?.bytes ?? 0)}（索引 + 明细）</span>
-        </div>
-        <button className="danger-setting" disabled={busy} onClick={() => void clear()}>
-          {busy ? "处理中…" : "清空备份"}
-        </button>
       </div>
-      <p className="muted">
-        与 WorkBuddy 的改动备份同构：索引在 <span className="mono">changes-index/&lt;会话 id&gt;.json</span>，
-        含变更块全文的明细在 <span className="mono">changes-detail/&lt;会话 id&gt;/</span>。
-      </p>
     </section>
   );
 }

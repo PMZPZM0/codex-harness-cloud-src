@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（97 个能力域 / 530 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（97 个能力域 / 531 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -55,9 +55,9 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 ## 能力域
 
-### boss-groups（12 通道）
+### boss-groups（13 通道）
 创世 boss 群编排：建群/派活/独立评审/打回换人/预算闸（成员各自一个常驻会话，浏览器用 ego lite 独立 TaskSpace）
-通道：boss-groups:list, boss-groups:status, boss-groups:create, boss-groups:assign, boss-groups:review, boss-groups:escalate, boss-groups:browser, boss-groups:recheck, boss-groups:member, boss-groups:pin, boss-groups:say, boss-groups:pool
+通道：boss-groups:list, boss-groups:status, boss-groups:create, boss-groups:assign, boss-groups:review, boss-groups:escalate, boss-groups:browser, boss-groups:recheck, boss-groups:member, boss-groups:pin, boss-groups:say, boss-groups:pool, boss-groups:rebind
 
 ### pet（20 通道）
 桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置
