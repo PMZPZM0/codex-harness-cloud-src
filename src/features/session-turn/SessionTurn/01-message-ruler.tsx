@@ -113,6 +113,14 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
   const wheelCtxRef = useRef({ allMarks, windowSize, currentIndex, windowOffset });
   wheelCtxRef.current = { allMarks, windowSize, currentIndex, windowOffset };
 
+  /* 声音反馈（10-26 用户：「触发波浪效果没有声音反馈」）——
+     原来的咔哒声只挂在**刻度尺自身**的滚轮上（滑选区），滚动消息触发的波浪是静音的。
+     现在改成「阅读位置跨过一条消息就咔哒一声」：一格里最多一声，快速连滚不会糊成噪音
+     （playWheelTick 内部另有 30ms 节流）；方向跟随本次滚轮方向，与刻度尺自身滚轮同一套音色。 */
+  const waveRef = useRef(false);
+  const waveDirRef = useRef(1);
+  const prevMarkRef = useRef<string | null>(null);
+
   // 滚动联动：视口上沿 30% 处落在哪条消息上，就高亮对应刻度
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -133,6 +141,9 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
         else break;
       }
       setCurrentItemId(current);
+      /* ⛔ 只在「滚轮滚动期间」且**跨过了一条消息**时响一声；静止、程序化滚动、跳转都不出声。 */
+      if (waveRef.current && current && current !== prevMarkRef.current) playWheelTick(waveDirRef.current);
+      prevMarkRef.current = current;
     };
     update();
     // rAF 节流：scroll/resize 高频触发，直接跑 update 会读 offsetTop/scrollTop 强制同步布局
@@ -144,10 +155,12 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
     /* 波浪开关：只有真实滚轮输入才点亮（程序化滚动、贴底跟随、点击跳转都不算）。
        最后一次滚轮后 600ms 自动收起 —— 用户要的是「滚动时才有波浪」，不是常驻呼吸。 */
     let wheelTimer: ReturnType<typeof setTimeout> | undefined;
-    const onWheel = () => {
+    const onWheel = (event: WheelEvent) => {
+      waveRef.current = true;
+      waveDirRef.current = event.deltaY > 0 ? 1 : -1;
       setWheelWave(true);
       if (wheelTimer) clearTimeout(wheelTimer);
-      wheelTimer = setTimeout(() => setWheelWave(false), 600);
+      wheelTimer = setTimeout(() => { waveRef.current = false; setWheelWave(false); }, 600);
     };
     const observer = new ResizeObserver(schedule);
     observer.observe(scroller);
