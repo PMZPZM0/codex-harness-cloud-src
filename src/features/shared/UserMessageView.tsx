@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo } from "react";
 import { justSentIds } from "../../lib/just-sent-ids";
 import { claimSendAnimation } from "../../lib/claim-send-animation";
 import { itemText } from "../../lib/item-text";
-import { isWatchdogSpamText } from "../../lib/host-queue.mjs";
+import { isHiddenNoticeBlock } from "../../lib/visible-group-blocks.mjs";
 import { parseUserRefs, userDisplayText, formatThreadReferenceBlock } from "../../lib/user-refs";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import type { GroupEventBlock } from "../../lib/group-event-text.mjs";
@@ -84,9 +84,14 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
        ⇒ 中枢会话里几乎每条消息都是群事件 ⇒ 刻度尺一个参照点都找不到，
        currentItemId 永远为 null，高亮与波浪都不动。
        包一层只承载定位属性的 div（⛔ 不加类名、不带样式，避免动到群卡的布局）。 */
+    /* ⛔ 10-26 用户：「刻度线要对应消息和群里展示的事件，不要对应那些不展示的」——
+       全是已废弃刷屏通知的群事件**连外壳都不渲染**（GroupFeed 本来会返回 null，
+       但外层 div 还留着定位属性 ⇒ DOM 里一堆空壳，刻度尺会以为那里有条消息）。 */
+    const visibleBlocks = refs.groupEvents.filter((block) => !isHiddenNoticeBlock(block));
+    if (!visibleBlocks.length) return null;
     return (
       <div data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
-        <GroupFeed blocks={refs.groupEvents} onOpenFile={onOpenFile} />
+        <GroupFeed blocks={visibleBlocks} onOpenFile={onOpenFile} />
       </div>
     );
   }
@@ -235,7 +240,7 @@ function booked(title: string | undefined | null): string {
  *     它覆盖预算 80%/用尽 + 停滞看门狗 + 待审看门狗三类。
  *  ⛔ 只过滤这三类：成员进出 / 失败 / 超时这些系统事件仍要看得见。 */
 function GroupFeed({ blocks, onOpenFile }: { blocks: GroupEventBlock[]; onOpenFile?: (path: string) => void }) {
-  const shown = blocks.filter((b) => !(b.type === "notice" && isWatchdogSpamText(b.text)));
+  const shown = blocks.filter((b) => !isHiddenNoticeBlock(b));
   if (!shown.length) return null;
   /* ⛔ 纯系统事件（没有任何成员汇报/结论）**不套卡片**：用户截图里一屏 7 张「群汇报」空卡，
      就是「只有一行居中灰字」也硬套了细边框 + 极淡底 + 卡头 ⇒ 看着像一堆警告条。
