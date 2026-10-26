@@ -138,7 +138,25 @@ const CHECKS = [
         Boolean(oa && oa.page === "OpenAI 订阅" && !oa.hasInfo && !oa.hasCopy && oa.twoPerRow
           && oa.rects.every(function(r){ return r.small === 0 && r.h <= 80 && r.w < oa.gridW - 20; })),
         JSON.stringify(oa));
-      await h.pressKey("Escape");
+            await nav("控制台");
+      await wait(900);
+      const ctrl = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const seg=[...m.querySelectorAll(".perm-seg-btn")];
+        const cs=seg[0]?getComputedStyle(seg[0]):null;
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          groups:m.querySelectorAll(".settings-exp-group-head").length,
+          cards:seg.length,
+          align:cs?cs.alignItems:"", ta:cs?cs.textAlign:"" };
+      })()`).catch(() => null);
+      await nav("外观");
+      await wait(800);
+      const appGroups = await h.eval(`document.querySelectorAll(".settings-modal .settings-exp-group-head").length`).catch(() => -1);
+      h.check("⑥ 控制台：分组小字已删、权限卡文字居中；外观页同样无分组小字",
+        Boolean(ctrl && ctrl.page === "控制台" && ctrl.groups === 0 && ctrl.cards === 3
+          && ctrl.align === "center" && ctrl.ta === "center" && appGroups === 0),
+        JSON.stringify({ ctrl, appGroups }));
+await h.pressKey("Escape");
       await wait(300);
     },
   },
