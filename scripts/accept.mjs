@@ -224,6 +224,7 @@ const CHECKS = [
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
           hasSelect:!!sel, options:list?list.querySelectorAll(".app-select-option").length:0,
           tabs:m.querySelectorAll(".mcp-market-toolbar .skill-tabs").length,
+          hasInfo:!!m.querySelector(".page-info"),
           labelWrap:lab?getComputedStyle(lab).whiteSpace:"",
           jumps:labels.filter((x)=>x.includes("广场")) };
       })()`).catch(() => null);
@@ -231,6 +232,10 @@ const CHECKS = [
         Boolean(mcpFilter && mcpFilter.page === "MCP" && mcpFilter.hasSelect && mcpFilter.options >= 5
           && mcpFilter.tabs === 0 && mcpFilter.labelWrap === "nowrap" && mcpFilter.jumps.length === 0),
         JSON.stringify(mcpFilter));
+      /* 10-27 用户（MCP 页截图）：「右上角问号删了」⇒ 页头整块撤掉，页面上不再有这枚 ?。 */
+      h.check("⑩ MCP：右上角问号已删",
+        Boolean(mcpFilter && !mcpFilter.hasInfo),
+        JSON.stringify({ hasInfo: mcpFilter && mcpFilter.hasInfo }));
 
       await nav("技能");
       await wait(1000);

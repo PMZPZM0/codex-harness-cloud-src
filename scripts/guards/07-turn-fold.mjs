@@ -227,9 +227,12 @@ export async function run() {
     //    「模型」页（标题是 provider-list-head、不是 settings-copy）与「专家和专家团」页
     //    （说明只有一句短话、不在收编名单里）的入口就真被漏掉了：内容库还在，用户点不到。
     //    这正是本条守卫要防的形态（本轮 code review 抓到的两个真问题之一）。
-    const orphanKeys = HELP_KEYS.filter((key) => !new RegExp(`helpKey="${key}"`).test(appC + voiceC));
+    // 10-26/10-27 用户令：模型页、插件页、MCP 页的 ? 都被明确撤掉（问号删除 / 删页头?），
+    //    帮助库里的主题内容保留 —— 它们是**明确要求**、不是漏挂 ⇒ 列入例外，别消红消成假绿。
+    const NO_HINT_KEYS = ["model", "mcp", "plugins"];
+    const orphanKeys = HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key) && !new RegExp(`helpKey="${key}"`).test(appC + voiceC));
     (orphanKeys.length === 0)
-      ? ok(`【32】${HELP_KEYS.length} 个帮助主题都有 ? 入口（无"内容库在、入口丢了"的孤儿）`)
+      ? ok(`【32】${HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key)).length} 个帮助主题都有 ? 入口（无"内容库在、入口丢了"的孤儿）`)
       : fail(`【32】这些主题的帮助入口丢了：${orphanKeys.join(", ")} —— 内容库还在，但用户点不到`);
     // ⛔ 赘述回潮的可证伪判据：settings-copy 区块里不该再有 >40 字的内联段落。
     //    短句（≤40 字）允许内联 —— 它只占一行，硬收进 ? 反而让用户多点一次。
