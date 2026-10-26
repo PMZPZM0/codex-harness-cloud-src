@@ -393,8 +393,15 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     const win = { ordered: timelineWindow.ordered, visible: historyPlan.visible };
     const cs = compactionStateOf(win.ordered, threadCompactToast?.state);
     const record = compactionRecordFor(thread.id);
+    /* ⛔⛔ 10-26 用户：「都没压缩过，好多绿线」「绿线跟着滚轮跑，压根不是压缩线的位置」——
+       没有压缩证据时也照画（纯函数兜底 = visible 最后一回合）⇒ 凭空一条线且跟着滚。
+       ⇒ 没证据不画；有证据但定不了位置也不画。 */
+    const hasEvidence = cs.state === "done" || cs.state === "compacting" || Boolean(record);
+    if (!hasEvidence) return { turnId: "", atEnd: false };
     const boundary = cs.turnId || String(record?.turnId ?? "");
-    const at = resolveCompactionAnchor(win.visible, boundary, { compactionAt: Number(record?.at ?? 0) });
+    const compactionAt = Number(record?.at ?? 0);
+    if (!boundary && !(compactionAt > 0)) return { turnId: "", atEnd: false };
+    const at = resolveCompactionAnchor(win.visible, boundary, { compactionAt });
     if (at < 0) return { turnId: "", atEnd: false };
     /* ⛔ 刻度尺只给**用户消息**画刻度：压缩落在空回合（手动压缩）上时，锚点那个回合没有刻度 ⇒
        绿色段要挂在「锚点位置之后第一个有用户消息的回合」的刻度之前；后面一个都没有 = 末尾。 */
