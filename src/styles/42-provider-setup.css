@@ -494,21 +494,9 @@
   gap: 12px;
   flex-wrap: wrap;
 }
-.provider-page-toolbar .provider-list-head { margin: 0; }
-.provider-count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  margin-left: 4px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 7%, transparent);
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 600;
-}
 .provider-page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* 保存重启用红色警示；高度/字号与旁边两颗按钮一致（用户：「不用刻意放大」） */
+.provider-page-actions .danger-setting { min-height: 34px; font-size: 12px; }
 
 .provider-card-grid {
   display: grid;
