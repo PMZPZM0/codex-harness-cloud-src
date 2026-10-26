@@ -1201,7 +1201,10 @@
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
-  gap: 4px;
+  /* ⛔ 10-26 用户：「刻度线中间那么小一个缝隙，鼠标上下滑动都会断」——
+     2px 线 + 上下 4px padding + 4px gap ⇒ 每格之间 4px 死区，指针穿过被判 mouseleave。
+     改零 gap + 上下 6px：单槽仍 14px（线间距与外观不变），命中区首尾相接。 */
+  gap: 0;
   display: flex;
   position: absolute;
   inset: 0;
@@ -1218,7 +1221,8 @@
   width: 12px;
   height: 2px;
   margin-left: 12px;
-  padding: 4px 0;
+  /* 2px 线 + 上下 6px = 14px 命中区（配 gap:0 ⇒ 相邻刻度相接） */
+  padding: 6px 0;
   transition:
     width 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
     margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
@@ -1233,7 +1237,7 @@
   /* ⛔ 静止与普通刻度同长（12px）；波浪时同样**只向右**变长（左端对齐不动）。 */
   width: 12px;
   height: 2px;
-  margin: 4px 0 4px 12px;
+  margin: 6px 0 6px 12px;
   padding: 0;
   border: 0;
   border-radius: 1px;

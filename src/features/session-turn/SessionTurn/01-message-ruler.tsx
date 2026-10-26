@@ -190,6 +190,28 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
   /* 当前阅读位置在**渲染出来的这一段刻度**里的下标。自动波浪以它为中心：
      往上/往下滚动 → currentItemId 变化 → 波浪跟着走（CSS transition 把相邻刻度
      的长度变化错峰，形成用户要的“波浪”；hover 时以鼠标位置为准）。 */
+  /* 悬停/划动改成**整条轨道连续响应**（10-26 用户：缝隙处会断，没有连贯性）：
+     按指针 Y 取最近的一条刻度，不再依赖"正好落在某个 button 上"。 */
+  const hoverAt = (clientY: number) => {
+    const track = trackRef.current;
+    if (!track) return;
+    const tickEls = Array.from(track.querySelectorAll<HTMLElement>(".ruler-tick"));
+    if (!tickEls.length) return;
+    let best = 0;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < tickEls.length; i += 1) {
+      const rect = tickEls[i].getBoundingClientRect();
+      const dist = Math.abs(rect.top + rect.height / 2 - clientY);
+      if (dist < bestDist) { bestDist = dist; best = i; }
+    }
+    if (best !== hoverIndex) {
+      setHoverIndex(best);
+      playWheelTick(-1);
+    }
+    const el = tickEls[best];
+    setTip({ text: marks[best]?.label ?? "", top: el.offsetTop + el.offsetHeight / 2 });
+  };
+
   const currentPos = currentItemId ? marks.findIndex((m) => m.itemId === currentItemId) : -1;
   return (
     <div className="message-ruler" role="navigation" aria-label="消息定位">
@@ -217,6 +239,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
             playWheelTick(direction);
           }, { passive: false });
         }}
+        onMouseMove={(event) => hoverAt(event.clientY)}
         onMouseLeave={() => { setHoverIndex(null); setTip(null); }}
       >
         {marks.map((mark, index) => {
@@ -240,13 +263,6 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
               />}
               <button
               className={`ruler-tick ${mark.type} ${mark.id === latestId ? "latest" : ""} ${mark.itemId === currentItemId ? "current" : ""}${wave}`}
-              onMouseEnter={(event) => {
-                setHoverIndex(index);
-                setTip({ text: mark.label, top: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 });
-                /* 10-26：「鼠标放上去，挪动和滚动也要触发声音」—— 划过一格响一声（音调略高）。 */
-                playWheelTick(-1);
-              }}
-              onMouseLeave={() => setTip(null)}
               onClick={() => onJump(mark.turnId)}
               aria-label={mark.label}
               data-turn-id={mark.turnId}
