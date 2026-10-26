@@ -350,7 +350,7 @@ export const limitedBenefitFeature = defineFeature<null>({
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("limited-benefit: 缺少 ipc 服务（宿主未提供？）");
-    void CHANNELS;   // 通道清单在 manifest 登记；保留常量便于守卫比对（同 free-gateway 做法）
+    void CHANNELS;   // 通道清单在 manifest 登记；保留常量便于守卫比对（同其它域做法）
 
     /* 目录（含勾选状态 + 倍率）：面板与自动注册都用它。 */
     ipcHost.handle("limited-benefit:catalog", async () => fetchCatalog());

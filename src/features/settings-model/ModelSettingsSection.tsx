@@ -15,7 +15,6 @@ import { FieldHelp } from "../../features/auth";
 import { classifyProviderProbeFailure, UpstreamProtocol } from "../../hooks/useModelProviders";
 import { ModelIdInput } from "../../components/ModelIdInput";
 import { matchModelSpec } from "../../lib/model-specs";
-import { FreeGatewayRecommendCard } from "../free-gateway";
 import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
 
 export type ModelSettingsSectionProps = { refreshActive?: () => void; autoCompactRatio: any; setAutoCompactRatio: any; setNotice: any; providersList: any; pptokenCardOff: any; editingProvider: any; setCustomDraft: any; setEditingProvider: any; uniqueModelCount: any; customModel: any; setPptokenCardOff: any; setProviderEnabled: any; currentProvider: any; probingProvider: any; probeActiveProvider: any; providerAutoOpenRef: any; customDraft: any; savingSettings: any; openAppConfirm: any; removeProvider: any; LOCAL_MODEL_PRESETS: any; showApiKey: any; setShowApiKey: any; probeProvider: any; saveCustomDraft: any; switchingModel: any; probeOneModel: any; openModelEditor: any; providerStatus: any; showToast: any; saveCustomModel: any; modelEditor: any; setModelEditor: any; targetProviderHint: any; applyModelIdInput: any; modelSuggestions: any; saveModelEditor: any };
@@ -327,29 +326,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           </div>
                         );
                       })}
-                    </div>
-                    <div className="provider-more-section">
-                      <div className="provider-list-head"><h2>更多供应商</h2></div>
-                      <FreeGatewayRecommendCard
-                        setNotice={setNotice}
-                        registered={providersList.some((p: any) => p.provider === "free-gateway")}
-                        onSelect={() => {
-                          const fg = providersList.find((p: any) => p.provider === "free-gateway");
-                          if (fg) { setEditingProvider("free-gateway"); setCustomDraft({ provider: "free-gateway", name: fg.name, model: fg.model, baseUrl: fg.baseUrl, contextWindow: String(fg.contextWindow ?? 128000), wireApi: "responses" as const, apiKey: "", models: fg.models ?? [], enabled: fg.enabled !== false }); setEditorOpen(true); }
-                        }}
-                        onRegistered={() => {
-                          setEditingProvider("free-gateway");
-                          setCustomDraft({ provider: "free-gateway", name: "免费模型网关", model: "", baseUrl: "http://127.0.0.1:18900/v1", contextWindow: "128000", wireApi: "responses" as const, apiKey: "", models: [], enabled: true });
-                          setEditorOpen(true);
-                          void window.codex.listCustomModels().then(({ providers }: any) => {
-                            const fg = providers.find((p: any) => p.provider === "free-gateway");
-                            if (fg) setCustomDraft({ provider: "free-gateway", name: fg.name, model: fg.model, baseUrl: fg.baseUrl, contextWindow: String(fg.contextWindow ?? 128000), wireApi: "responses" as const, apiKey: "", models: fg.models ?? [], enabled: true });
-                          });
-                          if (setProviderEnabled) setProviderEnabled("free-gateway", true);
-                          (window as any).__refreshProviders?.();
-                        }}
-                        onUninstalled={() => removeProvider("free-gateway")}
-                      />
                     </div>
       </div>
       </section>
