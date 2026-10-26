@@ -749,20 +749,11 @@ export async function tickAll(): Promise<void> {
   const state = await bossStore.load();
   let dirty = false;
   for (const group of Object.values(state.groups)) {
-    /* ⛔ 10-26：先清掉队列里的看门狗刷屏条目（每 5 秒一次 ⇒ 启动后自动压平）。
-       ⛔ 失败不阻塞后面的扫描（清理是补救，不是主逻辑）。 */
+    /* ⛔ 10-26 用户：「这什么狗几把玩意，一直刷屏，每次启动应用，进去就弹，给我删掉这玩意」。
+       预算只做静默执行（80% 不吭声 / 100% 自动暂停），⛔ 不再往中枢会话回投预算提醒。 */
     const before = group.paused;
-    const budget = checkBudget(state, group.id);
-    if (group.paused !== before) {
-      dirty = true;
-      await postToBoss(group, `[群事件] 群「${group.name}」预算用尽（${Math.round(budget.usedMinutes)} 分钟），已暂停自动派活。`);
-    } else if (budget.warn === "80" && group.paused !== true) {
-      // 同一个群 10 分钟内只提醒一次（配额闸复用回投那套，别每个 tick 刷）
-      if (quotaOk(`budget80:${group.id}`)) {
-        dirty = true;
-        await postToBoss(group, `[群事件] 群「${group.name}」预算已用 80%（${Math.round(budget.usedMinutes)}/${group.policy.budgetMinutes} 分钟）。`);
-      }
-    }
+    checkBudget(state, group.id);
+    if (group.paused !== before) dirty = true;
   }
     /* 出站队列兜底：定时器可能因为进程挂起而丢，tick 时补一次 flushed。 */
   for (const groupId of Array.from(OUTBOX.keys())) await flushOutbox(groupId);
