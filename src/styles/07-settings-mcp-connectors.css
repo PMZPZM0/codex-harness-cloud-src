@@ -7,6 +7,10 @@
 
 
 /* ══ app-server MCP 状态卡（设置 → 连接器中心 → 底部） ══════════════════════ */
+/* MCP 市场分类筛选（10-27 用户：分类做成筛选形式）——横向 tab 收成下拉，和搜索/操作同一行 */
+.mcp-category-filter { display: inline-flex; align-items: center; gap: 8px; flex: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mcp-category-filter > span { flex: none; white-space: nowrap; }
+.mcp-category-select { min-width: 148px; }
 .mcp-server-grid {
   grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
   gap: 10px;

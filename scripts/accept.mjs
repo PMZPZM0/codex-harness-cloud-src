@@ -185,6 +185,29 @@ const CHECKS = [
           && modelBar.classes[1].includes("secondary-setting") && !modelBar.classes[1].includes("primary-setting")
           && modelBar.classes[2].includes("danger-setting")),
         JSON.stringify(modelBar));
+
+      await nav("MCP");
+      await wait(1000);
+      await h.eval(`(function(){ document.querySelector(".settings-modal .mcp-category-select")?.click(); return 1; })()`);
+      await wait(300);
+      const mcpFilter = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const sel=m.querySelector(".mcp-category-select");
+        const list=document.querySelector(".app-select-list");
+        const labels=[...m.querySelectorAll("button")].map((b)=>(b.textContent||"").trim());
+        const lab=m.querySelector(".mcp-category-filter > span");
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          hasSelect:!!sel, options:list?list.querySelectorAll(".app-select-option").length:0,
+          tabs:m.querySelectorAll(".mcp-market-toolbar .skill-tabs").length,
+          labelWrap:lab?getComputedStyle(lab).whiteSpace:"",
+          jumps:labels.filter((x)=>x.includes("广场")) };
+      })()`).catch(() => null);
+      h.check("⑧ MCP：分类改成筛选下拉，市场跳转按钮已删",
+        Boolean(mcpFilter && mcpFilter.page === "MCP" && mcpFilter.hasSelect && mcpFilter.options >= 5
+          && mcpFilter.tabs === 0 && mcpFilter.labelWrap === "nowrap" && mcpFilter.jumps.length === 0),
+        JSON.stringify(mcpFilter));
+      await h.pressKey("Escape");
+      await wait(300);
 await h.pressKey("Escape");
       await wait(300);
     },
