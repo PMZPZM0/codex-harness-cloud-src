@@ -242,23 +242,30 @@ const CHECKS = [
       const skillsBar = await h.eval(`(function(){
         const m=document.querySelector(".settings-modal"); if(!m) return null;
         const page=m.querySelector(".skill-center"); if(!page) return null;
+        const row=page.querySelector(".skill-filter-row");
         const line=page.querySelector(".skill-actions-line");
-        const search=page.querySelector(".search-field");
-        if(!line||!search) return null;
+        const search=page.querySelector(".skill-filter-row .search-field");
+        if(!row||!line||!search) return null;
         const btns=[...line.querySelectorAll("button")];
-        const r=line.getBoundingClientRect(), s=search.getBoundingClientRect(), pr=page.getBoundingClientRect();
+        const r=line.getBoundingClientRect(), rr=row.getBoundingClientRect(), s=search.getBoundingClientRect();
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
           buttons:btns.map((b)=>(b.textContent||"").trim()),
           heights:btns.map((b)=>Math.round(b.getBoundingClientRect().height)),
-          belowSearch:r.top >= s.bottom - 2,
-          rightGap:Math.round(pr.right-r.right),
-          oldHeader:!!page.querySelector(".settings-heading-actions") };
+          sameRow:Math.abs((r.top+r.bottom)/2-(s.top+s.bottom)/2) <= 10,
+          inRow:line.closest(".skill-filter-row") === row,
+          rightGap:Math.round(rr.right-r.right),
+          pageInfo:!!page.querySelector(".page-info"),
+          tabs:page.querySelectorAll(".skill-tabs").length,
+          count:!!page.querySelector(".skill-filter-count"),
+          oldRow:!!page.querySelector(".skill-market-toolbar") };
       })()`).catch(() => null);
-      h.check("⑩ 技能页：我的技能/本地添加/刷新移到筛选区底部，小尺寸右对齐",
-        Boolean(skillsBar && skillsBar.page === "技能" && !skillsBar.oldHeader && skillsBar.buttons.length === 3
+      h.check("⑩ 技能页：按键与搜索同一排，分类小字与右上角问号已删",
+        Boolean(skillsBar && skillsBar.page === "技能" && !skillsBar.oldRow && !skillsBar.pageInfo
+          && skillsBar.tabs === 0 && !skillsBar.count && skillsBar.buttons.length === 3
           && skillsBar.buttons.some((x)=>x.includes("我的技能"))
           && skillsBar.buttons.some((x)=>x.includes("从本地添加技能"))
-          && skillsBar.heights.every((h)=>h <= 30) && skillsBar.belowSearch && skillsBar.rightGap <= 40
+          && skillsBar.heights.every((h)=>h <= 30) && skillsBar.sameRow && skillsBar.inRow
+          && skillsBar.rightGap <= 40
           && !skillsBar.buttons.some((x)=>x.includes("SkillHub 市场"))),
         JSON.stringify(skillsBar));
       await h.pressKey("Escape");
