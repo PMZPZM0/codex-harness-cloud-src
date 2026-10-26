@@ -8,6 +8,7 @@ import { useRefObject } from "../../../lib/use-ref-object";
 import { itemText } from "../../../lib/item-text";
 import { userDisplayText } from "../../../lib/user-refs";
 import { playWheelTick } from "../../../lib/wheel-tick.mjs";
+import { visibleGroupBlocks } from "../../../lib/visible-group-blocks.mjs";
 import { contentOffsetTop } from "../../../components/scroll-utils";
 const RULER_PAGE = 5;
 
@@ -47,7 +48,12 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
         if (item.type !== "userMessage") continue;
         if (!itemText(item).trim()) continue;
         // 团队/成员会话首条 SYSTEM TASK 段不展示给用户（与气泡/复制/编辑一致）
-        const label = userDisplayText(itemText(item));
+        const raw = itemText(item);
+        const label = userDisplayText(raw);
+        /* ⛔⛔ 10-26 用户：「刻度线要对应消息和群里展示的事件，不要对应那些不展示的」
+           ⇒ 判据与群汇报卡同源（visibleGroupBlocks）：过滤后一块不剩 = 界面不渲染 = 不出刻度。 */
+        const blocks = visibleGroupBlocks(raw);
+        if (blocks && blocks.length === 0) continue;
         result.push({ id: `${turn.id}-${item.id}`, turnId: turn.id, itemId: item.id, type: "user", label: label || "（仅系统任务段）" });
       }
     }
@@ -234,7 +240,12 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
               />}
               <button
               className={`ruler-tick ${mark.type} ${mark.id === latestId ? "latest" : ""} ${mark.itemId === currentItemId ? "current" : ""}${wave}`}
-              onMouseEnter={(event) => { setHoverIndex(index); setTip({ text: mark.label, top: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 }); }}
+              onMouseEnter={(event) => {
+                setHoverIndex(index);
+                setTip({ text: mark.label, top: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 });
+                /* 10-26：「鼠标放上去，挪动和滚动也要触发声音」—— 划过一格响一声（音调略高）。 */
+                playWheelTick(-1);
+              }}
               onMouseLeave={() => setTip(null)}
               onClick={() => onJump(mark.turnId)}
               aria-label={mark.label}

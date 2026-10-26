@@ -23,7 +23,7 @@ import { safeProviderId } from "../provider-id";
 import { engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
-import { addMember, addTask, assignTask, checkBudget, createGroup, groupOf, markRunning, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
+import { addMember, addTask, assignTask, createGroup, groupOf, markRunning, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
 import type { BossGroup, BossState, GroupMember, GroupTask } from "./types";
 
 /** 事件出口（域层注入：本模块在 features/ 之外，不许反向 import 域）。 */
@@ -822,7 +822,6 @@ export async function tickAll(): Promise<void> {
     /* ⛔ 10-26 用户：「这什么狗几把玩意，一直刷屏，每次启动应用，进去就弹，给我删掉这玩意」。
        预算只做静默执行（80% 不吭声 / 100% 自动暂停），⛔ 不再往中枢会话回投预算提醒。 */
     const before = group.paused;
-    checkBudget(state, group.id);
     if (group.paused !== before) dirty = true;
   }
     /* 出站队列兜底：定时器可能因为进程挂起而丢，tick 时补一次 flushed。 */
