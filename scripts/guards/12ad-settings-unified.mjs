@@ -110,6 +110,10 @@ ok(/skill-local-bulk/.test(skillsPage) && /本地导入/.test(skillsPage), "批�
 ok(!/resource-toolbar secondary[sS]{0,500}BatchActions/.test(skillsPage), "顶部不再挂全局批量条");
 ok(/const selectable = sourceTag === "local"/.test(skillsPage), "市场/内置卡片不参与本地批量勾选");
 const modelPage = pageSrc("model");
+ok(!/provider-list-head|provider-count/.test(modelPage) && !/model-page-dock/.test(modelPage), "模型页不再显示「模型供应商 N」小字与底部操作条");
+ok(/provider-page-toolbar[\s\S]*model-compact-control[\s\S]*provider-page-actions[\s\S]*自动配置[\s\S]*自定义供应商[\s\S]*保存重启/.test(modelPage), "模型页工具栏：压缩靠左，自动配置 / 自定义供应商 / 保存重启靠右");
+ok(/<button className="primary-setting" onClick=\{openAutoSetup\}[\s\S]{0,120}自动配置/.test(modelPage) && /<button className="secondary-setting" onClick=\{openNewProvider\}[\s\S]{0,120}自定义供应商/.test(modelPage), "绿色主按钮只给「自动配置」；「自定义供应商」是普通按钮");
+ok(/<button className="danger-setting" disabled=\{restarting\}[\s\S]{0,160}保存重启/.test(modelPage), "「保存重启」是红色警示按钮");
 ok(/provider-card-actions[\s\S]{0,700}provider-card-update/.test(modelPage), "「更新模型」在供应商卡底部操作行（与测试/编辑并排，不再占模型芯片行）");
 const actionsAt = modelPage.indexOf("provider-card-actions");
 const actionsEnd = modelPage.indexOf("</span>", actionsAt);

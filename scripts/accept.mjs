@@ -156,6 +156,35 @@ const CHECKS = [
         Boolean(ctrl && ctrl.page === "控制台" && ctrl.groups === 0 && ctrl.cards === 3
           && ctrl.align === "center" && ctrl.ta === "center" && appGroups === 0),
         JSON.stringify({ ctrl, appGroups }));
+
+      await nav("模型");
+      await wait(900);
+      const modelBar = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".model-settings-page"); if(!page) return null;
+        const toolbar=page.querySelector(".provider-page-toolbar");
+        const compact=toolbar?toolbar.querySelector(".model-compact-control"):null;
+        const actions=toolbar?toolbar.querySelector(".provider-page-actions"):null;
+        if(!toolbar||!compact||!actions) return null;
+        const cr=compact.getBoundingClientRect(), ar=actions.getBoundingClientRect();
+        return { head:!!page.querySelector(".provider-list-head"),
+          dock:!!page.querySelector(".model-page-dock"),
+          compactText:(compact.textContent||"").trim(),
+          sameRow:Math.abs((cr.top+cr.bottom)/2-(ar.top+ar.bottom)/2) <= 10,
+          left:cr.left < ar.left,
+          labels:[...actions.querySelectorAll("button")].map((b)=>(b.textContent||"").trim()),
+          classes:[...actions.querySelectorAll("button")].map((b)=>b.className) };
+      })()`).catch(() => null);
+      h.check("⑦ 模型页：小字与底部条已删；压缩靠左、三个按钮靠右同一行",
+        Boolean(modelBar && !modelBar.head && !modelBar.dock && modelBar.compactText.includes("自动压缩")
+          && modelBar.sameRow && modelBar.left
+          && modelBar.labels.some((x)=>x.includes("自动配置"))
+          && modelBar.labels.some((x)=>x.includes("自定义供应商"))
+          && modelBar.labels.some((x)=>x.includes("保存重启"))
+          && modelBar.classes.length === 3 && modelBar.classes[0].includes("primary-setting")
+          && modelBar.classes[1].includes("secondary-setting") && !modelBar.classes[1].includes("primary-setting")
+          && modelBar.classes[2].includes("danger-setting")),
+        JSON.stringify(modelBar));
 await h.pressKey("Escape");
       await wait(300);
     },

@@ -8,7 +8,6 @@ import { useEffect, useState } from "react";
 import { AppSelect } from "../../components/AppSelect";
 import { PPTokenEndpoints } from "../../lib/pptoken-endpoints";
 import { Check, ChevronRight, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, PowerOff, RefreshCw, Rocket, Store, Trash2, Wand2, X, Zap } from "lucide-react";
-import { PageInfo } from "../../components/SettingsHead";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { Spinner } from "../../components/CardShell";
 import { FieldHelp } from "../../features/auth";
@@ -214,23 +213,9 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack model-page">
-      {/* 10-26 用户令：页标题大字与副标题整排删除；「自动配置」从下方大块挪到页头右侧，
-          旁边加「保存并重启」—— 那个块的说明句 / 步骤条也一并删掉（用户：「不用注释了，太丑」）。 */}
-      <div className="settings-copy">
-        <div className="settings-heading-actions">
-          <button className="primary-setting" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
-          <button className="secondary-setting" disabled={restarting} onClick={() => void saveAndRestart()} title="配置已逐项保存；重启应用让引擎重新读取密钥与模型列表"><PowerOff size={14} />{restarting ? "重启中…" : "保存并重启"}</button>
-          {/* 10-26：全站页头帮助 ? 统一收到右上角 —— 这页的 ? 原挂在「模型供应商」区块标题旁，一并挪过来放最右 */}
-          <PageInfo text={<>两种方式二选一：登录 ChatGPT 订阅账号，或添加第三方供应商并填入密钥。配好后再选模型——两者齐了才能发消息。</>} helpKey="model" label="模型配置" />
-        </div>
-      </div>
       <div className="model-settings-page">
                     <div className="provider-page-toolbar">
-                      <div className="provider-list-head">
-                        <h2>模型供应商 <span className="provider-count">{displayProviders.length}</span></h2>
-                      </div>
-                      <div className="provider-page-actions">
-                        <span className="model-compact-control" title="上下文用量达到所选比例时，引擎自动压缩较早对话">
+                      <span className="model-compact-control" title="上下文用量达到所选比例时，引擎自动压缩较早对话">
                           <Zap size={12} />
                           <span>自动压缩</span>
                           <AppSelect
@@ -242,7 +227,10 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           />
                           <FieldHelp text={"上下文用量达到所选比例时，引擎自动压缩较早对话。\n\n调整后会保存到本机设置，对新回合生效；压缩线会标在历史消息里。"} />
                         </span>
-                        <button className="primary-setting" onClick={openNewProvider}><Plus size={14} />添加供应商</button>
+                      <div className="provider-page-actions">
+                        <button className="primary-setting" onClick={openAutoSetup}><Wand2 size={14} />自动配置</button>
+                        <button className="secondary-setting" onClick={openNewProvider}><Plus size={14} />自定义供应商</button>
+                        <button className="danger-setting" disabled={restarting} onClick={() => void saveAndRestart()} title="配置已逐项保存；重启应用让引擎重新读取密钥与模型列表"><PowerOff size={14} />{restarting ? "重启中…" : "保存重启"}</button>
                       </div>
                     </div>
                     <div className="provider-card-grid">
