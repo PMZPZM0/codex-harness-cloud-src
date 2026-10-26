@@ -118,6 +118,26 @@ const CHECKS = [
           && (relay.state !== "guest" || relay.strongBig >= 15)
           && relay.addSmall === 0 && relay.addDir === "row" && relay.addHeight >= 60),
         JSON.stringify(relay));
+
+      await nav("OpenAI 订阅");
+      await wait(1000);
+      const oa = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".relay-center"); if(!page) return null;
+        const grid=page.querySelector(".openai-account-grid");
+        const cards=[...page.querySelectorAll(".relay-add-card")];
+        const rects=cards.map(function(c){ const r=c.getBoundingClientRect(); return { top:Math.round(r.top), w:Math.round(r.width), h:Math.round(r.height), small:c.querySelectorAll("small").length }; });
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          hasInfo:!!page.querySelector(".page-info"),
+          hasCopy:!!page.querySelector(".settings-copy"),
+          gridW: grid ? Math.round(grid.getBoundingClientRect().width) : 0,
+          twoPerRow: rects.length === 2 && rects[0].top === rects[1].top,
+          rects };
+      })()`).catch(() => null);
+      h.check("⑤ OpenAI 订阅：无问号/无说明，添加卡两列矩形卡不拉满整行",
+        Boolean(oa && oa.page === "OpenAI 订阅" && !oa.hasInfo && !oa.hasCopy && oa.twoPerRow
+          && oa.rects.every(function(r){ return r.small === 0 && r.h <= 80 && r.w < oa.gridW - 20; })),
+        JSON.stringify(oa));
       await h.pressKey("Escape");
       await wait(300);
     },

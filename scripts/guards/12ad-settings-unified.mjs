@@ -50,6 +50,7 @@ const FILES = {
   relay: "src/features/relay/RelayCenterPage.tsx",
   relayBanner: "src/features/relay/RelayCenterPage/01-subscription-banner.tsx",
   relayGrid: "src/features/relay/RelayCenterPage/02-account-grid.tsx",
+  openai: "src/features/openai/OpenaiSubscriptionPage.tsx",
   accept: "scripts/accept.mjs",
 };
 for (const [name, rel] of Object.entries(FILES)) {
@@ -140,6 +141,14 @@ ok(/<strong>付费订阅 · 开通即用<\/strong>/.test(guestBranch) && !/<p>/.
 const addCard = /className="relay-plan-card relay-add-card"([\s\S]*?)<\/button>/.exec(relayGrid)?.[1] ?? "";
 ok(/<Plus\b/.test(addCard) && /<strong>添加中转站账号<\/strong>/.test(addCard) && !/<small>/.test(addCard), "添加账号卡只留图标 + 大字（小字说明已删）");
 ok(/\.settings-exp-shell \.relay-add-card\s*\{[^}]*flex-direction:\s*row[^}]*min-height:\s*64px/.test(css), "添加账号卡横向单行（不再竖排留白）");
+
+/* 10-26 用户（OpenAI 订阅页截图）：「问号删除，小文字注释删除大字就行，账户长卡片
+   改成长方形卡片，不要拉这么长」—— ? / 副标题 / 卡片小字全删；添加卡两列并排。 */
+const openaiPage = pageSrc("openai");
+ok(!/PageInfo/.test(openaiPage) && !/settings-copy/.test(openaiPage), "OpenAI 订阅页不再挂 ? / 页头说明（只留卡片大字）");
+const oaAddCards = [...openaiPage.matchAll(/className="relay-plan-card relay-add-card"([\s\S]*?)<\/button>/g)].map((m) => m[1]);
+ok(oaAddCards.length === 2 && oaAddCards.every((s) => !/<small>/.test(s)), "OpenAI 添加卡只留图标 + 大字（小字说明已删）");
+ok(/\.settings-exp-shell \.openai-account-grid \.relay-add-card\s*\{[^}]*grid-column:\s*auto/.test(css), "OpenAI 添加卡两列并排（不再横贯整行）");
 
 /* ── ⑥ SSH 工具栏不落单 ── */
 ok(/\.settings-exp-shell \.ssh-toolbar \.search-field\s*\{[^}]*flex:\s*1 1 160px;[^}]*width:\s*auto\s*!important/s.test(css), "SSH 搜索框可收缩（导出/导入不再被挤到第二行单飞）");
