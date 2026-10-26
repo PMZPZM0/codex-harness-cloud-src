@@ -1618,12 +1618,33 @@
 .composer:is(.composer-narrow, .composer-micro) .composer-right { flex: 0 1 auto; min-width: 0; gap: 0; overflow: hidden; }
 .composer:is(.composer-narrow, .composer-micro) .model-controls { min-width: 0; gap: 0; }
 .composer:is(.composer-narrow, .composer-micro) .composer-setting { padding: 0 5px; }
-.composer:is(.composer-narrow, .composer-micro) .composer-setting > span { display: none; }
-.composer:is(.composer-narrow, .composer-micro) .effort-trigger-label { display: none; }
+/* ⛔ 10-26 用户实测（输入框缩窄后截图）：「缩到最新，直接挤没，明明还有很多空间」
+   —— narrow（480~640）这一档右侧模型菜单已被压缩、行尾留着一片空白，却把权限/模型文字整段
+   display:none 掉 ⇒ 只剩一个图标，看着像"坏了"。⇒ 只有 micro（<480，真放不下）才藏字；
+   narrow 保留文字但限宽 + 省略号（与 1180 media 的 72px 同一口径，这里更紧一点）。 */
+.composer.composer-narrow .composer-setting > span {
+  display: inline-block;
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer.composer-micro .composer-setting > span { display: none; }
+/* ⛔ 10-26 用户规则：「有位置就缩成图标，没位置的就隐藏」——
+   强度文字（极高/中/低）在 narrow 档放得下（70px 里有 40px 是字），只有 micro 才缩成图标。 */
+.composer.composer-narrow .effort-trigger-label {
+  max-width: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer.composer-micro .effort-trigger-label { display: none; }
 .composer:is(.composer-narrow, .composer-micro) .composer-status-lights,
 .composer:is(.composer-narrow, .composer-micro) .relay-badge,
-.composer:is(.composer-narrow, .composer-micro) .cloud-points-badge,
-.composer:is(.composer-narrow, .composer-micro) .ctx-badge { display: none; }
+.composer:is(.composer-narrow, .composer-micro) .cloud-points-badge { display: none; } /* 可选动态灯：两档都先让位 */
+/* ⛔ 上下文环是 **35px 的纯图标**，本身没有"文字档"可缩 ⇒ 按「有位置就留」：
+   narrow 保留（它是这一档里信息密度最高的控件），只有 micro 才隐藏。 */
+.composer.composer-micro .ctx-badge { display: none; }
 /* 上方两个胶囊：同现时从「左右一排」改成上下两行，各自占满输入框宽度，不再互相挤/压字 */
 .composer-wrap:has(.composer-narrow) .composer-status-row,
 .composer-wrap:has(.composer-micro) .composer-status-row { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
