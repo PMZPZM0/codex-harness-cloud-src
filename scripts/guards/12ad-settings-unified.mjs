@@ -131,7 +131,7 @@ const refreshAt = modelPage.indexOf("const refreshCardModels");
 const refreshEnd = modelPage.indexOf("const testProviderCard", refreshAt);
 const refreshBlock = refreshAt >= 0 && refreshEnd > refreshAt ? modelPage.slice(refreshAt, refreshEnd) : "";
 ok(refreshBlock.length > 0 && /addedIds/.test(refreshBlock) && /removed/.test(refreshBlock) && /saveCustomDraft/.test(refreshBlock) && /relaunchApp/.test(refreshBlock), "「更新模型」新增/移除模型都保存并重启（与编辑弹窗保存同口径）");
-for (const [key, title] of [["skills", "技能中心"], ["plugins", "插件"], ["mcp", "MCP"], ["commands", "命令"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
+for (const [key, title] of [["skills", "技能中心"], ["plugins", "插件"], ["commands", "命令"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
   const text = pageSrc(key);
   const at = text.indexOf(`<h2>${title}`);
   const window = at >= 0 ? text.slice(at, at + 2200) : "";
@@ -202,6 +202,12 @@ const generalPage = pageSrc("general");
 ok(/语气自适应/.test(generalPage) && /ToggleSwitch/.test(generalPage)
   && /card-reply/.test(generalPage), "控制台「回复风格」卡里有语气自适应开关");
 ok(/changeAdaptiveTone/.test(generalPage), "控制台语气自适应开关接的是全局开关回调");
+
+/* 10-27 用户（MCP 页截图）：「右上角问号删了」⇒ MCP 页头整块撤掉，
+   进页直接是工具条与市场卡片。⛔ 名单里去掉 mcp 的同时单独钉一条，
+   免得以后「每页都有 ?」这条判据又把它悄悄加回来。 */
+const mcpHeaderSrc = src("src/features/settings-mcp/McpSettingsSection.tsx");
+ok(!/PageInfo/.test(mcpHeaderSrc), "MCP 页不再挂 ?（页头容器保留，各仓版式不同）");
 
 console.log(`\n【shell】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
