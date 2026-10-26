@@ -77,7 +77,19 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
   /* 群广播（10-26 用户令「方案就按只广播这个完成」）：中枢会话里的 `[群事件] …` 是成员汇总
      进来的**群消息**，不是用户说的话 ⇒ 不能再套用户气泡（右对齐、名字写"你"、看不出谁交的活）。
      整条交给群气泡渲染：成员头像 + 名字 + 内容；系统类事件走居中灰行。 */
-  if (refs.groupEvents?.length) return <GroupFeed blocks={refs.groupEvents} onOpenFile={onOpenFile} />;
+  if (refs.groupEvents?.length) {
+    /* ⛔⛔ 10-26 用户实测（指挥中枢会话）：「这个刻度线跟消息和滚轮没有联动，滚动消息，刻度线没反应」
+       —— 群广播在引擎侧**就是一条 userMessage**（刻度尺也按 userMessage 出刻度），
+       但这里直接 return 了 GroupFeed，**没带 `data-ruler-mark="user"` / data-item-id**
+       ⇒ 中枢会话里几乎每条消息都是群事件 ⇒ 刻度尺一个参照点都找不到，
+       currentItemId 永远为 null，高亮与波浪都不动。
+       包一层只承载定位属性的 div（⛔ 不加类名、不带样式，避免动到群卡的布局）。 */
+    return (
+      <div data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
+        <GroupFeed blocks={refs.groupEvents} onOpenFile={onOpenFile} />
+      </div>
+    );
+  }
   const refsImagePaths = new Set(refs.files.filter(isImagePath));
   // 文本占位符里出现过的图片以内联 chip 渲染在正文里，附件列表去重避免双份
   const inlineImageSet = new Set(promptImagePaths(rawText));
