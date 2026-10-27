@@ -7,28 +7,12 @@
 
 
 /* 10-27 用户：我的技能 / 从本地添加 / 刷新 下移到筛选区底部，右对齐、小一号 */
-.skill-actions-line {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-top: 2px;
-}
-.skill-actions-line > .skill-action-sm {
-  min-height: 28px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-size: 11.5px;
-  gap: 5px;
-}
-.skill-actions-line > .icon-button.skill-action-sm { width: 28px; padding: 0; }
-
 /* 10-27 用户：按键与搜索同一排；分类小字与右上角问号删除 */
-.skill-filter-row .search-field { flex: 0 1 220px; min-width: 168px; }
+.skill-filter-row .search-field { flex: 0 1 160px; min-width: 130px; }
 .skill-rank-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--muted); }
-.skill-rank-filter .app-select-trigger { min-width: 104px; }
+.skill-rank-filter .app-select-trigger { min-width: 76px; }
+.skill-category-filter { display: inline-flex; align-items: center; flex: none; }
+.skill-category-filter .app-select-trigger { min-width: 96px; }
 .skill-actions-line {
   display: flex;
   align-items: center;
@@ -41,7 +25,7 @@
 .skill-actions-line > .skill-action-sm {
   min-height: 28px;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 8px;
   font-size: 11.5px;
   gap: 5px;
