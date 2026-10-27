@@ -478,6 +478,41 @@ const CHECKS = [
       await wait(300);
 await h.pressKey("Escape");
       await wait(300);
+      /* ⑰ 10-27 用户（新建子智能体截图）：「这个新建子智能体更新一下，都是旧的，工具也是」
+         ⇒ 推理强度只剩四档、开关是共享胶囊、工具说明给 agent_invoke + subagent_save。 */
+      if (!(await h.eval(`!!document.querySelector(".settings-modal")`))) {
+        await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
+        await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+        await wait(600);
+      }
+      await nav("专家/专家团");
+      await wait(800);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-modal .hub-card")].find((x)=>(x.querySelector("strong")?.textContent||"").trim()==="子智能体"); b?.click(); return b?1:0; })()`);
+      await h.waitFor(`!!document.querySelector(".subagent-center .subagent-head-actions")`, { label: "子智能体页", timeoutMs: 12000 }).catch(() => undefined);
+      await wait(300);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".subagent-head-actions button")].find((x)=>(x.textContent||"").includes("新建子智能体")); b?.click(); return b?1:0; })()`);
+      await h.waitFor(`!!document.querySelector(".subagent-editor-modal")`, { label: "新建子智能体弹窗", timeoutMs: 8000 }).catch(() => undefined);
+      await wait(400);
+      const subModalBase = await h.eval(`(function(){
+        const m=document.querySelector(".subagent-editor-modal"); if(!m) return null;
+        const text=(m.textContent||"");
+        return { toggles:m.querySelectorAll(".toggle-switch").length,
+          checkboxes:m.querySelectorAll('input[type="checkbox"]').length,
+          toolBox:!!m.querySelector(".subagent-tool-box"),
+          hasInvoke:text.includes("agent_invoke"), hasSave:text.includes("subagent_save"),
+          oldCopy:text.includes("dynamicTools")||text.includes("agent_invoke · subagent") };
+      })()`).catch(() => null);
+      await h.eval(`(function(){ document.querySelector(".subagent-editor-modal .app-select-trigger")?.click(); return 1; })()`);
+      await wait(400);
+      const effortOpts = await h.eval(`(function(){ return [...document.querySelectorAll(".app-select-list .app-select-option-label")].map((x)=>(x.textContent||"").trim()); })()`).catch(() => []);
+      h.check("⑰ 新建子智能体：推理强度四档、共享胶囊开关、agent_invoke + subagent_save",
+        Boolean(subModalBase && subModalBase.toggles >= 4 && subModalBase.checkboxes === 0
+          && subModalBase.toolBox && subModalBase.hasInvoke && subModalBase.hasSave && !subModalBase.oldCopy
+          && effortOpts.join("/") === "低/中/高/极高"),
+        JSON.stringify({ ...subModalBase, effortOpts }));
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".subagent-editor-modal footer button")].find((x)=>(x.textContent||"").includes("取消")); b?.click(); return b?1:0; })()`);
+      await wait(300);
+
     },
   },
   {
