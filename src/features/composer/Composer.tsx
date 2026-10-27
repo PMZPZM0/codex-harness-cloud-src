@@ -158,6 +158,25 @@ export type ComposerMenuOption = { value: string; title: string; desc?: string; 
 export function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf }: { icon: any; label: string; options: ComposerMenuOption[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: ComposerMenuOption) => string | undefined }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  /* ⛔ 10-27 用户令：「模型下拉框在应用窄界面时展示不全，出现滚轮」。
+     打开时实测触发器上下两侧空间、挑大的一侧展开并按该侧高度铺开；
+     ⛔ 不写死 360px（那是"模型一多就滚"的直接原因）。 */
+  const [popPlace, setPopPlace] = useState<{ side: "up" | "down"; maxHeight: number }>({ side: "up", maxHeight: 0 });
+  useLayoutEffect(() => {
+    if (!open) { setPopPlace({ side: "up", maxHeight: 0 }); return; }
+    const measure = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const above = rect.top - 12;
+      const below = window.innerHeight - rect.bottom - 12;
+      const side: "up" | "down" = above >= below ? "up" : "down";
+      setPopPlace({ side, maxHeight: Math.max(160, Math.floor(side === "up" ? above : below)) });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [open, options.length]);
   useEffect(() => {
     if (!open) return;
     const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
@@ -171,18 +190,21 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
   const Icon = icon;
   return (
     <div className={`composer-menu ${open ? "open" : ""}`} ref={wrapRef}>
-      <button type="button" className={`composer-setting ${tone === "danger" ? "danger" : ""}`} disabled={disabled} title={title ?? label} onClick={() => setOpen((currentOpen) => !currentOpen)}>
+      <button ref={triggerRef} type="button" className={`composer-setting ${tone === "danger" ? "danger" : ""}`} disabled={disabled} title={title ?? label} onClick={() => setOpen((currentOpen) => !currentOpen)}>
         <Icon size={14} />
         <span>{current?.title ?? label}</span>
         <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
       </button>
       {open && (
-        <div className="composer-menu-pop" role="listbox" aria-label={label} style={width ? { width } : undefined}>
+        <div className="composer-menu-pop" role="listbox" aria-label={label}
+          style={{ ...(width ? { width } : {}), ...(popPlace.maxHeight ? { maxHeight: popPlace.maxHeight } : {}), ...(popPlace.side === "down" ? { top: "calc(100% + 8px)", bottom: "auto" } : {}) }}>
           {options.map((option) => {
-            const itemTone = toneOf?.(option);
+            const itemTone = toneOf?.(option) ?? (option as any).tone;
+            /* ⛔ 没有图标内容的行不占 20px 图标槽（权限菜单"两边空白"就是它）。 */
+            const hasIcon = Boolean(itemTone);
             return (
               <button type="button" role="option" aria-selected={option.value === value} key={option.value} className={option.value === value ? "active" : ""} onClick={() => { onChange(option.value); setOpen(false); }}>
-                <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}`} />
+                {hasIcon && <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}`} />}
                 <span className="menu-item-text"><strong>{option.title}</strong>{option.desc && option.desc !== option.title ? <small>{option.desc}</small> : null}</span>
                 {option.badges?.length ? <span className="menu-item-badges">{option.badges.map((badge) => <em key={badge.text} className={badge.kind ? `badge-${badge.kind}` : undefined}>{badge.kind === "vision" ? <Eye size={10} /> : badge.kind === "video" ? <Video size={10} /> : null}{badge.text}</em>)}</span> : null}
                 {/* 勾选挪到最右侧：左侧图标位让给「供应商色调圆点」，跨供应商的模型一眼看出是哪家 */}
