@@ -355,6 +355,15 @@ ok(!/<VoiceDevToolsSection/.test(codeOnlyTs(devtoolsPage)),
   "开发工具页**不再渲染**它（是迁移不是复制 —— 同一份状态两处渲染 = 双真相源）");
 ok(!/VoiceDevToolsSection/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")),
   "settings-registry 里那条 prop 传递也清掉了（死 prop 只会骗下一个读它的人）");
+/* 10-27 用户（语音页截图）：「把必须放到基础模型里面…上面一块空白删除，
+   右上角帮助❓号…放到基础模型卡片右上角」⇒ 页头 .settings-copy 整块删掉（上方不留空行）、
+   必需标签与帮助 ? 都进基础模型卡的卡头、副标题与路径下沉正文区。 */
+const voiceSectionSrc = read("src/components/VoiceSettingsSection.tsx");
+const voiceDevtoolsSrc = read("src/components/VoiceDevToolsSection.tsx");
+ok(!/settings-copy/.test(codeOnlyTs(voiceSectionSrc)) && /<PageInfo[\s\S]{0,400}?helpKey="voice"/.test(voiceSectionSrc)
+  && /helpSlot/.test(voiceSectionSrc) && /helpSlot/.test(voiceDevtoolsSrc),
+  "语音页页头已删（上方不留空行）；帮助 ? 由本页创建、挂到基础模型卡卡头右上角");
+
 ok(/设置 → 语音通话/.test(devtoolsPage),
   "开发工具页留了一句指路（按老习惯找不到时不至于迷路）");
 
