@@ -313,3 +313,4 @@
 | 2026-10-28 | 设置页审查修复：技能筛选分页、命令分类、验收对齐 | 修复 | `SkillsCenterSection.tsx`、`00-settings-registry.tsx`、`CommandsSettingsSection.tsx`、`McpSettingsSection.tsx`、`13-subagents-page.css`、`09-settings-workspace-memory.css`、`14-model-onboarding.css`、守卫 12ad、验收 `settings-current` | 同步主仓：技能市场分类/搜索先筛选再分页（原先只过滤当前页）；刷新保留搜索并回第一页；命令分组从内置清单派生；MCP 搜索忽略大小写；清死 CSS；验收选择器跟随新 DOM。云助手验收 settings-current 20/21（仅剩本仓既有的布布包差异）。 | 本轮 |
 | 2026-10-28 | 设置页审查补修：收藏夹/归档批量按可见、钩子信任入口收口 | 修复 | `FavoritesSettingsSection.tsx`、`ArchivePage.tsx`、`HooksSettingsSection.tsx`、守卫 12ad | 同步主仓：批量计数/操作只认当前可见勾选；钩子每条「信任」按钮删除（实际信任全部），唯一入口改为页头「信任全部 N」。 | 本轮 |
 | 2026-10-28 | 设置页统一页头：13 页旧标题/副标题/问号收起 | 改动 | 同主仓名单 + `45-settings-experience.css`、守卫 07/12ad | 同步主仓：页面标题/副标题/页头 ? 删除；操作移到正文；记忆总开关变首行卡片；归档计数进工具条；语音帮助保留在基础模型卡。守卫 12ad 118/118；云 UI 已部署。 | 本轮 |
+| 2026-10-28 | 二级页旧页头清理：子智能体/专家团/专家中心/浏览器/电脑控制/RPA | 改动 | 同主仓名单 + 样式、守卫 07/12ad、验收 | 同步主仓：六页标题/副标题/? 删除；前三个改成一行工具条（返回左、操作右）；后三个靠壳层返回。守卫 12ad 131/131；云 UI 已部署。 | 本轮 |

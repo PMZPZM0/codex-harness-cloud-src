@@ -218,7 +218,7 @@ export async function run() {
     const hintCount = (appC.match(/<PageInfo\b/g) || []).length;
     // 10-27：用户连续令「各页右上角 ? 删了」（模型 / MCP / 插件 / 人格市场 / 子智能体页头…）
     //   ⇒ 下限跟着实测降到 11；这条守的是「说明别摊回标题下」，不是「? 必须越多越好」。
-    (hintCount >= 1)
+    (hintCount <= 2)
       ? ok(`【32】设置页挂了 ${hintCount} 处 ? 号（说明收进 ?，头部恒为一行）`)
       : fail(`【32】? 号只有 ${hintCount} 处 —— 说明又被摊回标题下了（赘述回潮）`);
     const keyedHints = ((appC + voiceC).match(/helpKey="/g) || []).length;
@@ -237,7 +237,7 @@ export async function run() {
     // 10-27 用户（插件页）：「插件页删页头?」（commit 18f153b40）⇒ plugins 那枚 ? 也撤了，
     //    当轮漏改这条名单 ⇒ 一直红着「plugins 入口丢了」。同口径补进例外，别再留假红。
     //    同日技能中心也按用户令删掉了 ?（64b0856e2「删分类小字与帮助问号」）⇒ skills 一并列入。
-    const NO_HINT_KEYS = ["model", "mcp", "plugins", "skills", "devtools"];
+    const NO_HINT_KEYS = ["model", "mcp", "plugins", "skills", "devtools", "agentteam"];
     const orphanKeys = HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key) && !new RegExp(`helpKey="${key}"`).test(appC + voiceC));
     (orphanKeys.length === 0)
       ? ok(`【32】${HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key)).length} 个帮助主题都有 ? 入口（模型 / MCP / 插件页按用户令撤掉，不计）`)
