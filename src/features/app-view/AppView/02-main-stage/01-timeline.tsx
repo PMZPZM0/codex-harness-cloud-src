@@ -153,7 +153,7 @@ import { visibleTurnWindow, mergeTurnListsById, turnHistoryPlan } from "../../..
 import { setTurnHeightEstimate, setTurnWindowTail, subscribeTurnHistory, turnHistoryFor, turnHistoryVersion } from "../../../../lib/turn-history.mjs";
 import { ExpertTeamEditorModal, SubAgentEditorModal, TeamMemberRail, TeamMemberHistory, DelegatedRail, DelegatedRunPopup, TeamRunPopup } from "../../../experts-teams";
 import { BossGroupMemberRail } from "../../../boss-group-view/BossGroupMemberRail";
-import { useGroupMembers } from "../../../boss-group-view/group-members-store";
+import { activeMembersOf, useGroupMembers } from "../../../boss-group-view";
 /* ⭐ 10-05：普通会话的办公室入口迁到本文件的右侧轨道上 ⇒ 需要那个哨兵 teamId
    （从 team-office 域的 barrel 取，域间只许走 barrel）。 */
 import { OFFICE_SESSION_TEAM_ID } from "../../../team-office";
@@ -711,7 +711,8 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                        · 专家团会话 ⇒ TeamMemberRail；
                        · 普通会话 ⇒ DelegatedRail。 */}
                   {bossGroupId && !railTeam && (
-                    <BossGroupMemberRail members={bossGroupMembers.snapshot.members} />
+                    /* ⛔ 已移出的成员不再出现在轨上（与办公室/成员名单同口径，10-27）。 */
+                    <BossGroupMemberRail members={activeMembersOf(bossGroupMembers.snapshot.members)} />
                   )}
                   {railTeam && (
                     <TeamMemberRail

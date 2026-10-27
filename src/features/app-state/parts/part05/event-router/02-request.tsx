@@ -14,6 +14,7 @@ import { avatarAsset } from "../../../../../lib/avatar-presets";
    会话单例在 ui-sketch 那边持有（iframe 由弹窗 attach），这里只发请求。 */
 import { applySketchDoc, requestSketchDoc, summarizeDoc, validateSketchDoc, waitSketchReady } from "../../../../ui-sketch";
 import { ensureBossMemoryWorkspace } from "../../../../boss-group-view";
+import { refreshGroupMembers } from "../../../../boss-group-view";
 
 /** ⛔ 同一个 tool call 只执行一次（09-22 实测：一次 subagent_invoke 被渲染层执行 7 次 →
  *  7 个同名会话、每个约 1MB rollout、query 逐字相同 ⇒ 7 倍 token）。重复到达复用首次结果。 */
@@ -288,8 +289,20 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                     else await ok(`新成员进群：${res.member?.name}（${res.member?.role}${res.member?.source === "cli" ? "，本机 CLI agent" : ""}，id=${res.member?.id}）。TA 第一次被派活时才建执行体；用 group_assign 指派时传这个 id。`);
                   } else if (tool === "group_remove_member") {
                     const res = await window.codex.bossGroupMember({ groupId: String(args.groupId ?? ""), action: "remove", memberId: String(args.memberId ?? "") });
-                    if (!res?.ok) await bad(`移人失败：${res?.error ?? "未知原因"}`);
-                    else await ok(`已移出：${res.member?.name}。会话与轨迹保留；在跑任务不打断，未派任务自动换人。`);
+                    if (!res?.ok) { await bad(`移人失败：${res?.error ?? "未知原因"}`); }
+                    else {
+                      /* 10-27 用户令：「移除了群成员，这个旧的群成员回合就同步删除掉会话，同步自动刷新会话列表」
+                         ⇒ 宿主回的 removedThreadId 走渲染层唯一删除链路 deleteThreadCore，
+                            随后立刻重拉成员快照（成员面板 / 办公室 / 成员轨共用一份）。 */
+                      const removedThreadId = String(res.removedThreadId ?? "");
+                      const sameAsBoss = removedThreadId && removedThreadId === String(event.params?.threadId ?? "");
+                      if (removedThreadId && !sameAsBoss) {
+                        await bag.deleteThreadCore(removedThreadId).catch(() => undefined);
+                      }
+                      void refreshGroupMembers(String(args.groupId ?? ""));
+                      await ok(`已移出：${res.member?.name}。TA 的成员会话已删除${sameAsBoss ? "（跳过：正好是当前会话）" : ""}，`
+                        + `正在跑的活随之终止，未派的任务会自动换人；成员名单与办公室已同步刷新。`);
+                    }
                   } else if (tool === "group_delete") {
                     const res = await window.codex.deleteBossGroup({
                       groupId: String(args.groupId ?? ""),
