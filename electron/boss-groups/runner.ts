@@ -49,13 +49,19 @@ function quotaOk(key: string, max = POST_MAX_PER_WINDOW): boolean {
   return true;
 }
 
+/** 这个线程当前有没有回合在跑（引擎侧真相：turnId → threadId，boot 里按 turn/started|completed 记）。 */
+function activeTurnOf(threadId: string): string {
+  for (const [turnId, owner] of engineActiveTurnIds) if (owner === threadId) return turnId;
+  return "";
+}
+
 /**
  * 清理中枢线程队列里的**看门狗刷屏条目**（10-26 用户现场：「给老子立刻清空」）。
  *
  * ⛔ 为什么需要：这些提醒走的是引擎的用户消息队列，而引擎**只在线程空闲时**才消化
  *   ⇒ 线程一卡住（回合卡在"运行中"）就无限堆积（真机：57~99 条，全是同一批任务的
  *   「已经 N 秒没有进展 / 已交活 N 分钟仍没有审查结论」）。
- * ⛔ 只删看门狗那两类（isWatchdogSpamText）—— **成品交活 / 成员进出 / 预算**那些
+ * ⛔ 只删刷屏类（isWatchdogSpamText：停产看门狗 + 预算提醒）—— **成品交活 / 成员进出**那些
  *   是真消息，删了就是丢活。
  * ⛔ 幂等：每 5 秒的 tick 都跑一次 ⇒ 应用一启动就把堆积清掉（用户看到的就是干净的队列）。
  */
@@ -64,7 +70,8 @@ export async function pruneBossQueue(group: BossGroup): Promise<number> {
   if (!boss) return 0;
   let list: any;
   try {
-    /* ⛔ 线程没加载时队列读不到（空）⇒ 先 resume 再读（postToBoss 也这么做）。 */
+    /* ⛔ 线程没加载时队列读不到（空）⇒ 先 resume 再读（postToBoss 也这么做）。
+       ⛔ resume 失败不抛：读不到就当没队列。 */
     await server.request("thread/resume", { threadId: boss, excludeTurns: false }).catch(() => undefined);
     list = await server.request("thread/queue/list", { threadId: boss, limit: 200 });
   } catch {
@@ -85,13 +92,7 @@ export async function pruneBossQueue(group: BossGroup): Promise<number> {
   return removed;
 }
 
-/** 这个线程当前有没有回合在跑（引擎侧真相：turnId → threadId，boot 里按 turn/started|completed 记）。 */
-function activeTurnOf(threadId: string): string {
-  for (const [turnId, owner] of engineActiveTurnIds) if (owner === threadId) return turnId;
-  return "";
-}
-
-/** 群事件 →指挥中枢会话。⛔ 用 queue/add（不是 turn/start）：turn/start 会打断正在跑的回合。 */
+/** 群事件 → 指挥中枢会话。⛔ 用 queue/add（不是 turn/start）：turn/start 会打断正在跑的回合。 */
 export async function postToBoss(group: BossGroup, text: string, options: { critical?: boolean } = {}): Promise<boolean> {
   const boss = String(group.bossThreadId ?? "");
   if (!boss) return false;
@@ -107,15 +108,17 @@ export async function postToBoss(group: BossGroup, text: string, options: { crit
     /* ⛔⛔⛔ 10-26 用户现场：「你阿妈b的啊」「删了重新做这个机制」。
        ── 原机制（错在哪）────────────────────────────────────────────
        群事件一律走引擎的**用户消息队列**（thread/queue/add）。后果：
-         ① 引擎视角它就是"用户的排队消息" ⇒ 应用的排队面板把它们当成**你的消息**显示；
+         ① 引擎视角它就是"用户的排队消息" ⇒ 应用的排队面板把它们当成**你的消息**显示
+            （还挂着立即/定时/编辑/删除，而你根本管不了它）；
          ② 引擎**只在线程空闲时**才消化队列 ⇒ 中枢回合一卡住就无限堆积
             （真机：同一个任务堆了几十条，全队列 57~99 条，界面直接"炸"开）；
          ③ 队列里存在"待启动回合" ⇒ 引擎报「thread already has an active or pending turn」
             ⇒ 界面永远显示"运行中"、用户发不出新消息。
        ── 新机制 ───────────────────────────────────────────────────
        **有回合在跑 ⇒ 直接 steer 追加进当前回合**（不进队列）：
-         立刻送达、不进队列、不产生 pending turn、面板永远干净。
-       **中枢空闲 ⇒ 才进队列**（那时引擎会立刻消费，队列不会堆积）。 */
+         立刻送达（不用等当前回合结束）、不进队列、不产生 pending turn、面板永远干净。
+       **中枢空闲 ⇒ 才进队列**（那时引擎会立刻消费，队列不会堆积）。
+       ⛔ 两种方式的内容都带 `[群事件]` 标记 ⇒ 时间线按群事件块渲染（不是"你"的气泡）。 */
     const turnId = activeTurnOf(boss);
     if (turnId) {
       const steered = await server.request("turn/steer", {
@@ -170,7 +173,10 @@ async function saveDeliverableFile(group: BossGroup, task: GroupTask, body: stri
    · 只有 1 条成品、且这批里没有评审请求 ⇒ 全文照发（跟以前一样）；
    · 与评审请求同批 ⇒ 成品给 240 字摘要，但**评审正文里带着完整成品**（最多 16000 字）⇒ 信息不丢；
    · 多条 ⇒ 每条 240 字摘要 + 提示"完整成品在群内消息流里，用 group_status 读"；
-   · 配额用尽 ⇒ **放回队列**、45 秒后重试，⛔ 不丢。 */
+   · 配额用尽 ⇒ **放回队列**、45 秒后重试，⛔ 不丢。
+   ⛔ 10-26 追加：**成品同时落盘成文件**（`群输出/<task>-<n>-<标题>.md`），
+      广播文本里带一行 `成品文件：<路径>` ⇒ 界面上出**文件卡**（点开右栏预览），
+      用户不用在几千字气泡里找方案正文（用户原话：「我看不见方案内容」）。 */
 type OutItem = { kind: "deliverable" | "review"; taskId: string; title: string; who?: string; body: string; file?: string };
 type OutBox = { items: OutItem[]; timer: NodeJS.Timeout | null; retryAt: number; flushing: boolean };
 const OUTBOX = new Map<string, OutBox>();
@@ -243,7 +249,7 @@ async function flushOutbox(groupId: string): Promise<void> {
 
 /**
  * 你在群对话框里说的话 → boss 线程（turn/start，等 boss 回）。
- * ⛔ 这就是「点击指挥中枢直接进入对话框」的落点：说话不新建会话、不新建回合入口，
+ * ⛔ 这就是「点击 BOSS 会话直接进入对话框」的落点：说话不新建会话、不新建回合入口，
  *    boss 的回复由 watchBossReplies 镜像进群流。
  */
 export async function sayToGroup(input: { groupId: string; text: string }): Promise<{ ok: boolean; error?: string }> {
@@ -275,16 +281,16 @@ export async function sayToGroup(input: { groupId: string; text: string }): Prom
    真机取证（`<userData>/boss-groups.json`）：3 个任务 status=running 且 attempt.endedAt=null，
    对应成员 status=busy ⇒ 界面上永远是「正在做」。
    根因：结算**只**靠 `waitForTurnCompletion(...).then()` 那个进程内 Promise ——
-   应用一重启所有等待回调全部丢失 ⇒ 任务永远 running、成员永远 busy。
-   ⛔ 而且"谁该做什么"本来就是 Codex（指挥中枢）自己的判断 —— 宿主不该用看门狗去催
-     （用户原话：「你不要加看门狗，Codex 自己哪有那么傻」）。
+   应用一重启（我杀 app-server 那次）所有等待回调全部丢失 ⇒ 任务永远 running、成员永远 busy。
+   ⛔ 而且"谁该做什么"本来就是 Codex（指挥中枢）自己的判断 —— 宿主不该用看门狗去催（用户原话：
+     「你不要加看门狗，Codex 自己哪有那么傻」）。
 
    ── 新机制 ───────────────────────────────────────────────────────────────
    ① **引擎事件驱动**：全局监听 `turn/completed`，按 turnId 反查任务 → 结算。
       不依赖任何进程内等待 ⇒ 应用重启后新回合照样能结算。
    ② **启动对账**：启动时拿引擎真相（`thread/turns/list`）核对残留的 running 任务 ——
       回合早已结束 ⇒ 补结算；引擎里根本没这一回合（从没跑起来）⇒ 标失败并释放成员。
-   ⛔ 两者都不产生任何"催中枢"的消息（那正是刷屏的根源）。 */
+   ⛔ 两��都不产生任何"催中枢"的消息（那正是刷屏的根源）。 */
 
 /** turnId → 任务 id（派活时登记；引擎事件按它反查）。 */
 const taskTurnIndex = new Map<string, string>();
@@ -399,12 +405,14 @@ export async function reconcileRunningTasks(): Promise<number> {
     /* CLI 成员没有引擎会话（stdout 就是成品）⇒ 对账不了，跳过（它有子进程收尾）。 */
     if (!threadId || threadId.startsWith("cli:")) continue;
     /* ⛔ 读不到 ⇒ **跳过**（不动状态）：可能是引擎还没就绪 / 网络抖动 / 会话正在加载。
-       ⛔⛔ 绝不能因为"读不到"就判失败 —— 那会把**正在跑的任务**误杀。 */
+       ⛔⛔ 绝不能因为"读不到"就判失败 —— 那会把**正在跑的任务**误杀（更糟：用户看到
+          "我什么都没派，成员却失败退出"）。判失败只认引擎**明确说没有这一回合**。 */
     const page = await server.request("thread/turns/list", { threadId, limit: 20, sortDirection: "desc", itemsView: "full" })
       .catch(() => null);
     if (!page) continue;
     const turns = Array.isArray((page as any)?.data) ? (page as any).data : [];
-    /* ⛔ 索引是进程内的（重启后丢）⇒ 这里按残留任务的 turnId **重建**。 */
+    /* ⛔ 索引是进程内的（重启后丢）⇒ 这里按残留任务的 turnId **重建**，
+       否则重启后这一批任务永远收不到引擎事件。 */
     if (turnId) indexTaskTurn(task.id, turnId);
     const hit = turnId ? turns.find((t: any) => String(t?.id ?? "") === turnId) : undefined;
     if (!hit) {
@@ -646,7 +654,7 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
     bossStore.save();
     const attempt = task.attempts[task.attempts.length - 1];
     /* ⛔ CLI 成员（本机外部 agent）没有引擎会话：起子进程跑命令行，stdout 就是它的成品，
-        走同一条 交活→中枢自评 流水。 */
+        走同一条 交活→BOSS 自评 流水。 */
     if (member.source === "cli") {
       markRunning(state, task.id, { threadId: `cli:${member.name}` });
       bossStore.save();
@@ -670,11 +678,15 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
     indexTaskTurn(task.id, turnId);
     bossStore.save();
     emit({ type: "boss-group", phase: "task", groupId: group.id, taskId: task.id, memberId: member.id, status: "running" });
-    // 后台收尾：不 await（这就是"异步派活"的全部实现）
+    /* ⛔ 后台收尾：**结算走引擎事件**（onEngineTurnCompleted），这里只做**兜底**。
+       ⛔⛔ 原实现在这里 `waitForTurnCompletion(...).then(() => settleSubmission(...))` ——
+          那是**进程内 Promise**，应用一重启所有等待回调全部丢失
+          ⇒ 任务永远 running、成员永远 busy（真机 3 条残留，界面永远「正在做」）。
+       ⇒ 现在：引擎事件是主路径（重启后依然有效），Promise 只在事件没来时兜底，
+          且**走同一道幂等闸**（settlingTasks）⇒ 两条路不会重复结算。 */
     void waitForTurnCompletion(threadId, turnId).then((completed: any) => {
       /* ⛔ 文本由 onEngineTurnCompleted 统一取（含"事件里没 items 就补拉"那条路）——
-         ⛔ 副本此前这里是旧版（直接 settleSubmission + 自己算 text）：绕过幂等闸，
-            且与引擎事件主路径重复结算。对齐主仓：一律交回 onEngineTurnCompleted。 */
+         原来这里先算一次 `text` 却从没用过（死变量），真取文本的地方在那边。 */
       onEngineTurnCompleted(threadId, turnId, completed);
     }).catch((error: any) => {
       if (error?.code === TURN_WAIT_TIMEOUT_CODE) {
@@ -692,6 +704,13 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
   }
 }
 
+/**
+ * 任务失败（释放成员）。
+ *
+ * @param quiet ⛔ 静默模式（启动对账用）：只改状态、释放成员、**不回投中枢**。
+ *   ⛔ 对账是在纠正"上次没结算完的残留"，不是新失败 ⇒ 往中枢回一条
+ *   「执行失败」等于凭空造一件用户没经历的事（而且这条投递走用户消息队列）。
+ */
 async function failTask(taskId: string, reason: string, quiet = false) {
   const state = await bossStore.load();
   const task = state.tasks[taskId];
@@ -750,7 +769,7 @@ export async function settleSubmission(taskId: string, output: string): Promise<
 /** 同一任务同时只允许一次评审（settleSubmission 重复回调 / 人工与自动撞车 ⇒ 后到的直接跳过）。 */
 const inFlightReviews = new Set<string>();
 
-/** 评审：**不再另开会话**（10-25 用户令：评审由会话自己用技能做）。这里只把交活回投给 中枢。 */
+/** 评审：**不再另开会话**（10-25 用户令：评审由会话自己用技能做）。这里只把交活回投给 BOSS。 */
 export async function reviewTask(taskId: string): Promise<{ ok: boolean; verdict?: "approved" | "rejected"; error?: string }> {
   if (inFlightReviews.has(taskId)) return { ok: false, error: "该任务已有一轮评审在进行，跳过重复触发" };
   const state = await bossStore.load();
@@ -779,7 +798,7 @@ async function runReview(state: BossState, taskId: string): Promise<{ ok: boolea
     /* ⛔⛔ 10-25 用户令：「这个子成员都触发一次评审？评审机制有问题…评审上下文子智能体不要默认，
        删掉了，让 codex 自己创建」。
        原来这里 thread/start 开一个**新鲜上下文的评审会话**（侧栏一堆独立评审会话）。
-       ⇒ 改成：把验收标准 + 成品**回投给指挥中枢**，由 Codex 自己判断；
+       ⇒ 改成：把验收标准 + 成品**回投给 BOSS 会话**，由 Codex 自己判断；
          要独立上下文/子智能体时**它自己创建**（系统不再自动开评审会话）。
        ⇒ 结论由 Codex 调 group_review 回填（该通道已含 recordReview + 换人重做 + 回投，闭环不断）。 */
     /* ⛔ 评审请求也走出站队列：与成品合并成**一条**消息（同一任务的成品 + 裁决要求一起到），
@@ -819,14 +838,36 @@ export async function tickAll(): Promise<void> {
   const state = await bossStore.load();
   let dirty = false;
   for (const group of Object.values(state.groups)) {
-    /* ⛔ 10-26 用户：「这什么狗几把玩意，一直刷屏，每次启动应用，进去就弹，给我删掉这玩意」。
-       预算只做静默执行（80% 不吭声 / 100% 自动暂停），⛔ 不再往中枢会话回投预算提醒。 */
+    /* ⛔⛔ 10-26：队列清理**从每 5 秒改成只在启动对账时跑一次**。
+       原实现每个 tick 都对每个群 resume + list 队列（两次引擎往返 × 群数 × 每 5 秒）
+       —— 而这只是为了清"看门狗刷屏"那批历史遗留；看门狗删掉后**不会再产生新的**。
+       ⇒ 启动清一次即可；之后由渲染层读队列时顺手清（那里本来就在读）。 */
     const before = group.paused;
+    /* ⛔⛔ 10-26 用户现场：「这什么狗几把玩意，一直刷屏，每次启动应用，进去就弹，给我删掉这玩意」。
+       预算照旧只做**静默执行**（80% 不吭声、100% 自动暂停），⛔ 不再往中枢会话回投任何预算提醒。
+       原实现 80% 每 10 分钟最多回投 12 条、tick 每 5 秒一次 ⇒ 真机一屏全是同一条；
+       而且配额表是进程内的，每次启动重新计数 ⇒ 每次开机又刷一批。 */
     if (group.paused !== before) dirty = true;
   }
-    /* 出站队列兜底：定时器可能因为进程挂起而丢，tick 时补一次 flushed。 */
+  /* ⛔⛔⛔ 10-26 用户现场：「你不要加看门狗，Codex 自己哪有那么傻」。
+     停滞看门狗（markStalled）**整体删除**：
+       原实现每隔几秒扫一遍 running 任务，超过阈值就往中枢会话回投「已经 N 秒没有进展」——
+       而这条投递走引擎的**用户消息队列**，引擎只在线程空闲时才消化 ⇒ 线程一卡就无限堆积
+       （真机：同一任务堆了几十条，全队列 57~99 条，界面直接"炸"开）。
+     ⛔ 判定"该不该做"是 Codex（指挥中枢）自己的事 —— 它看得见成员会话在不在动。
+        宿主替代模型判断 = 制造噪声 + 卡死队列。**这里不再有任何看门狗。** */
+  /* ⛔⛔⛔ 10-26 用户现场：「你不要加看门狗」—— **待审看门狗也整体删除**。
+     原实现：任务停在 reviewing 超过 10 分钟就往中枢回投「仍没有审查结论，请你现在判」。
+     ⛔ 同样的坑：回投走用户消息队列 ⇒ 卡住时无限堆积（真机 57~99 条）。
+     ⛔ 而且"该不该审、审没审"是中枢自己的判断（它那一轮没看见就再看一眼的事），
+        宿主定时催 = 越权 + 噪声。**这里不再有任何看门狗。** */
+  /* 出站队列兜底：定时器可能因为进程挂起而丢，tick 时补一次 flushed。 */
   for (const groupId of Array.from(OUTBOX.keys())) await flushOutbox(groupId);
   if (dirty) bossStore.save();
+  /* ⛔⛔ 这里**不再**跑对账（10-26 修正）：每 5 秒对每个 running 任务做一次
+     `thread/turns/list` 引擎往返 = 常驻开销；而结算的主路径已经是**引擎事件**
+     （watchMemberSettlements）+ 启动对账（reconcileRunningTasks，在 boss 域启动时跑一次）。
+     ⛔ 对账是"启动时纠正上次残留"，不是常驻轮询 —— 那正是看门狗的形态。 */
 }
 
 /* ── 给 boss 工具用的门面 ─────────────────────────────────────────────────── */
@@ -922,8 +963,8 @@ export async function memberForBoss(input: {
     const group = groupOf(state, String(input.groupId ?? ""));
     emit({ type: "boss-group", phase: "member", groupId: group.id, memberId: member.id, status: member.status });
     /* ⛔⛔ 10-25 用户实测：「用户移除的群成员没有真实生效，Codex 不知道我移除了」。
-       成员变动必须**回投给指挥中枢**，否则模型只在自己查 group_status 时才可能看到，
-       而且那是旧口径（会把 removed 也数进去）。这里把增/移都主动告诉 中枢。 */
+       成员变动必须**回投给 BOSS 会话**，否则模型只在自己查 group_status 时才可能看到，
+       而且那是旧口径（会把 removed 也数进去）。这里把增/移都主动告诉 BOSS。 */
     if (input.action === "add") {
       void postToBoss(group, `[群事件] 新成员进群：${member.name}（${member.role}${member.source === "cli" ? "，本机 CLI agent" : ""}，id=${member.id}）。`);
     } else {
@@ -956,4 +997,53 @@ export async function pinForBoss(input: { groupId: string; eventId: string; pinn
 
 export function statusForBoss(groupId: string) {
   return snapshot(bossStore.get(), groupId);
+}
+
+/**
+ * 删除群（10-27 用户令：「群编排没有管理功能，codex 自己也删不掉… 但这个删要联动 codex 那边，
+ * 不然光界面删了，codex 那边不知道群删了不行」）。
+ *
+ * ⛔⛔ **先回投中枢、再清账**：`postToBoss` 要靠 group.bossThreadId 才找得到那条会话，
+ *    群一删就再也通知不到了 ⇒ 顺序不能反。回投的是 `[群事件]`，模型下一回合就知道这个群没了，
+ *    不会拿着旧 groupId 继续派活/审查（那才是用户说的"两边不一致"）。
+ * ⛔ 只删群账本（群 / 任务 / 事件）——**会话不删**：成员会话里的成品与轨迹仍可回看，
+ *    产出文件也都在群 workspace 里（用户明确要「群真的消失，会话与产出保留」，看 delete 前那版界面文案）。
+ * ⛔ 立即 `flush()`：删群是销毁性操作，不能等 120ms 合并写（崩在中间 = 界面已消失、账本还在）。
+ */
+export async function deleteGroupForBoss(input: { groupId: string; by?: "user" | "boss"; reason?: string }): Promise<{
+  ok: boolean;
+  error?: string;
+  deleted?: { id: string; name: string; tasks: number; events: number; running: number; notified: boolean };
+}> {
+  const state = await bossStore.load();
+  const group = state.groups[String(input.groupId ?? "")];
+  if (!group) return { ok: false, error: "群不存在（可能已经被删掉了）" };
+
+  const tasks = Object.values(state.tasks).filter((task) => task.groupId === group.id);
+  const running = tasks.filter((task) => ["queued", "assigned", "running", "submitted", "reviewing"].includes(task.status)).length;
+  const events = (state.events ?? []).filter((event) => event.groupId === group.id).length;
+  const who = input.by === "boss" ? "中枢" : "用户";
+
+  /* ① 先通知中枢（群还在，才找得到 boss 会话） */
+  const notified = await postToBoss(
+    group,
+    `[群事件] 群「${group.name}」(id=${group.id}) 已被${who}删除。\n`
+    + `⛔ 该群的 ${tasks.length} 条任务账本与 ${events} 条事件记录已一并清除`
+    + `${running ? `，其中 ${running} 条未完成的活已终止` : ""}。\n`
+    + `${String(input.reason ?? "").trim() ? `删除原因：${String(input.reason).trim().slice(0, 200)}\n` : ""}`
+    + `此后不要再对这个 groupId 派活 / 审查 / 查状态；需要继续就重新 group_create 建群。`
+    + `成员会话与产出文件都保留，可在侧栏回看。`,
+    /* critical：这条**不能**被闲聊配额吃掉 —— 模型不知道群没了，就会拿旧 groupId 继续派活。 */
+    { critical: true },
+  ).catch(() => false);
+
+  /* ② 再清账（群 / 任务 / 事件三处，缺一处就会在列表或状态里"诈尸"） */
+  for (const task of tasks) delete state.tasks[task.id];
+  state.events = (state.events ?? []).filter((event) => event.groupId !== group.id);
+  delete state.groups[group.id];
+  bossStore.save();
+  await bossStore.flush();
+  emit({ type: "boss-group", phase: "group", groupId: group.id, status: "deleted" });
+
+  return { ok: true, deleted: { id: group.id, name: group.name, tasks: tasks.length, events, running, notified } };
 }

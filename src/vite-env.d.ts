@@ -1188,6 +1188,8 @@ interface Window {
     bossGroupSay(input: any): Promise<any>;
     /* 创世 boss：可拉名单（专家/专家团 + 本机 CLI agent，带探测结果） */
     bossGroupPool(): Promise<any>;
+    /* 删群（先往中枢回投 [群事件] 再清群/任务/事件账本；会话与产出文件保留） */
+    deleteBossGroup(input: any): Promise<any>;
     /* 指挥中枢身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
     bossGroupSession(input: any): Promise<any>;
     /* 清空某个指挥中枢的专属记忆目录（⛔ 只清记忆，不删会话） */
