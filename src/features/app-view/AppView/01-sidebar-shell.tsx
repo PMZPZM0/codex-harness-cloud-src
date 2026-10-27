@@ -433,7 +433,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
        点项目新建，标签页换了、界面却还卡在 中枢引导卡）。所以 中枢入口必须**在它之后**置 true，
        否则刚置上就被它清掉、按钮点了进不去欢迎界面。 */
     bossHomePending.current = true;
-    startNewThread();
+    startNewThread({ boss: true });   // boss=true ⇒ 未选地址的提示用琥珀色（普通新建是蓝色）
     setBossPending(true);
     /* ⛔⛔ 10-25 用户令：「不要进指挥中枢就弹，改成点击那个选项再弹」
        ⇒ 这里**不再**自动弹项目地址对话框；入口在输入框左上角那枚项目地址 chip
