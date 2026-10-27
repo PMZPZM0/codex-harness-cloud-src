@@ -574,9 +574,10 @@ if (state) {
     && /\.boss-mood-(hype|coax|funny|angry|bored)/.test(bossWelcomeCss)
     && !/boss-mood-tag/.test(bossWelcomeCss) && !/boss-mood-tag/.test(bossIntroSrc),
     "主句字号放大（clamp）+ 五类语气各有配色，且**没有**分类小标签（⛔ 用户令：不要展示标签）");
-  /* 10-27 用户令：「轮播速度太快了，慢一点」⇒ 停留时长写在常量里，且不得低于 8 秒。 */
-  ok(/const MOOD_ROTATE_MS = (\d+)/.test(bossIntroSrc) && Number(bossIntroSrc.match(/const MOOD_ROTATE_MS = (\d+)/)[1]) >= 8000,
-    "情绪句轮播够慢（≥ 8s/条，用户令：太快了）");
+  /* 10-27 用户令：「轮播速度太快了，慢一点」→ 再「轮播速度改成 1 分钟」
+     ⇒ 停留时长写在常量里，且不得低于 60 秒（⛔ 别再按秒级调，用户已经两次嫌快）。 */
+  ok(/const MOOD_ROTATE_MS = 60_000;/.test(bossIntroSrc),
+    "情绪句轮播 60 秒一条（用户令：改成 1 分钟）");
   ok(/boss-welcome\s*\{[^}]*align-items:\s*center/.test(bossWelcomeCss)
     && /boss-welcome-sub\s*\{[^}]*text-align:\s*center/.test(bossWelcomeCss),
     "⛔ 欢迎界面的文案**居中**（与普通会话欢迎页同一观感）");
