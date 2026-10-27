@@ -92,6 +92,14 @@
 .settings-exp-page .settings-subhead-hint { color: var(--faint); }
 
 /* 外观页里的零散设置块也收成卡 */
+/* 10-27 用户令：「外观界面的菜单连贯性要做好，不要中间断」
+   ⇒ 外观页那五张卡（显示四项 / 拓展功能 / 壁纸 / 开机动画 / 代码高亮）**连成一条**：
+   去掉卡间的 10px 间隙与各自的圆角，相邻卡共用一条 1px 线，只在最上和最下补回圆角。
+   ⛔ 别给每张卡单独留 margin-top —— 那 10px 就是「中间断」的来源。 */
+.appearance-page > .settings-exp-card { margin-top: 0; border-radius: 0; }
+.appearance-page > .settings-exp-card + .settings-exp-card { border-top: 0; }
+.appearance-page > .settings-exp-hero + .settings-exp-card { border-radius: 12px 12px 0 0; }
+.appearance-page > .appearance-code-card { border-radius: 0 0 12px 12px; }
 .settings-exp-card { padding: 14px 16px 16px; }
 .settings-exp-card > .settings-subhead:first-child { margin-top: 0; }
 .settings-exp-card .settings-subhead { margin-top: 14px; }
@@ -222,13 +230,23 @@
 }
 
 /* ── 全设置页统一壳：页头、白卡、分组、工具条 ── */
+/* ── 10-27 用户令：「设置界面逐个检查，很多隔断，中间有小白条」──
+   根因：框架给**每一段**都留 8px 上 + **34px 下**留白。一个页面有几段，中间就出现几道白条，
+   看起来像被切断。改法：段上/下留白归零，段与段的节奏交给段内卡片自己的 10px margin；
+   8px / 26px 只留给**第一段的顶**与**最后一段的底**（页面呼吸感不丢）。 */
 .settings-exp-shell > .settings-section,
 .settings-exp-shell > .comp-lib {
   width: 100%;
   max-width: 100%;
-  padding: 8px 22px 34px;
+  padding: 0 22px;
 }
-.settings-exp-shell > .settings-section.settings-exp-page { padding: 4px 2px 26px; }
+.settings-exp-shell > .settings-section:first-of-type,
+.settings-exp-shell > .comp-lib:first-of-type { padding-top: 8px; }
+.settings-exp-shell > .settings-section:last-of-type,
+.settings-exp-shell > .comp-lib:last-of-type { padding-bottom: 26px; }
+.settings-exp-shell > .settings-section.settings-exp-page { padding: 0 2px; }
+.settings-exp-shell > .settings-section.settings-exp-page:first-of-type { padding-top: 4px; }
+.settings-exp-shell > .settings-section.settings-exp-page:last-of-type { padding-bottom: 26px; }
 .settings-exp-shell > .settings-section > .settings-copy,
 .settings-exp-shell > .settings-section > .settings-block-head,
 .settings-exp-shell .comp-lib-head {
@@ -424,6 +442,14 @@
 .settings-exp-shell .uc-hero-kicker { color: var(--muted); }
 .settings-exp-shell .uc-chip { background: var(--panel-2); border-color: var(--line-soft); color: var(--muted); }
 .settings-exp-shell .uc-panel { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); box-shadow: none; }
+/* 10-27 用户令：「用户人格和 codex 卡片区分开」⇒ 用户人格用强调色描边 + 极淡斜向底色，
+   与下面中性的 Codex 人格组一眼分得开。⛔ 特异性必须 ≥ `.settings-exp-shell .uc-panel`（0,2,0），
+   写 `.user-persona-panel` 单类会被上面那条压掉（实测白写了）。 */
+.settings-exp-shell .user-persona-panel {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  /* ⛔ 统一简洁风里不许出现渐变（守卫 12ad 直接扫这个字符串）⇒ 只允许纯色淡染。 */
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+}
 .settings-exp-shell .uc-panel-icon { background: var(--panel-2); color: var(--muted); }
 
 .settings-exp-shell .provider-setup-hero-title em { background: var(--panel-2); color: var(--muted); }
@@ -438,7 +464,6 @@
 .settings-exp-shell .provider-card.selected { background: var(--panel); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .settings-exp-shell .provider-item-icon { background: var(--panel-2) !important; color: var(--muted) !important; }
 .settings-exp-shell .provider-card-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
-.settings-exp-shell .provider-more-section .provider-item { border-color: var(--line-soft); background: var(--panel); }
 
 .settings-exp-shell .relay-sub-banner,
 .settings-exp-shell .relay-sub-banner[data-state="expiring"],
@@ -567,6 +592,15 @@
 /* ── 数据管理页（10-24 用户令「整齐划一」）：三段统一为分组小标题 + 单张白卡，行间细分隔线 ──
    ⛔ 全部作用域在 .storage-page-* 下（34-devtools-cards 教训：不许裸写 .settings-card 级全局改写）。
    旧行样式（.storage-row 自带边框底色）在卡内关掉 —— 行与行用分隔线，不再一格一格。 */
+/* ── 10-27 用户令：「这个界面也是分断太严重了」──
+   数据管理页是**两个并列的 .is-settings-flow 段**（占用卡 / 工作日志卡），框架给每段各留
+   26px 下留白 + 4px 上留白 ⇒ 中间空出 30px，看着像断成两块。这里把段留白归零、两卡共用一条线：
+   只有最上一张留上圆角、最下一张留下圆角，中间那条重复边框去掉。 */
+.settings-exp-shell > .is-settings-flow { padding-top: 0; padding-bottom: 0; }
+.settings-exp-shell > .is-settings-flow + .is-settings-flow { padding-top: 0; }
+.settings-exp-shell .is-settings-flow > .storage-page-card { margin-top: 0; border-radius: 0; }
+.settings-exp-shell > .is-settings-flow:first-of-type > .storage-page-card { border-radius: 12px 12px 0 0; }
+.settings-exp-shell > .is-settings-flow + .is-settings-flow > .storage-page-card { border-top: 0; border-radius: 0 0 12px 12px; }
 .settings-exp-shell .storage-page-card { display: flex; flex-direction: column; padding: 2px 14px; }
 .settings-exp-shell .storage-page-card > * { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
 .settings-exp-shell .storage-page-card > *:first-child { padding-top: 14px; }
@@ -578,6 +612,7 @@
 .settings-exp-shell .storage-page-card p.muted { margin: 0; line-height: 1.65; }
 .settings-exp-shell .storage-page-card .settings-actions { margin: 0; gap: 8px; }
 .settings-exp-shell .storage-page-card .storage-row .settings-actions { flex: none; }
+/* 备份目录行：说明在上，输入行在下（输入框可收缩，窄窗不横向溢出） */
 .storage-dir-row { display: flex; flex-direction: column; gap: 8px; }
 .storage-dir-line { display: flex; align-items: center; gap: 8px; }
 .storage-dir-line .account-menu-input { flex: 1 1 auto; min-width: 0; }
@@ -585,21 +620,10 @@
 .storage-dir-effective { margin: 2px 0 0; word-break: break-all; font-size: 11.5px; }
 .storage-dir-warn { color: var(--orange); }
 .settings-exp-shell .storage-page-card .work-logs-foot { flex-wrap: wrap; }
+/* 工作日志卡内的提示行放宽（与统计条同宽） */
 .settings-exp-shell .storage-page-card .work-logs-hint { max-width: none; }
 
-/* ── 一二布布主题包 + 用户人格（10-24 用户立项；用户中心两块新卡） ─────────────── */
-.settings-exp-shell .bubu-pack-body { display: flex; flex-direction: column; gap: 10px; }
-.settings-exp-shell .bubu-pack-preview { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.settings-exp-shell .bubu-pack-avatar { width: 64px; height: 64px; border-radius: 16px; object-fit: cover; border: 1px solid var(--line-soft); }
-.settings-exp-shell .bubu-pack-stickers { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
-.settings-exp-shell .bubu-pack-stickers img { width: 52px; height: 52px; border-radius: 12px; object-fit: cover; border: 1px solid var(--line-soft); }
-.settings-exp-shell .bubu-pack-voice { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
-.settings-exp-shell .bubu-pack-voice .app-select { min-width: 190px; }
-.settings-exp-shell .bubu-pack-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.settings-exp-shell .bubu-pack-actions .primary-setting { align-self: auto; }
-.settings-exp-shell .bubu-pack-stickers img { background: transparent; }
-.settings-exp-shell .bubu-pack-note { margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--faint); }
-
+/* ── 用户人格（10-25：与 Codex 人格同页） ── */
 .settings-exp-shell .user-persona-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
 .settings-exp-shell .user-persona-card {
   display: flex; flex-direction: column; gap: 6px; text-align: left;

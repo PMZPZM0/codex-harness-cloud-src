@@ -12,9 +12,11 @@
 .mcp-category-filter > span { flex: none; white-space: nowrap; }
 .mcp-category-select { min-width: 148px; }
 /* 10-27 用户：「搜索框靠左，分类选项放到搜索框后面」——
-   [搜索] [分类▾] 靠左成一组。⛔ 搜索框必须有宽度上限：继承 .resource-toolbar .search-field 的
-   flex:1 1 190px 会拉满整行、把分类挤到最右；选择器写三个类（0,3,0），否则被后导入的
-   12-settings-skills.css 同特异度规则压回去。 */
+   [搜索] [分类▾] 靠左成一组，操作按钮照旧被 .skill-toolbar-actions 的 margin-left:auto 顶到右边。
+   ⛔ 搜索框必须**有固定上限**：继承 .resource-toolbar .search-field 的 flex:1 1 190px 会把它拉满整行，
+      分类被挤到最右、贴着按钮，看起来就不像「跟在搜索后面」了。
+   ⛔ 选择器要写成 `.resource-toolbar.mcp-market-toolbar`（特异度 0,3,0）：12-settings-skills.css
+      里那条 `.resource-toolbar .search-field` 同特异度但**后导入**，只写两个类会被它压回去（实测过）。 */
 .resource-toolbar.mcp-market-toolbar .search-field { flex: 0 1 240px; min-width: 170px; }
 .mcp-server-grid {
   grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
@@ -1117,7 +1119,9 @@
   padding: 16px 22px 18px;
 }
 .settings-section.builtin-plugins { padding-bottom: 8px; }
-.settings-section.plugin-center { padding-top: 10px; }
+/* 10-26 六轮用户令「中间缝隙还是很大」：内置插件块与本市场块是两个兄弟 section，
+   各自上下留白叠起来 ⇒ 中间空出近 60px。这里把市场块的上留白归零，只留兄弟块自己的 8px。 */
+.settings-section.plugin-center { padding-top: 0; }
 .settings-section.plugin-center .plugin-stats { margin-bottom: 12px; }
 .settings-copy h2 {
   color: var(--text);
@@ -1677,6 +1681,21 @@
   min-width: 0;
   box-sizing: border-box;
 }
+/* 10-27 用户令：「我让你做成卡片放已安装里面」⇒ 内置三件排进已安装的卡片网格，
+   在网格里改成**竖版卡片**（图标/标题在上、说明一行、状态与「配置」在底部），
+   与相邻的 .plugin-card 同一观感。⛔ 仍只有「配置」一个动作，不提供卸载。 */
+.plugin-card-grid > .bi-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--panel);
+}
+.plugin-card-grid > .bi-row .bi-row-text { min-width: 0; }
+.plugin-card-grid > .bi-row .bi-row-text small { white-space: normal; line-height: 1.5; }
+.plugin-card-grid > .bi-row .bi-row-state { align-self: flex-start; }
+.plugin-card-grid > .bi-row > button { width: 100%; margin-top: 2px; }
 /* 右侧固定件一律不许被压扁：中文没有空格，flex item 的 min-content 只有「一个字」宽，
    不写 flex:none 时状态胶囊与按钮会被挤成一条（同画布按钮那次事故）。 */
 .bi-row > .bi-row-state,
@@ -1708,6 +1727,18 @@
   white-space: nowrap;
 }
 .bi-row.is-ready .bi-row-state { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
+/* 10-27：内置插件行标「内置」——随包分发、不可卸载（只读标记，不是按钮） */
+.bi-row-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 500;
+  vertical-align: 1px;
+}
 .bi-row.is-off .bi-row-state { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); }
 
 /* 二级弹窗的体/脚（外壳复用通用 .connector-setup-modal，与视频卡同一套） */

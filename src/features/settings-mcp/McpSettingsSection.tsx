@@ -5,8 +5,8 @@
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
 import { ArrowUpRight, Check, CircleStop, KeyRound, Link2, Play, Plus, RefreshCw, Search, Trash2, Wifi, Wrench, Zap } from "lucide-react";
-import { Spinner } from "../../components/CardShell";
 import { AppSelect } from "../../components/AppSelect";
+import { Spinner } from "../../components/CardShell";
 import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl } from "../../lib/skillhub-mcp";
 import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { MarketLogo } from "../../features/skills-market";
@@ -67,10 +67,15 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
   const toggleMcpChecked = (id: string) => setMcpServerChecked((current: any) => current.includes(id) ? current.filter((entry: any) => entry !== id) : [...current, id]);
   return (
   <section className="settings-section stack">
-  <div className="settings-copy channel-heading"><div><h2>MCP</h2><p>接入外部工具和数据源；市场可一键安装，也可以添加自己的 MCP 服务。</p></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button><button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshWithReceipt(setNotice, "刷新 MCP 状态", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+  {/* 10-27 用户令：「右上角问号删了」—— 页头整块（? + 副标题）撤掉，
+      进页直接是「分类 / 搜索 / 添加 MCP / 刷新」工具条与市场卡片。
+      ⛔ 新手帮助内容仍在 HelpDialog 的「MCP · 新手帮助」里（帮助库不删），
+         只是本页不再挂 ? 入口；守卫 07 的孤儿主题名单按这次用户令开了 mcp 的例外。 */}
     <div className="plugin-market-block">
-      <div className="plugin-market-title">MCP 市场<small>SkillHub MCP 工具广场 · 27 个服务 · 带模板一键接入 / 其余直达官网</small></div>
-      {/* 10-27 用户：「搜索框靠左，分类选项放到搜索框后面」⇒ [搜索] [分类▾] 靠左成一组。 */}
+      {/* 10-27 用户令：「那个分类做成筛选形式，几个市场跳转删了」——
+          横向分类 tab 收成下拉筛选；SkillHub / AIbase 两个外链跳转删除，只留添加与刷新。
+          10-27 再令：「搜索框靠左，分类选项放到搜索框后面」⇒ 顺序改成
+          [搜索] [分类▾] …………………… [添加 MCP][刷新]，与技能页同一套排法。 */}
       <div className="resource-toolbar mcp-market-toolbar">
         <SearchField value={mcpMarketSearch} onChange={setMcpMarketSearch} placeholder="搜索 MCP 服务名称或简介" />
         <div className="mcp-category-filter">
@@ -82,6 +87,10 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
             options={SKILLHUB_MCP_CATEGORIES.map((category) => ({ value: category, label: category }))}
             onChange={(value) => { setMcpMarketCategory(value); setMcpMarketSearch(""); }}
           />
+        </div>
+        <div className="skill-toolbar-actions">
+          <button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button>
+          <button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshWithReceipt(setNotice, "刷新 MCP 状态", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
         </div>
       </div>
       <div className="skill-card-grid">

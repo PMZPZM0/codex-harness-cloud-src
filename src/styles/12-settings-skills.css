@@ -6,32 +6,6 @@
  */
 
 
-/* 10-27 用户：我的技能 / 从本地添加 / 刷新 下移到筛选区底部，右对齐、小一号 */
-/* 10-27 用户：按键与搜索同一排；分类小字与右上角问号删除 */
-.skill-filter-row .search-field { flex: 0 1 160px; min-width: 130px; }
-.skill-rank-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--muted); }
-.skill-rank-filter .app-select-trigger { min-width: 76px; }
-.skill-category-filter { display: inline-flex; align-items: center; flex: none; }
-.skill-category-filter .app-select-trigger { min-width: 96px; }
-.skill-actions-line {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  flex-wrap: wrap;
-  flex: none;
-  margin-left: auto;
-}
-.skill-actions-line > .skill-action-sm {
-  min-height: 28px;
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 8px;
-  font-size: 11.5px;
-  gap: 5px;
-}
-.skill-actions-line > .icon-button.skill-action-sm { width: 28px; padding: 0; }
-
 /* 技能管理：我的技能小卡片视图。 */
 .skill-installed-view { display: flex; flex-direction: column; gap: 18px; margin-top: 16px; }
 .skill-installed-summary { display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 11.5px; align-self: flex-start; }
@@ -94,6 +68,47 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   flex: 1 1 190px;
   min-width: 160px;
 }
+
+/* ── 10-26 用户令（技能中心截图）：「框住这些做成一个筛选功能，搜索框靠左，上面一排按键放下来」 ──
+   布局：`[搜索框(左)] [筛选 总排行▾] ←—— 其余空间 ——→ [我的技能][从本地添加][SkillHub][刷新]`
+   ⛔ 按钮的 `margin-left:auto` 原来写死在 `.resource-toolbar > .secondary-setting` 上 ⇒ 三颗按钮各带一个
+      auto ⇒ 会被平摊开。这里只让**第一颗**吃 auto，其余归零，按钮才成一组贴在右边。 */
+/* 10-27 用户：「跟搜索框放一排；那一排分类小字删了」——
+   一行 = 搜索（短）+ 榜单筛选 + 三颗小按键（右对齐）；分类芯片行不再渲染。 */
+.skill-filter-row .search-field { flex: 0 1 160px; min-width: 130px; }
+.skill-rank-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--muted); }
+.skill-rank-filter .app-select-trigger { min-width: 76px; }
+.skill-category-filter { display: inline-flex; align-items: center; flex: none; }
+.skill-category-filter .app-select-trigger { min-width: 96px; }
+.skill-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+/* 组内的按钮不再各自吃 auto（否则会被平摊开） */
+.skill-toolbar-actions > button { margin-left: 0; flex: none; }
+/* 10-27：我的技能 / 从本地添加 / 刷新与搜索同一行，贴右、小一号 */
+.skill-actions-line {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: none;
+  margin-left: auto;
+}
+.skill-actions-line > .skill-action-sm {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  gap: 5px;
+}
+.skill-actions-line > .icon-button.skill-action-sm { width: 28px; padding: 0; }
 /* 次级工具栏已自带边框与底色，里面的统计条去掉重复外框 */
 .resource-toolbar.secondary .skill-installed-summary {
   border: 0;
@@ -115,6 +130,31 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   gap: 2px;
   display: flex;
 }
+/* ── 10-27 用户令：「控制台审批选项、外观的主题 / 消息字号 / 思考板块 / 运行过程，都按回复风格样式改」
+   统一一条规则：胶囊组贴右（row-pills），整卡只留一行（card-pills：卡内边距 8/14、头 0）。
+   ⛔ 宽度仍随容器自适应（不要 fit-content —— 用户上一轮刚否掉）。 */
+.segmented-tabs.row-pills { margin-left: auto; flex: none; }
+.segmented-tabs.row-pills button { font-size: 11.5px; }
+.settings-exp-shell .settings-card.card-pills { padding: 8px 14px; }
+/* 10-27 用户令：「都被隔开了」⇒ 同一组显示项合成**一张卡里的多行**（行间 1px 细线），
+   不再一行一张卡。卡自己不留内边距，交给每行 10/14，行高一致。 */
+/* 卡自己不留内边距（.settings-card 与 .settings-exp-card 两种壳都要压住），
+   否则行留白 = 卡 16 + 行 14 = 30，分隔线也会缩进成半截。 */
+.settings-exp-shell .settings-card.card-pill-rows,
+.settings-exp-shell .card-pill-rows { padding: 0; }
+.card-pill-rows > .settings-pill-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+.card-pill-rows > .settings-pill-row + .settings-pill-row { border-top: 1px solid var(--line-soft); }
+.settings-pill-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.settings-pill-row-label > svg { color: var(--green); }
+.settings-exp-shell .settings-card.card-pills > .settings-card-head { padding: 0; }
 .segmented-tabs button {
   height: 26px;
   border: 0;
@@ -1015,6 +1055,17 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .personalization-group > .settings-subhead {
   margin: 0 0 12px;
 }
+/* 10-27 用户令：「四个正方形卡片太丑了」⇒ 回复风格改成标题行右侧的胶囊分段控件（与插件页来源 tab 同款），
+   组卡里只剩这一行 ⇒ 底边距归零，卡片高度就是一行的高度。 */
+/* 10-27 三令：「左右还是得自适应长度，现在太短了」⇒ 卡宽回到随容器自适应（与下面自定义指令卡同宽），
+   **只压上下**：留白 14/16 → 8，卡高 ≈ 46px，一行胶囊的量。⛔ 不要写 fit-content / max-width。 */
+.personalization-group.card-style:has(.personalization-style-tabs) {
+  padding: 8px 14px;
+}
+.personalization-group.card-style:has(.personalization-style-tabs) > .settings-subhead { gap: 12px; }
+.personalization-style-tabs { margin-left: auto; flex: none; }
+.personalization-style-tabs button { font-size: 11.5px; }
+.personalization-group > .settings-subhead:last-child { margin-bottom: 0; }
 /* 组标题排版统一到 13px/600。卡的直接子级 subhead 就是「组标题」。 */
 .personalization-group > .settings-subhead {
   color: var(--text);

@@ -6,8 +6,8 @@
  */
 import { Check, CircleStop, LayoutGrid, Paperclip, Play, Plus, Quote, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
-import { AppSelect } from "../../components/AppSelect";
 import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
+import { AppSelect } from "../../components/AppSelect";
 import { SkillAvatar } from "../../features/skills-market";
 import { SkillPoolSection } from "./SkillPoolSection";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
@@ -19,6 +19,8 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
   return (
     <>
       <section className="settings-section stack skill-center">
+                    {/* 10-27 三轮用户令：「跟搜索框放一排；那一排分类小字删了；右上角帮助问号删了」——
+                        搜索 + 榜单筛选 + 三颗小按键同一行；分类芯片行与页头 ? 一并删除。 */}
                     <div className="resource-toolbar secondary skill-filter-row">
                       <SearchField
                         value={skillsManageOnly ? skillManageSearch : skillHubSearch}
@@ -48,11 +50,11 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                           </span>
                         </>
                       )}
-                    <div className="skill-actions-line">
-                      <button className={`${skillsManageOnly ? "active-manage" : "secondary-setting"} skill-action-sm`} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={13} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
-                      <button className="secondary-setting skill-action-sm" onClick={() => void importSkill()}><Paperclip size={13} />导入技能</button>
-                      <button className="icon-button skill-action-sm" title="刷新技能市场" onClick={() => void refreshWithReceipt(setNotice, "刷新技能市场", () => refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage))}>{marketLoading ? <Spinner /> : <RefreshCw size={13} />}</button>
-                    </div>
+                      <div className="skill-actions-line">
+                        <button className={`${skillsManageOnly ? "active-manage" : "secondary-setting"} skill-action-sm`} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={13} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
+                        <button className="secondary-setting skill-action-sm" onClick={() => void importSkill()}><Paperclip size={13} />导入技能</button>
+                        <button className="icon-button skill-action-sm" title="刷新技能市场" onClick={() => void refreshWithReceipt(setNotice, "刷新技能市场", () => refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage))}>{marketLoading ? <Spinner /> : <RefreshCw size={13} />}</button>
+                      </div>
                     </div>
                     {skillsManageOnly ? (() => {
                       // 技能规范化名：剥掉插件限定前缀（引擎对插件技能返回 `ponytail:ponytail-audit`，

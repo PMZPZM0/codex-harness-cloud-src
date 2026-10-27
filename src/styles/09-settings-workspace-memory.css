@@ -916,6 +916,16 @@
   margin: 6px 0 8px;
   font-size: 13px;
 }
+/* 10-27 用户令：「新增定时任务放到闲时模板那一排字，这行靠右」⇒ 标题行左右分置。 */
+.auto-templates-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 6px 0 8px;
+}
+.auto-templates-head h3 { margin: 0; }
+.auto-templates-head > button { flex: none; }
 .template-grid {
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px;
@@ -1201,9 +1211,12 @@
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
-  /* ⛔ 10-26 用户：「刻度线中间那么小一个缝隙，鼠标上下滑动都会断」——
-     2px 线 + 上下 4px padding + 4px gap ⇒ 每格之间 4px 死区，指针穿过被判 mouseleave。
-     改零 gap + 上下 6px：单槽仍 14px（线间距与外观不变），命中区首尾相接。 */
+  /* ⛔⛔ 10-26 用户：「刻度线中间那么小一个缝隙，鼠标上下滑动都会断」——
+     原来是 2px 线 + 上下各 4px padding + **4px gap** ⇒ 每格之间有 4px 死区，
+     指针穿过就被判成 mouseleave（tip 闪断、波浪跳、声音漏）。
+     改成 **零 gap**：把上下 padding 4→6px，单槽仍是 14px（2+12），
+     线间距与整条尺子的外观**一模一样**，但命中区首尾相接、没有死区。
+     ⛔ 槽高仍是 14px ⇒ visibleCount = h/14 不用动。 */
   gap: 0;
   display: flex;
   position: absolute;
@@ -1221,7 +1234,7 @@
   width: 12px;
   height: 2px;
   margin-left: 12px;
-  /* 2px 线 + 上下 6px = 14px 命中区（配 gap:0 ⇒ 相邻刻度相接） */
+  /* 2px 线 + 上下 6px = 14px 命中区（与轨道 gap:0 配合 ⇒ 相邻刻度命中区相接） */
   padding: 6px 0;
   transition:
     width 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
