@@ -110,6 +110,11 @@ const skillsPage = pageSrc("skills");
 ok(/skill-actions-line/.test(skillsPage) && !/settings-heading-actions/.test(skillsPage) && !/<div className="skill-tabs">/.test(skillsPage) && !/<span className="skill-filter-count">/.test(skillsPage), "技能页：按键与搜索同排，分类小字与页头按键已删");
 ok(!/PageInfo/.test(skillsPage), "技能页右上角帮助问号已删");
 ok(/\.skill-actions-line\s*\{[^}]*margin-left:\s*auto/.test(read("src/styles/12-settings-skills.css")) && /\.skill-action-sm\s*\{[^}]*height:\s*28px/.test(read("src/styles/12-settings-skills.css")), "技能页按键与搜索同一行、右对齐且小尺寸（28px）");
+const commandsPage = pageSrc("commands");
+ok(!/settings-copy|PageInfo|settings-heading-actions/.test(commandsPage) && /command-actions-line/.test(commandsPage), "命令页页头按键/问号已删，新建与刷新并进搜索行");
+ok(/<AppSelect[\s\S]{0,200}command-filter-select/.test(commandsPage) && !/command-stats|command-tabs/.test(commandsPage), "命令分类收成下拉筛选（统计小字与 tab 已删）");
+const commandCss = read("src/styles/14-model-onboarding.css");
+ok(/\.command-actions-line\s*\{/.test(commandCss) && /\.command-action-sm\s*\{[^}]*height:\s*28px/.test(commandCss) && /\.command-filter-select\s*\{/.test(commandCss), "命令页按键小尺寸（28px）、筛选下拉在位");
 ok(/manageable = \[\.\.\.localInstalled\]/.test(skillsPage), "技能批量管理只覆盖本地导入（市场/内置不参与）");
 ok(/skill-local-bulk/.test(skillsPage) && /本地导入/.test(skillsPage), "批量管理卡在本地导入分组内（不再挂在页面顶部）");
 ok(!/resource-toolbar secondary[sS]{0,500}BatchActions/.test(skillsPage), "顶部不再挂全局批量条");
@@ -132,7 +137,7 @@ const refreshAt = modelPage.indexOf("const refreshCardModels");
 const refreshEnd = modelPage.indexOf("const testProviderCard", refreshAt);
 const refreshBlock = refreshAt >= 0 && refreshEnd > refreshAt ? modelPage.slice(refreshAt, refreshEnd) : "";
 ok(refreshBlock.length > 0 && /addedIds/.test(refreshBlock) && /removed/.test(refreshBlock) && /saveCustomDraft/.test(refreshBlock) && /relaunchApp/.test(refreshBlock), "「更新模型」新增/移除模型都保存并重启（与编辑弹窗保存同口径）");
-for (const [key, title] of [["plugins", "插件"], ["commands", "命令"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
+for (const [key, title] of [["plugins", "插件"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
   const text = pageSrc(key);
   const at = text.indexOf(`<h2>${title}`);
   const window = at >= 0 ? text.slice(at, at + 2200) : "";
