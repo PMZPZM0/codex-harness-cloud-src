@@ -115,6 +115,8 @@ const commandsPage = pageSrc("commands");
 ok(!/settings-copy|PageInfo|settings-heading-actions/.test(commandsPage) && /command-actions-line/.test(commandsPage), "命令页页头按键/问号已删，新建与刷新并进搜索行");
 ok(!/还没有自定义命令/.test(commandsPage), "命令页不再显示「还没有自定义命令」空态注释");
 ok(/<AppSelect[\s\S]{0,200}command-filter-select/.test(commandsPage) && !/command-stats|command-tabs/.test(commandsPage), "命令分类收成下拉筛选（统计小字与 tab 已删）");
+const pluginsPage = pageSrc("plugins");
+ok(/<AppSelect[\s\S]{0,200}market-category-select/.test(pluginsPage) && !/<div className="skill-tabs">/.test(pluginsPage) && !/>在线市场<\/button>/.test(pluginsPage), "插件市场分类收成下拉，在线市场跳转已删");
 const commandCss = read("src/styles/14-model-onboarding.css");
 ok(/\.command-actions-line\s*\{/.test(commandCss) && /\.command-action-sm\s*\{[^}]*height:\s*28px/.test(commandCss) && /\.command-filter-select\s*\{/.test(commandCss), "命令页按键小尺寸（28px）、筛选下拉在位");
 ok(/manageable = \[\.\.\.localInstalled\]/.test(skillsPage), "技能批量管理只覆盖本地导入（市场/内置不参与）");
@@ -139,7 +141,7 @@ const refreshAt = modelPage.indexOf("const refreshCardModels");
 const refreshEnd = modelPage.indexOf("const testProviderCard", refreshAt);
 const refreshBlock = refreshAt >= 0 && refreshEnd > refreshAt ? modelPage.slice(refreshAt, refreshEnd) : "";
 ok(refreshBlock.length > 0 && /addedIds/.test(refreshBlock) && /removed/.test(refreshBlock) && /saveCustomDraft/.test(refreshBlock) && /relaunchApp/.test(refreshBlock), "「更新模型」新增/移除模型都保存并重启（与编辑弹窗保存同口径）");
-for (const [key, title] of [["plugins", "插件"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
+for (const [key, title] of [["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
   const text = pageSrc(key);
   const at = text.indexOf(`<h2>${title}`);
   const window = at >= 0 ? text.slice(at, at + 2200) : "";
