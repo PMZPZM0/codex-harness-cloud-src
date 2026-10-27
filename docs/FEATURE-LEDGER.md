@@ -216,3 +216,4 @@
 | 2026-10-27 | 勘误：组件库网格高度跟窗口走，去掉底部空白 | 修复 | `23-ui-skin.css`、守卫 12ad、验收 `settings-current` | 同步主仓：网格固定 max-height 460px 改为 calc(100vh - 250px)，随窗口铺满；云端已部署；组件库项验收通过。 | 本轮 |
 | 2026-10-27 | SSH 页工具栏收口：搜索 + 状态下拉 + 导入/导出/新建连接同一行，删问号 | 改动 | `SshSettingsSection.tsx`、`16-settings-ssh.css`、守卫 12ad、验收 `settings-current` | 同步主仓：页头删除；状态胶囊改「全部 N」下拉；导入/导出/新建连接缩成 28px 小按钮，与搜索同一行右侧。云端已部署；SSH 项验收通过（并行线 3 项待其同步）。 | 本轮 |
 | 2026-10-27 | 应用锁「开启应用锁」按钮靠右 | 改动 | `48-app-lock.css`、守卫 12ad | 同步主仓：`.app-lock-actions` 改 flex-end，开启态的三颗操作也一并靠右。云端已部署。 | 本轮 |
+| 2026-10-27 | 专家中心「返回智能体团队」与「专家市场」并排，删问号 | 改动 | `ExpertCenterSection.tsx`、`00-settings-registry.tsx`、`05-composer-input.css`、守卫 12ad、验收 `settings-current` | 同步主仓：返回键从壳层独立行移进页头，与专家市场左右分列；删除 PageInfo。云端已部署；专家中心项验收通过。 | 本轮 |
