@@ -129,6 +129,20 @@ ok(/expert-center-head/.test(expertCenterSrc) && /onBack/.test(expertCenterSrc) 
 ok(!/"expert-center": \{ back:/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")), "专家中心返回键不再由壳层单独占一行");
 const teamsSrc = read("src/features/settings-teams/TeamsSettingsSection.tsx");
 ok(/teams-back/.test(teamsSrc) && !/subagent-banner/.test(teamsSrc) && /onBack/.test(teamsSrc), "专家团返回并进操作行，Codex 说明卡已删");
+/* ── ⑨ 子智能体编辑器（10-27 用户：「新建子智能体更新一下，都是旧的，工具也是」）──
+   ⛔ 只断言 SubAgentEditorModal 段：专家团弹窗在同一个文件里，它的「启用状态」仍是原生 checkbox。 */
+const subAgentModal = codeOnly(read("src/features/experts-teams/ExpertsTeams/01-modals.tsx").split("export function ExpertTeamEditorModal")[0]);
+ok(!/ALL_EFFORTS/.test(subAgentModal) && /CUSTOM_MODEL_EFFORTS/.test(subAgentModal) && /effortLabels\[level\]/.test(subAgentModal),
+  "子智能体推理强度改四档（低/中/高/极高），不再列极简/最高/max");
+ok(/ToggleSwitch/.test(subAgentModal) && !/<input type="checkbox"/.test(subAgentModal),
+  "子智能体开关走共享 ToggleSwitch（原生大蓝勾选框已删）");
+ok(/subagent_save/.test(subAgentModal) && /agent_invoke/.test(subAgentModal) && !/dynamicTools|agent_invoke · subagent/.test(subAgentModal),
+  "工具说明改成 agent_invoke（派活）+ subagent_save（建/改），旧 dynamicTools 文案已删");
+const agentsSrc = read("src/features/settings-agents/AgentsSettingsSection.tsx");
+ok(/normalizeSubagentEffort/.test(agentsSrc) && /SUBAGENT_SANDBOX_OPTIONS/.test(agentsSrc) && /SUBAGENT_APPROVAL_OPTIONS/.test(agentsSrc),
+  "子智能体卡片：推理强度归一四档，沙箱/审批显示中文标签");
+ok(/effort: normalizeSubagentEffort\(agent\.effort\)/.test(read("src/features/app-state/parts/part07/02-seg/01-connectors-subagents-teams.tsx")),
+  "打开旧条目时把历史推理档位归一到四档（下拉不会空着）");
 ok(!/teams: \{ back:/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")), "专家团返回键不再由壳层单独占一行");
 const commandCss = read("src/styles/14-model-onboarding.css");
 ok(/\.command-actions-line\s*\{/.test(commandCss) && /\.command-action-sm\s*\{[^}]*height:\s*28px/.test(commandCss) && /\.command-filter-select\s*\{/.test(commandCss), "命令页按键小尺寸（28px）、筛选下拉在位");
@@ -203,9 +217,8 @@ ok(/\.perm-seg-btn\s*\{[^}]*align-items:\s*center[^}]*text-align:\s*center/.test
 /* ── ⑥ SSH 工具栏不落单 ── */
 ok(/\.settings-exp-shell \.ssh-toolbar \.search-field\s*\{[^}]*flex:\s*1 1 160px;[^}]*width:\s*auto\s*!important/s.test(css), "SSH 搜索框可收缩（导出/导入不再被挤到第二行单飞）");
 
-/* ── ⑦ 验收题同轮登记 ── */
-ok(/"settings-unified":\s*"10-24"/.test(accept), "验收 settings-unified 已登记到 10-24 轮（默认轮能跑到）");
-ok(/id:\s*"settings-unified"/.test(accept), "验收项本体存在");
+/* ── ⑦ 验收题同轮登记（云助手的 accept 只保留当前项、无轮次分区）── */
+ok(/id:\s*"settings-current"/.test(accept), "验收项 settings-current 存在（本仓没有轮次分区）");
 
 /* ── ⑧ 个性化页去重（10-27 用户令：「个性化里面的用户称呼可以删了，还有语气自适应也删了，
    跟用户中心和控制台的ahd重复了」）──
