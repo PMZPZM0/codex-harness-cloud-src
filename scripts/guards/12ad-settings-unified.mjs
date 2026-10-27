@@ -109,6 +109,7 @@ ok(/\.settings-exp-shell \.memory-center \.memory-backends\s*\{[^}]*border-top/s
 const skillsPage = pageSrc("skills");
 ok(/skill-actions-line/.test(skillsPage) && !/settings-heading-actions/.test(skillsPage) && !/<div className="skill-tabs">/.test(skillsPage) && !/<span className="skill-filter-count">/.test(skillsPage), "技能页：按键与搜索同排，分类小字与页头按键已删");
 ok(!/PageInfo/.test(skillsPage), "技能页右上角帮助问号已删");
+ok(/<AppSelect[\s\S]{0,200}skill-category-select/.test(skillsPage) && /skillHubFilterCategory \|\| skill\.category === skillHubFilterCategory/.test(skillsPage), "技能分类筛选下拉在位（卡片按分类过滤）");
 ok(/\.skill-actions-line\s*\{[^}]*margin-left:\s*auto/.test(read("src/styles/12-settings-skills.css")) && /\.skill-action-sm\s*\{[^}]*height:\s*28px/.test(read("src/styles/12-settings-skills.css")), "技能页按键与搜索同一行、右对齐且小尺寸（28px）");
 const commandsPage = pageSrc("commands");
 ok(!/settings-copy|PageInfo|settings-heading-actions/.test(commandsPage) && /command-actions-line/.test(commandsPage), "命令页页头按键/问号已删，新建与刷新并进搜索行");
