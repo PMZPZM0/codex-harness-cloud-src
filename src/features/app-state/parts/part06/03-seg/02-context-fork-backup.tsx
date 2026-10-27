@@ -5,6 +5,7 @@
  * ⛔ 顺序即契约：段内含 hook 调用，React 靠**调用顺序**绑定 state ⇒ 组合根必须按文件名前缀顺序调用。
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
+import { enginePersonality } from "../../../../../lib/reply-style.mjs";
 import "@xterm/xterm/css/xterm.css";
 import { loadDraft, saveDraft } from "../../../../../lib/composer-draft.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
@@ -13,8 +14,8 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
 /* ⛔ 新建**普通**会话 = 离开「欢迎界面」那个过渡态（10-25 用户实测：
-   「我在欢迎界面，点这个项目上的新建他不会跳转到普通会话的欢迎界面」）。
-   `pending` 是「下一条会话是 中枢」的标记，只有 中枢入口该置它 ⇒ 这里统一清掉。 */
+   「我在指挥欢迎界面，点这个项目上的新建他不会跳转到普通会话的欢迎界面」）。
+   `pending` 是「下一条会话是中枢」的标记，只有中枢入口该置它 ⇒ 这里统一清掉。 */
 import { setBossPending } from "../../../../boss-group-view";
 
 export function usePart06c2(bag: Bag) {
@@ -183,7 +184,7 @@ bag.forkThreadFromSidebar = forkThreadFromSidebar as typeof bag.forkThreadFromSi
         effort: bag.effort || undefined,
         sandbox: bag.sandbox,
         approvalPolicy: bag.approvalPolicy,
-        personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
+        personality: bag.selectedModel?.supportsPersonality ? enginePersonality(bag.personality) : null,
       });
       if (!res) return; // 用户取消
       bag.rememberPendingImport(res.thread.id, res.imported);
@@ -202,9 +203,9 @@ bag.importConversationMarkdown = importConversationMarkdown as typeof bag.import
   function startNewThread() {
     /* ⛔⛔ 这里是**所有**「新建普通会话」入口的唯一漏斗（新建任务 / Ctrl+N / 项目行的 ＋ /
        命令面板 /new / 空白态按钮都走它）。10-25 用户实测：
-       「我在欢迎界面，点这个项目上的新建他不会跳转到普通会话的欢迎界面」
-       —— 根因是 `bossThreads.pending`（= 下一条会话是 中枢）只在侧栏「新建任务」里被清过，
-       项目行那条路径没清 ⇒ 标签页都换新的了，时间线还在按 pending 渲染 中枢引导卡。
+       「我在指挥欢迎界面，点这个项目上的新建他不会跳转到普通会话的欢迎界面」
+       —— 根因是 `bossThreads.pending`（= 下一条会话是中枢）只在侧栏「新建任务」里被清过，
+       项目行那条路径没清 ⇒ 标签页都换新的了，时间线还在按 pending 渲染中枢引导卡。
        ⇒ 在漏斗里统一清：新建普通会话必然不是指挥中枢（中枢入口会在调用**之后**再置 true）。 */
     setBossPending(false);
     bag.setChatSearchOpen(false);

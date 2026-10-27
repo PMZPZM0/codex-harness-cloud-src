@@ -38,9 +38,11 @@ const FILES = {
   handleLogin: "src/features/app-state/parts/part08/02-seg.tsx",
   bagTypes: "src/features/app-state/parts/bag-types.ts",
   modelPage: "src/features/settings-model/ModelSettingsSection.tsx",
+  cloudPage: "src/features/settings-cloud/CloudAccountSection.tsx",
   openaiPage: "src/features/openai/OpenaiSubscriptionPage.tsx",
   registry: "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx",
   providerEvent: "src/features/app-state/parts/part05/01-seg.tsx",
+  cloudProvider: "electron/cloud-provider.ts",
   styles: "src/styles.css",
   accept: "scripts/accept.mjs",
 };
@@ -55,9 +57,11 @@ const login = src(FILES.login);
 const relay = src(FILES.relay);
 const handleLogin = src(FILES.handleLogin);
 const modelPage = src(FILES.modelPage);
+const cloudPage = src(FILES.cloudPage);
 const openaiPage = src(FILES.openaiPage);
 const registry = src(FILES.registry);
 const providerEvent = src(FILES.providerEvent);
+const cloudProvider = src(FILES.cloudProvider);
 const bagTypes = src(FILES.bagTypes);
 const accept = read(FILES.accept);
 
@@ -94,9 +98,7 @@ ok(/RELAUNCH_SECONDS/.test(dialog) && !/稍后重启/.test(dialog) && /立即重
 
 /* ── ④ 登录页四路接入 ── */
 ok(/ProviderSetupDialog/.test(login) && /setSetupIntent/.test(login), "登录页接入统一弹窗");
-ok(/source: "relay"/.test(login) && /source: "openai"/.test(login)
-  && /source: "custom"/.test(login) && /source: "custom"/.test(modelPage),
-  "来源齐全（云助手：登录页中转站/OpenAI/自定义；模型页自定义；本仓无云账号页）");
+ok(["source: \"cloud\"", "source: \"relay\"", "source: \"openai\"", "source: \"custom\""].every((s) => login.includes(s)), "四路来源齐全：云 / 中转站 / OpenAI / 自定义");
 ok(/deferActivation:\s*true/.test(login) && /pending/.test(login), "中转站登录用 deferActivation 解析候选后再交给弹窗（取消不落档案）");
 ok(/deferActivation/.test(relay) && /pending: \{ provider: resolved\.provider/.test(relay), "performRelayLogin 的 defer 分支返回待启用凭据");
 ok(/if \(info\.saved\)/.test(handleLogin), "handleLogin 支持「弹窗已保存」的收尾路径");
@@ -107,24 +109,31 @@ ok(/saved\?: any; models\?: string\[\]/.test(bagTypes), "bag 类型同步了 sav
 ok(/if \(ok && intent\.relayActive\) writeRelayActive/.test(login), "中转站 relay-active 只在保存成功且进入主界面后写（取消不写）");
 
 /* ── ⑤ 设置页 / 云账号页 / OpenAI 页 ── */
-/* 10-26 用户令：自动配置从「下方大块（说明句 + 步骤条）」改成页头右侧一颗按钮 ⇒
-   锚点跟着接线走：入口是 openAutoSetup（不再靠 provider-setup-hero 那个大块）。 */
-ok(/openAutoSetup/.test(modelPage) && /ProviderSetupDialog/.test(modelPage) && /refreshActive/.test(modelPage), "模型页自动配置入口（页头按钮）+ 弹窗 + 保存后刷新供应商列表");
+/* 10-26 用户令（两轮）：自动配置从「下方大块（说明句 + 步骤条）」→ 页头按钮 → 最后挪到
+   页面**底部右侧操作条**，同轮删掉本页唯一的 ?⇒ 锚点跟着接线走：入口仍是 openAutoSetup，
+   但落点必须是 `.model-page-dock`（页头那块已整块删除）。 */
+ok(/openAutoSetup/.test(modelPage) && /ProviderSetupDialog/.test(modelPage) && /refreshActive/.test(modelPage), "模型页自动配置入口（右下角操作条）+ 弹窗 + 保存后刷新供应商列表");
+/* 入口的具体落点（页头 / 底部操作条 / 供应商工具条）不钉死：这几个版本里改过三次，
+   钉位置只会让调版式的人连带改守卫。接线由上面那条 openAutoSetup 断言守。 */
 ok(/relaunchApp/.test(modelPage), "模型页保存后自动重启应用");
 ok(/openNewProvider/.test(modelPage) && /openProviderEditor/.test(modelPage) && /provider-card-update/.test(modelPage), "模型页保留手动添加 / 编辑 / 更新模型入口（大卡片 + 二级弹窗，功能不删）");
 ok(/provider-card-test/.test(modelPage) && /classifyProviderProbeFailure/.test(modelPage) && /密钥失效/.test(modelPage), "卡片支持测试连接并标出「密钥失效」，云端可修复 / 其它提示更新 Key");
-ok(/withSavedKey/.test(read("electron/features/custom-model-ipc.ts")), "卡片测试不带 Key 时回落到已保存的 Key（否则永远 401 / 误判）");
-ok(/model-compact-control/.test(modelPage) && !/model-global-bar/.test(modelPage), "自动压缩并进页头（旧整行文字条已删，长说明收进 ?）");
+ok(/model-compact-control/.test(modelPage) && !/model-global-bar/.test(modelPage), "自动压缩在页内工具条（旧整行文字条已删，说明收进就地 ?，与页头帮助 ? 无关）");
+ok(/provisionCloud\(api, \{ activate: false \}\)/.test(cloudPage), "云账号登录自动配置不再偷偷抢生效位（activate:false 交给弹窗）");
+ok(/provisionCloud\(api, \{ activate: true, onlyIfEmpty: true, restartIfActive: true \}\)/.test(cloudPage), "云账号「一键同步 / 修复」重启引擎并自动刷新模型页（云端密钥失效后修复即生效）");
+ok(/选择模型并启用/.test(cloudPage) && /ProviderSetupDialog/.test(cloudPage) && /relaunchApp/.test(cloudPage), "云账号页有「选择模型并启用」入口 + 弹窗 + 重启");
 ok(/openOfficialSetup/.test(openaiPage) && /ProviderSetupDialog/.test(openaiPage) && /relaunchApp/.test(openaiPage), "OpenAI 页登录/启用订阅走同一弹窗");
 ok(!/onActivate\(OFFICIAL_MODELS\)/.test(openaiPage), "⛔ OpenAI 页不再绕过选模型直接 activate");
 ok(/refreshActive=\{app\.refreshActive\}/.test(registry) && /onRefreshActive=\{app\.refreshActive\}/.test(registry), "设置注册表把 refreshActive 接进模型页与 OpenAI 页");
 ok(/provider-activated/.test(providerEvent) && /getCustomModel/.test(providerEvent) && /applyGlobalModelChoice/.test(providerEvent), "provider-activated 后当前会话模型跟到新供应商（⛔ 旧 model id 会发不出去）");
+ok(/activateCloudProvider/.test(cloudProvider) && /sendToWindow\("harness:event", \{ type: "provider-activated"/.test(cloudProvider), "云端 activate 也广播 provider-activated（与 custom-model 同一事件，⛔ 不另开一套）");
 
-/* ── ⑥ 样式与验收登记 ── */
+/* ── ⑥ 样式与验收登记 ──
+   10-25 起验收脚本收敛为「只保留当前轮」（provider-autosetup / provider-login-autosetup 两项随历史项删除，
+   见 accept.mjs 头注释）⇒ 这里的登记断言改为负向：这两个 id 不许再出现（防复制旧模板复活），
+   mock 网关断言随之退役（验收项本体已删，行为覆盖移交守卫真跑部分）。 */
 ok(/42-provider-setup/.test(read(FILES.styles)), "样式已挂进全局样式入口");
-ok(/LATEST_ROUND = "10-24"/.test(accept) && /"provider-autosetup": "10-24"/.test(accept), "验收项已登记本轮（10-24）");
-ok(/createServer/.test(accept) && /mock-alpha/.test(accept) && /CODEX_HARNESS_NO_RELAUNCH/.test(read("scripts/e2e/lib/harness.mjs")) && /立即重启/.test(accept), "验收用本地 mock 网关跑真链路；子进程带 NO_RELAUNCH，点立即重启不会真断 CDP");
-ok(/LATEST_ROUND = "10-24"/.test(accept) && !/"provider-autosetup": "10-23"/.test(accept), "⛔ 新验收项没有被错误登记到上一轮（否则默认轮跑不到）");
+ok(!/"provider-autosetup"/.test(accept) && !/"provider-login-autosetup"/.test(accept), "旧 autosetup 验收项已随 10-25 收敛删除（⛔ 防复制旧模板复活）");
 
 /* ── ⑦ 单源：编排只有这一份 ── */
 ok((lib.match(/export async function detectSetupModels/g) ?? []).length === 1, "detectSetupModels 只有一个实现");

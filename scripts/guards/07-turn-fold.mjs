@@ -216,7 +216,9 @@ export async function run() {
     // 都不好看」）：各页那个占位的「帮助」按钮已退休、长说明收进标题旁的 ?。所以断言从
     // "帮助按钮数"改成三层：① ? 挂载数 ② 兼作帮助入口的 ? 数 ③ 「赘述回潮」判据。
     const hintCount = (appC.match(/<PageInfo\b/g) || []).length;
-    (hintCount >= 15)
+    // 10-27：用户连续令「各页右上角 ? 删了」（模型 / MCP / 插件 / 人格市场…）⇒ 下限跟着实测降到 14，
+    //   这条守的是「说明别摊回标题下」，不是「? 必须越多越好」。
+    (hintCount >= 14)
       ? ok(`【32】设置页挂了 ${hintCount} 处 ? 号（说明收进 ?，头部恒为一行）`)
       : fail(`【32】? 号只有 ${hintCount} 处 —— 说明又被摊回标题下了（赘述回潮）`);
     const keyedHints = (appC.match(/helpKey="/g) || []).length;
@@ -227,12 +229,17 @@ export async function run() {
     //    「模型」页（标题是 provider-list-head、不是 settings-copy）与「专家和专家团」页
     //    （说明只有一句短话、不在收编名单里）的入口就真被漏掉了：内容库还在，用户点不到。
     //    这正是本条守卫要防的形态（本轮 code review 抓到的两个真问题之一）。
-    // 10-26/10-27 用户令：模型页、插件页、MCP 页的 ? 都被明确撤掉（问号删除 / 删页头?），
-    //    帮助库里的主题内容保留 —— 它们是**明确要求**、不是漏挂 ⇒ 列入例外，别消红消成假绿。
-    const NO_HINT_KEYS = ["model", "mcp", "plugins"];
+    // 10-26 二轮用户令：「自动配置和保存重启放到界面右下角，? 号删除」⇒ 模型页那枚 ? 随页头整块撤掉。
+    //    这是**明确要求**，不是漏挂 ⇒ 下面把它从"必须有入口"的名单里摘出；内容库仍保留 model 主题，
+    //    用户召回时再挂一个 ? 即可。⛔ 别把别的主题也塞进这个例外来消红（那正是本条要防的孤儿）。
+    // 10-27 用户（MCP 页截图）：「右上角问号删了」⇒ MCP 页那枚 ? 同样撤掉、内容库保留 mcp 主题。
+    // 10-27 用户（插件页）：「插件页删页头?」（commit 18f153b40）⇒ plugins 那枚 ? 也撤了，
+    //    当轮漏改这条名单 ⇒ 一直红着「plugins 入口丢了」。同口径补进例外，别再留假红。
+    //    同日技能中心也按用户令删掉了 ?（64b0856e2「删分类小字与帮助问号」）⇒ skills 一并列入。
+    const NO_HINT_KEYS = ["model", "mcp", "plugins", "skills"];
     const orphanKeys = HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key) && !new RegExp(`helpKey="${key}"`).test(appC + voiceC));
     (orphanKeys.length === 0)
-      ? ok(`【32】${HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key)).length} 个帮助主题都有 ? 入口（无"内容库在、入口丢了"的孤儿）`)
+      ? ok(`【32】${HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key)).length} 个帮助主题都有 ? 入口（模型 / MCP / 插件页按用户令撤掉，不计）`)
       : fail(`【32】这些主题的帮助入口丢了：${orphanKeys.join(", ")} —— 内容库还在，但用户点不到`);
     // ⛔ 赘述回潮的可证伪判据：settings-copy 区块里不该再有 >40 字的内联段落。
     //    短句（≤40 字）允许内联 —— 它只占一行，硬收进 ? 反而让用户多点一次。
@@ -598,10 +605,10 @@ export async function run() {
     (/setModelEditor\(\(editor\) => \{/.test(appC3) && /paramsDirty/.test(appC3))
       ? ok("【32】补全后的参数回填走函数式 setState + 尊重 paramsDirty（手改过不覆盖）")
       : fail("【32】参数回填用过期闭包或无视手改 —— 补全后参数可能没回填/被覆盖");
-    // 模型下拉徽标化（09-18 用户「选择样式还可以优化一下，现在不好看」）
-    (/function modelBadges\(/.test(appC3) && /badges: modelBadges\(model\)/.test(appC3) && /\.menu-item-badges/.test(cssNC) && /\.menu-item-check/.test(cssNC))
-      ? ok("【32】模型下拉每行带「图片/视频/上下文/输出」徽标 + 当前项右侧勾选")
-      : fail("【32】模型下拉没有参数徽标 —— 用户嫌「不好看」的那版");
+    // 模型下拉徽标化（09-18 用户「选择样式还可以优化一下，现在不好看」；10-25 当前项改用底色，不再显示勾选）
+    (/function modelBadges\(/.test(appC3) && /badges: modelBadges\(model\)/.test(appC3) && /\.menu-item-badges/.test(cssNC) && !/menu-item-check/.test(appC3))
+      ? ok("【32】模型下拉每行带「图片/视频/上下文/输出」徽标，当前项用底色标识（不显示勾选）")
+      : fail("【32】模型下拉徽标缺失，或右侧勾选又回来了（用户 10-25：选中有底色就行）");
     // 09-18 新形态（用户：「把模型配置里面思考选择删了，每个独立会话选择那个就生效那个」）：
     //   档位**不再是模型条目的属性** —— 模型配置里没有勾选区，菜单恒为全集，
     //   选哪个只落**当前会话**；模型/网关真不支持某档 → 发送失败自动学会 + 降档重发。
@@ -630,6 +637,8 @@ export async function run() {
     const effortTail = cssNC.slice(cssNC.indexOf("10-24：思考强度改成"));
     ok(/.effort-picker-thumb {[sS]{0,220}opacity: 1/s.test(effortTail), "【32】白色圆点常显（不再 hover 才出现）");
     ok(/.effort-picker-bead[sS]{0,160}display: none/s.test(effortTail), "【32】亮珠 / 刻点 / 火苗已隐藏（简洁版）");
+  ok(/EFFORT_BANDS/.test(effortPickerC) && /xhigh: "linear-gradient(90deg, #16a34a 0%, #0ea5e9 55%, #2563eb 100%)"/.test(effortPickerC), "【32】渐变随档位变化（低偏绿 / 高偏蓝 / 极高绿→蓝→深蓝）");
+  ok(/effort-picker-sparks/.test(effortPickerC) && /effort-picker-sparks i:nth-child(9)/.test(cssNC) && /@keyframes effort-spark/.test(cssNC), "【32】拉到极高有粒子特效（9 颗白色小星 + 光晕）");
     ok(/.effort-picker-bar.burn .effort-picker-fill[sS]{0,220}linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%)/s.test(effortTail), "【32】拉满仍是绿→蓝（不再切火焰色）");
 
     const applyBody = appNC.slice(appNC.indexOf("function applyEffort"), appNC.indexOf("function changeEffort"));
@@ -757,10 +766,10 @@ export async function run() {
     //   （App.tsx 在前、features 在后），indexOf 返回 -1 ⇒ 切出空串 ⇒ 假红「(section 没切出来)」。
     const end = appSrc.indexOf("</section>", start);
     const pluginSection = start >= 0 && end > start ? appSrc.slice(start, end) : "";
-    const refreshButtons = (pluginSection.match(/title="刷新[^"]*"/g) || []);
-    (pluginSection && refreshButtons.length === 1 && !/title="刷新插件市场"/.test(appSrc))
-      ? ok("【35】插件页只有一个刷新入口（市场工具栏那颗已去掉，不再是两个同款 🔄）")
-      : fail(`【35】插件页刷新入口数 = ${refreshButtons.length}（应为 1）：${refreshButtons.join(" / ") || "(section 没切出来)"}`);
+    // 10-27：刷新收成组件内一个 `const refreshButton`（三个视图各挂一次，同一时刻只显示一颗）
+    //   ⇒ 判据看**定义**数（在 return 之外，切不进 pluginSection）+ 卡内是否真的挂上了。
+    const refreshDefs = (readFileSync(join(ROOT, "src/features/settings-plugins/PluginsMarketSection.tsx"), "utf8").match(/title="刷新[^"]*"/g) || []);
+    (refreshDefs.length === 1 && /\{refreshButton\}/.test(pluginSection) && !/title="刷新插件市场"/.test(appSrc) ? ok : fail)("【35】插件页只有一个刷新入口（refreshButton 挂在各视图卡内）");
     (/async function refreshPluginsPage\(\)[\s\S]{0,240}?refreshSettingsResources\(\)[\s\S]{0,140}?refreshMarketPlugins\(/.test(appSrc))
       ? ok("【35】那一个刷新确实两处都刷（页面资源 + 当前筛选的市场列表）")
       : fail("【35】refreshPluginsPage 没同时刷市场列表 —— 合并后市场再也刷不动，且界面不报错");
@@ -785,11 +794,10 @@ export async function run() {
     (!offenders.length)
       ? ok(`【36】渲染层没有写死的反斜杠展示路径（扫 ${targets.length} 个 ts/tsx，注释已剥离）`)
       : fail(`【36】渲染层出现写死反斜杠的展示路径：${offenders.slice(0, 4).join("、")} —— mac 上会显示成 /a\\b\\c`);
-    const appPath = readAppUi();
-    (/function displayPath\(base: string, \.\.\.parts: string\[\]\): string \{/.test(appPath)
-      && /displayPath\(userDataPath, "codex-home", "skills"\)/.test(appPath))
-      ? ok("【36】展示路径走 displayPath()（按平台选分隔符）")
-      : fail("【36】displayPath() 缺失或技能中心说明没走它 —— 分隔符又会被写死");
+    // 10-27：技能中心那行说明随页头一起删掉了（用户令）⇒ 不再钉死某个消费点；
+    //   判据改成「helper 在 + 除定义外至少一处调用」，写死反斜杠仍由上面那条负向扫描守。
+    (/function displayPath\(base: string, \.\.\.parts: string\[\]\): string \{/.test(readAppUi()) ? ok : fail)(
+      "【36】展示路径走 displayPath()（helper 在；写死反斜杠仍有上面那条负向扫描守着）");
   }
 
   // ⑰i 并发安装不再假失败 + 体检批量安装逐项容错（09-18 用户反馈「安装失败：Error invoking remote method
@@ -1042,7 +1050,7 @@ export async function run() {
   {
     console.log(C.bold("\n【43】永久删除的磁盘收尾（删了就不能重启复活）"));
     const req = createRequire(import.meta.url);
-    const st = req(join(ROOT, "dist-electron", "session-tools.js"));
+    const st = req(join(ROOT, "dist-electron", "tools", "session-tools.js"));
     const pool = req(join(ROOT, "dist-electron", "rollout-pool.js"));
     const mainTs = readMainSource();
     const workerSrc = readFileSync(join(ROOT, "electron", "rollout-worker.cjs"), "utf8");
@@ -2820,7 +2828,7 @@ export async function run() {
   (/const upstreamProtocol = normalizeUpstreamProtocol\(input\.upstreamProtocol \?\? existing\?\.upstreamProtocol\);/.test(mainSrc72) ? ok : fail)(
     "【72】保存时归一并在未传值时沿用旧值"
   );
-  (/upstreamProtocol\?: BridgeMode \}\) => \{/.test(mainSrc72) ? ok : fail)("【72】custom-model:save 入参带该字段");
+  (/custom-model:save", async \(_event, input: \{[^}]*upstreamProtocol\?: BridgeMode/.test(mainSrc72) ? ok : fail)("【72】custom-model:save 入参带该字段");
   (/upstreamProtocol: dedupedDraft\.upstreamProtocol \?\? "auto"/.test(hookSrc72) ? ok : fail)(
     "【72】渲染层保存时带上该字段（缺省 auto）"
   );
@@ -4977,7 +4985,7 @@ export async function run() {
     (/\.reasoning-strip-marquee\.is-scrolling/.test(styles54) && /@keyframes reasoning-strip-marquee/.test(styles54) && /animation-play-state: paused/.test(styles54) && /prefers-reduced-motion/.test(styles54) && /\.reasoning-strip-body \{[\s\S]{0,200}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
       "【161】直播横滚用 CSS transform（不触发 scroll 事件 ⇒ 时间线不上下抖）；悬停暂停 / 减少动效静止；展开全文最高 50vh"
     );
-    (appearanceSrc.includes("思考板块展示") && appearanceSrc.includes('setReasoningDisplayMode("auto")') && appearanceSrc.includes('setReasoningDisplayMode("strip")') && appearanceSrc.includes("reasoning-mode-seg") && appearanceSrc.indexOf("思考板块展示") < appearanceSrc.indexOf("<FunctionMenuSettings") && !generalSrc.includes("思考板块展示") ? ok : fail)(
+    (appearanceSrc.includes("思考板块展示") && appearanceSrc.includes('setReasoningDisplayMode("auto")') && appearanceSrc.includes('setReasoningDisplayMode("strip")') && appearanceSrc.includes('aria-label="思考板块展示"') && appearanceSrc.indexOf("思考板块展示") < appearanceSrc.indexOf("<FunctionMenuSettings") && !generalSrc.includes("思考板块展示") ? ok : fail)(
       "【161】设置 → 外观有两档切换（自适应展开 / 长条按行），在「功能入口」上方，点击即时生效"
     );
     // ⑮ 用户 10-20 审查「回合内容超长时，运行中会不会有不进折叠的」：
@@ -5067,7 +5075,7 @@ export async function run() {
     );
     /* ⛔ 10-24 锚点同步：`compactToast` 必须先按会话过滤（`threadCompactToast`）再交给
        compactionStateOf —— 否则 A 会话的压缩成功会让 B 会话刻度尺长出假绿线（用户实测）。 */
-    ((timeline.includes("compactionState(thread.id, cs)") || timeline.includes("compactionStateOf(ordered, threadCompactToast?.state)") || timeline.includes("compactionStateOf(ordered, compactToast?.state)")) && timeline.includes("cs.state === \"done\" ? cs.item : null") ? ok : fail)(
+    (timeline.includes("compactionStateOf(ordered, threadCompactToast?.state)") && timeline.includes("cs.state === \"done\" ? cs.item : null") ? ok : fail)(
       "【165】timeline 层扫描最后一条已完成压缩 item（与 pruneSupersededCompactions 同口径）"
     );
     ((() => { const a = timeline.indexOf("compactionLine && i === insertBefore"); const b = timeline.indexOf("<MemoTurnView"); return a >= 0 && b >= 0 && a < b; })() ? ok : fail)(
