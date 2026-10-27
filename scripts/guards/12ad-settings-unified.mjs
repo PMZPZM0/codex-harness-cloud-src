@@ -127,6 +127,9 @@ ok(/\.app-lock-actions\s*\{[^}]*justify-content:\s*flex-end/.test(read("src/styl
 const expertCenterSrc = read("src/features/settings-expert-center/ExpertCenterSection.tsx");
 ok(/expert-center-head/.test(expertCenterSrc) && /onBack/.test(expertCenterSrc) && !/PageInfo/.test(expertCenterSrc), "专家中心返回与专家市场并排，帮助问号已删");
 ok(!/"expert-center": \{ back:/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")), "专家中心返回键不再由壳层单独占一行");
+const teamsSrc = read("src/features/settings-teams/TeamsSettingsSection.tsx");
+ok(/teams-back/.test(teamsSrc) && !/subagent-banner/.test(teamsSrc) && /onBack/.test(teamsSrc), "专家团返回并进操作行，Codex 说明卡已删");
+ok(!/teams: \{ back:/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")), "专家团返回键不再由壳层单独占一行");
 const commandCss = read("src/styles/14-model-onboarding.css");
 ok(/\.command-actions-line\s*\{/.test(commandCss) && /\.command-action-sm\s*\{[^}]*height:\s*28px/.test(commandCss) && /\.command-filter-select\s*\{/.test(commandCss), "命令页按键小尺寸（28px）、筛选下拉在位");
 ok(/manageable = \[\.\.\.localInstalled\]/.test(skillsPage), "技能批量管理只覆盖本地导入（市场/内置不参与）");
