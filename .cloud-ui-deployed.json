@@ -1,8 +1,8 @@
 {
-  "sourceHash": "7c51fe2b75a0c4c03a6042246f35f6a8e9f806f4818fbf778f1d915277aecdc5",
-  "assetHashes": "assets/index-BUCiAKyy.css,assets/index-D6L5Nv0g.js",
+  "sourceHash": "dca4cb4b5b9b1b7714ea4ead1d92ba43d5e9240ffe9239d25f2f69c34fa40c43",
+  "assetHashes": "assets/index-BUCiAKyy.css,assets/index-Fx_aC2A_.js",
   "builtAt": "2026-10-27",
-  "deployedAt": "2026-10-27T13:21:00.718Z",
+  "deployedAt": "2026-10-27T13:25:09.441Z",
   "remoteBase": "https://ppz123.asia/cloud/app",
   "remoteDir": "/var/www/codex-harness-cloud/app"
 }
