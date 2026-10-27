@@ -11,6 +11,11 @@
 .mcp-category-filter { display: inline-flex; align-items: center; gap: 8px; flex: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .mcp-category-filter > span { flex: none; white-space: nowrap; }
 .mcp-category-select { min-width: 148px; }
+/* 10-27 用户：「搜索框靠左，分类选项放到搜索框后面」——
+   [搜索] [分类▾] 靠左成一组。⛔ 搜索框必须有宽度上限：继承 .resource-toolbar .search-field 的
+   flex:1 1 190px 会拉满整行、把分类挤到最右；选择器写三个类（0,3,0），否则被后导入的
+   12-settings-skills.css 同特异度规则压回去。 */
+.resource-toolbar.mcp-market-toolbar .search-field { flex: 0 1 240px; min-width: 170px; }
 .mcp-server-grid {
   grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
   gap: 10px;
