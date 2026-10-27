@@ -123,6 +123,7 @@ ok(/\.comp-lib-grid\s*\{[^}]*max-height:\s*calc\(100vh/.test(read("src/styles/23
 const sshPage = pageSrc("ssh");
 ok(!/PageInfo|settings-copy/.test(sshPage) && /ssh-status-select/.test(sshPage) && /ssh-actions-line/.test(sshPage), "SSH 页问号/页头已删，状态筛选下拉与三颗操作并进搜索行");
 ok(/\.ssh-action-sm\s*\{[^}]*height:\s*28px/.test(read("src/styles/16-settings-ssh.css")), "SSH 操作按钮小尺寸（28px）");
+ok(/\.app-lock-actions\s*\{[^}]*justify-content:\s*flex-end/.test(read("src/styles/48-app-lock.css")), "应用锁操作按钮靠右");
 const commandCss = read("src/styles/14-model-onboarding.css");
 ok(/\.command-actions-line\s*\{/.test(commandCss) && /\.command-action-sm\s*\{[^}]*height:\s*28px/.test(commandCss) && /\.command-filter-select\s*\{/.test(commandCss), "命令页按键小尺寸（28px）、筛选下拉在位");
 ok(/manageable = \[\.\.\.localInstalled\]/.test(skillsPage), "技能批量管理只覆盖本地导入（市场/内置不参与）");
