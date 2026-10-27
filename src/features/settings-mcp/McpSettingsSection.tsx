@@ -70,7 +70,9 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
   <div className="settings-copy channel-heading"><div><h2>MCP</h2><p>接入外部工具和数据源；市场可一键安装，也可以添加自己的 MCP 服务。</p></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button><button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshWithReceipt(setNotice, "刷新 MCP 状态", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
     <div className="plugin-market-block">
       <div className="plugin-market-title">MCP 市场<small>SkillHub MCP 工具广场 · 27 个服务 · 带模板一键接入 / 其余直达官网</small></div>
-      <div className="resource-toolbar">
+      {/* 10-27 用户：「搜索框靠左，分类选项放到搜索框后面」⇒ [搜索] [分类▾] 靠左成一组。 */}
+      <div className="resource-toolbar mcp-market-toolbar">
+        <SearchField value={mcpMarketSearch} onChange={setMcpMarketSearch} placeholder="搜索 MCP 服务名称或简介" />
         <div className="mcp-category-filter">
           <span>分类</span>
           <AppSelect
@@ -81,7 +83,6 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
             onChange={(value) => { setMcpMarketCategory(value); setMcpMarketSearch(""); }}
           />
         </div>
-        <SearchField value={mcpMarketSearch} onChange={setMcpMarketSearch} placeholder="搜索 MCP 服务名称或简介" />
       </div>
       <div className="skill-card-grid">
         {SKILLHUB_MCP_CATALOG.filter((entry) => (mcpMarketCategory === "全部" || entry.category === mcpMarketCategory) && (!mcpMarketSearch || `${entry.name} ${entry.description} ${entry.category}`.toLowerCase().includes(mcpMarketSearch.toLowerCase()))
