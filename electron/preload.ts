@@ -490,6 +490,12 @@ contextBridge.exposeInMainWorld("codex", {
   openaiSetProxy: (proxy: string) => __ipc("openai:set-proxy", 1, [proxy]),
   openaiToggleAccount: (input: { id: string; disabled: boolean }) => __ipc("openai:toggle-account", 1, [input]),
   openaiUsage: (input?: { email?: string }) => __ipc("openai:usage", 0, [input ?? {}]),
+  /* 下载并校验官方安装包（走 updates.downloadUpdate：镜像候选 + 302 + 强制 https + asset.digest 的 sha256）。进度事件 {type:openfilm, phase:desktop} */
+  openfilmDesktopDownload: () => __ipc("openfilm:desktop-download", 0, []),
+  /* 桌面端状态：能不能装 / 已装在哪 / 上游最新版 / 本地安装包。⛔ 不代跑它的 electron-updater（App 更新归 App） */
+  openfilmDesktopInfo: () => __ipc("openfilm:desktop-info", 0, []),
+  /* 运行安装器（Win 带界面 / /S 静默；macOS hdiutil + cp + xattr 清 quarantine）/ 打开安装包目录 / 卸载引导（⛔ 绝不代删 /Applications 或 Program Files） */
+  openfilmDesktopRun: (action?: unknown) => __ipc("openfilm:desktop-run", 0, [action]),
   /* 按需安装（三步可单步重试；npm 走 npmmirror、chromium 走 cdn.npmmirror，失败回官方） */
   openfilmInstall: (step?: unknown) => __ipc("openfilm:install", 0, [step]),
   /* 单步重试（缺省 verify） */
@@ -864,6 +870,23 @@ contextBridge.exposeInMainWorld("codex", {
   workLogsRead: (input: { path: string }) => __ipc("work-logs:read", 1, [input]),
   /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
   workLogsScan: () => __ipc("work-logs:scan", 0, []),
+  /* 密码本列表（不含明文，只有 hasSecret） */
+  vaultList: () => __ipc("vault:list", 0, []),
+  /* 保存/更新一条；password 省略=保留原密码 */
+  vaultSave: (input: Record<string, unknown>) => __ipc("vault:save", 1, [input]),
+  vaultRemove: (id: string) => __ipc("vault:remove", 1, [id]),
+  /* 主进程解密后直写剪贴板（明文不返回渲染层） */
+  vaultCopy: (id: string) => __ipc("vault:copy", 1, [id]),
+  journalList: () => __ipc("journal:list", 0, []),
+  journalRead: (date: string) => __ipc("journal:read", 1, [date]),
+  /* 整篇覆盖 */
+  journalSave: (date: string, content: string) => __ipc("journal:save", 2, [date, content]),
+  /* 追加一条 */
+  journalAppend: (date: string, title: string, body: string) => __ipc("journal:append", 3, [date, title, body]),
+  journalRemove: (date: string) => __ipc("journal:remove", 1, [date]),
+  journalSearch: (query: string) => __ipc("journal:search", 1, [query]),
+  /* 竖条 + 功能入口菜单的可扩展目录 */
+  extensionsCatalog: () => __ipc("extensions:catalog", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
