@@ -460,7 +460,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
   return {
     automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} setNotice={setNotice} /> },
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
-    "boss-groups": { render: () => <BossGroupsSection /> },
+    "boss-groups": { render: () => <BossGroupsSection openAppConfirm={openAppConfirm} onNotice={setNotice} /> },
     "expert-center": { render: () => expertMarketOpen ? <ExpertMarketSection localSkills={localSkills} onBack={() => setExpertMarketOpen(false)} onInstalled={() => void refreshExpertCenterData()} onNotice={(m) => setNotice(m)} /> : <><ExpertCenterSection expertTeams={expertTeams} EXPERT_CATEGORY_DEFS={EXPERT_CATEGORY_DEFS} expertTeamMemberDirect={expertTeamMemberDirect} startMemberDirectSession={startMemberDirectSession} onOpenMarket={() => setExpertMarketOpen(true)} onBack={() => setSettingsPage("agentteam")} /></> },
     user: { render: () => <UserCenterSection
                           username={username}
