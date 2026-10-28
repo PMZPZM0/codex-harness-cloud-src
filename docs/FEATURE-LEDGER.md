@@ -331,3 +331,4 @@
 | 2026-10-28 | 手机远控会话列表只显示标题 | 改动 | `electron/remote/web-page.ts`、守卫 04/09 | 同步主仓：标题走 `threadTitle`（名字优先，否则预览首行截断 24 字），副标题只留时间，两行单行省略；不再把整段消息正文当标题。守卫 04 新增【139b】4 条。云 UI 无改动（本项属 electron 主进程页面）。 | 本轮 |
 | 2026-10-28 | 手机远控体验：整体美化 + 返回 + 免重复审批 + 剥离注入块 | 改动 | `electron/remote/web-page.ts`、`electron/remote.ts`、`electron/main.ts`、守卫 04/09 | 同步主仓：会话面板加返回、新建改胶囊、加载失败可重试；配对页带设备秘密自动换凭据（不再每次重批）；手机读历史剥掉常驻记忆/当前时间等注入块；用户气泡改浅色主色底、整体圆角主色化。守卫【139b】10 条。云 UI 无改动（页面由 electron 主进程生成）。 | 本轮 |
 | 2026-10-28 | 安卓远控 App（第一版）+ 桌面侧自建中转开关 | 新增 | `electron/remote.ts`、守卫 04/09（⛔ `android/` 只在主仓，不进本仓） | 同步主仓：远控端口固定 `17891`；新增固定公网地址（`HARNESS_REMOTE_PUBLIC_URL` 或数据目录 `remote-public-url.txt`），设了就不起 cloudflared；`listen` 失败带端口号 reject。守卫【139c】5 条。云 UI 无改动。 | 本轮 |
+| 2026-10-28 | 远控端口可覆盖（桌面版 / PPcode 同机双开） | 改动 | `electron/remote.ts`、守卫 04/09 | 同步主仓：默认仍是 17891，可用 `HARNESS_REMOTE_PORT` 或数据目录 `remote-port.txt` 覆盖，避免桌面版与 PPcode 抢同一端口。守卫【139c】6 条。云 UI 无改动。 | 本轮 |
