@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-28 | 云账号替换云端管理（自桌面仓移植） | 改动 | `src/features/settings-cloud/`、`src/components/CloudManageDialog.tsx`、`electron/cloud-*.ts`、`electron/features/cloud-*.ts`、`team-mode.ts`、IPC `cloud-auth`/`cloud-models`/`cloud-kb`/`cloud-memory`/`team`、manifest（+22 通道） | 设置页新增「云账号」：账号登录 → 登录即用自动配齐模型 / 云端知识库 / 云端记忆（就绪清单 + 一键同步 + 积分 + 会话同步 + 团队模式），侧栏入口从弹窗改跳该页。云助手独有的**设备与座位、限时福利勾选、云端更新检查**保留为页内「云助手专属」入口（弹窗裁掉积分与会话同步，避免两份真相）。`cloud:*` 的 sync 四通道从预留桩换成真实现（按行增量、凭据用云账号令牌），并补 `cloud:sync/list`。⛔ 旧壳（preload 无 cloud-auth）自动降级为一句「先更新应用」，设备/座位仍可用；界面需 `node scripts/deploy-cloud-ui.mjs` 部署后可见。 | 待提交 |
 | 2026-10-28 | AppSelect 定位改用统一浮层原语（同步主仓） | 改动 | `src/components/AppSelect.tsx` | 与主仓同轮：下拉框不再自写贴边/翻转，改调 AnchorPopover 的 placePopover()；向上开仍以按钮底边为锚。 | 待提交 |
 | 2026-10-28 | 输入框竖条补真机验收（composer-rail 7 条） | 流程 | `scripts/accept.mjs`、`scripts/guards/09-structural.mjs`（棘轮基线） | 竖条是本项目最新的用户可见功能，此前只有结构守卫（12ae），**一条真点击验收都没有**。新增 7 条：默认收起为夹在输入框左边线上的窄条（中心距边线 ≤3px、宽 ≤16、高 36–90）、点开四个入口、表情弹层完整在视口内且 ≥40 个、选表情只插一个表情且弹层自动收、**弹层开着 11 秒不自动收起**、重载后仍是展开态（双写回灌）、空闲 10 秒自动收起。实测 7/7 通过；顺带确认输入框是 contentEditable(.composer-editor)，不是 textarea。 | 待提交 |
 | 2026-10-28 | archive/ 取消 git 跟踪（三仓） | 基建 | `.gitignore`（已有 `archive/`）、仓库索引 | `archive/` 早在 .gitignore 里，但 39 个历史文件仍被跟踪（截图/海报/日志共 ~14MB）。`git rm -r --cached` 取消索引、文件保留在本机。⛔ `release-site/` **保持跟踪**：.gitignore 里写明「发布站源码纳入版本控制」（只排除 .env 与数据），撤销它会和既有决定冲突。 | 待提交 |
@@ -325,3 +326,4 @@
 | 2026-10-28 | 设置体验页卡片宽度回归：@layer 级联压窄右侧 | 修复 | `45-settings-experience.css`、守卫 12ad、验收 | 同步主仓：`.settings-exp-page` 补 `align-items:stretch`，卡片恢复自适应满宽；验收/守卫同步。云 UI 已部署。 | 本轮 |
 | 2026-10-28 | 输入框两条灰色控件：浅色改白色、左侧竖条收短 | 改动 | `54-composer-rail.css`、`04-cards-tools.css` | 同步主仓：浅色下顶部拖动条与左侧竖条改纯白+细描边；竖条 64/80/32 → 36/44/22。云 UI 已部署。 | 本轮 |
 | 2026-10-28 | 勘误：输入框两条小粗条描边改用边框线颜色 | 修复 | `54-composer-rail.css`、`04-cards-tools.css` | 同步主仓：两条小粗条描边统一 `var(--line)`，与输入框边框同色。云 UI 已部署。 | 本轮 |
+| 2026-10-28 | 手机远控会话列表只显示标题 | 改动 | `electron/remote/web-page.ts`、守卫 04/09 | 同步主仓：标题走 `threadTitle`（名字优先，否则预览首行截断 24 字），副标题只留时间，两行单行省略；不再把整段消息正文当标题。守卫 04 新增【139b】4 条。云 UI 无改动（本项属 electron 主进程页面）。 | 本轮 |
