@@ -39,7 +39,7 @@ ok(usedLayers.size >= 3 && [...usedLayers].every((name) => ["base", "components"
 
 /* ── ② any 棘轮 ── */
 /** 基线 = 10-27 实测值（`: any` + `as any`，排除 src 下 .d.ts 生成物）。只许降。 */
-const ANY_CAP = 1696;
+const ANY_CAP = 1679;
 let anyCount = 0;
 const perFile = [];
 const walk = (dir) => {
@@ -48,7 +48,10 @@ const walk = (dir) => {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) { walk(full); continue; }
     if (!/\.(ts|tsx)$/.test(entry.name) || /\.d\.ts$/.test(entry.name)) continue;
-    const text = readFileSync(full, "utf8");
+    /* ⛔ 先剥注释再数：注释里写「原来是 : any」这种说明会把计数虚高，棘轮就会失去意义 */
+    const text = readFileSync(full, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
     const n = (text.match(/:\s*any\b/g) || []).length + (text.match(/\bas\s+any\b/g) || []).length;
     if (n) { anyCount += n; perFile.push([full, n]); }
   }
