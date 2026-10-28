@@ -36,7 +36,7 @@ export function CloudAccountPage() {
               更新后这里会出现登录与一键配齐模型 / 云端知识库 / 云端记忆。
             </p>
             <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              设备与座位、限时福利、云端更新不受影响，仍在下方「云助手专属」里。
+              设备与座位、限时福利、云端更新由设备配对决定，不受这次更新影响。
             </p>
           </div>
         </section>

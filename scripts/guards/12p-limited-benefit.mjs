@@ -52,6 +52,11 @@ ok(!/===\s*row\.provider\)\s*return false/.test(domain),
 ok(/===\s*row\.provider\s*&&\s*active\.encryptedKey\s*===/.test(domain),
   "promoteIfVacant 的「已是自己」判据必须与 key 比较连用（key 变了就得重写 + 重新下发引擎）");
 
+/* ③ 与云账号共存（10-28）：云端供应商占生效位时不得把自己重新置为启用 ——
+   两个绿开关 + 云侧互斥下一个周期又关掉 = 开关来回闪。 */
+ok(/cloudOwnsSeat/.test(domain) && /enabled:\s*cloudOwnsSeat\s*\?\s*false/.test(domain),
+  "云供应商生效时限时福利不得把自己重新置为启用（enabled 判据含 cloudOwnsSeat）");
+
 /* 凭据边界：行里只许落加密值，绝不写明文。 */
 ok(/function encryptToken/.test(domain) && /encryptedKey:\s*token\s*\?\s*encryptToken\(token\)/.test(domain),
   "供应商行凭据只经 encryptToken 写入（不写明文；加密不可用时宁可不写）");

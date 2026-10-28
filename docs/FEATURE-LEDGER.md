@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-28 | 云账号共存修复（审查发现） | 修复 | `electron/features/limited-benefit-ipc.ts`、`scripts/guards/12p-limited-benefit.mjs`、`scripts/accept.mjs`、`src/features/settings-cloud/CloudAccountPage.tsx` | 云账号生效后打开云助手专属面板，限时福利同步会把自己重新置为启用，与云侧互斥来回闪（两个绿开关）；改为「云端占生效位时本行保持停用」，12p 加一条判据（10/10）。验收闸变量改为用完还原，旧壳文案不再指向可能不存在的下方区块。 | 待提交 |
 | 2026-10-28 | 云账号替换云端管理（自桌面仓移植） | 改动 | `src/features/settings-cloud/`、`src/components/CloudManageDialog.tsx`、`electron/cloud-*.ts`、`electron/features/cloud-*.ts`、`team-mode.ts`、IPC `cloud-auth`/`cloud-models`/`cloud-kb`/`cloud-memory`/`team`、manifest（+22 通道） | 设置页新增「云账号」：账号登录 → 登录即用自动配齐模型 / 云端知识库 / 云端记忆（就绪清单 + 一键同步 + 积分 + 会话同步 + 团队模式），侧栏入口从弹窗改跳该页。云助手独有的**设备与座位、限时福利勾选、云端更新检查**保留为页内「云助手专属」入口（弹窗裁掉积分与会话同步，避免两份真相）。`cloud:*` 的 sync 四通道从预留桩换成真实现（按行增量、凭据用云账号令牌），并补 `cloud:sync/list`。⛔ 旧壳（preload 无 cloud-auth）自动降级为一句「先更新应用」，设备/座位仍可用；界面需 `node scripts/deploy-cloud-ui.mjs` 部署后可见。 | 待提交 |
 | 2026-10-28 | AppSelect 定位改用统一浮层原语（同步主仓） | 改动 | `src/components/AppSelect.tsx` | 与主仓同轮：下拉框不再自写贴边/翻转，改调 AnchorPopover 的 placePopover()；向上开仍以按钮底边为锚。 | 待提交 |
 | 2026-10-28 | 输入框竖条补真机验收（composer-rail 7 条） | 流程 | `scripts/accept.mjs`、`scripts/guards/09-structural.mjs`（棘轮基线） | 竖条是本项目最新的用户可见功能，此前只有结构守卫（12ae），**一条真点击验收都没有**。新增 7 条：默认收起为夹在输入框左边线上的窄条（中心距边线 ≤3px、宽 ≤16、高 36–90）、点开四个入口、表情弹层完整在视口内且 ≥40 个、选表情只插一个表情且弹层自动收、**弹层开着 11 秒不自动收起**、重载后仍是展开态（双写回灌）、空闲 10 秒自动收起。实测 7/7 通过；顺带确认输入框是 contentEditable(.composer-editor)，不是 textarea。 | 待提交 |

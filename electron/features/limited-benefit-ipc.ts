@@ -37,6 +37,7 @@ import type { IpcHost } from "../ipc-host";
 import { readCustomModel, readCustomModels, writeCustomModels } from "../main/01-model-catalog";
 import { applyCustomModel } from "./custom-model-apply";
 import { customModelFile } from "../runtime-paths";
+import { CLOUD_PROVIDER_ID } from "../cloud-provider";
 import type { CustomModelFile, ProviderModel } from "./custom-model-types";
 
 /** 域内 IPC 通道（三前缀同源：域 id = ipc-registry prefix）。 */
@@ -235,6 +236,12 @@ async function applyProvider(): Promise<{ ok: boolean; models: number; changed: 
       ? { inputTypes: (m.supportsImages ? ["text", "image"] : ["text"]) as ("text" | "image" | "video")[] }
       : {}),
   }));
+  /* 10-28 与云账号共存：**云端供应商正占着生效位时，不要把自己重新置为启用** ——
+     否则两个供应商同时绿（10-15 用户点名的那件事），而云侧互斥下一个同步周期又把它关掉，
+     表现为开关来回闪。⛔ 只在自己的行上判，不遍历/不改别的供应商。 */
+  const seatOwnerBefore = await readCustomModel();
+  const cloudOwnsSeat = seatOwnerBefore?.provider === CLOUD_PROVIDER_ID;
+
   const next: CustomModelFile = {
     ...(previous ?? {
       provider: LIMITED_BENEFIT_PROVIDER,
@@ -256,7 +263,7 @@ async function applyProvider(): Promise<{ ok: boolean; models: number; changed: 
        `enabled === false` 的行会被整行跳过 —— 这正是"勾了却选不到"的最后一道坎）。
        ⛔ 但这里**只置自己这一行**：绝不遍历禁用其它供应商、绝不抢生效位
        （那是 custom-model:save 的语义，属于用户主动动作；本域只让模型"可选"）。 */
-    enabled: picked.length > 0 ? true : (previous?.enabled ?? false),
+    enabled: cloudOwnsSeat ? false : (picked.length > 0 ? true : (previous?.enabled ?? false)),
   } as CustomModelFile;
 
   /* ⛔⛔ 令牌会轮换（重签 / 换绑 / 服务端清记录）—— 旧 key 随即失效，但行里还留着它，
