@@ -345,3 +345,4 @@
 | 2026-10-28 | 审查修复：思考去重按条目 + delta/text 双字段 + 清空壳 | 修复 | `electron/features/boot.ts`、`electron/remote/web-page.ts`、守卫 04/09 | 同步主仓 2cc4cd904：去重到条目粒度、delta ?? text、清空思考块。守卫【139b】+1。云 UI 无改动。 | 本轮 |
 | 2026-10-28 | 手机端历史也展示思考 | 改动 | `electron/main.ts`、`electron/remote.ts`、`electron/remote/web-page.ts`、守卫 04/09 | 同步主仓 12333831d：历史接口增加 role:think，手机端折叠展示。守卫【139b】+1。云 UI 无改动。 | 本轮 |
 | 2026-10-28 | 手机端运行过程补齐：整轮思考兜底 + 命令输出 | 改动 | `electron/features/boot.ts`、`electron/remote/web-page.ts`、守卫 04/09 | 同步主仓 cbd046501：turn.items 兜底思考、命令输出、标题含思考。守卫【139b】+2。云 UI 无改动。 | 本轮 |
+| 2026-10-28 | 手机端 Markdown 渲染 | 新增 | `src/lib/mobile-markdown.mjs`（+ `.d.mts`）、`electron/remote/web-page.ts`、守卫 04 | 同步主仓 adc878e23：纯函数渲染器，页面内联同一份源码。守卫【139b】+2。云 UI 无改动。 | 本轮 |
