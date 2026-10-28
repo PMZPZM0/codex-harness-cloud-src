@@ -558,6 +558,25 @@ await h.pressKey("Escape");
     },
   },
   {
+    id: "engine-data",
+    name: "⚙️ 引擎在位：设置页资源（技能/钩子/插件）读取不再报 spawn ENOENT（10-28 事故）",
+    run: async (h) => {
+      await h.eval(`(function(){ if(!document.querySelector(".settings-modal")) document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      /* 资源是一次性批量拉的（开设置时已触发）：给足时间再读错误条。 */
+      await wait(2500);
+      const banner = await h.eval(`(function(){ const el=document.querySelector(".settings-modal .resource-error"); return el ? (el.innerText||"") : ""; })()`).catch(() => "");
+      h.check("① 设置页资源读取无引擎缺失报错（spawn / ENOENT / 引擎文件缺失均不允许）",
+        !/spawn|ENOENT|引擎文件缺失/.test(banner), String(banner).slice(0, 300));
+      /* 技能页真有数据：引擎返回空列表也算"读不到"，能抓到"引擎在但列表空"的另一半故障。 */
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="技能"; }); b?.click(); return 1; })()`);
+      await wait(1200);
+      const skills = await h.eval(`(function(){ const m=document.querySelector(".settings-modal"); if(!m) return null;
+        return { center: !!m.querySelector(".skill-center"), cards: m.querySelectorAll('[class*="skill-card"]').length }; })()`).catch(() => null);
+      h.check("② 技能列表有内容（不是空壳）", Boolean(skills && skills.center && skills.cards > 0), JSON.stringify(skills));
+    },
+  },
+  {
     id: "function-menu",
     name: "🧩 功能入口：新建/搜索下面或侧栏底部 + 拖动排序 + 更多 + 首次教程（10-24）",
     run: async (h) => {
