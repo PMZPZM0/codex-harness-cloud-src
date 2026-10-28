@@ -337,3 +337,4 @@
 | 2026-10-28 | 配对页文案收口（不硬折行、不串品牌） | 改动 | `electron/remote.ts` | 同步主仓：配对页说明改成两句短文案 + 显式换行；去掉产品名。 | 本轮 |
 | 2026-10-28 | 手机远控四件基础能力：＋ 图片 / 文件预览 / # 技能 / / 指令 | 新增 | `electron/remote.ts`、`electron/main.ts`、`electron/remote/web-page.ts`、`src/lib/remote-files.mjs`（+ `.d.mts`）、守卫 04/09 | 同步主仓：图片上传→localImage、文件预览（safeJoin 闸）、技能清单、指令三条。守卫【139d】6 条 + 真值表。 | 本轮 |
 | 2026-10-28 | 审查修复：新建会话步骤容器未重置 | 修复 | `electron/remote/web-page.ts`、守卫 04/09 | 同步主仓 8672d1522：新建会话重置步骤容器（旧容器已从 DOM 移除 ⇒ 新回合看不到运行过程）。守卫【139b】+1；变异测试 4/4 按预期变红。云 UI 无改动。 | 本轮 |
+| 2026-10-28 | 运行中一键停止 + 四件能力审查修复 | 改动 | `electron/remote/web-page.ts`、`electron/features/boot.ts`、`electron/main.ts`、守卫 04/09 | 同步主仓 f803995df：运行中发送键切「停止」；四类回合结束都发 done；停止带 turnId 并按引擎真实回合重试；回合中拒绝压缩；文件读真实路径校验。守卫【139b】【139d】各 +1。云 UI 无改动。 | 本轮 |
