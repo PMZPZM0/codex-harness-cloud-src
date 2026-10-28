@@ -298,6 +298,12 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["journal:append", "journal:list", "journal:read", "journal:remove", "journal:save", "journal:search"],
     note: "开发日记：按天一个 md",
   },
+  /* 10-28：快捷键统一读口。应用内键存 userData/shortcuts.json（本域独占）；
+     截图 / 语音仍是各自存储 —— 本域只读来聚合展示，写入走各自通道（先注册成功再落盘）。 */
+  { prefix: "shortcuts", count: 3, status: "in-features", file: "features/shortcuts-ipc.ts",
+    channels: ["shortcuts:read", "shortcuts:reset", "shortcuts:save"],
+    note: "快捷键目录读口：应用内键落 shortcuts.json，截图/语音键只读聚合（写入走各自通道）",
+  },
   { prefix: "extensions", count: 1, status: "in-features", file: "features/extensions-ipc.ts",
     channels: ["extensions:catalog"],
     note: "竖条 + 功能入口菜单的可扩展目录（封闭动作集）",
