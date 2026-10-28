@@ -334,3 +334,4 @@
 | 2026-10-28 | 安卓远控 App（第一版）+ 桌面侧自建中转开关 | 新增 | `electron/remote.ts`、守卫 04/09（⛔ `android/` 只在主仓，不进本仓） | 同步主仓：远控端口固定 `17891`；新增固定公网地址（`HARNESS_REMOTE_PUBLIC_URL` 或数据目录 `remote-public-url.txt`），设了就不起 cloudflared；`listen` 失败带端口号 reject。守卫【139c】5 条。云 UI 无改动。 | 本轮 |
 | 2026-10-28 | 远控端口可覆盖（桌面版 / PPcode 同机双开） | 改动 | `electron/remote.ts`、守卫 04/09 | 同步主仓：默认仍是 17891，可用 `HARNESS_REMOTE_PORT` 或数据目录 `remote-port.txt` 覆盖，避免桌面版与 PPcode 抢同一端口。守卫【139c】6 条。云 UI 无改动。 | 本轮 |
 | 2026-10-28 | 手机端连接持久化 + 运行步骤同步 | 改动 | `electron/remote.ts`、`electron/remote/web-page.ts`、`electron/features/boot.ts`、守卫 04/09 | 同步主仓：配对页支持 `#code=` 自动提交；连过就直连；运行步骤按 item 生命周期转发并在手机端渲染。守卫【139b】+1。云 UI 无改动。 | 本轮 |
+| 2026-10-28 | 审查修复：新建会话步骤容器未重置 | 修复 | `electron/remote/web-page.ts`、守卫 04/09 | 同步主仓 8672d1522：新建会话重置步骤容器（旧容器已从 DOM 移除 ⇒ 新回合看不到运行过程）。守卫【139b】+1；变异测试 4/4 按预期变红。云 UI 无改动。 | 本轮 |
