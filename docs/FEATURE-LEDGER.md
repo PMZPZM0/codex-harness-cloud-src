@@ -341,3 +341,4 @@
 | 2026-10-28 | 手机端可见思考内容 + 指令扩容 | 改动 | `electron/features/boot.ts`、`electron/remote.ts`、`electron/main.ts`、`electron/remote/web-page.ts`、守卫 04/09 | 同步主仓 1fe06ad47：思考内容（reasoning 摘要流）实时展开；指令新增 /归档当前会话、/设为目标；思考强度四档随消息下发。守卫【139b】+1、【139d】+1。云 UI 无改动。 | 本轮 |
 | 2026-10-28 | 安卓安装包发布 + 手机端自助下载 | 新增 | `electron/remote.ts`、`electron/main.ts`、`electron/remote/web-page.ts`、守卫 04/09 | 同步主仓 919d98b33：/apk 路由按镜像链取包并缓存；手机 ＋ 菜单新增「⬇安装包」。守卫【139d】+1。云 UI 无改动。 | 本轮 |
 | 2026-10-28 | 审查修复：安装包下载补 sha256 校验 + 并发去重 | 修复 | `electron/remote.ts`、守卫 04/09 | 同步主仓 6c7f5fefe：按资产 sha256 硬闸、缓存命中校验、并发只下一次。守卫【139d】+1。云 UI 无改动。 | 本轮 |
+| 2026-10-28 | 手机端思考内容兜底：供应商不流式时用完整摘要 | 修复 | `electron/features/boot.ts`、守卫 04/09 | 同步主仓 14564e92e：无增量时在 item/completed 用 summary/content 全文补发。守卫【139b】+1。云 UI 无改动。 | 本轮 |
