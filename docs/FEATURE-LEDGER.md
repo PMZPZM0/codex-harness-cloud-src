@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-28 | AppSelect 定位改用统一浮层原语（同步主仓） | 改动 | `src/components/AppSelect.tsx` | 与主仓同轮：下拉框不再自写贴边/翻转，改调 AnchorPopover 的 placePopover()；向上开仍以按钮底边为锚。 | 待提交 |
 | 2026-10-28 | 输入框竖条补真机验收（composer-rail 7 条） | 流程 | `scripts/accept.mjs`、`scripts/guards/09-structural.mjs`（棘轮基线） | 竖条是本项目最新的用户可见功能，此前只有结构守卫（12ae），**一条真点击验收都没有**。新增 7 条：默认收起为夹在输入框左边线上的窄条（中心距边线 ≤3px、宽 ≤16、高 36–90）、点开四个入口、表情弹层完整在视口内且 ≥40 个、选表情只插一个表情且弹层自动收、**弹层开着 11 秒不自动收起**、重载后仍是展开态（双写回灌）、空闲 10 秒自动收起。实测 7/7 通过；顺带确认输入框是 contentEditable(.composer-editor)，不是 textarea。 | 待提交 |
 | 2026-10-28 | archive/ 取消 git 跟踪（三仓） | 基建 | `.gitignore`（已有 `archive/`）、仓库索引 | `archive/` 早在 .gitignore 里，但 39 个历史文件仍被跟踪（截图/海报/日志共 ~14MB）。`git rm -r --cached` 取消索引、文件保留在本机。⛔ `release-site/` **保持跟踪**：.gitignore 里写明「发布站源码纳入版本控制」（只排除 .env 与数据），撤销它会和既有决定冲突。 | 待提交 |
 | 2026-10-28 | 竖条三域改走 host 接缝 + 域间 barrel（同步主仓 9fe42a5df） | 修复 | `electron/features/vault-ipc.ts`、`journal-ipc.ts`、`extensions-ipc.ts`、`src/features/app-state/index.ts`、`src/features/composer-rail/ComposerRail.tsx` | 与主仓同轮：三域改走 ctx.get("host")（路径只在 setPath 后求值、密钥库不直取），竖条深链改走 barrel。⛔ 主仓同轮的「设置注册表拆 pages/**」**未**同步 —— 本仓守卫基线自成一套历史，拆表须连守卫一起移植。 | 待提交 |
