@@ -577,6 +577,55 @@ await h.pressKey("Escape");
     },
   },
   {
+    id: "hooks-toolbar",
+    name: "🪝 钩子页：搜索 + 状态/来源筛选 + 刷新（10-28）",
+    run: async (h) => {
+      await h.eval(`(function(){ if(!document.querySelector(".settings-modal")) document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="钩子"; }); b?.click(); return 1; })()`);
+      await wait(1200);
+      const ui = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const row=m.querySelector(".hook-filter-row");
+        return { active:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          row:!!row,
+          search:!!(row && row.querySelector(".search-field input")),
+          selects:row ? row.querySelectorAll(".app-select-trigger").length : 0,
+          refresh:!!(row && row.querySelector('button[title="刷新钩子"]')),
+          total:Number((m.querySelector(".hook-stat strong")?.textContent||"0").replace(/\\D/g,""))||0,
+          layout:row ? Math.round(row.getBoundingClientRect().height) : 0 };
+      })()`).catch(() => null);
+      h.check("① 工具栏齐：搜索 + 状态筛选 + 来源筛选 + 刷新（同一行）",
+        Boolean(ui && ui.active === "钩子" && ui.row && ui.search && ui.selects === 2 && ui.refresh), JSON.stringify(ui));
+
+      /* 真输入（受控输入必须走原生 setter + input 事件，否则 React 不收）。 */
+      const typed = await h.eval(`(function(){
+        const input=document.querySelector(".hook-filter-row .search-field input"); if(!input) return null;
+        const setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set;
+        setter.call(input,"zzz-no-such-hook"); input.dispatchEvent(new Event("input",{bubbles:true}));
+        return input.value;
+      })()`).catch(() => null);
+      await wait(700);
+      const filtered = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const text=m.innerText||"";
+        return { empty: /没有匹配的钩子|还没有注册钩子/.test(text),
+          clear: !!m.querySelector(".hook-clear-filters"),
+          count: (m.querySelector(".hook-filter-count")?.textContent||"").trim() };
+      })()`).catch(() => null);
+      h.check("② 输入无匹配关键词：给出空态（有数据时带「清除筛选」），不崩",
+        Boolean(typed === "zzz-no-such-hook" && filtered && filtered.empty && (!filtered.count || /匹配\s*0/.test(filtered.count))),
+        JSON.stringify({ typed, filtered }));
+      await h.eval(`(function(){ const b=document.querySelector(".hook-clear-filters"); if(b){b.click();return 1;}
+        const input=document.querySelector(".hook-filter-row .search-field input");
+        if(input){ const setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set; setter.call(input,""); input.dispatchEvent(new Event("input",{bubbles:true})); }
+        return 0; })()`);
+      await wait(500);
+      const restored = await h.eval(`(function(){ const input=document.querySelector(".hook-filter-row .search-field input"); return input ? input.value : null; })()`).catch(() => null);
+      h.check("③ 清除筛选后关键词归零", restored === "", String(restored));
+    },
+  },
+  {
     id: "function-menu",
     name: "🧩 功能入口：新建/搜索下面或侧栏底部 + 拖动排序 + 更多 + 首次教程（10-24）",
     run: async (h) => {
