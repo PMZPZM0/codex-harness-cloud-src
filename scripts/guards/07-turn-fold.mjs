@@ -484,13 +484,14 @@ export async function run() {
     // RunningProcessTime 加 finalizing prop 时整行字面量匹配不上，两条守卫当场假红。
     const procCall = appC3.match(/\{running && userItems\.length > 0 && <RunningProcessTime[^>]*\/>/);
     const procIdx = procCall ? appC3.indexOf(procCall[0]) : -1;
-    const cardIdx = appC3.indexOf('{running && !hasVisible && userItems.length > 0 && <header className="turn-card-header">');
     (procIdx > 0)
       ? ok("【32】「正在处理 N 秒 + 灰线」不再依赖工具调用（回合内 userMessage 一到就显示）")
       : fail("【32】RunningProcessTime 的条件又被改掉（缺 userItems 会顶到用户消息上方；挂回 isTaskTurn 则纯聊天看不到）");
-    (procIdx > 0 && cardIdx > 0 && procIdx < cardIdx)
-      ? ok("【32】顺序：正在处理 + 灰线在「生成中」之上（用户 09-17 明确定的顺序）")
-      : fail("【32】「生成中」跑到灰线上面了 —— 用户明确否过这个顺序「你这顺序不对吧」");
+    /* ⛔ 10-28 用户（截图）：「回合第一个思考出来的时候，上面还有一排小字『思考中』，跟下面重复了」
+       ⇒ 那条占位头（● 思考中 / 生成中）整块删除。负向断言：不许长回来。 */
+    (!/turn-card-header/.test(appC3) && !/\? "思考中" : "生成中"/.test(appC3))
+      ? ok("【32】回合内不再有「● 思考中 / 生成中」占位小字（与思考卡重复；10-28 用户令）")
+      : fail("【32】占位小字又长回来了 —— 用户明确说它和下面的「深度思考中」重复");
     (/\{optimisticInput && !optimisticConfirmed && <>[\s\S]{0,700}?turn-head-avatar/.test(appNC))
       ? ok("【32】乐观阶段也渲染回合头（引擎回声前就有头像 + 名字）")
       : fail("【32】乐观阶段没有回合头 —— 头像名字要等引擎回声（正是用户报的「没第一时间出来」）");
@@ -1160,7 +1161,7 @@ export async function run() {
     const timerFn = timerIdx >= 0 ? appSrc.slice(timerIdx, appSrc.indexOf("\n}", timerIdx) + 2) : "";
     (timerFn && !/等待模型收尾/.test(timerFn) ? ok : fail)("【44】收尾提示只在底部状态行说一次（计时条不再重复同一句）");
     (/const turnFinalizing = Boolean\([^)]*isAwaitingTurnClose\(/.test(appSrc) ? ok : fail)("【44】收敛为一个布尔判据（状态行与短语共用，不各写一份）");
-    (/turnFinalizing \? "正文已完整，等待模型收尾"/.test(appSrc) ? ok : fail)("【44】状态行在收尾等待时如实说（不再写「正在生成回复」）");
+    (/turnFinalizing \? "等待模型收尾"/.test(appSrc) ? ok : fail)("【44】状态行在收尾等待时如实说（不再写「正在生成回复」）");
     // ⛔ 反向守卫：判据**不许**写成 `runActivity === "某中文文案"` —— 文案一改就静默失效，
     //   界面会悄悄退回「正在生成回复」，而预检照样全绿（09-18 审查抓出的隐患）。
     //   ⛔ 必须先去掉注释再判：注释里解释这条隐患时也会出现同样的写法，直接正则会假红（本轮踩到）。
@@ -5025,9 +5026,9 @@ export async function run() {
   (/if \(isCompactionItem\(item\)\) continue;/.test(activitySrc) ? ok : fail)(
     "【163】runActivity 扫描跳过 contextCompaction（压缩不是「生成回复」，指示归分隔线与 toast）"
   );
-  // ② 压缩进行中兜底必须给空串：此时「正在生成回复/正在落笔」是错的。
-  (/compactPendingRef\.current\.has\(bag\.thread\.id\)\) return "";/.test(activitySrc) ? ok : fail)(
-    "【163】压缩进行中 runActivity 兜底为空串（状态条静默，分隔线转圈承担指示）"
+  // ② 压缩进行中如实说「正在整理上下文」（10-28）：说在写回复是错的，但静默会让人以为卡死。
+  (/compactPendingRef\.current\.has\([^)]*\)\) return "正在整理上下文";/.test(activitySrc) ? ok : fail)(
+    "【163】压缩进行中如实说「正在整理上下文」（既不说在写回复，也不再静默）"
   );
   // ③ 压缩完成必须结算运行态（两个完成事件都要接）：turn/started 点亮的状态没人熄灭 = 永久挂。
   ((part05Src.match(/bag\.settleAfterCompaction\(/g) || []).length >= 2 ? ok : fail)(
