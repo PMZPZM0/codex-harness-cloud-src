@@ -1146,6 +1146,30 @@ await h.pressKey("Escape");
     },
   },
   {
+    id: "dev-port",
+    name: "🌐 本机测试端口：命令输出出现 localhost:端口 ⇒ 自动展开右栏浏览器（10-29）",
+    run: async (h) => {
+      await h.waitFor(`!!document.querySelector(".voice-ball")`, { label: "悬浮球挂载", timeoutMs: 30000 });
+      await h.eval(`(function(){
+        window.dispatchEvent(new CustomEvent("dev-port:open", { detail: { url: "http://127.0.0.1:4173/preview" } }));
+        return 1; })()`);
+      await wait(1500);
+      const probe = await h.eval(`(function(){
+        const wv=document.querySelector(".browser-pane-webview");
+        const dock=document.querySelector(".context-panel");
+        return { src: wv ? String(wv.src || "") : "", width: dock ? Math.round(dock.getBoundingClientRect().width) : 0 };
+      })()`).catch(() => null);
+      h.check("① 端口事件 ⇒ 右栏浏览器自动打开该地址",
+        Boolean(probe && probe.src.includes("127.0.0.1:4173")), JSON.stringify(probe));
+      h.check("② 右栏自动加宽到 ≥360", Boolean(probe && probe.width >= 360), String(probe && probe.width));
+      const tabsBefore = await h.eval(`document.querySelectorAll(".browser-pane-tabs .browser-pane-tab").length`).catch(() => 0);
+      await h.eval(`(function(){ window.dispatchEvent(new CustomEvent("dev-port:open", { detail: { url: "http://127.0.0.1:4173/preview" } })); return 1; })()`);
+      await wait(800);
+      const tabsAfter = await h.eval(`document.querySelectorAll(".browser-pane-tabs .browser-pane-tab").length`).catch(() => 0);
+      h.check("③ 同一 URL 去重（不重复开标签）", tabsAfter === tabsBefore && tabsBefore > 0, `${tabsBefore}→${tabsAfter}`);
+    },
+  },
+  {
     id: "sidebar-adaptive",
     name: "🧱 侧栏「功能入口」改为右侧浮层，不占纵向空间（10-26）",
     run: async (h) => {
