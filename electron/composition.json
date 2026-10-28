@@ -149,10 +149,45 @@
       "config": null
     },
     {
-      "id": "cloud-reserve",
+      "id": "cloud",
       "enabled": true,
       "file": "features/cloud-reserve-ipc.ts",
       "export": "cloudReserveFeature",
+      "config": null
+    },
+    {
+      "id": "cloud-auth",
+      "enabled": true,
+      "file": "features/cloud-auth-ipc.ts",
+      "export": "cloudAuthFeature",
+      "config": null
+    },
+    {
+      "id": "cloud-models",
+      "enabled": true,
+      "file": "features/cloud-models-ipc.ts",
+      "export": "cloudModelsFeature",
+      "config": null
+    },
+    {
+      "id": "cloud-kb",
+      "enabled": true,
+      "file": "features/cloud-kb-ipc.ts",
+      "export": "cloudKbFeature",
+      "config": null
+    },
+    {
+      "id": "cloud-memory",
+      "enabled": true,
+      "file": "features/cloud-memory-ipc.ts",
+      "export": "cloudMemoryFeature",
+      "config": null
+    },
+    {
+      "id": "team",
+      "enabled": true,
+      "file": "features/team-mode.ts",
+      "export": "teamModeFeature",
       "config": null
     },
     {

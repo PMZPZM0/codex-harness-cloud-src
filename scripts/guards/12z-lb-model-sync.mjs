@@ -15,7 +15,7 @@ const PROFILE = "C:/Users/Administrator/AppData/Roaming/Codex Assistant/custom-m
 let pass = 0, fail = 0;
 const ok = (cond, label) => { if (cond) { pass++; console.log("  ✓ " + label); } else { fail++; console.log("  ✗ " + label); } };
 
-const dialog = fs.readFileSync(path.join(ROOT, "src/components/CloudManageDialog.tsx"), "utf8");
+const dialog = fs.readFileSync(path.join(ROOT, "src/features/settings-cloud/CloudAssistantPanel.tsx"), "utf8");
 const listSrc = fs.readFileSync(path.join(ROOT, "src/features/app-state/parts/part03/03-restart-file-model-editor/01-restart-file-preview.tsx"), "utf8");
 
 console.log("A. 静态断言（修复必须在位）");
@@ -23,7 +23,7 @@ const seq = dialog.indexOf("await syncLimitedBenefit()");
 const relaunch = dialog.indexOf("await api.relaunchApp()");
 ok(seq >= 0, "「保存并重启」里有 await syncLimitedBenefit()");
 ok(relaunch >= 0 && seq >= 0 && seq < relaunch, "顺序正确：先等勾选同步，**再** relaunchApp（seq@" + seq + " < relaunch@" + relaunch + "）");
-ok(/import \{[^}]*\bsyncLimitedBenefit\b[^}]*\} from "[^"]*limited-benefit/.test(dialog), "CloudManageDialog 引入了 syncLimitedBenefit（不是只有静默版）");
+ok(/import \{[^}]*\bsyncLimitedBenefit\b[^}]*\} from "[^"]*limited-benefit/.test(dialog), "云助手面板引入了 syncLimitedBenefit（不是只有静默版）");
 ok(!/m\.id\), bag\.customModel\?\.model\]/.test(listSrc), "列表派生①：不再无条件并入 bag.customModel.model");
 ok(!/m\.id\), p\.model\]/.test(listSrc), "列表派生②：其它供应商同口径");
 ok(/const activeCurrent =/.test(listSrc) && /const pCurrent =/.test(listSrc), "当前模型不可用 ⇒ 回退第一个可用模型（列表自洽）");

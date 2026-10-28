@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（98 个能力域 / 548 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（106 个能力域 / 581 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -274,7 +274,7 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 通道：image-lab:edit, image-lab:generate, image-lab:info, image-lab:read, image-lab:view
 
 ### limited-benefit（4 通道）
-**限时福利**（10-14）：云端账号服务内置的模型供应商（模型目录由 WorkBuddy Manager 同步，逐模型带积分倍率）。这些通道是**宿主管理面**（拉目录 / 取代理令牌 / 同步成本机供应商行），不是模型工具 —— 模型侧永远不调它们；要用它：云端管理面板勾选模型（勾选 = 本机模型下拉框可见）→ 在下拉框里选中的即生效，按倍率扣积分。⛔ 上游真实地址与网关密钥只在服务端，客户端只拿到同源代理路径；代理令牌（wap_ 前缀）明文仅在签发那一次出现。
+**限时福利**（10-14）：云端账号服务内置的模型供应商（模型目录由 WorkBuddy Manager 同步，逐模型带积分倍率）。这些通道是**宿主管理面**（拉目录 / 取代理令牌 / 同步成本机供应商行），不是模型工具 —— 模型侧永远不调它们；要用它：设置 → 云账号 → 云助手专属 里勾选模型（勾选 = 本机模型下拉框可见）→ 在下拉框里选中的即生效，按倍率扣积分。⛔ 上游真实地址与网关密钥只在服务端，客户端只拿到同源代理路径；代理令牌（wap_ 前缀）明文仅在签发那一次出现。
 通道：limited-benefit:catalog, limited-benefit:token, limited-benefit:status, limited-benefit:apply
 
 ### dialog（7 通道）
@@ -321,6 +321,18 @@ MCP 服务器管理（配置/状态）
 应用密码锁（设置 → 应用锁，默认关闭）：开启时生成随机或自定义解锁密码，明文只展示一次、磁盘只存 scrypt 盐哈希；启动/重新显示先锁屏。连续 10 次错误会清空应用数据并重置。⛔ 界面门禁，不是磁盘加密；模型侧不调用它
 通道：app-lock:status, app-lock:prepare, app-lock:enable, app-lock:cancel, app-lock:verify, app-lock:disable
 
+### vault（4 通道）
+本机**密码本**（输入框左侧竖条 → 密码本）：list 列条目 / save 新增或改（password 省略即保留原密码）/ remove 删除 / copy 把某条密码写入系统剪贴板（30 秒后若还是这条就自动清空）。⛔ 密码用系统 safeStorage 加密落 userData/vault.json，**明文永不落盘**；模型侧用不到它
+通道：vault:copy, vault:list, vault:remove, vault:save
+
+### journal（6 通道）
+**开发日记**（竖条 → 开发日记）：按天一个 Markdown 文件（userData/dev-journal/YYYY-MM-DD.md）—— list 列日期与摘要 / read 看当天全文 / save 整篇覆盖 / append 追加一条 / remove 删当天 / search 全文检索。⛔ 与会话归档、项目工作日志是三件不同的事
+通道：journal:append, journal:list, journal:read, journal:remove, journal:save, journal:search
+
+### extensions（1 通道）
+竖条与功能入口菜单的**可扩展目录**（extensions:catalog）：内置四项面板 + userData/extensions.json 里用户自建项。⛔ 扩展项只能声明封闭动作集（http(s) 链接 / 跳到某个设置页 / 纯说明文字）—— 没有「执行命令」这类动作
+通道：extensions:catalog
+
 ### appSettings（2 通道）
 应用级开关（联网搜索/桌面自动化/下载源等，写 app-settings.json）
 通道：appSettings:read, appSettings:save
@@ -365,9 +377,29 @@ SkillHub **专家市场包**（skillhub.cn/skillspackage，55 包）：list 浏�
 「更新到新版本后首次启动」的**新功能介绍弹窗**（10-06）：state 取该版本的要点与「该不该弹」（判定含：这个版本有没有要点、用户看过没有、是升级还是全新安装——全新安装不弹，避免新用户看到莫名其妙的「更新内容」）；ack 记下当前版本已看过 ⇒ 同版本不再弹。要点数据在主进程 electron/whats-new-notes.ts，每次发版要加一条（守卫【11r】钉）。⛔ 模型侧用不到它
 通道：whatsnew:ack, whatsnew:history, whatsnew:state
 
-### cloud（14 通道）
-**云版预留接口层**（10-11，14 条，命名 cloud:<组>/<动作>）：云版产品线的占位通道，渲染层/远端按稳定通道名先行开发，后端逐步把桩换真。五组：cloud:sync/*（云端存储数据同步，预留桩）、cloud:device/*（本机配对设备管理，真实现）、cloud:notify/*（站长公告，本地缓存真实现）、cloud:update/*（助手自更新，check 真实现）、cloud:tools/*（工具链按需下载，status/progress 真实现）。⛔ 预留桩统一返回 {ok:false, reserved:true, code, error}，调用方以 reserved!==true 判能力；通道名发布即冻结只增不改
-通道：cloud:sync/conflict/resolve, cloud:sync/pull, cloud:sync/push, cloud:sync/status, cloud:device/list, cloud:device/unbind, cloud:notify/list, cloud:notify/mark-read, cloud:update/apply, cloud:update/check, cloud:update/download, cloud:tools/download, cloud:tools/progress, cloud:tools/status
+### cloud（15 通道）
+**云版接口层**（10-11 建，10-28 sync 接真实现）：五组 —— cloud:sync/*（会话按行增量同步：status/list/push/pull/conflict-resolve，凭据用云账号令牌，未登录直接 not-logged-in）、cloud:device/*（本机配对设备管理）、cloud:notify/*（站长公告，本地缓存）、cloud:update/*（助手自更新探测）、cloud:tools/*（工具链按需下载）。⛔ 通道名发布即冻结只增不改
+通道：cloud:sync/conflict/resolve, cloud:sync/list, cloud:sync/pull, cloud:sync/push, cloud:sync/status, cloud:device/list, cloud:device/unbind, cloud:notify/list, cloud:notify/mark-read, cloud:update/apply, cloud:update/check, cloud:update/download, cloud:tools/download, cloud:tools/progress, cloud:tools/status
+
+### cloud-auth（5 通道）
+**云账号**的登录 / 登出 / 切换（10-28 自桌面仓移植）：用账号密码换云端会话令牌（⛔ 不是配对流程）；令牌在 safeStorage 里，⛔ 渲染层与模型侧都拿不到明文。用户说「登录云端 / 退出云账号 / 换个云账号」时用它。⛔ 与本机「中转站账号」是两条独立的登录线，别混
+通道：cloud-auth:login, cloud-auth:logout, cloud-auth:switch, cloud-auth:status, cloud-auth:points
+
+### cloud-models（7 通道）
+**云端模型目录同步**（10-28 自桌面仓移植）：登录后自动把云端「已勾选」的模型写成本机供应商 \`cloud\`（勾选 = 下拉框可见），并默认每 10 分钟自动保持更新。用户说「云端模型没同步 / 拉一下云端模型 / 勾了模型选不到」时用它（sync 是唯一同步入口，force=true 会重签代理令牌）
+通道：cloud-models:catalog, cloud-models:sync, cloud-models:test, cloud-models:token, cloud-models:set-enabled, cloud-models:status, cloud-models:activate
+
+### cloud-kb（2 通道）
+**云端知识库**（跨设备共享的那一份）→ 本机 MCP 连接器 \`cloud-kb\`（10-28 自桌面仓移植）。⛔ 与「本地项目级知识库」（kb 域，随项目走）**不是一回事**：这份存在服务端，换台机器登录也在。未开通权益时服务端不建库不发钥匙，本域只会如实报 not-activated
+通道：cloud-kb:sync, cloud-kb:status
+
+### cloud-memory（2 通道）
+**云端记忆**的凭据与上游切换（10-28 自桌面仓移植）。⛔ 记忆中枢没有 MCP 端点 ⇒ 记忆不是靠工具调用的，而是在**对话请求层**由服务端自动注入/写入。本域拿到该账号的 userKey 后把**对话上游切到记忆端点**（天然按账号隔离）；未开通/被停用时自动切回
+通道：cloud-memory:sync, cloud-memory:status
+
+### team（5 通道）
+**团队工作模式**（10-28 自桌面仓移植）：list 我加入的团队 / enter 进入（对话上游切到团队记忆端点 + 团队知识库接成 cloud-kb-team 连接器）/ exit 退出 / status 生效状态。⛔ 记忆通道独占：进入团队 = 个人记忆暂停；团队库与个人库不能同时接。用户说「切到团队 / 团队记忆不生效」时用它
+通道：team:list, team:enter, team:exit, team:status, team:upload
 
 ### soul-market（4 通道）
 SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏览 / get 看人设全文 / current 当前生效 / apply 应用人格（写 personalization.persona + 同步 AGENTS.md，**下一个新会话生效**，slug=null 还原默认）。用户想「换个性格/语气」时用它
@@ -394,7 +426,7 @@ SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏�
 通道：custom-model:apply, custom-model:list, custom-model:probe, custom-model:read, custom-model:remove, custom-model:remove-model, custom-model:save, custom-model:select, custom-model:set-effort, custom-model:set-enabled, custom-model:set-model, custom-model:upsert-model
 
 ### model-source（2 通道）
-**云端模型模式开关**（10-15）：两个通道 —— get 读 / set 写，落盘 userData/model-source.json。开启 ⇒ 模型列表只走云端开放目录里勾选的那些（服务端按 /admin/models/available 下发），本地供应商自动停用，且「模型配置」里的供应商开关被锁定打不开；关闭 ⇒ 恢复本地供应商手动开关。⛔ 只停用**除限时福利之外**的本地供应商 —— 限时福利那一行的可用性由云端勾选决定，不占「当前生效供应商」位。开关本体在「云端管理」面板；模型侧用不到（宿主管理面）。
+**云端模型模式开关**（10-15）：两个通道 —— get 读 / set 写，落盘 userData/model-source.json。开启 ⇒ 模型列表只走云端开放目录里勾选的那些（服务端按 /admin/models/available 下发），本地供应商自动停用，且「模型配置」里的供应商开关被锁定打不开；关闭 ⇒ 恢复本地供应商手动开关。⛔ 只停用**除限时福利之外**的本地供应商 —— 限时福利那一行的可用性由云端勾选决定，不占「当前生效供应商」位。开关本体在 设置 → 云账号 → 云助手专属；模型侧用不到（宿主管理面）。
 通道：model-source:get, model-source:set
 
 ### bridge（1 通道）

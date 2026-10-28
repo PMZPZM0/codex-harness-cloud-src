@@ -28,7 +28,12 @@ import { channelBotFeature as feat_channel_bot } from "./features/channel-bot-ip
 import { channelsFeature as feat_channels } from "./features/channels-ipc";
 import { clipboardFeature as feat_clipboard } from "./features/clipboard-ipc";
 import { closeConfirmFeature as feat_close_confirm } from "./features/close-confirm-ipc";
-import { cloudReserveFeature as feat_cloud_reserve } from "./features/cloud-reserve-ipc";
+import { cloudReserveFeature as feat_cloud } from "./features/cloud-reserve-ipc";
+import { cloudAuthFeature as feat_cloud_auth } from "./features/cloud-auth-ipc";
+import { cloudModelsFeature as feat_cloud_models } from "./features/cloud-models-ipc";
+import { cloudKbFeature as feat_cloud_kb } from "./features/cloud-kb-ipc";
+import { cloudMemoryFeature as feat_cloud_memory } from "./features/cloud-memory-ipc";
+import { teamModeFeature as feat_team } from "./features/team-mode";
 import { codexFeature as feat_codex } from "./features/codex-ipc";
 import { codexOfficialMarketFeature as feat_codex_official_market } from "./features/codex-official-market-ipc";
 import { commandsFeature as feat_commands } from "./features/commands-ipc";
@@ -140,7 +145,12 @@ export const ENABLED: EnabledDomain[] = [
   { id: "channels", plugin: feat_channels as Plugin<unknown>, config: null },
   { id: "clipboard", plugin: feat_clipboard as Plugin<unknown>, config: null },
   { id: "close-confirm", plugin: feat_close_confirm as Plugin<unknown>, config: null },
-  { id: "cloud-reserve", plugin: feat_cloud_reserve as Plugin<unknown>, config: null },
+  { id: "cloud", plugin: feat_cloud as Plugin<unknown>, config: null },
+  { id: "cloud-auth", plugin: feat_cloud_auth as Plugin<unknown>, config: null },
+  { id: "cloud-models", plugin: feat_cloud_models as Plugin<unknown>, config: null },
+  { id: "cloud-kb", plugin: feat_cloud_kb as Plugin<unknown>, config: null },
+  { id: "cloud-memory", plugin: feat_cloud_memory as Plugin<unknown>, config: null },
+  { id: "team", plugin: feat_team as Plugin<unknown>, config: null },
   { id: "codex", plugin: feat_codex as Plugin<unknown>, config: null },
   { id: "codex-official-market", plugin: feat_codex_official_market as Plugin<unknown>, config: null },
   { id: "commands", plugin: feat_commands as Plugin<unknown>, config: null },

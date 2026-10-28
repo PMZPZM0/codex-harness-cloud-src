@@ -573,6 +573,38 @@ interface Window {
     writeClipboardImage(filePath: string): Promise<boolean>;
     /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
     respondCloseConfirm(action: "tray" | "quit" | "cancel", remember: boolean): Promise<{ ok: boolean; error?: string }>;
+    /* 云账号登录（10-16）：账号密码换云端 Bearer 会话令牌，safeStorage 加密后落 userData/cloud/auth.json。⛔ 不是配对流程 —— 服务端 accountWho() 同时认会话令牌与设备令牌 */
+    cloudAuthLogin(input: { baseUrl?: string; username?: string; password?: string }): Promise<{ ok: boolean; account?: { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number }; error?: string }>;
+    /* 退出云账号（缺省 = 当前生效那个）。⛔ 最后一个账号被删时才收摊（停用云供应商行与两个 MCP 连接器，都只停用不删除） */
+    cloudAuthLogout(id?: string): Promise<{ ok: boolean; loggedIn: boolean; baseUrl: string; active: { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number } | null }>;
+    /* 云账号积分（服务端 /points/me）：余额 + 最近 30 条变动明细。⛔ 账户级数据，故挂在 cloud-auth 域而不是另开板块 */
+    cloudAuthPoints(): Promise<{ ok: boolean; balance: number; signupGrant: number; txns: Array<{ id?: string; at?: number; delta?: number; kind?: string; note?: string; after?: number }>; error?: string }>;
+    /* 云账号登录态（⛔ 只回账号与「有没有」，不回任何令牌） */
+    cloudAuthStatus(): Promise<{ loggedIn: boolean; baseUrl: string; active: { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number } | null; accounts: Array<{ id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number }>; defaultBaseUrl: string }>;
+    /* 切换生效云账号（多账号并存时用） */
+    cloudAuthSwitch(id: string): Promise<{ ok: boolean; loggedIn: boolean; baseUrl: string; active: { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number } | null }>;
+    /* 云端知识库连接器状态（只读本地，不联网） */
+    cloudKbStatus(): Promise<{ exists: boolean; enabled: boolean; url: string; hasToken: boolean } & { connectorId: string; tool: string }>;
+    /* 把云端知识库接成 MCP 连接器 cloud-kb（streamable_http + 令牌走环境变量，⛔ 不落 config.toml）。未开通权益时只停用连接器并回报原因 */
+    cloudKbSync(): Promise<{ ok: boolean; action: string; url?: string; kbName?: string; error?: string }>;
+    /* 云端记忆状态（只读本地，不联网） */
+    cloudMemoryStatus(): Promise<{ connectorId: string; connector: { exists: boolean; enabled: boolean; url: string; hasToken: boolean }; hasCredentials: boolean; mode: string; note: string; upstream?: "memory" | "model"; activation: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }>;
+    /* 取云端记忆凭据（加密缓存）。⛔ 记忆中枢当前**没有 MCP 端点**（实测 /mcp、/v1/mcp、/sse 全 404），故 mode 恒为 rest-only 且不建连接器 —— 等本地 stdio 适配器 */
+    cloudMemorySync(): Promise<{ ok: boolean; mode: string; action?: string; error?: string; upstream?: "memory" | "model"; upstreamChanged?: boolean; activation?: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }>;
+    /* 把「云端模型」设为当前生效供应商（用户显式点击）。⛔ 自动同步绝不抢生效位，只有这条会；切换会重启引擎以让新 Key/地址生效 */
+    cloudModelsActivate(): Promise<{ ok: boolean; model: string; error?: string }>;
+    /* 云端模型目录（服务端 /models 原样透传）：含逐模型勾选状态 enabled 与积分倍率 credits（creditsLocked=管理员已钉住、upstreamCredits=上游原值），以及闲时倍率快照 offPeak（时段按服务端本地时间，tzOffsetMinutes 供客户端换算）。⛔ 不返回任何密钥与上游地址 */
+    cloudModelsCatalog(): Promise<{ ok?: boolean; provider?: { id?: string; name?: string; baseUrl?: string; ready?: boolean; hasProxyToken?: boolean }; models?: Array<{ id: string; name?: string; credits?: string; enabled?: boolean; contextLength?: number; maxOutputTokens?: number; supportsImages?: boolean; supportsReasoning?: boolean; creditsLocked?: boolean; upstreamCredits?: string }>; offPeak?: { enabled?: boolean; windows?: Array<{ id?: string; label?: string; start?: number; end?: number; rate?: number }>; active?: { label?: string; start?: number; end?: number; rate?: number } | null; tzOffsetMinutes?: number }; error?: string }>;
+    /* 勾选云端模型（写**服务端** /models/enabled，权威在云端）→ 写完后立刻同步到本机下拉框。勾选语义：勾上 = 下拉框可见 */
+    cloudModelsSetEnabled(input: { ids: string[] }): Promise<{ ok: boolean; enabledCount?: number; sync?: { ok: boolean; models: number; changed: boolean; promoted: boolean; error?: string }; error?: string }>;
+    /* 本机云供应商状态（只读本地，不联网）：是否已注册 / 模型数 / 是否已有 Key / 上次同步时间 */
+    cloudModelsStatus(): Promise<{ loggedIn: boolean; baseUrl: string; registered: boolean; enabled: boolean; models: number; hasToken: boolean; lastSyncAt: number }>;
+    /* 把云端目录同步成本机供应商行（登录成功后 / 手动刷新 / 定时轮询都调它）。⛔ 同时写复数列表与单数生效档案（10-16「勾 5 个下拉 15 个」事故的防线）；force=true 会重签代理令牌 */
+    cloudModelsSync(input?: { force?: boolean }): Promise<{ ok: boolean; models: number; changed: boolean; promoted: boolean; error?: string }>;
+    /* 云端模型连通测试（10-19）：探**引擎实际会用的那条路**（本地桥 + 云供应商行合成后的 baseUrl/key，记忆开启时即 memapi + 记忆 userKey）。401/403 自动重签一次并重探；forceHeal=true = 界面「重签密钥并重试」。成功由界面提示保存并重启应用 */
+    cloudModelsTest(input?: { forceHeal?: boolean }): Promise<{ ok: boolean; code?: string; error?: string; originalError?: string; healed?: boolean; model?: string; status?: number; latencyMs?: number; models?: number }>;
+    /* 取云代理令牌（/proxy/token，明文**仅此一次**）。⛔ 供「Key 掉了」的修复入口用；落盘一律加密 */
+    cloudModelsToken(input?: { force?: boolean }): Promise<{ ok: boolean; token: string; reused: boolean; error?: string }>;
     /* 云版预留（真实现）：列出本机已配对设备/用户（HARNESS_CLOUD_HOME/users.json），token 只给指纹前 6 位 */
     cloudDeviceList(): Promise<{ devices: { name: string; createdAt: number; tokenFingerprint: string }[] }>;
     /* 云版预留（真实现）：解绑设备/用户（从 users.json 移除，其 token 立即失效） */
@@ -583,6 +615,8 @@ interface Window {
     cloudNotifyMarkRead(id: string): Promise<{ ok: boolean }>;
     /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
     cloudSyncConflictResolve(key: string, resolution: string): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
+    /* 10-18：列出本地会话供勾选上传（只读，不写游标） */
+    cloudSyncList(): Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> }>;
     /* 云版预留：按 key 从云端拉回数据（未开通前为预留桩） */
     cloudSyncPull(input?: { keys: string[] }): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
     /* 云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}） */
@@ -691,6 +725,8 @@ interface Window {
     installExpertMarketPackage(input: { slug: string }): Promise<{ slug: string; teamId: string; displayName: string; installedChildren: string[]; childFailures: string[]; expertCreated: boolean; expertUpdated: boolean }>;
     /* SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包） */
     listExpertMarketPackages(input?: { page?: number; pageSize?: number; query?: string }): Promise<{ items: { slug: string; displayName: string; summary: string; scene: string; subScene: string; children: string[] }[]; total: number; page: number; pageSize: number }>;
+    /* 竖条 + 功能入口菜单的可扩展目录 */
+    extensionsCatalog(): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>;
     openExternal(url: string): Promise<void>;
     addFavorite(input: Partial<FavoriteItem>): Promise<{ items: FavoriteItem[]; item: FavoriteItem }>;
     clearFavorites(): Promise<{ items: FavoriteItem[]; removed: number }>;
@@ -736,6 +772,14 @@ interface Window {
     readImage(path: string): Promise<{ data: Uint8Array; size: number }>;
     /* 在应用内弹「图像工坊」浮层给用户看一张图。只读展示、**不自动收起**（由用户自己关）。零凭证 */
     imageView(input: { path: string; title?: string }): Promise<{ ok: boolean; output: string; error?: string }>;
+    /* 追加一条 */
+    journalAppend(date: string, title: string, body: string): Promise<{ days: JournalDay[]; date: string }>;
+    journalList(): Promise<{ days: JournalDay[]; dir: string; today: string }>;
+    journalRead(date: string): Promise<{ date: string; content: string }>;
+    journalRemove(date: string): Promise<{ days: JournalDay[] }>;
+    /* 整篇覆盖 */
+    journalSave(date: string, content: string): Promise<{ days: JournalDay[]; date: string }>;
+    journalSearch(query: string): Promise<{ hits: { date: string; lines: string[] }[] }>;
     addKnowledgeFiles(input: { workspace?: string; paths?: string[] }): Promise<{ imported: { title: string; id: string }[]; failures: string[] }>;
     addKnowledgeText(input: { workspace?: string; title?: string; text?: string; source?: string }): Promise<KbDocMeta>;
     /* 读取知识库后端：local=项目本地库 / cloud=云端 weknora（MCP） */
@@ -1078,6 +1122,16 @@ interface Window {
     listTeamRuns(threadId: string): Promise<TeamMemberRunRecord[]>;
     teamThreadsMap(): Promise<{ threads: Record<string, string>; members: Record<string, string> }>;
     teamOfThread(threadId: string): Promise<string>;
+    /* 进入团队模式（切团队记忆上游 + 接团队知识库） */
+    teamEnter(input?: { teamId?: string }): Promise<any>;
+    /* 退出团队模式（恢复个人知识库连接器） */
+    teamExit(): Promise<any>;
+    /* 团队工作模式：我加入的团队 */
+    teamList(): Promise<any>;
+    /* 团队模式当前生效状态 */
+    teamStatus(): Promise<any>;
+    /* 上传本机文件到团队知识库（走云端计费与权限闸） */
+    teamUpload(input?: { paths?: string[] }): Promise<any>;
     invokeTeamMember(input: { teamId: string; memberId: string; query: string; leadThreadId?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ threadId: string; turnId?: string; teamId: string; memberId: string; name: string; profession: string; output: string; runId?: string; reused?: boolean }>;
     listExpertTeams(): Promise<ExpertTeamConfig[]>;
     startTeamMemberSession(input: { teamId: string; memberId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }): Promise<{ thread: any; turnId: string | null; member: { id: string; name: string; profession: string }; role?: ExpertPendingRole | null }>;
@@ -1126,6 +1180,13 @@ interface Window {
     /* 更新：读当前状态机（相位/进度/速度/剩余/更新说明/稍后安装版本/是否电池供电） */
     updateStateRead(): Promise<{ ok: boolean; state: { phase: string; percent: number; receivedBytes: number; totalBytes: number; speedBytesPerSec: number; etaSeconds: number | null; version?: string; changelog?: string; error?: string; deferredVersion?: string; onBattery?: boolean; product?: string } }>;
     getUsername(): Promise<string>;
+    /* 主进程解密后直写剪贴板（明文不返回渲染层） */
+    vaultCopy(id: string): Promise<{ ok: boolean; reason?: string }>;
+    /* 密码本列表（不含明文，只有 hasSecret） */
+    vaultList(): Promise<{ items: VaultItem[]; encrypted: boolean }>;
+    vaultRemove(id: string): Promise<{ items: VaultItem[] }>;
+    /* 保存/更新一条；password 省略=保留原密码 */
+    vaultSave(input: { id?: string; title?: string; username?: string; url?: string; note?: string; password?: string }): Promise<{ items: VaultItem[] }>;
     /* 按顺序合并视频片段成一条成片（整片导出）：先 -c copy，失败回落统一重编码；输出 <workspace>/.drama-canvas/export/ */
     videoConcat(input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }): Promise<{ path: string; bytes: number; mode: "copy" | "reencode"; parts: number }>;
     /* 各厂商凭证（userData/video-providers.json） */
@@ -1221,23 +1282,6 @@ interface Window {
     workLogsRead(input: { path: string }): Promise<{ path: string; text: string; bytes: number; mtime: number }>;
     /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
     workLogsScan(): Promise<{ projects: Array<{ cwd: string; name: string; memoryDir: string; exists: boolean; bytes: number; files: Array<{ path: string; rel: string; kind: string; bytes: number; mtime: number }> }> }>;
-    /* 密码本列表（不含明文，只有 hasSecret） */
-    vaultList(): Promise<{ items: VaultItem[]; encrypted: boolean }>;
-    /* 保存/更新一条；password 省略=保留原密码 */
-    vaultSave(input: { id?: string; title?: string; username?: string; url?: string; note?: string; password?: string }): Promise<{ items: VaultItem[] }>;
-    vaultRemove(id: string): Promise<{ items: VaultItem[] }>;
-    /* 主进程解密后直写剪贴板（明文不返回渲染层） */
-    vaultCopy(id: string): Promise<{ ok: boolean; reason?: string }>;
-    journalList(): Promise<{ days: JournalDay[]; dir: string; today: string }>;
-    journalRead(date: string): Promise<{ date: string; content: string }>;
-    /* 整篇覆盖 */
-    journalSave(date: string, content: string): Promise<{ days: JournalDay[]; date: string }>;
-    /* 追加一条 */
-    journalAppend(date: string, title: string, body: string): Promise<{ days: JournalDay[]; date: string }>;
-    journalRemove(date: string): Promise<{ days: JournalDay[] }>;
-    journalSearch(query: string): Promise<{ hits: { date: string; lines: string[] }[] }>;
-    /* 竖条 + 功能入口菜单的可扩展目录 */
-    extensionsCatalog(): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

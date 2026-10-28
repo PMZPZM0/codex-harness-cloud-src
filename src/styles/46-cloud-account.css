@@ -1,0 +1,635 @@
+/* ══════════════════════════════════════════════════════════════════════════
+ * 设置页 · 云账号（10-16）—— 中转站式云账号登录 + 云端模型同步 + 云端知识库/记忆
+ *
+ * ⛔ 只使用主题变量（--line / --panel / --text / --muted / --red / --green）——
+ *    写死色值会在暗色主题下瞎掉。类名前缀 `cloud-acct-` 与本页一一对应，
+ *    ⛔ 不往通用设置类上挂钩（避免影响别的设置页）。
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+.cloud-acct-msg {
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  padding: 9px 13px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cloud-acct-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+/* 10-26 三轮用户令：「反馈这个文字成功不好看」⇒ 成功态从「一圈绿边」改成淡绿底 + 圆点，
+   失败态同样给淡红底；文字仍用 --text，暗色下不会糊。 */
+.cloud-acct-msg.ok {
+  border-color: color-mix(in srgb, var(--green, #3B6D11) 45%, var(--line));
+  background: color-mix(in srgb, var(--green, #3B6D11) 9%, var(--panel));
+}
+.cloud-acct-msg.err {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--line));
+  background: color-mix(in srgb, var(--red) 9%, var(--panel));
+}
+.cloud-acct-msg.ok::before,
+.cloud-acct-msg.err::before {
+  content: "";
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: var(--green, #3B6D11);
+}
+.cloud-acct-msg.err::before { background: var(--red); }
+
+.cloud-acct-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cloud-acct-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+.cloud-acct-head .cloud-acct-sub {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.cloud-acct-tag {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.cloud-acct-tag.on { border-color: var(--green, #3B6D11); }
+.cloud-acct-tag.off { border-color: var(--line); color: var(--muted); }
+
+.cloud-acct-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cloud-acct-row > label {
+  flex: 0 0 68px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.cloud-acct-row > .field,
+.cloud-acct-row > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cloud-acct-kv {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cloud-acct-kv code {
+  color: var(--text);
+  font-family: var(--mono);
+  word-break: break-all;
+}
+
+.cloud-acct-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cloud-acct-metrics b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.cloud-acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cloud-acct-actions .danger { color: var(--red); }
+
+.cloud-acct-adv {
+  font-size: 12px;
+  color: var(--muted);
+}
+.cloud-acct-adv > summary {
+  cursor: pointer;
+  user-select: none;
+}
+.cloud-acct-adv > input { margin-top: 6px; width: 100%; }
+
+/* 积分变动明细：四列（时间 / 类型 / 备注 / 增减），窄屏折行 */
+.cloud-acct-txns {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+}
+.cloud-acct-txn {
+  display: grid;
+  grid-template-columns: 76px 62px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.cloud-acct-txn:last-child { border-bottom: 0; }
+.cloud-acct-txn-when { color: var(--muted); font-variant-numeric: tabular-nums; }
+.cloud-acct-txn-kind { color: var(--text); }
+.cloud-acct-txn-note {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-acct-txn-delta {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* ── 输入框里的**云端积分徽标**（10-16 用户令：与中转站/OpenAI 两枚同位置、同外观）──
+   ⛔ 位置由 JSX 决定（`.model-controls` 里、`.context-ring` 上下文环**左边**）——
+      这里只管外观，不改布局顺序。 */
+.cloud-points-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 4px;
+  border-radius: 8px;
+  color: var(--faint);
+  cursor: default;
+}
+.cloud-points-badge:hover,
+.cloud-points-badge:focus-within {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+/* 悬停浮层：⛔ 平时 display:none —— 不占正文宽度（积分是"扫一眼"的信息）。
+   定位/层级/阴影**对齐既有 `.ctx-pop`**（bottom:100%+8px / right:0 / z-index:30 / var(--shadow)），
+   ⛔ 不新造一档 z-index（层叠层级带【198】有约定）。 */
+.cloud-points-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 160px;
+  max-width: 280px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  text-align: left;
+}
+.cloud-points-badge:hover .cloud-points-tip,
+.cloud-points-badge:focus-within .cloud-points-tip {
+  display: flex;
+}
+.cloud-points-tip b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+.cloud-points-tip small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.cloud-points-tip-foot {
+  color: var(--faint) !important;
+}
+/* 命中闲时 ⇒ 这一行点亮（`!important` 是为了压过上面的 `.cloud-points-tip small` 配色，
+   与 `.cloud-points-tip-foot` 同一个做法）。不命中/未启用时用默认 muted，不抢注意力。 */
+.cloud-points-offpeak {
+  color: var(--ok) !important;
+}
+
+/* ── 未登录态视觉优化（10-18，用户反馈「排版老气」）────────────────────────────
+   ⛔ 全部限定在 .cloud-acct-* 前缀内 —— primary-setting 是全站共用的，⛔ 不能改它本身，
+      只给本页的登录按钮加 `.cloud-acct-login` 做覆盖。
+   ⛔ 颜色一律走 var()，暗色主题才不会瞎。 */
+.cloud-acct-row > input {
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--field);
+  font-size: 13px;
+  line-height: 1.4;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.cloud-acct-row > input:hover { border-color: var(--line-strong, var(--muted)); }
+.cloud-acct-row > input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+/* 登录按钮：与全站主色统一（原来是浅绿渐变，和紫色 brand 冲突） */
+.cloud-acct-actions > button.primary-setting.cloud-acct-login {
+  background: var(--accent);
+  background-image: none;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 18px;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+}
+.cloud-acct-actions > button.primary-setting.cloud-acct-login:hover:not(:disabled) { filter: brightness(1.06); }
+.cloud-acct-actions > button.primary-setting.cloud-acct-login:disabled { opacity: .5; box-shadow: none; }
+/* 「服务地址」折叠：去掉浏览器默认三角，改成轻量可点行 */
+.cloud-acct-adv > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+.cloud-acct-adv > summary::-webkit-details-marker { display: none; }
+.cloud-acct-adv > summary::before {
+  content: "\25B8";
+  font-size: 10px;
+  line-height: 1;
+  transition: transform .15s ease;
+}
+.cloud-acct-adv[open] > summary::before { transform: rotate(90deg); }
+.cloud-acct-adv > summary:hover { color: var(--text); }
+
+/* ── 10-22「登录即用」改版：hero 卡 / 就绪清单 / 教程 / 高级折叠 ─────────────
+   ⛔ 仍只走主题变量；不改全站 primary/secondary 按钮本体，只排布局。 */
+.cloud-acct-hero {
+  gap: 14px;
+  padding: 18px 20px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 58%),
+    var(--panel);
+}
+.cloud-acct-hero-top {
+  display: flex;
+  /* 10-26 三轮用户令：「别动不动就换行」⇒ 顶部一行定死：图标 + 名字 + 两颗按钮。
+     名字过长时**省略号**，不把按钮挤到第二行。 */
+  align-items: center;
+  gap: 12px;
+}
+.cloud-acct-hero-icon {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+}
+.cloud-acct-hero-main { flex: 1 1 auto; min-width: 0; }
+/* 10-26 三轮用户令：用户中心跟在账户名后面（小号文字链接，不抢主操作按钮的视觉权重） */
+.cloud-acct-name-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  padding: 1px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.cloud-acct-name-link:hover { color: var(--text); border-color: var(--line); background: var(--panel-2); }
+.cloud-acct-hero-main h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+/* 账户名超长走省略号（title 给全名），⛔ 不许换行 */
+.cloud-acct-ready .cloud-acct-hero-main .cloud-acct-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-acct-ready .cloud-acct-hero-main h3 .cloud-acct-tag { flex: 0 0 auto; }
+.cloud-acct-hero-top > .cloud-acct-hero-actions { flex: 0 0 auto; flex-wrap: nowrap; }
+.cloud-acct-hero-actions > button { white-space: nowrap; }
+.cloud-acct-hero-main p { margin: 0; font-size: 12.5px; line-height: 1.6; }
+.cloud-acct-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.cloud-acct-hero > .cloud-acct-hero-actions { justify-content: flex-start; }
+.cloud-acct-hero-top > .cloud-acct-hero-actions { justify-content: flex-end; }
+
+/* 登录表单：两列（标签 + 输入），窄屏自动回落单列 */
+.cloud-acct-form {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: center;
+}
+.cloud-acct-form > label { color: var(--muted); font-size: 13px; }
+.cloud-acct-form > input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--field);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.cloud-acct-form > input:hover { border-color: var(--line-strong, var(--muted)); }
+.cloud-acct-form > input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.cloud-acct-footnote { line-height: 1.6; }
+
+/* 就绪清单：一行一项，状态用 tag 表达（绿=已就绪 / 灰=未就绪） */
+.cloud-acct-ready-grid {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+  overflow: hidden;
+}
+/* 10-26 三轮用户令：「下面这三个做好看一点，整齐划一」——
+   原来是 flex 顺序排 ⇒ 标签长短不同（当前生效 / 已接通 / 已接通（请求层））会把右侧说明搓成三个起点。
+   改成**四列网格**：图标 / 名称 / 状态标签 / 说明，三者逐列对齐、行高一致。 */
+.cloud-acct-ready-row {
+  display: grid;
+  grid-template-columns: 16px 74px 116px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--line);
+}
+.cloud-acct-ready-row:last-child { border-bottom: 0; }
+.cloud-acct-ready-ico { display: inline-flex; color: var(--muted); }
+.cloud-acct-ready-row.on .cloud-acct-ready-ico { color: var(--accent); }
+.cloud-acct-ready-row > b { color: var(--text); font-weight: 550; }
+/* 标签在本列内左对齐（宽度随内容，不再把后面的说明顶开） */
+.cloud-acct-ready-row > .cloud-acct-tag { justify-self: start; }
+.cloud-acct-ready-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-acct-hero-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-top: 2px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.cloud-acct-points { display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
+.cloud-acct-link {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+.cloud-acct-link:hover:not(:disabled) { color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
+.cloud-acct-link:disabled { opacity: .5; cursor: default; }
+
+/* 自动配置逐步回执 */
+.cloud-acct-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.cloud-acct-step {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.cloud-acct-step > b { flex: 0 0 58px; color: var(--text); font-weight: 500; }
+.cloud-acct-step-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  transform: translateY(-1px);
+}
+.cloud-acct-step.ok .cloud-acct-step-dot { background: var(--green, #3B6D11); }
+.cloud-acct-step.failed .cloud-acct-step-dot,
+.cloud-acct-step.needs-action .cloud-acct-step-dot { background: var(--amber, #e8a020); }
+.cloud-acct-step.skipped .cloud-acct-step-dot { background: var(--line-strong, var(--muted)); }
+
+/* 新手教程（默认收起；展开后是三步 + 一句手动流程指引） */
+.cloud-tutorial {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 10px 14px;
+}
+.cloud-tutorial > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text);
+  font-size: 13px;
+}
+.cloud-tutorial > summary::-webkit-details-marker { display: none; }
+.cloud-tutorial > summary::after {
+  content: "\25BE";
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  transition: transform .15s ease;
+}
+.cloud-tutorial[open] > summary::after { transform: rotate(180deg); }
+.cloud-tutorial > summary .cloud-acct-sub { color: var(--muted); font-size: 12px; font-weight: 400; }
+.cloud-tutorial ol {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.cloud-tutorial ol b { color: var(--text); font-weight: 550; }
+.cloud-tutorial-note {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* 手动流程 / 高级设置 */
+.cloud-acct-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cloud-acct-advanced > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+}
+.cloud-acct-advanced > summary::-webkit-details-marker { display: none; }
+.cloud-acct-advanced > summary::after {
+  content: "\25BE";
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  transition: transform .15s ease;
+}
+.cloud-acct-advanced[open] > summary::after { transform: rotate(180deg); }
+.cloud-acct-advanced > summary .cloud-acct-sub { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+/* ── 团队工作模式（10-24）───────────────────────────────────────────────
+   云账号页里的独立区块：选团队 → 进入 = 记 channel 切换（团队记忆 + 团队知识库）。
+   ⛔ 记忆通道是独占的，界面上必须让用户看见"个人记忆暂停"这件事（区块底部有常驻说明）。 */
+.cloud-team-block {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel, transparent);
+}
+.cloud-team-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--text); }
+.cloud-team-head > b { font-weight: 550; }
+.cloud-team-refresh {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.cloud-team-refresh:hover { border-color: var(--line); color: var(--text); }
+.cloud-team-note { margin: 9px 0 0; font-size: 12px; line-height: 1.75; color: var(--muted); }
+.cloud-team-note b { color: var(--text); font-weight: 550; }
+/* 编号说明（10-26）：一条一行，别再糊成一团 */
+.cloud-team-steps { padding-left: 18px; }
+.cloud-team-steps li { margin: 1px 0; }
+.cloud-team-steps li::marker { color: var(--faint); }
+.cloud-team-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
+.cloud-team-pick {
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--field, transparent);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.cloud-team-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cloud-team-btn:hover:not(:disabled) { border-color: var(--accent); }
+.cloud-team-btn.primary { border-color: var(--accent); color: var(--accent); }
+.cloud-team-btn:disabled { opacity: .45; cursor: default; }
+.cloud-team-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.cloud-team-hint { margin: 8px 0 0; font-size: 11.5px; line-height: 1.7; color: var(--faint); }
+.cloud-team-ok,
+.cloud-team-bad { margin: 8px 0 0; font-size: 12px; display: flex; align-items: center; gap: 5px; }
+.cloud-team-ok { color: var(--accent); }
+.cloud-team-bad { color: var(--red); }
+.cloud-team-uploads { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 11.5px; line-height: 1.8; }
+.cloud-team-uploads li { word-break: break-all; }
+.cloud-team-uploads li.ok { color: var(--accent); }
+.cloud-team-uploads li.bad { color: var(--red); }

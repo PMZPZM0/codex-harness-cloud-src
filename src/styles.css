@@ -55,6 +55,7 @@
 @import "./styles/37-update-ready" layer(components);
 @import "./styles/38-close-confirm" layer(components);
 @import "./styles/39-cloud-manage" layer(components);
+@import "./styles/46-cloud-account" layer(components);
 
 @import "./styles/39-media-preview" layer(components);
 @import "./styles/40-reasoning-strip" layer(components);
