@@ -118,6 +118,9 @@ export function HooksSettingsSection(props: HooksSettingsSectionProps) {
       </span>
       {filtering && <span className="hook-filter-count">匹配 {matched} / 共 {hooks.length}</span>}
       <div className="hook-actions-line settings-actions-row">
+        {/* 10-28 审查：主进程只提供「批量信任待信任钩子」（hooks:trust），没有单条信任通道。
+            这里原先每条未信任钩子都放一颗「信任」，点哪条都会信任**全部** ⇒ 误导。
+            唯一入口保留在页头「信任全部 N」。 */}
         {untrusted.length > 0 && <button className="primary-setting" disabled={hookTrusting} onClick={() => void trustAllHooks()}>{hookTrusting ? <Spinner /> : <ShieldCheck size={14} />}信任全部 {untrusted.length}</button>}
         <button className="icon-button" title="刷新钩子" onClick={() => void refreshWithReceipt(setNotice, "刷新钩子", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
       </div>
