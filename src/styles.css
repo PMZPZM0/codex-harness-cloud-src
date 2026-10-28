@@ -11,6 +11,8 @@
  */
 
 /* 10-27：层叠顺序由 @layer 决定（导入顺序仅决定同层内次序）。 */
+/* ⛔⛔ base 层禁止新增 `!important`：important 声明的层序是反的（早层赢），
+   base 里一条同属性不同值的 important 会莫名压过 pages —— 守卫 12af 按实测基线卡死。 */
 @layer base, components, pages, overrides;
 
 @import "./styles/01-base-and-chrome" layer(base);
