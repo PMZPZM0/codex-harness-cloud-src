@@ -26,9 +26,9 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
 
 export function HooksSettingsSection(props: HooksSettingsSectionProps) {
   const { settingsResources, pluginDisplayName, localSkills, hookTrusting, trustAllHooks, refreshSettingsResources, resourceLoading, linkedBusy, setLinkedEnabled, hookBusy, setHookEnabled, setNotice } = props;
-  const hooks = settingsResources.hooks as any[];
-  const untrusted = hooks.filter((hook: any) => hook.trustStatus && hook.trustStatus !== "trusted");
-  const enabledCount = hooks.filter((hook: any) => hook.enabled !== false).length;
+  const hooks = settingsResources.hooks as Record<string, unknown>[];
+  const untrusted = hooks.filter((hook) => hook.trustStatus && hook.trustStatus !== "trusted");
+  const enabledCount = hooks.filter((hook) => hook.enabled !== false).length;
   /* ⛔ 筛选状态只在本页（不进 bag）：离开设置页即重置，不会污染别处。 */
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -73,7 +73,7 @@ export function HooksSettingsSection(props: HooksSettingsSectionProps) {
 
   const keyword = query.trim().toLowerCase();
   const filtering = keyword !== "" || statusFilter !== "all" || sourceFilter !== "all";
-  const hookMatches = (hook: any, group: typeof groups[number]) => {
+  const hookMatches = (hook: Record<string, unknown>, group: typeof groups[number]) => {
     const trusted = Boolean(hook.trustStatus && hook.trustStatus !== "trusted");
     const on = hook.enabled !== false;
     if (statusFilter === "on" && !on) return false;
