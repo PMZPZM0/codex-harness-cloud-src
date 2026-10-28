@@ -349,3 +349,4 @@
 | 2026-10-28 | 手机端 Markdown 渲染 | 新增 | `src/lib/mobile-markdown.mjs`（+ `.d.mts`）、`electron/remote/web-page.ts`、守卫 04 | 同步主仓 adc878e23：纯函数渲染器，页面内联同一份源码。守卫【139b】+2。云 UI 无改动。 | 本轮 |
 | 2026-10-28 | 手机运行过程显示文件变更 +N −M | 改动 | `electron/features/boot.ts`、`electron/remote/web-page.ts`、`electron/turn-file-watch.ts`、守卫 04/09 | 同步主仓 c1ef55364：live 报告带 threadId 转发、页面一行原地更新。守卫【139b】+1。云 UI 无改动。 | 本轮 |
 | 2026-10-28 | 运行步骤对齐：工具参数 + 逐文件 +N −M | 改动 | `electron/features/boot.ts`、`electron/remote/web-page.ts`、守卫 04/09 | 同步主仓 078190bef：工具带参数摘要、文件逐行。守卫【139b】+1；boot.ts 本仓实测 1006 行，新登记进棘轮。云 UI 无改动。 | 本轮 |
+| 2026-10-28 | 运行步骤补齐剩余五项（审批提示/任务条/命令状态/diff/目标条） | 新增 | `electron/main.ts`、`electron/features/boot.ts`、`electron/remote.ts`、`electron/remote/web-page.ts`、守卫 04/09 | 同步主仓 997e6f295：四个 RPC + 通知/任务条/目标条 UI。守卫【139b】+2、【139d】+2；boot.ts 实测 1019 行。云 UI 无改动。 | 本轮 |
