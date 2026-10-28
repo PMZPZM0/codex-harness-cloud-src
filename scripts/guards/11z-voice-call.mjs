@@ -945,7 +945,7 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     && !/\.voice-mascot-orb\b/.test(botCss) && /\.voice-bot--skin-ink \{/.test(botCss),
     "胶囊眼是脸宽 16% / 脸高 34% 的竖长条（随 28/34px 预览同比缩放），旧 Siri 球样式已删除");
   const voiceSettingsSrc = read("electron/voice/voice-settings.ts");
-  ok(/ball: \{ visible: true, hints: true, style: DEFAULT_VOICE_BALL_STYLE \}/.test(voiceSettingsSrc)
+  ok(/ball: \{ visible: true, hints: true, style: DEFAULT_VOICE_BALL_STYLE, quiet: false \}/.test(voiceSettingsSrc)
     && /style: normalizeVoiceBallStyle\(\(ball as any\)\.style\)/.test(voiceSettingsSrc),
     "主进程设置默认 + 显式映射 ball.style（⛔ 漏映射 = 设置页选了不生效）");
   const floatStateSrc = read("src/components/VoiceCallFloat/use-voice-call-float-state.tsx");
@@ -1009,6 +1009,41 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     && /\.voice-ball-keyboard \{[^}]*pointer-events:\s*none/.test(reactionCss)
     && /\.voice-keyboard-key \{[^}]*animation:\s*voice-key-tap/.test(reactionCss),
     "位移层、瞳孔缩放（独立 scale 属性）与迷你键盘样式在位（键盘不占布局、不拦点击）");
+}
+
+/* ── 任务姿态 + 安静陪伴（10-29 用户令：人性化联动 + 情绪价值；同步主仓 dec5eba9b）── */
+{
+  const moodFile = "src/components/VoiceCallFloat/use-voice-task-mood.ts";
+  const moodSrc = codeOnlyTs(read(moodFile));
+  const ballFloat = codeOnlyTs(floatTsx);
+  ok(/export function useVoiceTaskMood/.test(moodSrc) && /onEvent\(/.test(moodSrc) && /onHarnessEvent\(/.test(moodSrc),
+    "任务姿态来自引擎事件（onEvent + onHarnessEvent 双订阅），⛔ 不读卡片 DOM 当第二真相");
+  ok(/sameThread/.test(moodSrc) && /threadRef\.current/.test(moodSrc),
+    "事件按当前会话过滤（后台专家/别的会话不能点亮这颗球）");
+  ok(/DONE_HOLD_MS = 6000/.test(moodSrc) && /FAILED_HOLD_MS = 4000/.test(moodSrc),
+    "收尾反馈有保留窗口（done 6s / failed 4s，之后回 idle —— 不是永久挂脸）");
+  ok(/moodRef\.current === \"waiting\"/.test(moodSrc) && /next !== \"idle\" && next !== \"done\" && next !== \"failed\"/.test(moodSrc),
+    "waiting 优先级最高（确认期间后续 item 不改姿态，与宠物域同口径）");
+  ok(/data-task=\{taskMood\}/.test(ballFloat) && /useVoiceTaskMood\(threadId\)/.test(ballFloat) && /taskMood: taskMood/.test(ballFloat),
+    "球挂 data-task 姿态，并把姿态喂进状态 hook（气泡池跟着走）");
+  ok(/if \(!hintsEnabled \|\| quiet \|\| autoMuted\) \{ setHint\(null\); return; \}/.test(hook),
+    "气泡三道闸：用户开关 / 安静陪伴 / 当天降噪 —— 任何一个都不冒泡");
+  ok(/HINT_IGNORE_LIMIT = 3/.test(hook) && /HINT_MUTE_KEY/.test(hook) && /localStorage\.setItem\(HINT_MUTE_KEY/.test(hook),
+    "自适应降噪：连续 3 条没人理 ⇒ 当天静音（localStorage 记日期）");
+  ok(/noteBallInteraction/.test(hook) && /noteBallInteraction\(\)/.test(ballFloat) && /localStorage\.removeItem\(HINT_MUTE_KEY/.test(hook),
+    "球上任何交互都清零降噪计数并解除静音（用户回来就恢复说话）");
+  ok(/toggleQuiet/.test(hook) && /quiet: next/.test(hook) && /安静陪伴（不说话）/.test(floatTsx),
+    "安静陪伴：右键菜单开关 + 落盘 voice-settings（设置页同一字段）");
+  ok(/taskMood !== \"idle\" && taskMood !== \"failed\"/.test(codeOnlyTs(read("src/components/VoiceCallFloat.tsx"))),
+    "failed 态不弹文案（只做表情 —— 挫败时最烦话多）");
+  const ballCssTask = codeOnlyCss(read("src/styles/18-openai-dialog.css"));
+  ok(/\.voice-ball\[data-task="done"\] \.voice-mascot \{ animation: voice-task-done/.test(ballCssTask)
+    && /@keyframes voice-task-done/.test(ballCssTask)
+    && /prefers-reduced-motion: reduce[\s\S]{0,200}\.voice-ball\[data-task\] \.voice-mascot \{ animation: none/.test(ballCssTask),
+    "CSS：收尾动效 + 减动效降级（prefers-reduced-motion 下一律静止）");
+  const ballVoiceSettings = read("electron/voice/voice-settings.ts");
+  ok(/quiet\?: boolean/.test(ballVoiceSettings) && /quiet: \(ball as any\)\.quiet === true/.test(ballVoiceSettings),
+    "voice-settings 落盘 quiet（缺省 false，老档案升级不改行为）");
 }
 
 console.log(`\n【voice-call】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
