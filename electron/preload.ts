@@ -931,6 +931,12 @@ contextBridge.exposeInMainWorld("codex", {
   workLogsRead: (input: { path: string }) => __ipc("work-logs:read", 1, [input]),
   /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
   workLogsScan: () => __ipc("work-logs:scan", 0, []),
+  /* 聚合读取：应用内键 + 截图/语音键 */
+  shortcutsRead: () => __ipc("shortcuts:read", 0, []),
+  /* 只写应用内键；截图/语音由各自通道写 */
+  shortcutsSave: (input: { bindings?: Record<string, string[]> } = {}) => __ipc("shortcuts:save", 0, [input]),
+  /* 恢复默认（截图/语音不动） */
+  shortcutsReset: () => __ipc("shortcuts:reset", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
