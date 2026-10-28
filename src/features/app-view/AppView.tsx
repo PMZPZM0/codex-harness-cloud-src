@@ -182,6 +182,7 @@ import { HtmlPreviewBridge } from "../html-preview";
 /* OpenFilm Studio → 右栏内置浏览器（10-27）：主进程 open 完广播 studio 事件，这里接管打开。 */
 import { OpenfilmBridge } from "../openfilm";
 import { RightFileBridge } from "./AppView/RightFileBridge";
+import { CloudAccountSyncBridge } from "../settings-cloud";
 /* 汇总卡 → 右栏「审阅」（10-18 用户对照 Qoder）：点文件行打开右栏审阅页。
    与 HTML 预览桥同款：只在主窗口挂，返回 null。 */
 import { TurnReviewBridge } from "../status";
@@ -478,6 +479,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
       {!popoutThreadId && <HtmlPreviewBridge app={app} />}
+      {!popoutThreadId && <CloudAccountSyncBridge />}
       <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice, rightOpen: app.rightOpen, rightTab: app.rightTab }} />
       {!popoutThreadId && <RightFileBridge app={app} />}
       {!popoutThreadId && <TurnReviewBridge onOpen={() => {

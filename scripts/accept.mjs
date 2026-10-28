@@ -516,6 +516,45 @@ await h.pressKey("Escape");
     },
   },
   {
+    id: "cloud-account",
+    name: "☁️ 云账号：桌面仓云账号板块已替换云管理 + 云助手专属项仍在（10-28）",
+    run: async (h) => {
+      await h.eval(`(function(){ if(!document.querySelector(".settings-modal")) document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(700);
+      /* 本地静态预览不走 headless 的 index 注入 ⇒ 闸变量要自己给（生产由 headless 写进页面）。 */
+      await h.eval(`(function(){ window.__CHC_ACCOUNT_GATE__ = true; return 1; })()`);
+      const navClick = async (label) => h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()===${JSON.stringify(label)}; }); if(!b) return 0; b.click(); return 1; })()`);
+      await navClick("云账号");
+      await wait(1500);
+      const page = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        return { active:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          hasSection:!!m.querySelector(".cloud-acct-section"),
+          hasLogin:!!m.querySelector('[data-testid="cloud-login-simple"]'),
+          hasReady:!!m.querySelector('[data-testid="cloud-ready"]'),
+          unsupported:!!m.querySelector('[data-testid="cloud-account-unsupported"]'),
+          extras:!!m.querySelector('[data-testid="cloud-assistant-extras"]') };
+      })()`).catch(() => null);
+      h.check("① 云账号页：账号板块已挂载（登录卡 / 就绪清单 / 旧壳说明 三选一）+ 云助手专属区在",
+        Boolean(page && page.active === "云账号" && page.hasSection && page.extras
+          && (page.hasLogin || page.hasReady || page.unsupported)), JSON.stringify(page));
+
+      const opened = await h.eval(`(function(){ const b=[...document.querySelectorAll('[data-testid="cloud-assistant-extras"] button')].find(function(x){ return (x.textContent||"").includes("打开设备与云服务设置"); }); if(!b) return 0; b.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".cloud-manage-card")`, { label: "云助手专属面板", timeoutMs: 5000 }).catch(() => undefined);
+      const dlg = await h.eval(`(function(){ const c=document.querySelector(".cloud-manage-card"); if(!c) return null;
+        const t=c.innerText||"";
+        return { hasBenefit:t.includes("限时福利"), hasDevice:t.includes("设备 / 座位"),
+          hasPoints:t.includes("我的积分"), hasSync:t.includes("会话同步") }; })()`).catch(() => null);
+      h.check("② 云助手专属面板：保留设备/座位与限时福利，积分与会话同步已移出（不出现两份）",
+        Boolean(opened && dlg && dlg.hasBenefit && dlg.hasDevice && !dlg.hasPoints && !dlg.hasSync), JSON.stringify(dlg));
+      await h.eval(`(function(){ document.querySelector(".cloud-manage-x")?.click(); return 1; })()`);
+      await wait(400);
+      const closed = await h.eval(`!document.querySelector(".cloud-manage-card")`).catch(() => false);
+      h.check("③ 面板可关闭（不留遮罩挡住设置页）", closed === true, String(closed));
+    },
+  },
+  {
     id: "function-menu",
     name: "🧩 功能入口：新建/搜索下面或侧栏底部 + 拖动排序 + 更多 + 首次教程（10-24）",
     run: async (h) => {

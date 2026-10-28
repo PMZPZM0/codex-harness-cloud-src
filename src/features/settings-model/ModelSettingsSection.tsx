@@ -269,7 +269,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                               <label
                                 className={`provider-switch ${(p.enabled === false || pseudoOff) ? "off" : ""}`}
                                 title={cloudLocked && !isPseudoPptoken
-                                  ? "云端模型模式已开启：本地供应商开关已锁定（如需使用本地供应商，请先到云端管理关闭「云端模型模式」）"
+                                  ? "云端模型模式已开启：本地供应商开关已锁定（如需使用本地供应商，请先到 设置 → 云账号 → 云助手专属 关闭「云端模型模式」）"
                                   : (isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : "已禁用 · 点击启用（会自动停用当前供应商）"))}
                                 onClick={(event) => { event.stopPropagation(); selectProviderDraft(p, isPseudoPptoken); }}
                               >

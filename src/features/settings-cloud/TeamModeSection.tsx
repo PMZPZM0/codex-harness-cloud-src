@@ -1,0 +1,249 @@
+/**
+ * 团队工作模式（10-24）—— 云账号页里的一个独立区块。
+ *
+ * 为什么需要它：团队记忆 / 团队知识库在云端只是"凭据 + 库"，本机默认什么都没接。
+ * 这一块负责把本机切到某个团队：**对话上游换成团队记忆端点**（记忆在请求层自动注入/写入），
+ * **团队知识库接成 MCP 连接器**（与个人 cloud-kb 互斥，工具名相同）。
+ *
+ * ⛔ 三条必须在界面上讲清楚（否则用户会以为"个人记忆坏了"）：
+ *   ① 记忆通道是**独占**的：进入团队 = 个人记忆暂停；退出后要回云账号页再同步一次个人记忆。
+ *   ② 团队库和个人库**不能同时接**（两个 WeKnora 连接器工具名相同）。
+ *   ③ 空间没开通时如实说"未开通"，⛔ 不画一个假装能用的开关。
+ */
+import { useCallback, useEffect, useState } from "react";
+import { LogIn, LogOut, RefreshCw, TriangleAlert, Upload, Users } from "lucide-react";
+import { AppSelect } from "../../components/AppSelect";
+
+type TeamRow = {
+  id: string;
+  name: string;
+  role: string;
+  seats: { used: number; limit: number };
+  memoryEnabled: boolean;
+  kbEnabled: boolean;
+};
+
+type TeamStatus = {
+  active: boolean;
+  /** "team" = 模型调用扣团队积分；"personal" = 还没接上团队通道（扣个人积分）。 */
+  billing: "team" | "personal";
+  team: { id: string; name: string; role: string; enteredAt: number } | null;
+  memory: { on: boolean; scope: "team" | "personal" | "model" };
+  kb: { teamConnector: boolean; personalConnector: boolean; url: string };
+};
+
+type EnterReply = {
+  ok: boolean;
+  error?: string;
+  team?: { id: string; name: string };
+  memory?: { ready: boolean };
+  kb?: { ready: boolean; url: string };
+  missing?: string[];
+};
+
+type UploadRow = { name: string; ok: boolean; error?: string; message?: string; cost?: number; usedMb?: number; quotaMb?: number };
+
+type TeamApi = {
+  teamList?: () => Promise<{ ok: boolean; teams: TeamRow[]; error?: string; policyEnabled?: boolean }>;
+  teamEnter?: (input?: { teamId?: string }) => Promise<EnterReply>;
+  teamExit?: () => Promise<{ ok: boolean; error?: string; note?: string }>;
+  teamStatus?: () => Promise<{ ok: boolean } & TeamStatus>;
+  teamUpload?: (input?: { paths?: string[] }) => Promise<{ ok: boolean; error?: string; results: UploadRow[] }>;
+  chooseFiles?: () => Promise<string[]>;
+};
+
+const teamApi = (): TeamApi => window.codex as unknown as TeamApi;
+
+const ROLE_LABEL: Record<string, string> = { owner: "所有者", admin: "管理员", member: "成员" };
+
+/** 一句话说清现在生效的是什么（⛔ 三态互斥，别让用户自己推）。 */
+function scopeText(st: TeamStatus | null): string {
+  if (!st) return "读取中…";
+  if (st.memory.scope === "team") return "对话已走团队记忆（请求层自动注入 / 写入）";
+  if (st.memory.scope === "personal") return "对话走个人记忆（团队记忆未生效）";
+  return "对话走纯模型端点（没有记忆）";
+}
+
+export function TeamModeSection() {
+  const [teams, setTeams] = useState<TeamRow[] | null>(null);
+  const [status, setStatus] = useState<TeamStatus | null>(null);
+  const [pick, setPick] = useState("");
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
+  const [err, setErr] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [upResults, setUpResults] = useState<UploadRow[]>([]);
+
+  const load = useCallback(async () => {
+    const api = teamApi();
+    const [list, st] = await Promise.all([api.teamList?.(), api.teamStatus?.()]);
+    if (list && list.ok) {
+      setTeams(list.teams);
+      setErr("");
+    } else {
+      setTeams([]);
+      setErr(list?.error === "not-logged-in" ? "not-logged-in" : list?.error || "读取团队列表失败");
+    }
+    if (st && st.ok) {
+      setStatus({ active: st.active, billing: st.billing, team: st.team, memory: st.memory, kb: st.kb });
+      if (st.active && st.team) setPick(st.team.id);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const enter = async () => {
+    const teamId = pick || status?.team?.id || "";
+    if (!teamId) return;
+    setBusy("enter");
+    setMsg(null);
+    try {
+      const r = (await teamApi().teamEnter?.({ teamId })) || { ok: false, error: "通道未就绪" };
+      if (!r.ok) {
+        const map: Record<string, string> = {
+          "not-a-member": "你不是这个团队的成员",
+          "not-logged-in": "云账号未登录",
+          "safe-storage-unavailable": "系统安全存储不可用，无法保存团队凭据",
+          "missing-team-id": "没选团队",
+        };
+        setMsg({ tone: "bad", text: map[r.error || ""] || `进入失败：${r.error || "未知错误"}` });
+        return;
+      }
+      const parts = [
+        r.memory?.ready ? "团队记忆已接通" : "团队记忆未接通",
+        r.kb?.ready ? "团队知识库已接成本机 MCP" : "团队知识库未接通",
+      ];
+      setMsg({
+        tone: r.memory?.ready || r.kb?.ready ? "ok" : "bad",
+        text: parts.join(" · ") + (r.missing?.length ? `（${r.missing.join("；")}）` : ""),
+      });
+      await load();
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const exit = async () => {
+    setBusy("exit");
+    setMsg(null);
+    try {
+      const r = (await teamApi().teamExit?.()) || { ok: false, error: "通道未就绪" };
+      setMsg({ tone: r.ok ? "ok" : "bad", text: r.ok ? r.note || "已退出团队模式" : `退出失败：${r.error || "未知错误"}` });
+      await load();
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const upload = async () => {
+    const files = (await teamApi().chooseFiles?.()) || [];
+    if (!files.length) return;
+    setUploading(true);
+    setUpResults([]);
+    try {
+      const r = (await teamApi().teamUpload?.({ paths: files })) || { ok: false, error: "通道未就绪", results: [] };
+      setUpResults(r.results || []);
+      if (!r.ok && r.error) setMsg({ tone: "bad", text: `上传失败：${r.error}` });
+      else if (r.results?.some((x) => x.ok)) setMsg({ tone: "ok", text: `已上传 ${r.results.filter((x) => x.ok).length} 个文件到团队库` });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const active = Boolean(status?.active);
+  const notLoggedIn = err === "not-logged-in";
+
+  return (
+    <section className="cloud-team-block" data-testid="team-mode-section">
+      <div className="cloud-team-head">
+        <Users size={16} />
+        <b>团队工作模式</b>
+        <span className={`cloud-acct-tag ${active ? "on" : "off"}`}>{active ? `已进入：${status?.team?.name || ""}` : "未进入"}</span>
+        <button className="cloud-team-refresh" type="button" onClick={() => void load()} title="刷新">
+          <RefreshCw size={13} />
+        </button>
+      </div>
+
+      {/* 10-26 三轮用户令：「文字不要老是换行，123 一个个写好」⇒ 原来那一坨长句拆成三条编号，
+          每条只讲一件事（记忆 / 计费 / 知识库），一行能读完。 */}
+      <ol className="cloud-team-note cloud-team-steps">
+        <li><b>团队记忆</b>：对话上游切到团队记忆，队友进同一团队即共享。</li>
+        <li><b>团队积分</b>：模型调用经云端转发，1 点 = 1 个个人积分额度。</li>
+        <li><b>团队知识库</b>：接成本机 MCP，模型可直接检索团队文档。</li>
+      </ol>
+
+      {notLoggedIn ? (
+        <p className="cloud-team-hint">先在页面上方登录云账号，团队列表才会出来。</p>
+      ) : (
+        <div className="cloud-team-row">
+          {/* ⛔ 渲染层禁用原生 select（守卫【197】）：用 AppSelect（自带弹层/键盘/翻转） */}
+          <AppSelect
+            className="cloud-team-pick"
+            value={pick}
+            onChange={setPick}
+            ariaLabel="选择团队"
+            options={[
+              { value: "", label: teams === null ? "读取中…" : teams.length ? "选择团队…" : "没有可用的团队" },
+              ...(teams || []).map((t) => ({
+                value: t.id,
+                label: `${t.name}（${ROLE_LABEL[t.role] || t.role} · 席位 ${t.seats.used}/${t.seats.limit}）`,
+              })),
+            ]}
+          />
+          <button className="cloud-team-btn primary" type="button" disabled={!pick || Boolean(busy)} onClick={() => void enter()}>
+            <LogIn size={14} />{busy === "enter" ? "正在进入…" : "进入团队模式"}
+          </button>
+          <button className="cloud-team-btn" type="button" disabled={!active || Boolean(busy)} onClick={() => void exit()}>
+            <LogOut size={14} />{busy === "exit" ? "正在退出…" : "退出"}
+          </button>
+        </div>
+      )}
+
+      {err && !notLoggedIn ? (
+        <p className="cloud-team-bad"><TriangleAlert size={13} />{err === "unauthorized" ? "登录已过期，请重新登录云账号" : err}</p>
+      ) : null}
+
+      <div className="cloud-team-state">
+        <span>记忆通道：{scopeText(status)}</span>
+        <span>模型计费：{status?.billing === "team" ? "扣团队积分" : "扣个人积分"}</span>
+        <span>团队知识库：{status?.kb.teamConnector ? "已接（cloud-kb-team）" : "未接"}</span>
+        <span>个人知识库：{status?.kb.personalConnector ? "已接（进入团队时会暂时让位）" : "未接"}</span>
+      </div>
+
+      {active ? (
+        <div className="cloud-team-row">
+          <button className="cloud-team-btn" type="button" disabled={uploading} onClick={() => void upload()}>
+            <Upload size={14} />{uploading ? "上传中…" : "上传文档到团队库"}
+          </button>
+          <span className="cloud-team-hint" style={{ margin: 0 }}>
+            单文件 ≤24MB；图片需视觉模型；按 1 点/MB 扣团队积分（走云端计费与权限，失败自动退分）
+          </span>
+        </div>
+      ) : null}
+      {upResults.length ? (
+        <ul className="cloud-team-uploads">
+          {upResults.map((r) => (
+            <li key={r.name} className={r.ok ? "ok" : "bad"}>
+              {r.ok ? `✓ ${r.name}（${r.cost ?? 0} 点）` : `✗ ${r.name}：${r.message || r.error || "失败"}`}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {active && status?.billing === "personal" ? (
+        <p className="cloud-team-bad">
+          <TriangleAlert size={13} />团队通道未接通：模型调用<b>仍扣个人积分</b>（团队空间未开通）。请 owner 开通后重新进入。
+        </p>
+      ) : null}
+
+      <p className="cloud-team-hint">
+        ⛔ 记忆通道是独占的：进入团队后<b>个人记忆暂停</b>；退出后回本页点一次「同步记忆」即可恢复个人记忆。
+        团队空间由团队 owner 在网页端「团队概览 → 开通 / 修复团队空间」创建。
+      </p>
+
+      {msg ? <p className={msg.tone === "ok" ? "cloud-team-ok" : "cloud-team-bad"}>{msg.text}</p> : null}
+    </section>
+  );
+}

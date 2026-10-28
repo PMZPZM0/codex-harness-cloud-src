@@ -222,6 +222,38 @@ contextBridge.exposeInMainWorld("codex", {
   writeClipboardImage: (filePath: string) => __ipc("clipboard:write-image", 1, [filePath]),
   /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
   respondCloseConfirm: (action: "tray" | "quit" | "cancel", remember: boolean) => __ipc("close-confirm:respond", 2, [action, remember]),
+  /* 云账号登录（10-16）：账号密码换云端 Bearer 会话令牌，safeStorage 加密后落 userData/cloud/auth.json。⛔ 不是配对流程 —— 服务端 accountWho() 同时认会话令牌与设备令牌 */
+  cloudAuthLogin: (input: { baseUrl?: string; username?: string; password?: string }) => __ipc("cloud-auth:login", 1, [input]),
+  /* 退出云账号（缺省 = 当前生效那个）。⛔ 最后一个账号被删时才收摊（停用云供应商行与两个 MCP 连接器，都只停用不删除） */
+  cloudAuthLogout: (id?: string) => __ipc("cloud-auth:logout", 0, [id]),
+  /* 云账号积分（服务端 /points/me）：余额 + 最近 30 条变动明细。⛔ 账户级数据，故挂在 cloud-auth 域而不是另开板块 */
+  cloudAuthPoints: () => __ipc("cloud-auth:points", 0, []),
+  /* 云账号登录态（⛔ 只回账号与「有没有」，不回任何令牌） */
+  cloudAuthStatus: () => __ipc("cloud-auth:status", 0, []),
+  /* 切换生效云账号（多账号并存时用） */
+  cloudAuthSwitch: (id: string) => __ipc("cloud-auth:switch", 1, [id]),
+  /* 云端知识库连接器状态（只读本地，不联网） */
+  cloudKbStatus: () => __ipc("cloud-kb:status", 0, []),
+  /* 把云端知识库接成 MCP 连接器 cloud-kb（streamable_http + 令牌走环境变量，⛔ 不落 config.toml）。未开通权益时只停用连接器并回报原因 */
+  cloudKbSync: () => __ipc("cloud-kb:sync", 0, []),
+  /* 云端记忆状态（只读本地，不联网） */
+  cloudMemoryStatus: () => __ipc("cloud-memory:status", 0, []),
+  /* 取云端记忆凭据（加密缓存）。⛔ 记忆中枢当前**没有 MCP 端点**（实测 /mcp、/v1/mcp、/sse 全 404），故 mode 恒为 rest-only 且不建连接器 —— 等本地 stdio 适配器 */
+  cloudMemorySync: () => __ipc("cloud-memory:sync", 0, []),
+  /* 把「云端模型」设为当前生效供应商（用户显式点击）。⛔ 自动同步绝不抢生效位，只有这条会；切换会重启引擎以让新 Key/地址生效 */
+  cloudModelsActivate: () => __ipc("cloud-models:activate", 0, []),
+  /* 云端模型目录（服务端 /models 原样透传）：含逐模型勾选状态 enabled 与积分倍率 credits（creditsLocked=管理员已钉住、upstreamCredits=上游原值），以及闲时倍率快照 offPeak（时段按服务端本地时间，tzOffsetMinutes 供客户端换算）。⛔ 不返回任何密钥与上游地址 */
+  cloudModelsCatalog: () => __ipc("cloud-models:catalog", 0, []),
+  /* 勾选云端模型（写**服务端** /models/enabled，权威在云端）→ 写完后立刻同步到本机下拉框。勾选语义：勾上 = 下拉框可见 */
+  cloudModelsSetEnabled: (input: { ids: string[] }) => __ipc("cloud-models:set-enabled", 1, [input]),
+  /* 本机云供应商状态（只读本地，不联网）：是否已注册 / 模型数 / 是否已有 Key / 上次同步时间 */
+  cloudModelsStatus: () => __ipc("cloud-models:status", 0, []),
+  /* 把云端目录同步成本机供应商行（登录成功后 / 手动刷新 / 定时轮询都调它）。⛔ 同时写复数列表与单数生效档案（10-16「勾 5 个下拉 15 个」事故的防线）；force=true 会重签代理令牌 */
+  cloudModelsSync: (input?: { force?: boolean }) => __ipc("cloud-models:sync", 0, [input]),
+  /* 云端模型连通测试（10-19）：探**引擎实际会用的那条路**（本地桥 + 云供应商行合成后的 baseUrl/key，记忆开启时即 memapi + 记忆 userKey）。401/403 自动重签一次并重探；forceHeal=true = 界面「重签密钥并重试」。成功由界面提示保存并重启应用 */
+  cloudModelsTest: (input?: { forceHeal?: boolean }) => __ipc("cloud-models:test", 0, [input]),
+  /* 取云代理令牌（/proxy/token，明文**仅此一次**）。⛔ 供「Key 掉了」的修复入口用；落盘一律加密 */
+  cloudModelsToken: (input?: { force?: boolean }) => __ipc("cloud-models:token", 0, [input]),
   /* 云版预留（真实现）：列出本机已配对设备/用户（HARNESS_CLOUD_HOME/users.json），token 只给指纹前 6 位 */
   cloudDeviceList: () => __ipc("cloud:device/list", 0, []),
   /* 云版预留（真实现）：解绑设备/用户（从 users.json 移除，其 token 立即失效） */
@@ -232,6 +264,8 @@ contextBridge.exposeInMainWorld("codex", {
   cloudNotifyMarkRead: (id: string) => __ipc("cloud:notify/mark-read", 1, [id]),
   /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
   cloudSyncConflictResolve: (key: string, resolution: string) => __ipc("cloud:sync/conflict/resolve", 2, [key, resolution]),
+  /* 10-18：列出本地会话供勾选上传（只读，不写游标） */
+  cloudSyncList: () => __ipc("cloud:sync/list", 0, []),
   /* 云版预留：按 key 从云端拉回数据（未开通前为预留桩） */
   cloudSyncPull: (input?: { keys: string[] }) => __ipc("cloud:sync/pull", 0, [input]),
   /* 云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}） */
@@ -340,6 +374,8 @@ contextBridge.exposeInMainWorld("codex", {
   installExpertMarketPackage: (input: { slug: string }) => __ipc("expert-market:install", 1, [input]),
   /* SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包） */
   listExpertMarketPackages: (input: { page?: number; pageSize?: number; query?: string } = {}) => __ipc("expert-market:list", 0, [input]),
+  /* 竖条 + 功能入口菜单的可扩展目录 */
+  extensionsCatalog: () => __ipc("extensions:catalog", 0, []),
   openExternal: (url: string) => __ipc("external:open", 1, [url]),
   addFavorite: (input: unknown) => __ipc("favorites:add", 1, [input]),
   clearFavorites: () => __ipc("favorites:clear", 0, []),
@@ -385,6 +421,14 @@ contextBridge.exposeInMainWorld("codex", {
   readImage: (path: string) => __ipc("image-lab:read", 1, [{ path }]),
   /* 在应用内弹「图像工坊」浮层给用户看一张图。只读展示、**不自动收起**（由用户自己关）。零凭证 */
   imageView: (input: unknown) => __ipc("image-lab:view", 1, [input]),
+  /* 追加一条 */
+  journalAppend: (date: string, title: string, body: string) => __ipc("journal:append", 3, [date, title, body]),
+  journalList: () => __ipc("journal:list", 0, []),
+  journalRead: (date: string) => __ipc("journal:read", 1, [date]),
+  journalRemove: (date: string) => __ipc("journal:remove", 1, [date]),
+  /* 整篇覆盖 */
+  journalSave: (date: string, content: string) => __ipc("journal:save", 2, [date, content]),
+  journalSearch: (query: string) => __ipc("journal:search", 1, [query]),
   addKnowledgeFiles: (input: { workspace?: string; paths?: string[] }) => __ipc("kb:add-files", 1, [input]),
   addKnowledgeText: (input: { workspace?: string; title?: string; text?: string; source?: string }) => __ipc("kb:add-text", 1, [input]),
   /* 读取知识库后端：local=项目本地库 / cloud=云端 weknora（MCP） */
@@ -727,6 +771,16 @@ contextBridge.exposeInMainWorld("codex", {
   listTeamRuns: (threadId: string) => __ipc("team-runs:list", 1, [threadId]),
   teamThreadsMap: () => __ipc("team-threads:map", 0, []),
   teamOfThread: (threadId: string) => __ipc("team-threads:team-of", 1, [threadId]),
+  /* 进入团队模式（切团队记忆上游 + 接团队知识库） */
+  teamEnter: (input?: { teamId?: string }) => __ipc("team:enter", 0, [input]),
+  /* 退出团队模式（恢复个人知识库连接器） */
+  teamExit: () => __ipc("team:exit", 0, []),
+  /* 团队工作模式：我加入的团队 */
+  teamList: () => __ipc("team:list", 0, []),
+  /* 团队模式当前生效状态 */
+  teamStatus: () => __ipc("team:status", 0, []),
+  /* 上传本机文件到团队知识库（走云端计费与权限闸） */
+  teamUpload: (input?: { paths?: string[] }) => __ipc("team:upload", 0, [input]),
   invokeTeamMember: (input: unknown) => __ipc("teams:invoke-member", 1, [input]),
   listExpertTeams: () => __ipc("teams:list", 0, []),
   startTeamMemberSession: (input: unknown) => __ipc("teams:member-session", 1, [input]),
@@ -775,6 +829,13 @@ contextBridge.exposeInMainWorld("codex", {
   /* 更新：读当前状态机（相位/进度/速度/剩余/更新说明/稍后安装版本/是否电池供电） */
   updateStateRead: () => __ipc("updates:state-read", 0, []),
   getUsername: () => __ipc("user:name", 0, []),
+  /* 主进程解密后直写剪贴板（明文不返回渲染层） */
+  vaultCopy: (id: string) => __ipc("vault:copy", 1, [id]),
+  /* 密码本列表（不含明文，只有 hasSecret） */
+  vaultList: () => __ipc("vault:list", 0, []),
+  vaultRemove: (id: string) => __ipc("vault:remove", 1, [id]),
+  /* 保存/更新一条；password 省略=保留原密码 */
+  vaultSave: (input: Record<string, unknown>) => __ipc("vault:save", 1, [input]),
   /* 按顺序合并视频片段成一条成片（整片导出）：先 -c copy，失败回落统一重编码；输出 <workspace>/.drama-canvas/export/ */
   videoConcat: (input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }) => __ipc("video:concat", 1, [input]) as Promise<{ path: string; bytes: number; mode: "copy" | "reencode"; parts: number }>,
   /* 各厂商凭证（userData/video-providers.json） */
@@ -870,23 +931,6 @@ contextBridge.exposeInMainWorld("codex", {
   workLogsRead: (input: { path: string }) => __ipc("work-logs:read", 1, [input]),
   /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
   workLogsScan: () => __ipc("work-logs:scan", 0, []),
-  /* 密码本列表（不含明文，只有 hasSecret） */
-  vaultList: () => __ipc("vault:list", 0, []),
-  /* 保存/更新一条；password 省略=保留原密码 */
-  vaultSave: (input: Record<string, unknown>) => __ipc("vault:save", 1, [input]),
-  vaultRemove: (id: string) => __ipc("vault:remove", 1, [id]),
-  /* 主进程解密后直写剪贴板（明文不返回渲染层） */
-  vaultCopy: (id: string) => __ipc("vault:copy", 1, [id]),
-  journalList: () => __ipc("journal:list", 0, []),
-  journalRead: (date: string) => __ipc("journal:read", 1, [date]),
-  /* 整篇覆盖 */
-  journalSave: (date: string, content: string) => __ipc("journal:save", 2, [date, content]),
-  /* 追加一条 */
-  journalAppend: (date: string, title: string, body: string) => __ipc("journal:append", 3, [date, title, body]),
-  journalRemove: (date: string) => __ipc("journal:remove", 1, [date]),
-  journalSearch: (query: string) => __ipc("journal:search", 1, [query]),
-  /* 竖条 + 功能入口菜单的可扩展目录 */
-  extensionsCatalog: () => __ipc("extensions:catalog", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

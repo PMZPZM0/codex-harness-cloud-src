@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { RelayBalanceBadge, RelayCenterPage } from "../../../../relay";
 import { OpenaiBalanceBadge, OpenaiSubscriptionPage } from "../../../../openai";
+import { CloudPointsBadge } from "../../../../settings-cloud";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../../lib/entity-avatar";
 /*指挥中枢上下文（域间只走 barrel）—— ⛔ 指挥中枢的项目地址由**欢迎界面**独占设置，
    输入框上方那枚「项目地址」芯片不能出现（它读的是全局 workspace ⇒ 会串到别的会话的目录）。 */
@@ -599,6 +600,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                             <div className="model-controls">
                               {relayActive && customModel?.provider === relayActive.provider && <RelayBalanceBadge active={relayActive} />}
                               {customModel?.provider === "openai-official" && <OpenaiBalanceBadge accountKey={openaiActiveAcct ?? "openai-official"} />}
+                              <CloudPointsBadge active={customModel?.provider === "cloud"} />
                               <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} onCompact={() => { if (thread?.id) { compactPendingRef.current.add(thread.id); setCompactEventState("running"); window.codex.request("thread/compact/start", { threadId: thread.id }).catch((error: any) => { compactPendingRef.current.delete(thread.id); setCompactEventState("error", error.message); }); } }} />
                               <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} width={330} options={[...allModels.map((model) => ({
                                 value: model.id,

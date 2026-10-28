@@ -9,7 +9,6 @@ import { isMacPlatform } from "../../../lib/is-mac-platform";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { FileTrustDialog } from "../../../components/FileTrustDialog";
-import { CloudManageDialog } from "../../../components/CloudManageDialog";
 import { hk } from "../../../lib/hk";
 import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
 import { EntityTagEditorHost } from "../../../components/EntityTagEditor";
@@ -317,8 +316,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   // ⛔ 10-21 用户要求：侧栏能力入口按用途分行（前端 UI / 技能插件 MCP / 智能体 / 人格记忆知识库），
   //   点击弹窗看教程；纯局部 UI 状态，不跨组件共享、不进 bag。
   const [guideKey, setGuideKey] = useState<SidebarGuideKey | null>(null);
-  // ⛔ 10-13 云端管理（云助手形态专属）：同款纯局部 UI 状态（不进 bag）。
-  const [cloudManageOpen, setCloudManageOpen] = useState(false);
   /* 登录管理（10-21 用户要求）：三处账户一处直达，纯局部弹窗状态。 */
   const [loginMgrOpen, setLoginMgrOpen] = useState(false);
   /* 新手教程（10-21 侧栏重排）：入口挪进底部导航组 ⇒ 打开状态提到这里（受控交给 NewbieGuide）。 */
@@ -826,8 +823,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     <div className="account-menu-sep" />
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("usage"); setSettingsOpen(true); }}><CircleGauge size={15} className="ic-blue" /><span>使用统计</span></button>
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("user"); setSettingsOpen(true); setMobileNav(false); }}><UserRound size={15} className="ic-blue" /><span>用户中心</span></button>
+                    {/* 10-28：入口改跳设置页「云账号」（云助手专属的设备/座位在页内高级区）。 */}
                     {window.__CHC_ACCOUNT_GATE__ === true ? (
-                      <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setCloudManageOpen(true); setMobileNav(false); }}><Cloud size={15} className="ic-cyan" /><span>云端管理</span></button>
+                      <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("cloud"); setSettingsOpen(true); setMobileNav(false); }}><Cloud size={15} className="ic-cyan" /><span>云账号</span></button>
                     ) : null}
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); void window.codex.openExternal("https://dl.ppz123.asia/feedback.html"); }}><MessageSquarePlus size={15} className="ic-amber" /><span>问题反馈</span><ExternalLink size={12} className="account-menu-arrow" /></button>
                     <div className="account-menu-sep" />
@@ -943,8 +941,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             <CloseConfirmDialog />
             {/* 工作区外文件预览的授权确认（10-18，应用内模态） */}
             <FileTrustDialog />
-            {/* ⛔ 10-13 云端管理面板：portal 到 body，放 aside 里不影响定位 */}
-            {cloudManageOpen ? <CloudManageDialog onClose={() => setCloudManageOpen(false)} /> : null}
             {/* 受控：传 open ⇒ NewbieGuide 不再画自己那行入口（否则底部会出现两个「新手」） */}
             <NewbieGuide open={newbieOpen} onOpenChange={setNewbieOpen} onOpenSettings={onOpenSettings} />
           </aside>

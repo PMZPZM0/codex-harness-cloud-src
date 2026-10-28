@@ -1,14 +1,15 @@
 /**
- * 云端管理（10-13 二期）—— 账户菜单「云端管理」入口的**应用内**面板。
+ * 云助手专属（10-13 建，10-28 收窄）—— 设备/座位 + 限时福利 + 云端更新。
  *
- * 职责：把"这台机器与云端的关系"说清楚 + 给出动作：
- *   · 连接状态：闸是否开 / 绑定的账号 / 服务器可达性 / 本机配对码（未绑定时）
+ * ⛔ 10-28 起**账号、积分、会话同步已搬到设置页「云账号」**（自桌面仓移植的账号体系）：
+ *   这里是它们之外、桌面版没有的云助手独有能力，避免两套界面各读一份同一状态。
+ *
+ * 职责：
+ *   · 连接状态：闸是否开 / 绑定的账号 / 服务器可达性 / 设备凭据
  *   · 设备（座位）列表：名称 + token 指纹 + 吊销（吊销后那台机器要重新认领）
  *   · 更新：cloud:update/check（探测云端 version.json）—— download/apply 尚未接线，**如实显示**
- *   · 我的积分：余额 + 变动明细（10-14 用户令「面板里啥都没有」补上）
  *   · 限时福利：内置供应商的可用模型 + 倍率 + 勾选（勾了才有权限调用）
- *   · 会话同步：立即上传 / 从云端下载
- *   · 断开连接：清空绑定与设备 token ⇒ 回到配对卡
+ *   · 断开连接 / 换绑：清空绑定与设备 token ⇒ 回到配对卡
  *
  * 数据源（两路，都有就都用，缺了就防御性降级）：
  *   · IPC（并行线的 cloud-reserve-ipc 域）：cloud:device/list / cloud:device/unbind / cloud:update/check
@@ -21,19 +22,19 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Cloud, CloudDownload, CloudUpload, Coins, Gift, HelpCircle, RefreshCw, RotateCw, Search, Unplug, X } from "lucide-react";
-import {syncLimitedBenefitQuiet, syncLimitedBenefit } from "../features/limited-benefit";
+import { Cloud, Gift, HelpCircle, RefreshCw, RotateCw, Search, Unplug, X } from "lucide-react";
+import {syncLimitedBenefitQuiet, syncLimitedBenefit } from "../limited-benefit";
 /* ⛔ 胶囊开关一律走统一 ToggleSwitch（守卫【234】⑧）：颜色/暗色适配由它一处负责，
    不在业务组件里手写轨道与圆点（手写必然各写各的色值 ⇒ 主题一变就露馅）。 */
-import { ToggleSwitch } from "./SettingsWidgets";
+import { ToggleSwitch } from "../../components/SettingsWidgets";
 /* ⛔ 令牌数格式化复用 model-specs 的单一真相源（1_050_000 → "1.05M"），不在此处抄第二份。 */
-import { formatTokenCount } from "../lib/model-specs";
+import { formatTokenCount } from "../../lib/model-specs";
 /* 闲时（限时）倍率状态（10-18）：用户令「管理员可以修改倍率」+「夜间/闲时倍率」。
    ⛔ 用 currentOffPeakWindow **现算**，不读 /models 回执里的 `offPeak.active`
    —— 后者是拉目录那一刻的快照，管理员刚改完时段就会显示错（可差好几分钟）。
    判定语义（服务端本地时间 / 左闭右开 / 跨零点）与积分扣减同一份实现，见 credit-estimate.mjs。 */
-import { currentOffPeakWindow } from "../lib/cloud-credit-store";
-import type { OffPeakConfig } from "../lib/credit-estimate.mjs";
+import { currentOffPeakWindow } from "../../lib/cloud-credit-store";
+import type { OffPeakConfig } from "../../lib/credit-estimate.mjs";
 
 type CloudState = {
   gated: boolean;
@@ -52,19 +53,6 @@ type CloudState = {
    ⛔ 旧字段 tokenFingerprint 早就不存在了 —— 用它当标签 + 拿 name 当 id 调用 ⇒ 永远 404 = "点解绑没反应"。 */
 type DeviceRow = { id: string; name: string; claimedAt?: number; lastSeen?: number; current?: boolean };
 type UpdateInfo = { available: boolean; current?: string; latest?: string; url?: string; notes?: string; reason?: string };
-/** 同步结果（与本机 /api/sync-now、/api/sync-state 对齐）。 */
-type SyncResultLike = { ok: boolean; reason?: string; pushedSessions?: number; pushedLines?: number; quotaExceeded?: boolean };
-/** 积分（服务端 /points/me，设备令牌也能读）。 */
-type PointsTxn = { id: number; at: number; delta: number; kind: string; ref: string; note?: string; after?: number };
-type PointsInfo = {
-  ok: boolean;
-  username?: string;
-  balance?: number;
-  signupGrant?: number;
-  txns?: PointsTxn[];
-  verify?: { balance: number; sum: number; ok: boolean };
-  error?: string;
-};
 /** 模型目录（服务端 /models）。倍率 credits 形如 "x0.29"。
     ⛔ 已勾选状态是**每个模型内联的 `enabled` 布尔**（不是顶层 id 数组）——
     按顶层数组读会永远拿到空集（"勾了刷新又没了"）。 */
@@ -94,13 +82,6 @@ type ModelsInfo = {
   offPeak?: OffPeakConfig;
   error?: string;
 };
-const KIND_LABEL: Record<string, string> = {
-  signup: "注册赠送",
-  grant: "管理员发放",
-  consume: "调用消耗",
-  reconcile: "对账冲正",
-  refund: "退回",
-};
 /* ⛔ 云通道（cloud:device/*、cloud:update/check）只存在于**云助手仓**的 manifest ⇒
    桌面仓的生成类型里没有它们。组件只在云助手形态挂载，但 TS 对三仓统一编译
    ⇒ 这里走**防御性可选类型**，运行时有就有、没有就不调（绝不在桌面仓硬引）。 */
@@ -123,7 +104,7 @@ async function fetchCloudState(): Promise<CloudState | null> {
   }
 }
 
-export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => void; onOpenSettings?: (page: string) => void }) {
+export function CloudAssistantPanel({ onClose, onOpenSettings }: { onClose: () => void; onOpenSettings?: (page: string) => void }) {
   const [state, setState] = useState<CloudState | null>(null);
   const [devices, setDevices] = useState<DeviceRow[] | null>(null);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
@@ -146,8 +127,6 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
 
   useEffect(() => {
     refresh();
-    loadSync();   // 会话同步状态（已上传会话数/行数/最近时间）
-    loadPoints(); // 积分余额与变动明细
     loadModels(); // 限时福利：可用模型 + 勾选
     /* ⛔ 打开面板即把服务端的勾选同步成本机供应商（幂等、静默）：
        本机模型下拉框只读本机供应商列表 ⇒ 不同步就是"勾了却选不到"（用户实测）。
@@ -194,18 +173,6 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
       .catch(() => setDisconnecting(false));
   };
 
-  /* ── 积分（服务端 /points/me，本机 /api/cloud-points 转发）────────────────── */
-  const [points, setPoints] = useState<PointsInfo | null>(null);
-  const [pointsErr, setPointsErr] = useState("");
-  function loadPoints() {
-    void fetch("/api/cloud-points", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j: PointsInfo) => {
-        if (j && j.ok) { setPoints(j); setPointsErr(""); }
-        else { setPoints(null); setPointsErr(j?.error === "no-device-token" ? "未绑定账号" : (j?.error || "读取失败")); }
-      })
-      .catch(() => { setPoints(null); setPointsErr("网络错误"); });
-  }
   /* ── 限时福利：模型目录（服务端 /models）+ 勾选（/models/enabled）─────────── */
   const [models, setModels] = useState<ModelsInfo | null>(null);
   const [modelsErr, setModelsErr] = useState("");
@@ -276,22 +243,6 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
       setNote("重启失败：" + ((e as Error)?.message || "未知错误"));
     }
   }
-  /* ── 一键刷新（积分余额 + 消耗流水 + 模型目录）──────────────────────────────
-     10-14 用户令：「加一个使用日志刷新功能，还有积分同步功能」+「积分也没有用了就刷新」。
-     这些数据在服务端都是**只读快照**，面板只在打开时拉一次 ⇒ 用着用着就过期了
-     （消耗一笔后余额/流水都不动），必须给一个手动重拉的入口。
-     ⛔ 只做重新读取；勾选写回仍走 commitModels 的整集覆盖，不在这里动写路径。 */
-  const [refreshingCloud, setRefreshingCloud] = useState(false);
-  function refreshCloudData() {
-    setRefreshingCloud(true);
-    loadSync();
-    loadPoints();
-    loadModels();
-    /* 三个 load 都是 fire-and-forget（各自内部 catch），给一个最短可见反馈即可 —— 
-       不做 await 编排：任何一路慢/失败都不该把按钮卡住（用户要的是"点了就刷"）。 */
-    window.setTimeout(() => setRefreshingCloud(false), 600);
-  }
-
   /* 勾选去抖 500ms 后再落盘（连点不会再打一串请求）。
      ⛔ 服务端契约是 `{ ids: [...] }` 整集覆盖 —— 发 `{ enabled }` 会被静默丢掉（勾选存不进去）。 */
   const modelsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -336,41 +287,6 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
     commitModels(next);
   };
 
-  /* 会话同步（P0 上传 / P1 下载）：状态读本机 /api/sync-state，动作打本机同步端点。 */
-  const [syncInfo, setSyncInfo] = useState<{ summary: { sessions: number; lines: number }; lastSyncAt: number; lastResult: SyncResultLike | null } | null>(null);
-  const [syncing, setSyncing] = useState<"up" | "down" | "">("");
-  function loadSync() {
-    void fetch("/api/sync-state", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j: { ok?: boolean; summary?: { sessions: number; lines: number }; lastSyncAt?: number; lastResult?: SyncResultLike | null }) => {
-        if (j && j.ok && j.summary) setSyncInfo({ summary: j.summary, lastSyncAt: Number(j.lastSyncAt || 0), lastResult: j.lastResult || null });
-      })
-      .catch(() => undefined);
-  }
-  const syncUpload = () => {
-    setSyncing("up");
-    void fetch("/api/sync-now", { method: "POST" })
-      .then((r) => r.json())
-      .then((j: { result?: SyncResultLike }) => {
-        const res = j && j.result;
-        setNote(res && res.ok ? `已上传 ${res.pushedSessions || 0} 个会话 / ${res.pushedLines || 0} 行${res.quotaExceeded ? "（已达存储上限，剩余未传）" : ""}` : `上传未完成：${(res && res.reason) || "未知"}`);
-        loadSync();
-      })
-      .catch(() => setNote("上传失败（本机服务不可达）"))
-      .finally(() => setSyncing(""));
-  };
-  const syncDownload = () => {
-    setSyncing("down");
-    void fetch("/api/sync-pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
-      .then((r) => r.json())
-      .then((j: { result?: { ok?: boolean; pulled?: number; skipped?: number; failed?: number; reason?: string } }) => {
-        const res = j && j.result;
-        setNote(res && res.ok ? `已从云端下载 ${res.pulled || 0} 个会话（本机已有 ${res.skipped || 0} 个，失败 ${res.failed || 0} 个）` : `下载未完成：${(res && res.reason) || "未知"}`);
-      })
-      .catch(() => setNote("下载失败（本机服务不可达）"))
-      .finally(() => setSyncing(""));
-  };
-
   const disconnect = () => {
     setDisconnecting(true);
     void fetch("/api/cloud-disconnect", { method: "POST" })
@@ -390,10 +306,10 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
   const accounts = state?.machineAccounts ?? [];
 
   return createPortal(
-    <div className="cloud-manage-backdrop" role="dialog" aria-modal="true" aria-label="云端管理">
+    <div className="cloud-manage-backdrop" role="dialog" aria-modal="true" aria-label="设备与云服务">
       <div className="cloud-manage-card">
         <div className="cloud-manage-head">
-          <span className="cloud-manage-title"><Cloud size={15} /> 云端管理</span>
+          <span className="cloud-manage-title"><Cloud size={15} /> 设备与云服务</span>
           <button type="button" className="cloud-manage-x" onClick={onClose} aria-label="关闭"><X size={15} /></button>
         </div>
 
@@ -410,58 +326,6 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
               {/* ⛔ 配对码不在这里显示：外壳已不再注入 __CHC_PAIR_CODE__，"5 分钟有效"的旧语义也早改了
                   （现在是"认领成功或手动刷新前一直有效"）。配对码统一在**配对页**（/pair）展示，带复制与刷新。 */}
             </div>
-          )}
-        </section>
-
-        <section className="cloud-manage-sec">
-          <div className="cloud-manage-label">
-            我的积分
-            <button
-              type="button"
-              className="cloud-manage-btn cloud-manage-refresh"
-              disabled={refreshingCloud}
-              onClick={refreshCloudData}
-              title="刷新积分余额、消耗记录与模型目录"
-            >
-              <RefreshCw size={12} className={refreshingCloud ? "spin" : undefined} />
-              刷新
-            </button>
-          </div>
-          {!points ? (
-            <div className="cloud-manage-muted">{pointsErr || "读取中…"}</div>
-          ) : (
-            <>
-              <div className="cloud-manage-points">
-                <span className="bal">
-                  <Coins size={15} /> {Number(points.balance ?? 0).toLocaleString()}
-                </span>
-                <span className="unit">积分</span>
-                {points.verify ? (
-                  <span className={"cloud-manage-badge" + (points.verify.ok ? " ok" : " bad")}>
-                    {points.verify.ok ? "账目一致" : "账目异常"}
-                  </span>
-                ) : null}
-              </div>
-              {points.txns && points.txns.length ? (
-                <div className="cloud-manage-txns">
-                  {points.txns.slice(0, 8).map((t) => (
-                    <div key={`${t.id}-${t.ref}`} className="cloud-manage-txn">
-                      <span className="k">{KIND_LABEL[t.kind] || t.kind}</span>
-                      <span className="n" title={t.note || ""}>{t.note || t.ref}</span>
-                      <span className={"d" + (t.delta > 0 ? " up" : t.delta < 0 ? " down" : "")}>
-                        {/* 10-14：免费模型的调用记 delta=0（服务端 addUsageOnly 只留痕不改余额）。
-                            直接显示 "0" 看着像异常，按语义写成「免费」；有变动的仍带正负号。 */}
-                        {Number(t.delta) === 0 ? "免费" : `${t.delta > 0 ? "+" : ""}${t.delta}`}
-                      </span>
-                      <span className="t">{new Date(t.at).toLocaleDateString()}</span>
-                    </div>
-                  ))}
-                  {points.txns.length > 8 ? <div className="cloud-manage-muted">仅显示最近 8 条，完整明细见网站用户中心。</div> : null}
-                </div>
-              ) : (
-                <div className="cloud-manage-muted">暂无变动记录（注册赠送 {Number(points.signupGrant ?? 1000).toLocaleString()} 积分）</div>
-              )}
-            </>
           )}
         </section>
 
@@ -675,28 +539,6 @@ export function CloudManageDialog({ onClose, onOpenSettings }: { onClose: () => 
               <div className="cloud-manage-note">{update.reason ? `未探测到新版本：${update.reason}` : "已是最新版本"}</div>
             )
           ) : null}
-        </section>
-
-        <section className="cloud-manage-sec">
-          <div className="cloud-manage-label">会话同步</div>
-          <div className="cloud-manage-note" id="syncSummary" style={{ marginBottom: 8 }}>
-            {syncInfo
-              ? `已上传 ${syncInfo.summary.sessions} 个会话 / ${syncInfo.summary.lines} 行` +
-                (syncInfo.lastSyncAt ? ` · 最近 ${new Date(syncInfo.lastSyncAt).toLocaleTimeString()} ` : "") +
-                (syncInfo.lastResult && syncInfo.lastResult.ok === false && syncInfo.lastResult.reason !== "not-paired"
-                  ? `（上次未完成：${syncInfo.lastResult.reason}）`
-                  : "")
-              : "读取中…"}
-          </div>
-          <button type="button" className="cloud-manage-btn" onClick={syncUpload} disabled={Boolean(syncing) || !paired}>
-            <CloudUpload size={13} />
-            {syncing === "up" ? "正在上传…" : "立即上传（本机 → 云端）"}
-          </button>
-          <button type="button" className="cloud-manage-btn" onClick={syncDownload} disabled={syncing === "down" || !paired}>
-            <CloudDownload size={13} />
-            {syncing === "down" ? "正在下载…" : "从云端下载到本机"}
-          </button>
-          <div className="cloud-manage-muted">自动上传：会话每 5 分钟增量同步一次（只传新增行）；下载会把云端会话落回本机会话列表。</div>
         </section>
 
         <section className="cloud-manage-sec">

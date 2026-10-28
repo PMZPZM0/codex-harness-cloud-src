@@ -58,6 +58,7 @@ const AppearanceSettingsSection = lazy(() => import("../../../../settings-appear
 const ExpertCenterSection = lazy(() => import("../../../../settings-expert-center/ExpertCenterSection").then((m) => ({ default: m.ExpertCenterSection })));
 const ComputerSettingsSection = lazy(() => import("../../../../settings-computer/ComputerSettingsSection").then((m) => ({ default: m.ComputerSettingsSection })));
 const RelayCenterPage = lazy(() => import("../../../../relay").then((m) => ({ default: m.RelayCenterPage })));
+const CloudAccountPage = lazy(() => import("../../../../settings-cloud").then((m) => ({ default: m.CloudAccountPage })));
 const OpenaiSubscriptionPage = lazy(() => import("../../../../openai").then((m) => ({ default: m.OpenaiSubscriptionPage })));
 const SshTerminalModal = lazy(() => import("../../../../ssh").then((m) => ({ default: m.SshTerminalModal })));
 const SshExecModal = lazy(() => import("../../../../ssh").then((m) => ({ default: m.SshExecModal })));
@@ -458,6 +459,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
   } = app;
 
   return {
+    cloud: { render: () => <CloudAccountPage /> },
     automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} setNotice={setNotice} /> },
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
     "boss-groups": { render: () => <BossGroupsSection openAppConfirm={openAppConfirm} onNotice={setNotice} /> },

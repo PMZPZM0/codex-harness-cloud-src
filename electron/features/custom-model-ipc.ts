@@ -278,7 +278,7 @@ export const customModelFeature = defineFeature<null>({
     ipcHost.handle("custom-model:set-enabled", async (_event, input: { provider: string; enabled: boolean }) => {
       /* ⛔ 云端模型模式下锁定本地供应商开关（用户令：开启云端模型后，模型配置里打不开供应商开关）。 */
       if (input.enabled && (await readModelSource()).cloudModels && input.provider !== LIMITED_BENEFIT_PROVIDER) {
-        throw new Error("云端模型模式已开启：模型只能来自云端，本地供应商开关已锁定（如需使用本地供应商，请先在云端管理里关闭「云端模型模式」）");
+        throw new Error("云端模型模式已开启：模型只能来自云端，本地供应商开关已锁定（如需使用本地供应商，请先在 设置 → 云账号 → 云助手专属 关闭「云端模型模式」）");
       }
       const list = await readCustomModels();
       const target = list.find((entry) => entry.provider === input.provider);

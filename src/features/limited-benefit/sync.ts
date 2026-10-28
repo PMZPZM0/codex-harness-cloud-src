@@ -57,7 +57,7 @@ export async function syncLimitedBenefit(_catalog?: CatalogLike | null): Promise
     setTimeout(refresh, 800);
     /* 10-14：changed 透传给调用方。⛔ 置「pending-restart」标记的动作**不在本函数**——
        按 10-14 用户令「不是每次勾选都弹」，标记只在用户**手动点「同步到模型配置」按钮**时
-       由 CloudManageDialog 置；配对后自动注册（Quiet）changed 再多也不弹不标记。 */
+       由云助手专属面板（settings-cloud/CloudAssistantPanel）置；配对后自动注册（Quiet）changed 再多也不弹不标记。 */
     const changed = Boolean((r as { changed?: boolean }).changed);
     return { ok: true, models: Number(r.models || 0), promoted: Boolean(r.promoted), changed };
   } catch (error) {
