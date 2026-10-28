@@ -1539,7 +1539,7 @@ export async function run() {
         "scripts/guards/06-app-behavior.mjs": 3076,   // 10-24 -4（实测净行）：移除 both 断言，改为两处位置共用 grid 折叠体 + 贴紧搜索任务 + 直接拖动；此前 3053 = both/拖动   // 10-22 底部入口组可折叠 2907→2946（实测净行）：结构倒置（入口组→账户行）+ 折叠 4 条 + 箭头 2 条 + hidden CSS / 账户行 42px 2 条   // 10-21 侧栏重排 2894→2907（实测净行：底部导航组顺序 + 布局位置 + 新手教程受控 4 条断言）   // 10-21 登录管理收口 2882→2894（实测净行：+4 条可达性断言）；此前并行线在途 +23   // 10-21 模型探活 +9（桥 auto 回落 chat / 指定模型真推理）；10-21 侧栏 +6（专家/专家团/子智能体卡片直达内页）；此前 2844 美术第二轮 +6（实测净行）：【232】③ 动画包看帧改为可选；此前 2819 = 10-21 +16（侧栏重排：连体胶囊 / 定时同款 / 删更多 / 知识库并入人格入口 / 紧凑卡片）；此前 +3（按守卫自身口径实测净行）=【232】入口分流改 ?pet=1 / ?pet=activity + 活动归约判据   // 10-20 +13 = 多租户隔离加固判据（双证一致 / identity-mismatch / memKey-only 不归属 / 扣费用 effectiveUsername）；上一条 +14 = 云端记忆身份判据（桥补 X-Tdai-User-Key + 账号服务按 memKey 映射真实用户）；10-15 2739→2775（实测净行；06 里已新加断言而上限没跟着走 ⇒ check 整链被这一条卡住，棘轮口径按实测值更新）；10-09 +5（2734→2739，实测净行）：【232】⑯ 第 4 条断言改成**按 closed 处理器切片**锚定 —— 变异测试抓到它原先只判「字符串存在」是假绿（closePetWindow 里也有同一行，删 closed 那处仍绿）。此前 10-09 +3（2731→2734，实测净行）：【232】⑯ 负向断言补 codeOnly 剥注释（注释里写着「第一版挂在 mousemove+elementFromPoint 上」被自己顶红 ⇒ 剥完再匹配，含本仓多次同型）。此前 10-09 +19（2712→2731，实测净行）：【232】⑯「宠物透明区域鼠标穿透」四条断言——用户报「打开应用后软件外面无法点」，根因 = 宠物窗是透明矩形且 .pet-float 整块 drag 区，默认整块吃鼠标；修法 = 主进程默认 setIgnoreMouseEvents(true,{forward:true}) + 渲染层按指针是否在宠物本体上（elementFromPoint 取最深元素）动态翻转 + 光标离开窗口回到穿透。此前 2712 = 10-08 夜三 +8（2704→2712，实测净行）：【243】⑥「MinGW 安装支不许绕开共享纪律」——用户报「MinGW-w64 下载失败」，现场 = 临时目录里躺着完好 zip 而 tools/mingw 连目录都没建；该支原先直接调 BSDTAR（无三级降级）且对坏缓存走续传。此前 2704 = 10-08 夜二 +32（2672→2704，实测净行）：【286】「装完不更新」整类根因 5 条断言（pip 元数据单一真相源 pipMetadataDirs / 卸载连元数据一起删 / 装前清孤儿元数据 / 装完复核包目录 / 三条真实安装路径回读 runtimeInstalled）+【241】随 python 判定平台无关化改锚点。此前 10-08 夜 +23（2649→2672，实测净行）：【255】补一条「四条安装链都不让引擎重启失败变成安装失败」——起因：SkillHub「编程专家.Skill」与 Gitee「Agent SDK 开发套件」两次实测，文件都装好了，最后一步重启引擎报 `Codex app-server exited (1)` ⇒ 整体被报成安装失败。⛔ 本段注释续行必须带 ` * ` 前缀，否则被算成净代码行（10-08 实测踩过）。此前 2649 = 10-07 夜三 +27（2622→2649，实测净行）：【285】装/判/卸落点同源三条（用户实测「知识库本地语义检索 / CloakBrowser 卸载不更新状态，一直显示已安装」= 四个根因：marker 推导出不存在的路径、判定认双落位而卸载只删一个、worker 占文件 EBUSY 被吞成成功、包体 join 多一层 node_modules）+ 【242】npmShimPaths 调用形态随显式接根参数更新。此前 2622 = 10-07 夜二 +26（npm 布局双候选 + bundledNpmCli 单一真相源）：1060 那段 = 【27】区补三条 npm 断言（verify-packaged-tools 必须按候选列表探测两种解包布局 + 不许单平台硬编码 + toolchain.bundledNpmCli 是唯一真相源），另 816 段 = 「npm CLI 字面量在主进程源码里只许出现 1 次」（mac 真缺口：runtime-ipc / kb-embed-backend 曾各自写死 Windows zip 布局 ⇒ mac 上「开发工具 / 知识库」装不上）。此前 2596 = 10-07 夜 +4 = 【27】补「resources/tools/node 也要一条独立 node_modules 映射」（实测事故：包内有 node.exe 却无 npm ⇒「开发工具」/知识库全部装不上；builder 只剪 from 根级 node_modules，dev 态不复现）+ 【29】随包源判据泛化（`<X>/node_modules` 姐妹条目的可造性由父条目 X 决定，别再逐条开后门）。此前 2592 / 2590 = 10-07 并行会话在途 +18（【154】办公室缩放钮断言：控制组在关闭钮左 / 三个 zoom 调用 / 缩放回报与句柄 / 托盘 pointer-events），按实测记账。此前 10-05 深夜+1 = 办公室轮（b0e83ff）修活【154】（删陈旧【168】门 + 换当前实现 23 条断言）留下的净增量，回填补账。此前：10-05：【29】防线二从「固定 900 字符窗口」改成按**同级分支边界**切片 + 加一条「切片确实跨到分支体」前置（净 +3）—— 本轮往 boot.ts 那个分支加了一条委托登记表清理，旧窗口立刻假红；窗口类判据一律按边界切，别调大数字。另：本文件 ok/fail 是**单参**版，写 ok(cond,msg) 会恒真
         "scripts/guards/02-session-logic.mjs": 1241,   // 10-08 +12（1229→1241，实测净行）：语音「打断链路」判据由**固定字符窗口**改成按**同级分支边界**切片（branchBody：取 event.type==="X" 到下一个 event.type==="Y" 之间），并加「切片非空」前置防恒真假绿 —— 起因：realtime voice 的 final 分支开头插了外放回声剔除（约 8 行），把原来的 `[\s\S]{0,300}?` 撑破 ⇒ 假红。本文件是守卫载体（侧栏会话逻辑域）：每加一条规则基线随之上移 —— 10-04 新增【281】侧栏幽灵消失三条（兜底收编不吃 preview / memberIds 必须是派生量 / singles 与簇体同源）+20；10-04 新增【282】侧栏会话行不展示项目地址两条（渲染器不再引用 cwd / 两处小字各自锚定）+11
         "src/features/app-state/parts/bag-types.ts": 1417,   // 10-17 +1 = deferredCompactRef（排队压缩）   // 生成物（段内顶层声明的类型面）：本文件不承载任何逻辑，长度随「段内顶层声明数」变化 —— 10-04 补 5 条漏接线的声明（ctxBtnRef / ctxMenuStyle / taskBtnRef / taskMenuStyle / dispatchKey，守卫【93】报的 missing）；10-05 界面草图那一位（uiSketchOpen + setter，【283】钉）+2，非业务代码增长
-        "scripts/guards/09-structural.mjs": 1738,   // 10-21 新登记 04 棘轮一行；本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；+1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据；10-07 夜 +45（1681→1690→1735，**两次实测**）＝ ① +9 = 【100】补统一记忆（fabric）剥离的三条正例 + 一条负例 + 两个样例常量 + 一行读 memory-fabric 源（用户实测「项目记忆铺进气泡 + 同一条消息渲染两遍」的判据盲区）；② +36 = 【253】③ 打包白名单/读取路径两条 + 【268-c】同一 slot id 重复消费两条（含对照组）+ 复用【268-b】那趟扫描的 slotIdsOf 收集（用户实测「功能域全是 0」+「重复展示两次」两位数级事故，两条判据都是它们唯一的结构防线）
+        "scripts/guards/09-structural.mjs": 1750,   // 10-21 新登记 04 棘轮一行；本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；+1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据；10-07 夜 +45（1681→1690→1735，**两次实测**）＝ ① +9 = 【100】补统一记忆（fabric）剥离的三条正例 + 一条负例 + 两个样例常量 + 一行读 memory-fabric 源（用户实测「项目记忆铺进气泡 + 同一条消息渲染两遍」的判据盲区）；② +36 = 【253】③ 打包白名单/读取路径两条 + 【268-c】同一 slot id 重复消费两条（含对照组）+ 复用【268-b】那趟扫描的 slotIdsOf 收集（用户实测「功能域全是 0」+「重复展示两次」两位数级事故，两条判据都是它们唯一的结构防线）
         "scripts/guards/13-drama-gen.mjs": 1070,
         "electron/features/boot.ts": 1070,   // 10-28 新登记（实测净行）：手机远控事件转发（思考 / 步骤 / 文件 / 工具）持续加厚，本仓已过 1000 行
         "electron/main.ts": 835,   // 10-28 +92（实测净行）：手机四件能力 + 登记 cwd（同步主仓 2af43ea99）；此前 630 = 手机读历史剥注入块 + 本仓云端逻辑= 手机读历史剥注入块（stripHarnessBlocks 接线，+1，同步主仓 c8fb61268）+ 本仓自有的云端逻辑（云端 main.ts 本就比主仓长）；此前 594 = 10-22 并行提交（单实例 / createWindow 防重入）+6（实测净行）；此前 588 = 10-21 577→588（实测净行；step 标题/工具面那批已提交改动，7fb641b —— 上一轮并行线提交时没刷新本数，按实测补记账）；此前 10-20 576→577（实测净行；⚠️ 这 +2 来自**并行工作线**的 harness-media 协议注册，本轮未改该文件 —— 该线提交时请按自身实测复核本数）   // 10-16 557→576（**实测净行**；不是本轮刷新回执的改动）= 主题跟随两笔**已提交**改动（7588b08 主题广播 + 渲染层订阅、1be2dde 独立会话弹窗原生外观按当前主题补设）给 main.ts 加了 19 净行却没同步本条 ⇒ check 整链在 HEAD 上就已经是红的，按「实测值更新」补记账（棘轮只许缩不许长，增长是既成事实，不补就永远卡住后面的守卫）。此前 10-10 +1（556→557，实测净行）= 记忆容量倍率：模块体里**同步**读 app-settings 并 memoryLayers.setScale（⛔ 异步会晚于下面的 setLayers 生效）。此前 10-07 轮 546→556（实测）：组合层改具名 import + setPath(userData) 后 process.nextTick(mountEnabledDomains)（挂载时机修复 + 循环 require 窗口规避，【253】钉）
@@ -1949,12 +1949,16 @@ export async function run() {
           const electronStub = mkStub();
           const moduleAny = createRequire(import.meta.url);
           const loadOrig = moduleAny("node:module")._load;
+          /** ⛔ 真跑产物会把**所有启用域的 setup** 执行一遍（remote 起 HTTP / scheduler 起 tick /
+              codex 拉引擎）。挂载句柄必须留到 finally 才能收尾 —— 见下面的卸载。 */
+          let genG = null;
           try {
             moduleAny("node:module")._load = function (request, ...rest) {
               if (String(request) === "electron") return electronStub;
               return loadOrig.call(this, request, ...rest);
             };
             const g = moduleAny(genDist);
+            genG = g;
             // ⛔ 10-07：挂载挪进显式函数 ⇒ 先钉「require 本身不挂任何域」（模块作用域自动挂载
             //    正是 app-settings 缓存被写坏的事故源头），再调 mountEnabledDomains() 验装卸语义。
             (typeof g.mountEnabledDomains === "function" ? ok : fail)(
@@ -1984,6 +1988,16 @@ export async function run() {
             fail(`【270】真跑 dist-electron/composition.gen.js 失败：${error270 instanceof Error ? error270.message : String(error270)}`);
           } finally {
             moduleAny("node:module")._load = loadOrig;
+            /* ⛔⛔ 10-28（用户：「保留干净的后台」的根因之一）：这一段真跑 mountEnabledDomains()
+               会把**每个启用域的 setup** 都执行 → remote 起 HTTP 监听、scheduler 起 tick、
+               codex 域拉起一个 codex.exe app-server。不收拾：① 守卫进程永不退出（卡死）；
+               ② 每跑一次预检漏一个 codex.exe，握着会话 rollout 的 writer ⇒ 应用里发消息报
+               「thread … already has an active writer」。⇒ 跑完把所有挂载过的域卸掉。 */
+            try {
+              for (const id of genG?.mountedDomainIds?.() ?? []) {
+                try { genG.unmountDomainById(id); } catch { /* 单个域卸载失败不该连坐 */ }
+              }
+            } catch { /* 句柄结构变了也不该让预检崩 */ }
           }
         }
       }
