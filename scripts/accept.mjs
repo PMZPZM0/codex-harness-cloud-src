@@ -522,8 +522,9 @@ await h.pressKey("Escape");
       await h.eval(`(function(){ if(!document.querySelector(".settings-modal")) document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
       await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
       await wait(700);
-      /* 本地静态预览不走 headless 的 index 注入 ⇒ 闸变量要自己给（生产由 headless 写进页面）。 */
-      await h.eval(`(function(){ window.__CHC_ACCOUNT_GATE__ = true; return 1; })()`);
+      /* 本地静态预览不走 headless 的 index 注入 ⇒ 闸变量要自己给（生产由 headless 写进页面）。
+         ⛔ 先存原值、跑完还原：后续验收项不继承本项制造的全局态。 */
+      const prevGate = await h.eval(`(function(){ const v = window.__CHC_ACCOUNT_GATE__; window.__CHC_ACCOUNT_GATE__ = true; return typeof v === "undefined" ? "" : String(v); })()`);
       const navClick = async (label) => h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()===${JSON.stringify(label)}; }); if(!b) return 0; b.click(); return 1; })()`);
       await navClick("云账号");
       await wait(1500);
@@ -552,6 +553,8 @@ await h.pressKey("Escape");
       await wait(400);
       const closed = await h.eval(`!document.querySelector(".cloud-manage-card")`).catch(() => false);
       h.check("③ 面板可关闭（不留遮罩挡住设置页）", closed === true, String(closed));
+      /* 还原闸变量（见本项开头）：原本没有就删掉，原本有就写回原值。 */
+      await h.eval(`(function(){ const prev = ${JSON.stringify(prevGate)}; if (prev === "") { try { delete window.__CHC_ACCOUNT_GATE__; } catch (e) { /* 忽略 */ } } else { window.__CHC_ACCOUNT_GATE__ = prev === "true"; } return 1; })()`);
     },
   },
   {
