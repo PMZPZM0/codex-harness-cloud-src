@@ -6,9 +6,10 @@
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 import { createToolCallDedupe } from "../../../../../lib/tool-call-dedupe.mjs";
+import { handleDataAccessTool } from "../../../../data-access";
 import { readStoredCodexAvatar, setCodexIdentity } from "../../../../../lib/codex-identity.mjs";
-import { BUBU_PACK, BUBU_PERSONA, USER_PERSONAS, userPersonaFields } from "../../../../../lib/bubu-pack.mjs";
-import { avatarAsset } from "../../../../../lib/avatar-presets";
+/* 用户人格库（行业身份预设）：与任何第三方 IP 无关。 */
+import { USER_PERSONAS, userPersonaFields } from "../../../../../lib/user-personas.mjs";
 /* 前端开发（10-05，两轮改名：界面草图 → 手机前端UI → 前端开发）：Codex 读写画布走**对方域的 barrel**（域↔域的唯一接口面）。
    会话单例在 ui-sketch 那边持有（iframe 由弹窗 attach），这里只发请求。 */
 import { applySketchDoc, requestSketchDoc, summarizeDoc, validateSketchDoc, waitSketchReady } from "../../../../ui-sketch";
@@ -55,6 +56,10 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
           void toolCallDedupe.run(event.id, async () => {
             try {
               const args = typeof event.params?.arguments === "string" ? JSON.parse(event.params.arguments) : event.params?.arguments ?? {};
+              /* 10-29：收藏夹 / 开发日记 / 密码本（用户定的权限模型：会话级授权、默认关、
+                 只读 + 只追加、密码本写入先弹一次性确认）。执行端在 data-access/tool-handler，
+                 权限闸在主进程 dataaccess:*（这里的判断不算数）。 */
+              if (await handleDataAccessTool(event, args as Record<string, unknown>, toolCallRespond)) return;
               if (event.params?.tool === "memory_recall") {
                 /* ⛔ 10-05 统一记忆（检索）：**走同一个通道、同一套作用域** ——
                    改造前这里只查碎片池（且那个池子跨工作区只降权、不过滤），
@@ -86,7 +91,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 const cat = String(args.category ?? "临时上下文");
                 const scope = args.scope === "project" ? "project" : "private";
                 /* ⛔⛔ 10-25：指挥中枢的记忆必须写进它自己的专属目录 ——
-                   用 `bag.workspace`（用户选的项目）会把 中枢的记忆写进项目记忆里，
+                   用 `bag.workspace`（用户选的项目）会把中枢的记忆写进项目记忆里，
                    与普通会话混在一起 ⇒ 与普通会话完全拆开的承诺就破了。 */
                 const bossMemWs = await ensureBossMemoryWorkspace(String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""));
                 const result = await window.codex.writeFabricMemory({
@@ -157,23 +162,12 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `保存失败：${error.message}` }], success: false });
                 }
               } else if (event.params?.tool === "persona_apply") {
-                /* ⛔ 人格切换通道（10-24 用户立项）：Codex 改自己（一二布布）/ 改用户（行业精英库）。
+                /* 用户人格切换通道：Codex 按行业身份库改用户的 occupation / userContext。
                    与 identity_update 同一套落点（personalization:save-identity → AGENTS.md），
-                   ⛔ 本会话已注入的旧人格不会热替换，新会话才完整生效 —— 回执里必须写明。 */
+                   ⛔ 本会话已注入的旧背景不会热替换，新会话才完整生效 —— 回执里必须写明。 */
                 try {
                   const target = String(args.target ?? "");
                   const personaId = String(args.personaId ?? "").trim();
-                  if (target === "self") {
-                    if (personaId !== "yierbubu") {
-                      await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "self 目前只内置 \"yierbubu\"（一二布布）；其它人格请在「用户中心」安装人格包。" }], success: false });
-                      return;
-                    }
-                    await window.codex.saveIdentity({ persona: BUBU_PERSONA, soulSlug: "yierbubu", assistantName: BUBU_PACK.assistantName });
-                    setCodexIdentity({ name: BUBU_PACK.assistantName, avatar: { type: "image", value: avatarAsset("codex-bubu.png") } });
-                    bag.showToast("已切换为一二布布", "头像与名字已生效；人格/表情包下一个新会话开始");
-                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "已切换为一二布布人格：名字与头像已生效；人格全文与表情包触发表从下一个新会话开始完全生效（本会话回复可能仍带旧语气）。表情包按触发表在情绪到位时插入 `![一二布布·<label>](bubu://<id>)`。" }], success: true });
-                    return;
-                  }
                   if (target === "user") {
                     const fields = personaId === "default" ? { occupation: "", userContext: "" } : userPersonaFields(personaId);
                     if (!fields) {
@@ -188,7 +182,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       : "已恢复空白用户人格（职业与背景已清空）。" }], success: true });
                     return;
                   }
-                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "target 必须是 \"self\" 或 \"user\"。" }], success: false });
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "target 必须是 \"user\"。" }], success: false });
                 } catch (error: any) {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `人格切换失败：${error.message}` }], success: false });
                 }
@@ -206,7 +200,9 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       .filter((m: any) => m.name && m.role);
                     const res = await window.codex.createBossGroup({
                       name: String(args.name ?? ""),
-                      /* ⛔ 指挥中枢跑在 <userData>/boss-home（记忆独立），群干活的项目取 boss-workspace。 */
+                      /* ⛔ 指挥中枢自己跑在 <userData>/boss-home（记忆独立），所以「群在哪干活」
+                         不能取 bag.workspace —— 取用户在指挥中枢里选的项目（boss-workspace）。
+                         模型显式传 workspace 时以它为准。 */
                       workspace: String(args.workspace ?? (() => { try { return localStorage.getItem("boss-workspace") ?? ""; } catch { return ""; } })() ?? bag.workspace ?? ""),
                       // ⛔ boss 身份取引擎下发的 threadId（模型伪造不了），群事件靠它回投
                       bossThreadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
@@ -294,17 +290,22 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                     if (!res?.ok) await bad(`加人失败：${res?.error ?? "未知原因"}`);
                     else await ok(`新成员进群：${res.member?.name}（${res.member?.role}${res.member?.source === "cli" ? "，本机 CLI agent" : ""}，id=${res.member?.id}）。TA 第一次被派活时才建执行体；用 group_assign 指派时传这个 id。`);
                   } else if (tool === "group_remove_member") {
-                    const res = await window.codex.bossGroupMember({ groupId: String(args.groupId ?? ""), action: "remove", memberId: String(args.memberId ?? "") });
+                    const res = await window.codex.bossGroupMember({
+                      groupId: String(args.groupId ?? ""), action: "remove",
+                      memberId: String(args.memberId ?? ""),
+                    });
                     if (!res?.ok) { await bad(`移人失败：${res?.error ?? "未知原因"}`); }
                     else {
                       /* 10-27 用户令：「移除了群成员，这个旧的群成员回合就同步删除掉会话，同步自动刷新会话列表」
-                         ⇒ 宿主回的 removedThreadId 走渲染层唯一删除链路 deleteThreadCore，
-                            随后立刻重拉成员快照（成员面板 / 办公室 / 成员轨共用一份）。 */
+                         ⇒ 宿主回的 removedThreadId 走**渲染层唯一删除链路** deleteThreadCore
+                            （引擎 thread/delete + 墓碑 + 缓存 + 侧栏剔行），不另写一份删除。
+                         ⛔ 不删就会在侧栏留一串「中枢调度」孤儿会话（用户截图实证）。 */
                       const removedThreadId = String(res.removedThreadId ?? "");
                       const sameAsBoss = removedThreadId && removedThreadId === String(event.params?.threadId ?? "");
                       if (removedThreadId && !sameAsBoss) {
                         await bag.deleteThreadCore(removedThreadId).catch(() => undefined);
                       }
+                      /* 成员名单 / 办公室 / 成员轨共用同一份快照 ⇒ 立刻重拉，不等 4s 轮询。 */
                       void refreshGroupMembers(String(args.groupId ?? ""));
                       await ok(`已移出：${res.member?.name}。TA 的成员会话已删除${sameAsBoss ? "（跳过：正好是当前会话）" : ""}，`
                         + `正在跑的活随之终止，未派的任务会自动换人；成员名单与办公室已同步刷新。`);
@@ -317,7 +318,8 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                     });
                     if (!res?.ok) await bad(`删群失败：${res?.error ?? "未知原因"}`);
                     else await ok(`群「${res?.deleted?.name ?? ""}」已删除：清掉 ${res?.deleted?.tasks ?? 0} 条任务与 ${res?.deleted?.events ?? 0} 条事件`
-                      + `${res?.deleted?.running ? `，${res.deleted.running} 条未完成的活已终止` : ""}。`
+                      + `${res?.deleted?.running ? `，${res.deleted.running} 条未完成的活已终止` : ""}`
+                      + `${res?.deleted?.notified === false ? "（注意：中枢回投没成功，这条结果就是通知）" : ""}。`
                       + `成员会话与产出文件保留；要接着干就重新 group_create。`);
                   } else {
                     const st = await window.codex.bossBrowserStatus();
@@ -346,7 +348,7 @@ ${st.hint}`);
               //    已整体删除（它与调度开关脱钩、还让专家/专家团永远被绕过），⛔ 不许加回来。
               else if (event.params?.tool === "agent_invoke") {
                 const dispatchOrigin = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
-                /* ⛔ 中枢群会话不用调度工具（10-25 用户令）：群里的派遣只有 group_assign 一条路，
+                /* ⛔中枢群会话不用调度工具（10-25 用户令）：群里的派遣只有 group_assign 一条路，
                    否则两套派遣并行会把账本撕裂。拒绝时告诉模型正确工具。 */
                 const bossHit = await (async () => {
                   try {
@@ -356,13 +358,13 @@ ${st.hint}`);
                 })();
                 if (bossHit) {
                   await toolCallRespond.send(event.id!, {
-                    contentItems: [{ type: "inputText", text: "你是群里的 中枢：不用 agent_invoke 调度，改用 group_assign 派活（验收标准 criteria 必填）。" }],
+                    contentItems: [{ type: "inputText", text: "你是这个群的指挥中枢：不用 agent_invoke 调度，改用 group_assign 派活（验收标准 criteria 必填）。" }],
                     success: false,
                   });
                 } else {
+                const kindRaw = String(args.kind ?? "");
                 // kind 是联合类型：非法值**不硬塞**（先校验再断言，断言因此可证安全），
                 // 当场回一条可读的拒绝，而不是让 IPC 抛类型错——模型据此立刻改参数。
-                const kindRaw = String(args.kind ?? "");
                 const kindArg = (["expert", "team", "member", "subagent"] as const).includes(kindRaw as any)
                   ? (kindRaw as "expert" | "team" | "member" | "subagent")
                   : null;
@@ -663,6 +665,7 @@ ${st.hint}`);
                   success: info?.ok === true,
                 });
               } else if (event.params?.tool === "image_view") {
+                /* 10-29：主进程图像工坊已放开可信根（任意图片可直接看），这里不再需要授权重试。 */
                 const viewed: any = await window.codex.imageView({
                   path: String(args.path ?? ""),
                   title: args.title ? String(args.title) : undefined,

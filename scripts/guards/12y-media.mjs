@@ -46,8 +46,8 @@ ok(
   "harness-media 必须是流式 + Range/206（整文件读内存 = 大视频卡死）",
 );
 ok(
-  boot.includes("isInsideTrustedRoots") && boot.includes("MEDIA_MIME") && boot.includes("Unsupported media type"),
-  "harness-media 安全三件套：可信根 + MIME 白名单 + 拒未知扩展（⛔ 任意文件读取面）",
+  boot.includes("MEDIA_MIME") && boot.includes("Unsupported media type") && !boot.includes("isInsideTrustedRoots"),
+  "harness-media 两件套：MIME 白名单 + 拒未知扩展；⛔ 不判可信根（10-29 用户令）",
 );
 ok(
   main.includes('"harness-media"') && /stream:\s*true/.test(main),

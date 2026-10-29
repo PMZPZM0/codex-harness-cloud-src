@@ -235,8 +235,10 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   ok(/window\.codex\.readFile\(path\)/.test(workspacePreview) && /FilePreviewCode/.test(workspacePreview) && /Markdown/.test(workspacePreview)
     && /workspace-file-preview-pdf/.test(workspacePreview) && /workspace-file-preview-image/.test(workspacePreview),
     "预览走 fs:read，覆盖 Markdown / 代码 / 图片 / PDF / 二进制占位");
-  ok(Boolean(manifest.channels.find((c) => c.channel === "shell:open")) && /shell:open/.test(shell) && /isInsideOrEqualTrustedRoots\(target\)/.test(shell),
-    "「默认应用」走新通道 shell:open，且与 shell:reveal 同一道可信根闸（⛔ 不放行任意路径）");
+  /* ⛔ 10-29 用户令：shell:open **故意**不判可信根（任意位置的文件都要能打开）。 */
+  ok(Boolean(manifest.channels.find((c) => c.channel === "shell:open")) && /shell:open/.test(shell)
+    && !/isInsideOrEqualTrustedRoots\(target\)/.test(shell),
+    "「默认应用」走 shell:open，且**不再判可信根**（10-29 用户令）");
 
   /* 10-22 用户截图：「我没改嘛，还是这种旧的」——消息末尾的内联文件引用原来还是小芯片。
      普通文件必须换成同一张 FileRefCard（默认右栏），图片/音视频保留缩略芯片。 */
