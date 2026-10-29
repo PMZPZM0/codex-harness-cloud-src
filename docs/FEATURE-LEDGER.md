@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-29 | 命令卡：结束态一律 ✓ + 映射补漏（node 开关 / 目录 / 读文件） | 修复 | `src/features/terminal/TerminalPanel.tsx`、`src/lib/command-display.mjs`、`src/styles/03-messages-turns.css`、`src/styles/15-queued-messages.css`、守卫 07 | 用户实测：「中间有失败，不要在这里显示×显示√就行了」。① 结束态不再按退出码标 ×/「失败」（非零退出多为正常探测：`git config --get user.name` 没配、非仓库里 `git status`），退出码仍在展开体；② 映射补漏：`node --version`→「看 node 版本」、`node -e`→「跑 node 脚本」/内联写文件→「写文件」、`dir`/`ls`→「看目录内容」、`Get-Content`/`cat`→「读文件 <名>」；③ 只在引号外拆 `;`/`&&`；④ 整条命令被引号包住时先脱壳。（同步主仓 e94d18330） | 本轮 |
 | 2026-10-28 | 命令卡表头映射中文（同步主仓） | 改动 | `command-display.mjs`、`TerminalPanel.tsx`、`15-queued-messages.css` | 与主仓同轮（7b49fa4ef）：动作/用途/通用 CLI 子命令映射，兜底显示命令原文。界面已部署。 | 待提交 |
 | 2026-10-28 | 调度面板专家数改专家库总数（同步主仓） | 修复 | `DispatchMenu.tsx`、`dispatch-core.ts`、`dispatch.ts`、`vite-env.d.ts` | 与主仓同轮（c9bfa170e）：专家数 = 单人专家 + 各团（主理人+成员），目录补 memberCount。界面已部署。 | 待提交 |
 | 2026-10-28 | 调度弹层数量实时同步（同步主仓） | 修复 | `DispatchMenu.tsx` | 与主仓同轮（7ec6c4c08）：打开时拉真实目录 + 打开期间 3 秒轮询。界面已部署。 | 待提交 |
