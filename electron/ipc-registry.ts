@@ -349,6 +349,10 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["teams:invoke-member", "teams:list", "teams:member-session", "teams:remove", "teams:reset-defaults", "teams:save", "teams:session-config", "teams:start-session", "teams:tools"],
     note: "09-21 拆出：跨域符号经 main 导出的活绑定取用",
   },
+  { prefix: "cliagents", count: 4, status: "in-features", file: "features/cli-agents-ipc.ts",
+    channels: ["cliagents:detect", "cliagents:list", "cliagents:remove", "cliagents:save"],
+    note: "10-29 新域：CLI 智能体管理面（列表 / 检测 / 增改 / 删除）；派活走 agent_invoke(kind=cli)"
+  },
   { prefix: "clipboard", count: 4, status: "in-features", file: "features/clipboard-ipc.ts",
     channels: ["clipboard:image", "clipboard:write", "clipboard:write-image", "clipboard:read-files"],
     note: "09-22 拆出：clipboard 全部 4 个剪贴板通道；imagesDir 改为 handler 内惰性求值（app.getPath 不落模块顶层）",

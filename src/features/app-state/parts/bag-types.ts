@@ -1207,6 +1207,15 @@ export interface Bag {
   refreshThreadRole: (threadId?: string | undefined) => Promise<void>;
   delegateRecordsRef: React.RefObject<Record<string, DelegateRecordEntry>>;
   dispatchInfoRef: React.RefObject<{ description: string; targets: DispatchTargetEntry[]; }>;
+
+  /* ★ 10-29 @ 点名（专家 / 子智能体 / CLI 智能体 / 专家团）：本轮有效，发送后清空。 */
+  dispatchMentions: DispatchTargetEntry[];
+  setDispatchMentions: React.Dispatch<React.SetStateAction<DispatchTargetEntry[]>>;
+  addDispatchMention: (target: DispatchTargetEntry) => void;
+  removeDispatchMention: (key: string) => void;
+  clearDispatchMentions: () => void;
+  createDispatchSubagent: (name: string) => Promise<DispatchTargetEntry | null>;
+  dispatchMentionBlock: () => string;
   refreshDispatchInfo: () => Promise<void>;
   refreshDelegateRecords: () => Promise<void>;
   dispatchBusy: boolean;

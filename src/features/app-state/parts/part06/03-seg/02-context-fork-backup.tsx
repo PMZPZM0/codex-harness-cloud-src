@@ -5,7 +5,9 @@
  * ⛔ 顺序即契约：段内含 hook 调用，React 靠**调用顺序**绑定 state ⇒ 组合根必须按文件名前缀顺序调用。
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
+import { useState } from "react";
 import { enginePersonality } from "../../../../../lib/reply-style.mjs";
+import { addMention, mentionBlockOf, mentionKeyOf } from "../../../../../lib/dispatch-mention.mjs";
 import { loadDraft, saveDraft } from "../../../../../lib/composer-draft.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { resolveImagePath } from "../../../../../lib/resolve-image-path";
@@ -50,9 +52,70 @@ bag.quoteMessage = quoteMessage as typeof bag.quoteMessage;
   }
 bag.cancelQuote = cancelQuote as typeof bag.cancelQuote;
 
+  /* ★ 10-29 @ 点名：用户在本条消息里点名的调度对象（专家 / 子智能体 / 专家团）。
+     语义 = **本轮有效**：发送时拼成「[本轮点名对象]」指令块（lib/dispatch-mention.mjs 的
+     mentionBlockOf），由模型用 agent_invoke 真派活；发完即清空（不跨消息继承，避免"上一条点名
+     的对象被下一句话误派"）。
+     ⛔ 不在选中时直接派活：那会绕过 dispatch 的许可 / 身份闸，且用户还没写正文（query 为空）。 */
+  const [dispatchMentions, setDispatchMentions] = useState<DispatchTargetEntry[]>([]);
+bag.dispatchMentions = dispatchMentions as typeof bag.dispatchMentions;
+bag.setDispatchMentions = setDispatchMentions as typeof bag.setDispatchMentions;
+
+  /** 选中一个候选 ⇒ 记进本轮点名 + 清掉输入框里的 @查询词（与引用上下文 / 技能同一形态）。 */
+  function addDispatchMention(target: DispatchTargetEntry) {
+    if (!target?.kind || !String(target.name ?? "").trim()) return;
+    bag.setDispatchMentions((current) => {
+      const next = addMention(current, target) as DispatchTargetEntry[];
+      if (next.length === current.length) bag.showToast("已经点过名了", `「${target.name}」已在本条消息里`);
+      return next;
+    });
+    /* ⛔ 清到行尾（不是到空白）：对象名带空格（"Claude Code"），
+       用 `/@[^\s]*$/` 只会清掉 "@Code"、把 "Claude " 留在输入框里。 */
+    bag.setPrompt((current) => current.replace(/@[^\n]*$/, ""));
+    bag.setContextQuery("");
+    bag.setContextOpen(false);
+    requestAnimationFrame(() => bag.composerInputRef.current?.focus());
+  }
+bag.addDispatchMention = addDispatchMention as typeof bag.addDispatchMention;
+
+  function removeDispatchMention(key: string) {
+    bag.setDispatchMentions((current) => current.filter((entry) => mentionKeyOf(entry) !== key));
+  }
+bag.removeDispatchMention = removeDispatchMention as typeof bag.removeDispatchMention;
+
+  function clearDispatchMentions() { bag.setDispatchMentions([]); }
+bag.clearDispatchMentions = clearDispatchMentions as typeof bag.clearDispatchMentions;
+
+  /** @ 一个**不存在**的子智能体时由宿主代建（确定性：失败原因能直接告诉用户，不用烧一回合）。
+   *  ⛔ 只在用户点了面板里的「新建并 @」时调用 —— 打字过程中绝不自动建对象。
+   *  ⛔ 模型侧没有建对象的工具（dispatch-core 只暴露 agent_invoke / agent_archive_sessions），
+   *    所以这是唯一入口；建完刷新目录，之后的手动调度看到的是同一份。 */
+  async function createDispatchSubagent(name: string): Promise<DispatchTargetEntry | null> {
+    const clean = String(name ?? "").trim();
+    if (!clean) return null;
+    if (clean.length > 32) { bag.showToast("名字太长", "子智能体名称最多 32 个字"); return null; }
+    try {
+      const agent = (await window.codex.saveSubAgent({ name: clean })) as { id?: string; description?: string } | null | undefined;
+      const target: DispatchTargetEntry = { kind: "subagent", key: String(agent?.id ?? clean), name: clean, profession: "", description: String(agent?.description ?? "") };
+      await Promise.resolve(bag.refreshDispatchInfo?.()).catch(() => undefined);
+      addDispatchMention(target);
+      bag.showToast("已新建子智能体", `「${clean}」已按默认配置创建，可在 设置 → 子智能体 里补充指令`);
+      return target;
+    } catch (error) {
+      bag.showToast("新建子智能体失败", String((error as Error)?.message ?? error));
+      return null;
+    }
+  }
+bag.createDispatchSubagent = createDispatchSubagent as typeof bag.createDispatchSubagent;
+
+  /** 发送时拼进正文的指令块（空数组 ⇒ 空串，正文一字不多）。 */
+  function dispatchMentionBlock() { return mentionBlockOf(bag.dispatchMentions); }
+bag.dispatchMentionBlock = dispatchMentionBlock as typeof bag.dispatchMentionBlock;
+
   function addContextItem(item: { id: string; role: "用户" | "Codex"; text: string }) {
     bag.setContextItems((current) => [...current, item]);
-    bag.setPrompt((current) => current.replace(/@[^\s]*$/, ""));
+    /* 10-29 用户令：引用上下文的触发符从 `@` 改成 `*`（`@` 让给"点名专家/子智能体/专家团"）。 */
+    bag.setPrompt((current) => current.replace(/\*[^\s]*$/, ""));
     bag.setContextQuery("");
     bag.setContextOpen(false);
   }
@@ -79,10 +142,35 @@ bag.addSkillReference = addSkillReference as typeof bag.addSkillReference;
     //   标记滞留、下一次程序化改 prompt 被误跳过」）。
     bag.draftJustRestoredRef.current = false;
     saveDraft(bag.thread?.id ?? null, value);
+    /* ★ 两个触发符共用同一个弹层，按**最后出现的那个符号**决定这次是谁（互不抢）：
+         `@` = 点名调度对象（专家 / 子智能体 / CLI 智能体 / 专家团）
+         `*` = 引用本次对话里的历史消息
+       ⛔⛔ 10-29 晚补齐 `@` 的触发入口：上一版把 `@` 整体换成了 `*`（用户令「把 @ 引用上下文改成 *」），
+         结果 `@ 点名` 只剩下面板渲染 + 芯片 + 发送注入，**没有任何地方把 contextOpen 打开的**
+         —— 文档与交付说明都写着"输入 @ 即弹候选"，实际敲了没反应（典型的「声称能力」）。
+       判据刻意不同：
+         · `*` 后面不许有空白 —— `a*b` / `2*3` / `**粗体**` 这类不能误触；
+         · `@` 允许空格 —— 对象名本身带空格（"Claude Code"、"Codex CLI"），
+           敲到一半就关面板的话，用户永远选不到带空格的那一个。 */
+    const star = value.lastIndexOf("*");
     const at = value.lastIndexOf("@");
-    const afterAt = at >= 0 ? value.slice(at + 1) : "";
-    if (at >= 0 && !/\s/.test(afterAt)) {
-      bag.setContextQuery(afterAt);
+    if (at >= 0 && at > star) {
+      const afterAt = value.slice(at + 1);
+      const atStart = at === 0 || /\s/.test(value[at - 1] ?? "");
+      // 40 字上限 = 防止把整段粘贴文本当查询词（对象名不会这么长）
+      if (atStart && !/\n/.test(afterAt) && afterAt.length <= 40) {
+        bag.setContextQuery(afterAt);
+        bag.setContextOpen(true);
+        return;
+      }
+      bag.setContextOpen(false);
+      return;
+    }
+    const afterStar = star >= 0 ? value.slice(star + 1) : "";
+    const tokenStart = star === 0 || /\s/.test(value[star - 1] ?? "");
+    const looksLikeQuery = /^\s*$/.test(afterStar) || /^[\p{L}\p{N}]/u.test(afterStar);
+    if (star >= 0 && tokenStart && !/\s/.test(afterStar) && looksLikeQuery) {
+      bag.setContextQuery(afterStar);
       bag.setContextOpen(true);
     } else {
       bag.setContextOpen(false);
@@ -218,7 +306,7 @@ bag.importConversationMarkdown = importConversationMarkdown as typeof bag.import
     /* 未选工作区：不悄悄默认，提醒用户自选（发送时才会真正用到目录）。
        ⛔ 10-27 用户令：「这个提示不对，项目地址选项在左上角」—— chip 就在输入框左上角
           （`02-composer-form.tsx` 的 cwd chip），别再写「右上角」。
-       ⛔ 同日：「新建任务，提示要是蓝色；指挥中枢进去现在这个颜色可以」
+       ⛔ 同日：「新建任务，提示要是蓝色；指挥中枢进去提醒现在这个颜色可以」
           ⇒ 显式指定语气：普通新建 = info（蓝），中枢 = warning（琥珀），不再让颜色由文案猜。 */
     if (!bag.workspace) {
       bag.setNotice(
@@ -259,5 +347,5 @@ bag.importConversationMarkdown = importConversationMarkdown as typeof bag.import
 bag.startNewThread = startNewThread as typeof bag.startNewThread;
 
 
-  return { copyImage, quoteMessage, cancelQuote, addContextItem, removeContextItem, addSkillReference, onPromptChange, forkFromTurn, exportThreadsBackup, importThreadsBackup, exportThreadsMarkdown, forkThreadFromSidebar, importConversationMarkdown, startNewThread };
+  return { copyImage, quoteMessage, cancelQuote, addContextItem, removeContextItem, addSkillReference, dispatchMentions, setDispatchMentions, addDispatchMention, removeDispatchMention, clearDispatchMentions, createDispatchSubagent, dispatchMentionBlock, onPromptChange, forkFromTurn, exportThreadsBackup, importThreadsBackup, exportThreadsMarkdown, forkThreadFromSidebar, importConversationMarkdown, startNewThread };
 }
