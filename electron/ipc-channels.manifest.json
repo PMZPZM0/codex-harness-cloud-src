@@ -5957,7 +5957,7 @@
       "channel": "feishu-cli:status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; user: string; detail: string; error: string }>",
+      "returns": "Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string }>",
       "invokeArgs": "",
       "cast": null,
       "note": "10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录"
