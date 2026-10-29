@@ -21,7 +21,9 @@
      配合下面放大到 28px 的图标，命中面积够用；两列布局也才有高度可用。 */
   top: -8px;
   bottom: -8px;
-  z-index: 30;
+  /* ⛔ 10-29：侧栏展开 z=5、折叠飞出 z=35 ⇒ 这里必须**高过 35**。
+     主区/工作区全是 overflow:visible（实测祖先链），所以不会裁；只会与侧栏抢层级。 */
+  z-index: 40;
   display: flex;
   flex-direction: row-reverse;
   align-items: center;
@@ -415,78 +417,8 @@
    触发条件取窗口宽 1100：这一档以下主区已被侧栏挤窄，竖条再往左外侧长会顶到侧栏
    （实测 1080 宽窗口里 rail 左缘已贴到侧栏右缘）。
    ⛔ 挪进内部就必须给正文让位（`.composer-editor` 的 padding-left），否则第一行文字被图标压住。 */
-@media (max-width: 1100px) {
-  /* ⛔ 小屏**不能用竖列**：输入框本体只有 ~114 高，5 个 28px 图标要 160 高，竖着必然被裁/滚动。
-     输入框在窄屏下依然是**宽的**（实测 700 视口下 640），所以横排一排最自然（140px 宽）。 */
-  .composer-rail {
-    right: auto;
-    left: 6px;
-    top: 6px;
-    bottom: auto;
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .composer-rail-toggle {
-    transform: none;
-    width: 26px;              /* 横向条的"手柄"：短粗条躺在图标行左侧 */
-    height: 12px;
-  }
-  .composer-rail-grip {
-    width: 22px;
-    height: 4px;
-  }
-  .composer-rail-icons {
-    flex-flow: row nowrap;    /* 一排横放 */
-    max-height: none;
-    overflow: visible;
-    margin: 6px 0 0;          /* 横排时手柄在上、图标行在下 ⇒ 间隙放到上边 */
-  }
-  /* 正文让位：横向条高 ~36，正文从下面开始 */
-  .composer .composer-editor,
-  .composer textarea {
-    padding-left: 0;
-    padding-top: 40px;
-  }
-}
-
-/* ── 10-29（二改）：空间不够时收成**一排（一列到底）**，仍在输入框左侧 ──────
-   用户：「正常展示两行在旁边，距离不够就展示一排，这样，不要贴到输入框上面」。
-   ⛔ 上一版把它挪到输入框**上方**横排 —— 被用户否掉了（"贴到输入框上面"）。
-   现在两档形态都在左侧、都骑在左边框线上，只有图标排列方式不同：
-     · 默认（够宽）：3 个一列、最多两列（两行，宽 76px）
-     · 不够宽（会被侧栏挤到）：收成**单列一到底**（宽 38px，高度可以探出输入框）
-   宽度从 76 降到 38 正是为了塞进被侧栏挤压后的那点空间。 */
-.composer-rail.is-single .composer-rail-icons {
-  flex-flow: column nowrap;   /* 一列到底，不再换列 */
-  max-height: none;           /* 允许比输入框高（用户早先明确过"可以比输入框高一些"） */
-  overflow: visible;
-}
-
-/* ── 第三档（10-29 用户：「最小界面，左边没空间的时候，再展示在输入框上面」）────
-   只在**左侧连单列都塞不下**时才启用（判据见 ComposerRail 的 avail 三级）。
-   ⛔ 这是兜底，不是默认：能在左边就在左边。 */
-.composer-rail.is-top {
-  right: auto;
-  left: 0;
-  top: auto;
-  bottom: 100%;              /* 整条到输入框上方 */
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding-bottom: 2px;
-}
-.composer-rail.is-top .composer-rail-toggle {
-  transform: none;           /* 横条的手柄：一条短横，不再压线 */
-  width: 40px;
-  height: 12px;
-}
-.composer-rail.is-top .composer-rail-grip {
-  width: 22px;
-  height: 4px;
-}
-.composer-rail.is-top .composer-rail-icons {
-  flex-flow: row nowrap;     /* 一排横放 */
-  max-height: none;
-  overflow: visible;
-  margin: 4px 0 0;
-}
+/* ── 10-29 用户：「主要小尺寸的」───────────────────────────────────────────
+   这里原本有一条 `@media (max-width: 1100px)`：小屏把图标塞进输入框**内部左上角横排**，
+   还给正文加了 padding-top:40 让位（用户截图看到的就是这个形态，被判不合格）。
+   ⇒ 整条删掉：小尺寸与宽屏**同一套形态** —— 图标两列骑在左边框线上（69×104，装得进框高），
+      空间不够时它盖在侧栏上（z-index 40），而不是变形或钻进框里。 */
