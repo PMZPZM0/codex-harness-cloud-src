@@ -26,6 +26,7 @@ import { builtinFeature as feat_builtin } from "./features/builtin-ipc";
 import { capabilitiesFeature as feat_capabilities } from "./features/capabilities-ipc";
 import { channelBotFeature as feat_channel_bot } from "./features/channel-bot-ipc";
 import { channelsFeature as feat_channels } from "./features/channels-ipc";
+import { cliAgentsFeature as feat_cliagents } from "./features/cli-agents-ipc";
 import { clipboardFeature as feat_clipboard } from "./features/clipboard-ipc";
 import { closeConfirmFeature as feat_close_confirm } from "./features/close-confirm-ipc";
 import { cloudReserveFeature as feat_cloud } from "./features/cloud-reserve-ipc";
@@ -91,6 +92,7 @@ import { sessionWorkspaceFeature as feat_sessionspace } from "./features/session
 import { screenshotFeature as feat_screenshot } from "./features/screenshot-ipc";
 import { shellFeature as feat_shell } from "./features/shell-ipc";
 import { skillDisciplineFeature as feat_skill_discipline } from "./features/skill-discipline-ipc";
+import { skillPacksFeature as feat_skill_packs } from "./features/skill-packs-ipc";
 import { skillsFeature as feat_skills } from "./features/skills-ipc";
 import { soulMarketFeature as feat_soul_market } from "./features/soul-market-ipc";
 import { sshFeature as feat_ssh } from "./features/ssh-ipc";
@@ -147,6 +149,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "capabilities", plugin: feat_capabilities as Plugin<unknown>, config: null },
   { id: "channel-bot", plugin: feat_channel_bot as Plugin<unknown>, config: null },
   { id: "channels", plugin: feat_channels as Plugin<unknown>, config: null },
+  { id: "cliagents", plugin: feat_cliagents as Plugin<unknown>, config: null },
   { id: "clipboard", plugin: feat_clipboard as Plugin<unknown>, config: null },
   { id: "close-confirm", plugin: feat_close_confirm as Plugin<unknown>, config: null },
   { id: "cloud", plugin: feat_cloud as Plugin<unknown>, config: null },
@@ -212,6 +215,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "screenshot", plugin: feat_screenshot as Plugin<unknown>, config: null },
   { id: "shell", plugin: feat_shell as Plugin<unknown>, config: null },
   { id: "skill-discipline", plugin: feat_skill_discipline as Plugin<unknown>, config: null },
+  { id: "skill-packs", plugin: feat_skill_packs as Plugin<unknown>, config: null },
   { id: "skills", plugin: feat_skills as Plugin<unknown>, config: null },
   { id: "soul-market", plugin: feat_soul_market as Plugin<unknown>, config: null },
   { id: "ssh", plugin: feat_ssh as Plugin<unknown>, config: null },
