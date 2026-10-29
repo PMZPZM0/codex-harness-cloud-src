@@ -373,3 +373,4 @@
 | 2026-10-29 | 飞书 CLI 全流程走查：失败回中文下一步 / 配置进程 10 分钟上限 / 版本查询缓存 | 修复 | `electron/features/feishu-cli-ipc.ts`、守卫 04 | 同步主仓。① 工具失败只回英文原文 ⇒ 模型反复重试，改为翻成「去设置哪一步」；② `config init` 用户放弃时无限挂 ⇒ 10 分钟硬上限；③ 等待授权时每 2 秒刷状态会多 spawn 一次 `--version` ⇒ 缓存 60 秒。守卫【139f】共 12 条。 | 本轮 |
 | 2026-10-29 | 飞书 CLI 登录成功后卡片仍「等待授权」修复 | 修复 | `src/features/settings-devtools/FeishuCliCard.tsx`、守卫 04 | 同步主仓。上一版「见到 configured 就收起链接」⇒ 登录阶段链接被清、轮询被掐断 ⇒ 永远「等待授权」。改为按当前流程收起（busyRef）。守卫【139f】共 13 条；界面已部署。 | 本轮 |
 | 2026-10-29 | 飞书 CLI 卡片补「能做什么 / 怎么用」说明区 | 改动 | `src/features/settings-devtools/FeishuCliCard.tsx`、`src/styles/12-settings-skills.css`、守卫 04 | 同步主仓。三步下新增说明区：8 项能力两列卡 + 3 条使用原则 + 6 条示例胶囊 + 3 条注意项。守卫【139f】共 15 条；界面已部署。 | 本轮 |
+| 2026-10-29 | 飞书 CLI 已配置后可「重新配置」换应用 | 改动 | `src/features/settings-devtools/FeishuCliCard.tsx`、`src/lib/feishu-card.mjs`、`electron/features/feishu-cli-ipc.ts`、manifest、守卫 04 | 同步主仓。已配置行补「重新配置」按钮；切换完成按 appId 变化判断（期间保持轮询），完成后提示重新登录。守卫【139f】共 16 条；界面已部署。 | 本轮 |
