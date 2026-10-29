@@ -269,7 +269,8 @@ function FunctionMenuEditor() {
   const rawEntry = (entry: MenuEntrySpec) => ({ id: String(entry.id).replace(/^ext_/, ""), label: entry.label, icon: entry.icon, order: entry.order, action: entry.action });
   const saveMenu = async (next: MenuEntrySpec[]) => {
     try {
-      await window.codex.extensionsMenuSet({ entries: next.map(rawEntry) });
+      const saved = await window.codex.extensionsMenuSet({ entries: next.map(rawEntry) });
+      if (!saved?.ok) return; /* 主进程拒收（非数组 / 校验全失败）：保持旧目录，不假装成功 */
       bumpCustomMenuRevision();
     } catch { /* 写盘失败：保留旧目录，下次打开还能再试 */ }
   };
@@ -280,6 +281,9 @@ function FunctionMenuEditor() {
     void saveMenu([...extMenu, { id, label, order: 90, action: { type: "settings", target: page } }]);
   };
   const targetLabel = (page: string) => targets.find((item) => item.page === page)?.label ?? page;
+  /* 默认入口已覆盖的设置页：再加一遍会出现两个「收藏夹 / 开发工具」（10-30 审查）。 */
+  const DEFAULT_MENU_PAGES = new Set(["devtools", "favorites"]);
+  const CUSTOM_MENU_LIMIT = 40;
   const groups = targets.reduce<Record<string, { page: string; label: string }[]>>((acc, item) => {
     (acc[item.group] ||= []).push({ page: item.page, label: item.label });
     return acc;
@@ -390,8 +394,8 @@ function FunctionMenuEditor() {
               ))}
             </div>
           )}
-          <button type="button" className="secondary-setting fm-custom-add" onClick={() => setPickerOpen((open) => !open)}>
-            <Plus size={13} />{pickerOpen ? "收起设置页清单" : "添加设置页"}
+          <button type="button" className="secondary-setting fm-custom-add" disabled={extMenu.length >= CUSTOM_MENU_LIMIT} title={extMenu.length >= CUSTOM_MENU_LIMIT ? "自定义入口最多 " + CUSTOM_MENU_LIMIT + " 个" : undefined} onClick={() => setPickerOpen((open) => !open)}>
+            <Plus size={13} />{pickerOpen ? "收起设置页清单" : "添加设置页"}{extMenu.length >= CUSTOM_MENU_LIMIT ? "（已满）" : ""}
           </button>
           {pickerOpen && (
             <div className="fm-custom-picker">
@@ -400,7 +404,7 @@ function FunctionMenuEditor() {
                   <span className="fm-custom-group-title">{group}</span>
                   <div className="fm-custom-chips">
                     {items.map((item) => {
-                      const added = extMenu.some((entry) => entry.id === "ext_set_" + item.page);
+                      const added = DEFAULT_MENU_PAGES.has(item.page) || extMenu.some((entry) => entry.id === "ext_set_" + item.page);
                       return (
                         <button key={item.page} type="button" className={added ? "added" : ""} disabled={added} onClick={() => addTarget(item.page, item.label)}>
                           {item.label}{added ? " ✓" : ""}

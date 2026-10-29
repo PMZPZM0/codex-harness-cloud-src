@@ -200,5 +200,9 @@ ok(/extensionsCatalog/.test(src("src/features/function-menu/FunctionMenuSettings
   && /\.fm-settings-custom/.test(read("src/styles/44-function-menu.css")),
   "设置侧「拓展功能」摘要与菜单联动：内置两项 + 自定义入口都显示（⛔ 菜单里加了、设置里看不到 = 两套真相）");
 
+ok(/DEFAULT_MENU_PAGES = new Set\(\[\s*"devtools",\s*"favorites"\s*\]\)/.test(menuSrc2) && /CUSTOM_MENU_LIMIT = 40/.test(menuSrc2)
+  && /!Array\.isArray\(input\?\.entries\)\) return/.test(extMain),
+  "自定义入口不会与内置默认页重复（收藏夹 / 开发工具）、超 40 条有提示，保存通道对非数组直接拒写（⛔ 空调用不许清空菜单）");
+
 console.log(`\n【rail】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
