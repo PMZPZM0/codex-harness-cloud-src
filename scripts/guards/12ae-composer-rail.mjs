@@ -173,9 +173,14 @@ ok(/function setFunctionMenuSettingsTargets/.test(menuStoreSrc) && /function set
   && /function openSettingsFromFunctionMenu/.test(menuStoreSrc) && /settingsNav\.flatMap/.test(shellSrc2)
   && !/settingsNav/.test(menuSrc2),
   "自定义入口的可选项与跳转由侧栏壳注册；唯一来源是 settingsNav（功能菜单不反向依赖 AppView）");
-ok(/extensionsMenuSet/.test(menuSrc2) && /extMenu\.filter/.test(menuSrc2) && /fm-custom-chips/.test(menuSrc2)
-  && /添加设置页/.test(menuSrc2),
+ok(/extensionsMenuSet/.test(menuSrc2) && /extMenu\.filter/.test(menuSrc2) && /AddPagesDialog/.test(menuSrc2) && /添加设置页/.test(menuSrc2),
   "编辑菜单能添加 / 移除自定义设置页入口（落盘走 extensions:menu-set，不写死在前端）");
+{
+  const pagesDialogSrc = src("src/features/function-menu/AddPagesDialog.tsx");
+  ok(/createPortal\(/.test(pagesDialogSrc) && /fm-pages-search/.test(pagesDialogSrc) && /useState<Set<string>>/.test(pagesDialogSrc)
+    && /onAdd\(chosenItems\)/.test(pagesDialogSrc) && /z-index: 950/.test(read("src/styles/44-function-menu.css")),
+    "添加设置页是弹窗 + 搜索 + 批量勾选（⛔ 不能退回一次只能加一个的小清单）；层级 950 压在编辑菜单 900 之上、轻浮层 1000 之下");
+}
 ok(/action\.type === "text"\) continue/.test(extMain) && /JSON\.stringify\(next/.test(extMain) && /slice\(0, 40\)/.test(extMain),
   "保存路径只收 url / settings（text 拒绝）且 40 条上限；写盘保留 rail 原样");
 {
