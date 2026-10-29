@@ -1597,6 +1597,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (feishuSrc.includes("runHintOf") && feishuSrc.includes("还没登录") && feishuSrc.includes("10 * 60_000") ? ok : fail)(
       "【139f】流程收口：工具失败回「下一步点哪里」的中文指引 + 配置进程最长挂 10 分钟（⛔ 只回英文原文 ⇒ 模型会反复重试；无限挂着 ⇒ 吃配置锁的僵尸进程）"
     );
+    (cardSrc.includes("feishuPollOutcome") ? ok : fail)(
+      "【139f】卡片轮询的链接/等待态归约走纯函数 feishuPollOutcome（真值表见本组末尾；⛔ 写在组件闭包里的判定没有判据，改坏了只能等用户截图）"
+    );
     (feishuSrc.includes("spawn(binary, args") ? ok : fail)(
       "【139f】CLI 执行用参数数组 spawn（⛔ 模型传入的 args 不能拼 shell）"
     );
@@ -1605,6 +1608,19 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     );
     (cardSrc.includes("feishuCliSetupStart") && cardSrc.includes("feishuCliLoginStart") && cardSrc.includes("feishuCliStatus") ? ok : fail)(
       "【139f】开发工具卡片：安装 / 配置应用 / 登录 / 状态四步齐全"
+    );
+    // 真值表：轮询归约（纯模块，node 直接 import）。⛔ 登录那一行是 10-29 事故的回归判据。
+    const feishuCard = await import(pathToFileURL(join(ROOT, "src", "lib", "feishu-card.mjs")).href);
+    const poll = (input) => JSON.stringify(feishuCard.feishuPollOutcome(input));
+    const pollCases = [
+      poll({ flow: "login", configured: true, loggedIn: false }) === JSON.stringify({ keepLink: true, clearBusy: false }),
+      poll({ flow: "login", configured: true, loggedIn: true }) === JSON.stringify({ keepLink: false, clearBusy: true }),
+      poll({ flow: "setup", configured: true, loggedIn: false }) === JSON.stringify({ keepLink: false, clearBusy: true }),
+      poll({ flow: "setup", configured: false, loggedIn: false }) === JSON.stringify({ keepLink: false, clearBusy: false }),
+      poll({ flow: "", configured: true, loggedIn: false }) === JSON.stringify({ keepLink: false, clearBusy: false }),
+    ];
+    (pollCases.every(Boolean) ? ok : fail)(
+      "【139f】轮询归约真值表：登录等待中（配置已完成）必须留链接继续轮询；登录成功才收；配置完成只收 setup 的链接"
     );
   }
 
@@ -1617,7 +1633,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     const tunnelSrc = readFileSync(join(ROOT, "electron", "relay-tunnel.ts"), "utf8");
     const relaySrc = readFileSync(join(ROOT, "electron", "remote.ts"), "utf8");
     const tunnelPage = readFileSync(join(ROOT, "electron", "remote", "web-page.ts"), "utf8");
-    const androidSrc = readFileSync(join(ROOT, "android", "app", "src", "main", "java", "com", "codexharness", "remote", "MainActivity.java"), "utf8");
+    /* ⛔ android/ 工程只存在于主仓（三仓同步面明确排除它）—— 副本里没有这个目录，
+       readFileSync 会直接抛 ENOENT、整组守卫连后面的断言一起不执行。所以按 N/A 处理。 */
+    const androidFile = join(ROOT, "android", "app", "src", "main", "java", "com", "codexharness", "remote", "MainActivity.java");
+    const hasAndroid = existsSync(androidFile);
+    const androidSrc = hasAndroid ? readFileSync(androidFile, "utf8") : "";
 
     (gwSrc.includes("handleTunnelRequest") && gwSrc.includes("const match = url.match") && gwSrc.includes("tunnels.get(id)") ? ok : fail)(
       "【139e】网关按 /t/<设备ID> 路由到对应隧道（不是所有人共用一条通道）"
@@ -1655,7 +1675,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes('apiUrl("/apk")') && !tunnelPage.includes('baseUrl + "/apk"') ? ok : fail)(
       "【139e】安装包入口用 apiUrl（旧实现引用了未定义的 baseUrl ⇒ 点了必抛错）"
     );
-    (androidSrc.includes("baseOf(normalize(raw))") && androidSrc.includes("baseOf(stored)") && androidSrc.includes('indexOf("/r/")') ? ok : fail)(
+    (!hasAndroid || (androidSrc.includes("baseOf(normalize(raw))") && androidSrc.includes("baseOf(stored)") && androidSrc.includes('indexOf("/r/")')) ? ok : fail)(
       "【139e】APK 存扫码链接时必须保留 /t/<id> 前缀（只存 origin 会 404）"
     );
     (relaySrc.includes("let submitting = false") && relaySrc.includes("if (submitting) return") && !relaySrc.includes('location.href = API_BASE') ? ok : fail)(
@@ -1709,16 +1729,16 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       } catch (error) { console.log("      剥离模块导入失败：", error.message); }
       (stripOk ? ok : fail)("【139e】手机读历史必须剥掉 <!--boss-role--> 角色块（用户截图：整块注入显示在气泡里）");
     }
-    (androidSrc.includes("R.id.code") && androidSrc.includes("R.id.connect") && androidSrc.includes("R.id.scan") ? ok : fail)(
+    (!hasAndroid || (androidSrc.includes("R.id.code") && androidSrc.includes("R.id.connect") && androidSrc.includes("R.id.scan")) ? ok : fail)(
       "【139e】安卓首屏保留手输连接码 + 扫码（两个入口，同一个界面）"
     );
-    ((androidSrc.includes("setOrientationLocked(true)") && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes('android:screenOrientation="portrait"') && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes("tools:replace=\"android:screenOrientation\"")) ? ok : fail)(
+    (!hasAndroid || (androidSrc.includes("setOrientationLocked(true)") && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes('android:screenOrientation="portrait"') && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes("tools:replace=\"android:screenOrientation\"")) ? ok : fail)(
       "【139e】扫码页必须竖屏（zxing 默认 sensorLandscape，必须 tools:replace 覆盖）"
     );
-    (androidSrc.includes("startConnect(code == null") && androidSrc.includes('"/api/pair"') && androidSrc.includes("pollApproval") && !androidSrc.includes("openChat(") ? ok : fail)(
+    (!hasAndroid || (androidSrc.includes("startConnect(code == null") && androidSrc.includes('"/api/pair"') && androidSrc.includes("pollApproval") && !androidSrc.includes("openChat(")) ? ok : fail)(
       "【139e】配对在 App 内一次完成：手输码保留 + 直接 POST /api/pair 并轮询批准（⛔ 不再打开网页配对页）"
     );
-    (androidSrc.includes("for (int attempt = 0; attempt < 3") && androidSrc.includes("removeIf") && androidSrc.includes("postDelayed(() -> web.loadUrl") ? ok : fail)(
+    (!hasAndroid || (androidSrc.includes("for (int attempt = 0; attempt < 3") && androidSrc.includes("removeIf") && androidSrc.includes("postDelayed(() -> web.loadUrl")) ? ok : fail)(
       "【139e】冷启动自动登录要重试（中转未就绪不许让人白输码）+ Cookie 去重 + 进页前等一拍"
     );
     ((function(){ try { const ui=readFileSync(join(ROOT, "src/features/app-view/AppView/04-remote-approval.tsx"), "utf8"); return ui.includes("pullCode") && ui.includes("remotePairState") && ui.includes("setRemoteQr"); } catch(e) { return false; } })() ? ok : fail)(
