@@ -4624,6 +4624,32 @@ export async function run() {
     const termSrc = readFileSync(join(ROOT, "src", "features", "terminal", "TerminalPanel.tsx"), "utf8").replace(/\r/g, "");
     const termCode = termSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
     (/export function commandPurpose\(/.test(cmdCode) ? ok : fail)("【127】commandPurpose 纯函数存在（从脚本输出标签提炼用途）");
+    /* ★ 10-30 用户实测（截图 + rollout 双证）：会话 cwd 与命令里 cd 到的目录不一致时，
+       卡片把相对路径按**会话目录**拼 ⇒ 点开「文件不存在」。下面几条**真跑纯函数**（import 源码）。 */
+    {
+      const cmdMod = await import(pathToFileURL(join(ROOT, "src", "lib", "command-display.mjs")).href);
+      const liveCmd = `cd 'D:\\Codex Harness Desktop'; $f = '.\\src\\lib\\command-display.mjs'; Copy-Item $f`;
+      (cmdMod.commandWorkdir(liveCmd) === "D:\\Codex Harness Desktop" ? ok : fail)(
+        "【127】commandWorkdir 能解析命令开头的 cd（绝对目录）"
+      );
+      (cmdMod.resolveCommandTarget(liveCmd, ".\\src\\lib\\command-display.mjs") === "D:\\Codex Harness Desktop\\src\\lib\\command-display.mjs" ? ok : fail)(
+        "【127】相对目标按**命令自己的 cd 目录**补全（⛔ 不是会话目录）"
+      );
+      (cmdMod.resolveCommandTarget("Get-Content .\\a.mjs", ".\\a.mjs") === ".\\a.mjs" ? ok : fail)(
+        "【127】命令没 cd 时不猜目录，原样返回"
+      );
+      (cmdMod.resolveCommandTarget("cd ..; ls", ".\\a.txt") === ".\\a.txt" ? ok : fail)(
+        "【127】相对 cd 推不出真目录 ⇒ 原样返回，不许瞎拼"
+      );
+      (cmdMod.resolveCommandTarget("cd 'D:\\x'; cat D:\\other\\b.txt", "D:\\other\\b.txt") === "D:\\other\\b.txt" ? ok : fail)(
+        "【127】本来就是绝对路径的 ⇒ 不动"
+      );
+    }
+    (/const openTarget = commandText && target \? resolveCommandTarget\(commandText, target\) : target;/.test(termCode)
+      && /onOpenFile\(openTarget\)/.test(termCode) && !/onOpenFile\(target\)/.test(termCode)
+      ? ok : fail)(
+      "【127】命令卡点击用 openTarget（按命令 cd 解析），⛔ 不再用会话目录拼出来的 raw target"
+    );
     (/export const INTENT_VERB = \{ read: "查看", search: "定位", modify: "编辑", command: "运行" \}/.test(cmdCode) ? ok : fail)(
       "【127】意图→动词表存在（查看/定位/编辑/运行）"
     );
