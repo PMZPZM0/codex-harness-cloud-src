@@ -4650,6 +4650,41 @@ export async function run() {
       ? ok : fail)(
       "【127】命令卡点击用 openTarget（按命令 cd 解析），⛔ 不再用会话目录拼出来的 raw target"
     );
+    /* ★ 10-30 二轮：卡片路径**根本不存在**时（会话目录拼出来的死链），按会话台账回落同名真实文件；
+       台账里常是 URL 编码形态（%20），两侧都要解一次。⛔ 这几条**真跑纯函数**。 */
+    {
+      const fb = await import(pathToFileURL(join(ROOT, "src", "lib", "path-fallback.mjs")).href);
+      const B = "\\";
+      const req = ["D:", "测试", "src", "lib", "command-display.mjs"].join(B);
+      const known = ["D:", "Codex Harness Desktop", "src", "lib", "command-display.mjs"].join(B);
+      (fb.pickKnownPathFallback({ requested: req, known, workspace: ["D:", "测试"].join(B) }) === known ? ok : fail)(
+        "【127】卡片死链按会话台账回落同名真实文件"
+      );
+      (fb.pickKnownPathFallback({ requested: req, known: ["D:", "x", "src", "app", "command-display.mjs"].join(B), workspace: ["D:", "测试"].join(B) }) === "" ? ok : fail)(
+        "【127】⛔ 目录尾段对不上就不回落（不许点开不相干的同名文件）"
+      );
+      {
+        const realFile = join(ROOT, "src", "lib", "command-display.mjs");
+        const deadRoot = join(ROOT, "__dead_dir__");
+        const pickedNow = fb.pickKnownPathFallback({ requested: join(deadRoot, "src", "lib", "command-display.mjs"), known: realFile, workspace: deadRoot });
+        (existsSync(realFile) && pickedNow === realFile ? ok : fail)("【127】真跑：死链落到磁盘上真实存在的文件");
+      }
+      {
+        const pathsSrc = readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "paths.ts"), "utf8");
+        (/function decodeMaybeEncodedPath\(/.test(pathsSrc) && /decodeMaybeEncodedPath\(match\[1\]\)/.test(pathsSrc) ? ok : fail)(
+          "【127】会话台账入库前解百分号编码（编码态路径永远打不开）"
+        );
+        const fbSrc = readFileSync(join(ROOT, "src", "lib", "path-fallback.mjs"), "utf8");
+        (/decodeURIComponent\(rawKnown\)/.test(fbSrc) ? ok : fail)("【127】回落取用台账值时也解一次");
+      }
+      {
+        const preview = readFileSync(join(ROOT, "src", "hooks", "useFilePreview.ts"), "utf8");
+        const rail = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "03-workspace-files.tsx"), "utf8");
+        (/resolveExistingFile\(/.test(preview) && /resolveExistingFile\(/.test(rail) ? ok : fail)(
+          "【127】两处预览面都接了回落（居中编辑器 + 右栏）"
+        );
+      }
+    }
     (/export const INTENT_VERB = \{ read: "查看", search: "定位", modify: "编辑", command: "运行" \}/.test(cmdCode) ? ok : fail)(
       "【127】意图→动词表存在（查看/定位/编辑/运行）"
     );
