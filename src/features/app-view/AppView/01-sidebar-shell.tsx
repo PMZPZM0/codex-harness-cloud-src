@@ -8,7 +8,6 @@ import { BossProjectDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDir
 import { isMacPlatform } from "../../../lib/is-mac-platform";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
-import { FileTrustDialog } from "../../../components/FileTrustDialog";
 import { hk } from "../../../lib/hk";
 import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
 import { EntityTagEditorHost } from "../../../components/EntityTagEditor";
@@ -940,8 +939,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 它 portal 到 body ⇒ 放在 aside 里的位置不影响定位。 */}
             <CloseConfirmDialog />
             {/* 工作区外文件预览的授权确认（10-18，应用内模态） */}
-            <FileTrustDialog />
-            {/* 受控：传 open ⇒ NewbieGuide 不再画自己那行入口（否则底部会出现两个「新手」） */}
+                    {/* 受控：传 open ⇒ NewbieGuide 不再画自己那行入口（否则底部会出现两个「新手」） */}
             <NewbieGuide open={newbieOpen} onOpenChange={setNewbieOpen} onOpenSettings={onOpenSettings} />
           </aside>
   );

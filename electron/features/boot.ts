@@ -7,19 +7,19 @@
  *    局部常量 + setWeixinGateway() 写回 —— 语义等价，且 main 侧引用点零改动。
  */
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from "electron";
-import { readLimitedBenefitTokenForBoot } from "./limited-benefit-ipc";
-import { healEngineInstall } from "../engine-install-heal";
 import fs from "node:fs/promises";
-import { createReadStream, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
 import os from "node:os";
 import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
+import { clearGrants } from "./data-access-ipc";
 import { gcSessionWorkspaces, removeSessionWorkspace, setSessionWorkspaceState } from "./session-workspace";
 import { clearSessionPrivateMemory } from "../memory-fabric";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { bossMemoryWorkspace, isBossSession } from "../boss-groups/session-registry";
+import { healEngineInstall } from "../engine-install-heal";
 import { debugTurnFiles } from "../debug/turn-files-debug";
 import { sendToWindow } from "./window-bus";
 import { getMusicStream } from "../music-streams";
@@ -67,7 +67,6 @@ let userSkillsDir!: any;
 let refreshSkillDiscipline!: any;
 let readCustomModel!: any;
 let server!: any;
-let isInsideTrustedRoots!: any;
 let placeholderPngResponse!: any;
 let createWindow!: any;
 let filterForRenderer!: any;
@@ -99,18 +98,20 @@ function turnIdOf(params: any): string {
 }
 
 /**
- * 回合收尾落「改动备份」（10-13 自桌面版同步）。
+ * 回合收尾落「改动备份」（10-13）。
  *
  * ⛔ **阶梯第 2 级「本仓已有吗」**：`turn-file-watch` 已经把工作区走完并算出这回合改了哪些
- *   文件（带增删行数，跑过 IGNORE 表与 4000 全局 / 600 单目录两级预算），
+ *   文件（带 additions/deletions，跑过 IGNORE 表与 4000 全局 / 600 单目录两级预算），
  *   这里**只搬运不重算** —— 自己再写一遍遍历就是两处真相源，且忽略规则必然与它漂移。
- * ⛔ 开关关闭 ⇒ 直接返回、一行不落盘。⛔ 内部线程（记忆蒸馏等）不备份。
+ * ⛔ 开关关闭 ⇒ 直接返回、一行不落盘（用户没主动开之前不该产生任何产物）。
+ * ⛔ 内部线程（记忆蒸馏等）不备份：那不是用户的代码，备份它只会污染回看列表。
  * ⛔ 永不抛：磁盘满/路径失效只记日志（旁路能力，打断回合才是真损失）。
  */
 function backupTurnIfEnabled(threadId: string, turnId: string): Promise<unknown> {
   return backupTurnIfEnabledImpl(threadId, turnId, {
     filesForTurn: (tid, rid) => {
       // ⚠️ emitTurnFileChanges 会清掉快照；这里紧接着读，取的是**同一批**文件条目。
+      // 取不到就退成该会话最后一个回合的报告（引擎形态差异时 turnId 可能对不上）。
       const reports = storedReportsForThread(tid);
       const hit = reports.find((r) => r.turnId === rid) ?? reports[reports.length - 1];
       return (hit?.files ?? []) as any[];
@@ -122,8 +123,10 @@ function backupTurnIfEnabled(threadId: string, turnId: string): Promise<unknown>
         dir: normalizeBackupDir(settings.changeBackupDir).dir,
       };
     },
-    // ⛔ 容量裁剪要把最旧的备份**移进回收站**（用户令「最大 3G，超了删除旧的」）——
+    // ⛔ 容量裁剪要把最旧的备份**移进回收站**（10-13 用户令「最大 3G，超了删除旧的放回收站」）——
     //   备份是用户代码的唯一副本，直接 rm = 不可恢复地删掉别人写的东西。
+    //   `shell.trashItem` 只有主进程有 ⇒ 在这里注入；change-backup 本模块不 import electron，
+    //   因此仍能被纯 Node 环境真跑测试（守卫 12i 依赖这一点）。
     trash: async (target: string) => {
       try {
         await shell.trashItem(target);
@@ -354,7 +357,6 @@ export function bindBoot(deps: Record<string, any>) {
   refreshSkillDiscipline = deps.refreshSkillDiscipline;
   readCustomModel = deps.readCustomModel;
   server = deps.server;
-  isInsideTrustedRoots = deps.isInsideTrustedRoots;
   placeholderPngResponse = deps.placeholderPngResponse;
   createWindow = deps.createWindow;
   filterForRenderer = deps.filterForRenderer;
@@ -445,8 +447,10 @@ export async function bootApp() {
   // 会让首屏短暂出现幽灵会话（见 purgeDeletedThread 注释）。失败不阻塞启动。
   try { await loadDeletedThreads(); } catch (error) { console.warn("deleted-threads 载入失败：", error); }
 
-  /* 10-29 用户令：启动时收口「孤立工作区」（记录在目录不在 / 目录在记录不在）。
-     ② 超过 30 天才删 —— 刚建出来还没登记的目录立刻删会误伤正在创建的会话。不 await。 */
+  /* 10-29 用户令：启动时收口「孤立工作区」。
+     两类：记录在但目录不在（会话被外部删掉 / 用户手删了目录）、目录在但记录不在
+     （删除时目录被占用没删掉、或注册文件丢了）。② 超过 30 天才删 —— 刚建出来还没来得及
+     登记的目录立刻删会误伤正在创建的会话。⛔ 不 await：清目录可能很慢，不能拖慢启动。 */
   void gcSessionWorkspaces(app.getPath("userData")).then((stats) => {
     if (stats.recordsRemoved || stats.dirsRemoved) {
       console.log(`[sessionspace] 启动收口：清记录 ${stats.recordsRemoved} 条、清孤儿目录 ${stats.dirsRemoved} 个、重试 orphan ${stats.orphanRetried} 条（扫描 ${stats.scanned} 条）`);
@@ -544,42 +548,13 @@ export async function bootApp() {
     }
   }
   // ⛔ 10-24 自愈：catalog 坏/空文件会让引擎启动即拒载（见 healModelCatalogBeforeStart 注释）。
-  //    必须赶在 server.start 之前跑 —— 旧版把它放在 server.start 之后，那时引擎已经死了，
-  //    重写 catalog 也救不回来（用户报障现场）。
+  //    必须赶在 server.start 之前跑 —— 旧版把它放在 server.start 之后（第 928 行附近），
+  //    那时引擎已经死了，重写 catalog 也救不回来（用户报障现场）。
   try {
     await healModelCatalogBeforeStart(custom);
   } catch (error) {
     console.warn("[boot] model-catalog self-heal failed (降级继续):", error);
   }
-  // 云版/headless 兜底（10-11）：safeStorage 密文可能解不开（无头环境/换机拷贝的 userData），
-  // 而引擎对 env_key 是**存在性**校验（上游鉴权由统一通道桥自己管）⇒ 允许显式注入：
-  //   ① env HARNESS_CLOUD_API_KEY；② userData/api-key.txt（明文，0600，用户自己放）。
-  // 顺序：env > 文件 > 解密结果；只在当前 key 为空时补位，不覆盖已解出的真 key。
-  if (!server.hasApiKey()) {
-    const fallback = process.env.HARNESS_CLOUD_API_KEY
-      || (() => { try { return readFileSync(path.join(app.getPath("userData"), "api-key.txt"), "utf8").trim(); } catch { return ""; } })();
-    if (fallback) {
-      server.setApiKey(fallback);
-      console.log("[boot] 使用兜底 API key（env HARNESS_CLOUD_API_KEY 或 userData/api-key.txt）");
-    }
-  }
-  /* ⛔ 20:1x 兼容分支：老用户的限时福利令牌只存在 cloudHome/limited-benefit-token，
-     而上面那段兜底只认 env 与 userData/api-key.txt ⇒ 重启后引擎仍拿不到 Key。
-     这里从既有令牌补写一次 api-key.txt（幂等；写失败不阻断启动），让老用户自动收敛。 */
-  if (!server.hasApiKey()) {
-    try {
-      const legacy = readLimitedBenefitTokenForBoot();
-      if (legacy) {
-        const p = path.join(app.getPath("userData"), "api-key.txt");
-        try { writeFileSync(p, legacy, { mode: 0o600 }); } catch { /* 目录/权限异常则只注入不落盘 */ }
-        server.setApiKey(legacy);
-        console.log("[boot] 从限时福利令牌补位 API key（并落地 api-key.txt）");
-      }
-    } catch (error) {
-      console.warn("[boot] 读取限时福利令牌失败：", error instanceof Error ? error.message : String(error));
-    }
-  }
-
   protocol.handle("harness-image", async (request) => {
     let imagePath = new URL(request.url).searchParams.get("path");
     if (!imagePath) return new Response("Missing path", { status: 400 });
@@ -588,18 +563,13 @@ export async function bootApp() {
     if (!/^[a-zA-Z]:[\\/]/.test(imagePath) && !imagePath.startsWith("/")) {
       try { imagePath = decodeURIComponent(imagePath); } catch { /* 原样使用 */ }
     }
-    // ⛔ 收敛到「图片 + 可信根内」（09-13 审计 S5）：这个协议注册在**默认 session** 上，
-    // 而渲染层要渲染模型输出 / 内置浏览器里的网页 / 渠道消息 —— 不收敛就等于给它们一个
-    // `harness-image://img/?path=C:/任意文件` 的任意文件读取原语。
-    // 允许：常见图片扩展名，且落在 userData / images 缓存目录 / 任一已知会话工作目录内。
+    /* ⛔ 10-29 用户令：「不管哪里的文件，都要可以预览和编辑」⇒ 不再判可信根。
+       仍保留**扩展名白名单**（这是正确性约束：非图片交给 img 只会得到乱码，不是安全闸）。
+       ⚠️ 残余风险已知并接受：本协议注册在默认 session，主文档里的任意 HTML 都能取本机图片。 */
     if (!/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(imagePath)) {
       return new Response("Unsupported media type", { status: 415 });
     }
-    {
-      const resolved = path.resolve(imagePath);
-      if (!isInsideTrustedRoots(resolved)) return new Response("Forbidden", { status: 403 });
-      imagePath = resolved;
-    }
+    imagePath = path.resolve(imagePath);
     // 斜杠方向兜底：引擎/宿主写入的路径斜杠方向可能不一致
     if (!existsSync(imagePath)) {
       const backslash = imagePath.replace(/\//g, "\\");
@@ -633,11 +603,8 @@ export async function bootApp() {
     const ext = path.extname(mediaPath).slice(1).toLowerCase();
     const mime = MEDIA_MIME[ext];
     if (!mime) return new Response("Unsupported media type", { status: 415 });
-    {
-      const resolved = path.resolve(mediaPath);
-      if (!isInsideTrustedRoots(resolved)) return new Response("Forbidden", { status: 403 });
-      mediaPath = resolved;
-    }
+    /* ⛔ 10-29 用户令：媒体同样不再判可信根（能预览图片就要能预览音视频）。保留 MIME 白名单。 */
+    mediaPath = path.resolve(mediaPath);
     // 斜杠方向兜底（与 harness-image 同款）
     if (!existsSync(mediaPath)) {
       const backslash = mediaPath.replace(/\//g, "\\");
@@ -782,6 +749,7 @@ export async function bootApp() {
        ⛔ 必须排在 filterForRenderer **之前**（事件一旦被裁掉就再也拿不到了）。
        ⛔ 只处理 role_memory_save 这一个工具；返回 false = 不是它，照原流程往下走。 */
     void handleRoleMemoryToolCall({ userDataDir: app.getPath("userData"), event, respond: (id, result) => server.respond(id as any, result) })
+    /* MCP 工具（dynamicTools 注册的那批）：带连接器前缀的才认，其余交回原流程 */
     void handleMcpToolCall({ event, respond: (id, result) => server.respond(id as any, result) })
       .catch(() => false);
     /* 10-10 被委派会话的**能力网关**（用户令「全开 harness_tools」）：同上，被委派会话的事件会被
@@ -832,14 +800,16 @@ export async function bootApp() {
           // ⛔ 引擎侧发起的删除（不经渲染层 thread/delete 请求）同样要清磁盘残留 + 记墓碑，
           //   否则侧栏的 rollout 兜底扫描在下次启动把它捞回来（见 purgeDeletedThread 注释）。
           if (event.method === "thread/deleted") void purgeDeletedThread(goneId).catch(() => undefined);
+          if (goneId) clearGrants(goneId); // 10-29：会话删了 ⇒ 三模块授权作废（另一入口在 codex-ipc 的 purgeTarget）
           /* 10-29 用户令：会话专属工作区的状态跟着引擎事件走。
-             删除 ⇒ 目录 + 记录一起清；归档 ⇒ 只打标记，目录保留（取消归档要能接着用）。
-             ⛔ 这是第二条入口（引擎侧发起），codex-ipc 的 purgeTarget 是第一条 —— 两处都要有。 */
+             删除 ⇒ 目录 + 记录一起清；归档 ⇒ **只打标记，目录保留**（取消归档要能接着用）。
+             ⛔ 这是第二条入口（引擎侧发起的删除/归档），codex-ipc 的 purgeTarget 是第一条 —— 两处都要有。 */
           if (goneId) {
             if (event.method === "thread/deleted") {
               /* 删除：工作区目录 + **该会话的私有记忆目录**（private__<id>/）一起清。
                  ⛔ 用工作区记录里的 projectRoot 定位记忆，不用 threadCwd 缓存 ——
-                    重启后再删旧会话时缓存可能是空的，那就定位不到、只剩垃圾。 */
+                    重启后再删旧会话时缓存可能是空的，那就定位不到、只剩垃圾。
+                 ⛔ 顺序：先删工作区拿到 projectRoot，再删记忆（记忆归 memory-fabric，别在这里拼路径）。 */
               void removeSessionWorkspace(app.getPath("userData"), goneId)
                 .then(async (out) => {
                   const memoryWs = out.projectRoot || threadCwd.get(goneId) || "";
@@ -945,10 +915,12 @@ export async function bootApp() {
            没有这一发收尾就静默漏结算（运行中行不受影响，因为它用的是快照自存的回合 id）。 */
         emitTurnFileChanges(threadIdOf);
         if (id) settleTurnByTurnId(id);
-        /* 改动备份（10-13 自桌面版同步）：把上面那份「这回合改了哪些文件」落成可回看的备份档案。
+        /* 改动备份（10-13）：把上面那份「这回合改了哪些文件」落成可回看的备份档案。
            ⛔ **不重写 diff、不重写遍历** —— 直接复用 turn-file-watch 已算好的结果
-           （它带 additions/deletions，还跑过 IGNORE 表与 4000/600 两级预算）。
-           ⛔ 开关关闭 ⇒ 一行都不落盘。⛔ 备份失败只记日志，永不打断回合。 */
+           （它带 additions/deletions，还跑过 IGNORE 表与 4000/600 两级预算），
+           再写一套 walker 就是两处真相源，且必然与它的忽略规则漂移。
+           ⛔ 开关关闭 ⇒ 一行都不落盘（用户没主动开之前不产生任何产物）。
+           ⛔ 备份失败只记日志，永不打断回合（旁路能力，用户正在写的东西比备份重要）。 */
         if (!internalThreads.has(String(threadIdOf))) void backupTurnIfEnabled(threadIdOf, id);
         // ⛔ 10-03 语法修复：58afb8b 把这里写成了 `else if (threadIdOf)`，但上面的
         //   `} else if (...)` 分支已闭合 ⇒ 整个文件解析失败（tsc TS1128），主进程编译不过。
@@ -1110,10 +1082,10 @@ export async function bootApp() {
         const willCapture = !isWelcomeGen && Boolean(buffer.user.trim() || buffer.assistant.trim());
         debugMemoryCapture({ method: "turn/completed", threadId, turnId: turnIdOf(p) || null, via: taken.via, userLen: buffer.user.length, assistantLen: buffer.assistant.length, itemsLen: items.length, cwd: buffer.cwd ?? null, isWelcomeGen, willCapture });
         if (willCapture) {
-          /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个指挥中枢记忆板块，跟普通会话完全拆开」。
-            指挥中枢跑在用户选的项目目录里 ⇒ 捕获写入若还用 `buffer.cwd`，
+          /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」。
+             BOSS 会话跑在用户选的项目目录里 ⇒ 捕获写入若还用 `buffer.cwd`，
              它的日志/纪律会**写进那个项目的记忆** ⇒ 与普通会话混在一起。
-             ⇒ 指挥中枢改写它自己的专属记忆目录（`<userData>/boss-home/memories/<threadId>`）。
+             ⇒ BOSS 会话改写它自己的专属记忆目录（`<userData>/boss-home/memories/<threadId>`）。
                 名单在主进程（session-registry.ts），这里能直接判。 */
           void (async () => {
             let ws = buffer.cwd;

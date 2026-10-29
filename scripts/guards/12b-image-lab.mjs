@@ -53,8 +53,8 @@ ok(
 );
 // ⛔ 三件套查**产物**（编译后仍在）；tsc 会把调用改写成 `!(0, runtime_refs_1.isInsideTrustedRoots)(candidate)`
 ok(
-  /isInsideTrustedRoots\)?\(candidate\)/.test(labDist) && labDist.includes(".png") && /MAX_IMAGE_BYTES/.test(labDist),
-  "路径闸三件套（产物层）：可信根 + 图片扩展名白名单 + 大小上限（⛔ 任意路径读写 = XSS 读写全盘）",
+  labDist.includes(".png") && /MAX_IMAGE_BYTES/.test(labDist) && !/isInsideTrustedRoots\)?\(candidate\)/.test(labDist),
+  "路径闸两件套（产物层）：图片扩展名白名单 + 大小上限；⛔ 不判可信根（10-29 用户令）",
 );
 ok(
   /exports\.imageEditCore\s*=/.test(labDist) && /exports\.imageInfoCore\s*=/.test(labDist),

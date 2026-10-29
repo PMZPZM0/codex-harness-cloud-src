@@ -670,12 +670,13 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   //    （indexOfHandle 同时认两种）。只认 ipcMain 会得 -1 ⇒ slice(-1, …) 读到聚合面尾部
   //    ⇒ 这两条**安全**断言会以「可信根收敛被去掉」为名报红，而不变量其实没破（实测假红两轮）。
   const fsWrite = sliceHandle(mainForSec, "fs:write", 1400);
-  /isInsideTrustedRoots\(resolved\)/.test(fsWrite)
-    ? ok("fs:write 收敛到主进程可信根（渲染层自报的 root 不再参与判定，09-19 用户拍板收紧）")
-    : fail("fs:write 又用渲染层可控的 root 做校验或去掉了可信根收敛 —— 等于任意路径写文件");
+  /* ⛔ 10-29 用户令推翻了「收敛」口径：编辑器保存**故意**不再判可信根（工作区外的文件也要能改）。 */
+  (!/isInsideTrustedRoots\(resolved\)/.test(fsWrite) && !/input\.root/.test(fsWrite)
+    ? ok("fs:write 不判可信根、也不拿渲染层 root 做校验（10-29 用户令：任意文件可编辑）")
+    : fail("fs:write 又被加回了可信根 / root 校验 —— 会让工作区外的文件存不下（本次要修的症状）"));
   const fsRead = sliceHandle(mainForSec, "fs:read", 1400);
-  (/isInsideTrustedRoots\(target\)/.test(fsRead) ? ok : fail)(
-    "fs:read 收敛到可信根（会话工作目录 + userData + 用户选过的路径，不再任意读全盘文件）"
+  (!/isInsideTrustedRoots\(target\)/.test(fsRead) ? ok : fail)(
+    "fs:read 不判可信根（10-29 用户令：任意文件都能预览，不再弹授权）"
   );
   // shell:reveal / updates:reveal 同口径收敛
   // ⛔ 10-03：与下面 updates:reveal 同口径 —— 域改成插件形态后注册写的是 ipcHost.handle，
@@ -683,8 +684,9 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   //    读到无关片段而假红（不变量本身并没破）。找不到锚点就切片为空 ⇒ 明红，不静默放过。
   const shellRevealFrom = mainForSec.search(/(?:ipcMain\.handle|ipcHost\.handle)\("shell:reveal"/);
   const shellReveal = shellRevealFrom >= 0 ? mainForSec.slice(shellRevealFrom, shellRevealFrom + 900) : "";
-  (/isInsideOrEqualTrustedRoots\(target\)/.test(shellReveal) ? ok : fail)(
-    "shell:reveal 收敛到可信根（含根本身：reveal 工作区 / userData 目录是合法用法）"
+  /* ⛔ 10-29 用户令：定位也不再判可信根（与预览同口径）。 */
+  (!/isInsideOrEqualTrustedRoots\(target\)/.test(shellReveal) ? ok : fail)(
+    "shell:reveal 不判可信根（10-29 用户令：任意位置的文件都能定位）"
   );
   /* ⛔ 10-03 P2：锚点必须认两种注册形态 —— 域迁到容器后写的是 ipcHost.handle，用 indexOf('ipcMain.handle("...') 会得到 -1 ⇒ 切片为空 ⇒ 这条安全断言假红（不变量本身没破）。 */
   const updRevealFrom = mainForSec.search(/(?:ipcMain\.handle|ipcHost\.handle)\("updates:reveal"/);
@@ -753,9 +755,11 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     ? ok("external:open / popout 不再无条件放行 file:（只允许工作区内的 .html）")
     : fail("external:open 又放行任意 file: 了 —— 渲染层可让系统执行任意本地程序");
   // harness-image 必须收敛路径
-  /protocol\.handle\("harness-image"[\s\S]{0,1200}?Forbidden/.test(mainForSec)
-    ? ok("harness-image 协议收敛到图片 + 可信根内（不再任意读文件）")
-    : fail("harness-image 协议没有路径收敛 —— 它是默认 session 上的任意文件读取原语");
+  /* ⛔ 10-29 用户令：协议**故意**不再判可信根（图片 / PDF 预览要能看任意位置的文件）。 */
+  (/protocol\.handle\("harness-image"[\s\S]{0,1200}?Unsupported media type/.test(mainForSec)
+    && !/protocol\.handle\("harness-image"[\s\S]{0,1200}?Forbidden/.test(mainForSec)
+    ? ok("harness-image 只留 MIME 白名单、不判可信根（10-29 用户令）")
+    : fail("harness-image 又被加回了路径收敛，或丢了 MIME 白名单"));
   // 导航与新窗口收敛必须有
   /will-navigate/.test(mainForSec) && /setWindowOpenHandler/.test(mainForSec) && /will-attach-webview/.test(mainForSec)
     ? ok("主窗口导航 / 新窗口 / webview 挂载都有收敛（此前全仓零命中）")

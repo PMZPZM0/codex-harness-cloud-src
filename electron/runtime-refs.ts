@@ -11,7 +11,7 @@
  * ⛔ 本文件**不得** import "./main"（会成环，且整场收敛失效）。
  */
 import { app, BrowserWindow, nativeTheme } from "electron";
-import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
 import { CodexServer } from "./codex-server";
@@ -126,16 +126,8 @@ function loadPersistedTrust() {
     if (Array.isArray(rows)) for (const row of rows) if (typeof row === "string" && row) userPickedPaths.add(path.resolve(row));
   } catch { /* 首次运行/文件坏 => 空集 */ }
 }
-/** 用户点击授权后调用：把该文件所在**目录**加入可信根并持久化。返回规范化后的目录。 */
-export function allowUserPath(target: string): string {
-  loadPersistedTrust();
-  const resolved = path.resolve(String(target || ""));
-  const dir = existsSync(resolved) && statSync(resolved).isDirectory() ? resolved : path.dirname(resolved);
-  userPickedPaths.add(dir);
-  if (userPickedPaths.size > 200) userPickedPaths.delete(userPickedPaths.values().next().value as string);
-  try { writeFileSync(trustFilePath(), JSON.stringify([...userPickedPaths], null, 2), "utf8"); } catch { /* 写盘失败仍本次生效 */ }
-  return dir;
-}
+/* 10-29：allowUserPath 已删除 —— 预览 / 编辑不再需要授权，它唯一的调用方（fs:allow）同轮删除。
+   历史 trusted-paths.json 仍会被读取（loadPersistedTrust），让其余**资产类**闸门认旧授权。 */
 
 export const trustPicked = (paths: readonly string[]) => {
   for (const p of paths) {
@@ -188,10 +180,10 @@ export async function syncEngineWatchdog() {
   else server.stopWatchdog();
 }
 
-/** 窗口事件落盘诊断（10-16）：排查「关闭独立弹窗后主窗没反应」时发现，主进程侧的窗口
- *  通知**一句日志都没有** ⇒ 用户报「没自动回来」时无法区分「通知没发出」「发给了空集合」
- *  「渲染层没处理」三种情形（本次的真根因恰好是第一种，静默返回了一整轮）。
- *  落 `userData/window-events.log`（与 theme-chrome.log 同一落盘纪律：无头形态没有可见终端）。 */
+/** 窗口事件落盘诊断（10-16，与云助手同轮同步）：排查「关闭独立弹窗后主窗没反应」时发现，
+ *  主进程侧的窗口通知**一句日志都没有** ⇒ 用户报「没自动回来」时无法区分「通知没发出」
+ *  「发给了空集合」「渲染层没处理」三种情形（云助手那边的真根因恰好是第一种）。
+ *  落 `userData/window-events.log`（无头形态没有可见终端，只能落盘）。 */
 function windowEventDiag(msg: string) {
   try {
     appendFileSync(path.join(app.getPath("userData"), "window-events.log"), `${new Date().toISOString()} ${msg}\n`);
@@ -200,15 +192,12 @@ function windowEventDiag(msg: string) {
 
 /** 弹窗被关闭 → 通知**主窗**（popout-closed 解锁侧栏 + popout-return 自动切回该会话）。
  *
- *  ⛔⛔ 必须走窗口总线的**主窗**通道，不能只发 `mainWindow`（10-16 用户报
- *     「关闭独立弹窗后，没有自动回来，会话选不了」的真根因）：助手形态（headless）
- *     **根本不创建桌面版主窗**（window-factory.createWindow 在助手形态直接返回）
- *     ⇒ `mainWindow` 恒为 null ⇒ 原先那句 `if (!mainWindow …) return;` 让通知
- *     **一次都发不出去**：侧栏那条会话永远停在「会话在独立窗口中」的灰态，
- *     也不会自动切回主应用。
- *  ⛔ 用 `sendToWindow`（= 总线里 { primary: true } 的窗口集合），而不是 broadcastToAll：
- *     两种形态的主窗都登记为 primary（桌面版 = mainWindow；助手形态 = assistant-window）
- *     ⇒ 一改两形态通吃；而 popout-return 若广播给**其它仍开着的**弹窗，
+ *  ⛔⛔ 走窗口总线的**主窗**通道，不再只发 `mainWindow`（与云助手同轮同步）：云助手形态
+ *     根本不创建桌面版主窗 ⇒ `mainWindow` 恒为 null ⇒ 原先那句 `if (!mainWindow …) return;`
+ *     让通知**一次都发不出去**（用户报「关闭独立弹窗后没有自动回来，会话选不了」）。
+ *     `sendToWindow` 的目标是总线里 { primary: true } 的窗口集合 ⇒ 两种形态通吃
+ *     （桌面版 = mainWindow；助手形态 = assistant-window）。
+ *  ⛔ 也不要用 broadcastToAll：`popout-return` 若广播给**其它仍开着的**弹窗，
  *     会让它们把自己的会话切走、并清掉自己的弹窗标识（弹窗壳整个坏掉）。
  *  调用点已在 unregisterBusWindow 之后 ⇒ 已关的弹窗不会收到。 */
 export function notifyPopoutClosed(threadId: string) {
@@ -264,14 +253,13 @@ export function titleBarOverlayOptions() {
 
 /** 把**当前主题**的原生外观应用到**单个**窗口（建窗后 / 首次显示后各补设一次）。
  *
- *  ⛔ 存在的理由（10-16 用户实测：「暗色主题下独立窗口右上角的系统缩小/全屏/叉掉看不见」，
- *     主仓与 PPcode 同样复现）：建窗只在构造参数里读了一次 `titleBarOverlayOptions()`
- *     （而且那时 appThemeDark 可能还是 null ⇒ 退到**系统**主题）。Windows 又会在窗口
- *     **首次显示**时做边框延展，把构造期设好的属性覆盖掉 —— 与 `win-rounded-corners.ts`
- *     记的圆角时序坑是同一件事。⇒ 暗色顶栏上画的是系统主题的近黑符号 = 看不见。
- *     所以：建窗补一次、`show` 之后再补一次（幂等）。
- *  ⛔ 与 applyWindowChrome 的区别：那个遍历**全部**总线窗口、由主题切换触发；
- *     这个只管传入的那一个、由建窗/首显触发 —— 两者互补，缺一个就会出现
+ *  ⛔ 存在的理由（10-16 用户实测：「暗色主题下独立窗口右上角的系统缩小/全屏/叉掉看不见」）：
+ *     建窗只在构造参数里读了一次 `titleBarOverlayOptions()`（而且那时 appThemeDark 可能还是
+ *     null ⇒ 退到**系统**主题）。Windows 又会在窗口**首次显示**时做边框延展，把构造期设好的
+ *     属性覆盖掉 —— 与 `win-rounded-corners.ts` 记的圆角时序坑是同一件事。
+ *     ⇒ 暗色顶栏上画的是系统主题的近黑符号 = 看不见。所以：建窗补一次、`show` 之后再补一次（幂等）。
+ *  ⛔ 与 applyWindowChrome 的分工：那个遍历**全部**总线窗口、由主题切换触发；
+ *     这个只管传入的那一个、由建窗/首显触发 —— 两者互补，缺一就会出现
  *     「新开的窗口外观不对 / 换了主题旧窗口不跟」。 */
 export function applyThemeToWindow(win: BrowserWindow): void {
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;

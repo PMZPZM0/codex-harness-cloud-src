@@ -142,7 +142,8 @@ import {
   Video,
   Bell,
   CheckCheck,
-  /* 运行状态行的前置图标（10-28 用户：状态文字前面加对应图标） */
+  /* 运行状态行的前置图标（10-28 用户：状态文字前面加对应图标）
+     ⛔ 只补原本没导入的：Globe2 / PenLine / Send / Wrench 文件里已有（重复导入 = TS2300）。 */
   Timer,
   Hourglass,
   Pencil,
@@ -157,7 +158,8 @@ import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../.
 /**
  * 运行状态 → 前置图标（10-28 用户：「正在执行命令和正在编辑文件和文件生成中前面加上这种对应图标」
  * 「其他映射状态的文字前面也都加上对应图标」）。
- * ⛔ 只是视觉映射，不参与状态判定（判定只有 part06 的 runActivity 一处出口）。
+ * ⛔ 这只是**视觉映射**，不参与状态判定（判定在 part06 的 runActivity，单一出口）。
+ * ⛔ 新增状态必须在这里补一行，否则状态行只有文字没有图标（用户会立刻看出来不一致）。
  */
 const RUN_ACTIVITY_ICONS: Record<string, typeof Timer> = {
   "准备中": Timer,
@@ -183,7 +185,7 @@ import { visibleTurnWindow, mergeTurnListsById, turnHistoryPlan } from "../../..
 import { setTurnHeightEstimate, setTurnWindowTail, subscribeTurnHistory, turnHistoryFor, turnHistoryVersion } from "../../../../lib/turn-history.mjs";
 import { ExpertTeamEditorModal, SubAgentEditorModal, TeamMemberRail, TeamMemberHistory, DelegatedRail, DelegatedRunPopup, TeamRunPopup } from "../../../experts-teams";
 import { BossGroupMemberRail } from "../../../boss-group-view/BossGroupMemberRail";
-import { activeMembersOf, useGroupMembers } from "../../../boss-group-view";
+import { activeMembersOf, useGroupMembers } from "../../../boss-group-view/group-members-store";
 /* ⭐ 10-05：普通会话的办公室入口迁到本文件的右侧轨道上 ⇒ 需要那个哨兵 teamId
    （从 team-office 域的 barrel 取，域间只许走 barrel）。 */
 import { OFFICE_SESSION_TEAM_ID } from "../../../team-office";
@@ -193,14 +195,11 @@ import { ImagePreview, ImageLightbox, SearchPreviewModal, PastedTextEditor, type
 import { decodeText } from "../../../../hooks/useFilePreview";
 
 /** 会话工作区文件的弹窗编辑读写通道（pastedText.kind==="file" 时用）：读 = fs:read（base64→
- *  与右栏预览同一 decodeText 口径，GBK 兜底）；写 = fs:write（可信根校验在主进程，root 参数不参与判定）。 */
-/** ⛔ 10-18 预览修复：路径在会话工作区之外时，主进程返回 OUTSIDE_TRUST:<dir>（机器可读）。
- *  这里弹一次确认，用户同意后调 fs:allow 放行**该目录**（主进程持久化，重启仍有效），再重试一次。
- *  ⛔ 只在用户点击打开文件这条路径上发生 —— 不是模型能触发的放行。 */
+ *  与右栏预览同一 decodeText 口径，GBK 兜底）；写 = fs:write。
+ *  ★ 10-29 用户令：预览 / 编辑不再有授权环节（主进程 fs 通道已放开可信根，任意文件可读可写）
+ *  ⇒ 这里就是直读直写，不再有 OUTSIDE_TRUST / fs:allow 的重试逻辑（那套已整体删除）。 */
 const fileEditTransport: TextEditorTransport = {
   read: async (path: string) => {
-    /* ⛔ 越界（OUTSIDE_TRUST:<dir>）不在这一层处理：⛔ 原生 confirm 被守卫【191】禁（吞焦点）。
-       授权 UI 在编辑器里（PastedTextEditor 内联按钮），这里原样抛出让 UI 识别前缀。 */
     const result = await window.codex.readFile(path);
     const binary = atob(result.dataBase64 ?? "");
     return decodeText(Uint8Array.from(binary, (value) => value.charCodeAt(0)));
@@ -216,7 +215,7 @@ import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago,
 import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 
 export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
-  /* 10-25 用户令：指挥中枢的空态要有自己的引导语（「你好 中枢…」），发送后自然消失。
+  /* 10-25 用户令：指挥中枢的空态要有自己的引导语（「你好中枢…」），发送后自然消失。
      ⛔ 用共享 store 判断，别在这里再拉一次 listBossGroups。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const {
@@ -423,9 +422,12 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     const win = { ordered: timelineWindow.ordered, visible: historyPlan.visible };
     const cs = compactionStateOf(win.ordered, threadCompactToast?.state);
     const record = compactionRecordFor(thread.id);
-    /* ⛔⛔ 10-26 用户：「都没压缩过，好多绿线」「绿线跟着滚轮跑，压根不是压缩线的位置」——
-       没有压缩证据时也照画（纯函数兜底 = visible 最后一回合）⇒ 凭空一条线且跟着滚。
-       ⇒ 没证据不画；有证据但定不了位置也不画。 */
+    /* ⛔⛔ 10-26 用户两条实测：「都没压缩过，好多绿线」「绿线跟着滚轮跑，压根不是压缩线的位置」。
+       根因：**没有任何压缩证据时也照调 resolveCompactionAnchor("", {at:0})**，而它的兜底是
+       「visible 的最后一回合」⇒ 每个没压缩过的会话都会凭空长出一条绿线，窗口一滚它就跟着跑。
+       ⇒ 两道闸：
+         ① 没有压缩证据（渲染层窗口里没有压缩项 / 该会话没有压缩记录 / 没有该会话的 toast）⇒ 不画；
+         ② 有证据但**定不了位置**（既没有回合 id，也没有毫秒时间）⇒ 也不画（宁可不画，不画错位置）。 */
     const hasEvidence = cs.state === "done" || cs.state === "compacting" || Boolean(record);
     if (!hasEvidence) return { turnId: "", atEnd: false };
     const boundary = cs.turnId || String(record?.turnId ?? "");
@@ -440,12 +442,16 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     while (j < win.visible.length && !hasUser(win.visible[j])) j += 1;
     return { turnId: j < win.visible.length ? String(win.visible[j]?.id ?? "") : "", atEnd: j >= win.visible.length };
   })();
-  /*指挥中枢的空态判定（10-25）：三种入口都算 —— pending（刚点开还没落 id）/ 群 boss 线程 /
-     home 锚点会话（还没建群时那个普通会话）。⛔ 不能只看 isEmpty：它要求 thread 为 null，
-     而「会话已建出来但一条消息都没有」时 thread 存在 ⇒ 空态分支进不去 ⇒ 整片空白。 */
+  /*指挥中枢的空态判定（10-25）：当前会话是某群 boss 线程，或刚点「指挥中枢」还没落 id（pending）。
+     ⛔⛔ 不能只判「是 boss 线程」：会话已建出来但**一条消息都没有**时 `isEmpty` 为 false
+        （它的定义是 `!thread && !allItems.length`，要求 thread 为 null）⇒ 空态分支进不去 ⇒ 整片空白。
+        所以这里自己判 0 回合（thread 存在但 turns 为空也算空态）。 */
   const noTurns = (thread?.turns ?? []).length === 0;
   const isBossThreadNow = Boolean(thread?.id) && bossThreads.bossIds.includes(String(thread?.id));
-  const isBossHome = Boolean(thread?.id) && String(thread?.id) === bossThreads.homeId;
+  /* 还有第三种：**还没建群、但已经有 home 锚点**的那个指挥中枢（它是普通会话、不在群账本里，
+     只看 bossIds 会漏 ⇒ 进去看到的是普通欢迎页/空白）。用户 10-25：「就算没有创建会话，
+     进指挥中枢也要直接进去会话界面，不要在欢迎界面加载」。 */
+  const isBossHome = Boolean(thread?.id) && (bossThreads.sessionIds ?? []).includes(String(thread?.id));
   const isBossEmpty = (bossThreads.pending || isBossThreadNow || isBossHome) && noTurns;
 
   /* ⛔⛔ 10-26 用户令：指挥中枢会话的**右侧群成员轨**（头像 + 工作中绿灯/光圈）。
@@ -462,9 +468,12 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     <div className="timeline-wrap" ref={timelineWrapRef}>
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
                   {/*指挥中枢的空白态：与 timeline 同级（绝对定位相对 .timeline-wrap），
-                     不进滚动内容流 —— 普通会话完全不受影响。 */}
+                     不进滚动内容流 —— 普通会话完全不受影响。
+                     ⛔ 传入**本会话自己的 cwd** ⇒ 多个指挥中枢各显示各的项目地址（不串项）。 */}
                   {isBossEmpty ? <BossThreadIntro /> : null}
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>
+                  {/*指挥中枢的空白态是**它自己的一套**（10-25 用户令：跟欢迎界面没关系）——
+                     普通会话仍走 welcome-state，这里两者互不影响。 */}
                   {isEmpty && !isBossEmpty ? (
                     <div className="welcome-state">
                       <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
@@ -488,7 +497,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   )}
                   {/* ⛔ 空会话不显示「加载更早」（10-25 用户令：没有消息的时候可以隐藏掉）——
                       空会话里那条按钮既没有可加载的内容，又把欢迎语顶下去。 */}
-                  {thread && !isEmpty && (historyPlan.hiddenCount > 0 || hasEarlierCursor) && (
+                  {thread && !isEmpty && !noTurns && (historyPlan.hiddenCount > 0 || hasEarlierCursor) && (
                     <button type="button" className="load-earlier-turns" aria-busy={earlierLoadingId === thread.id} onClick={() => void loadEarlierTurns(thread.id)}>
                       <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
                       {earlierLoadingId === thread.id
@@ -747,8 +756,13 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                        · 专家团会话 ⇒ TeamMemberRail；
                        · 普通会话 ⇒ DelegatedRail。 */}
                   {bossGroupId && !railTeam && (
-                    /* ⛔ 已移出的成员不再出现在轨上（与办公室/成员名单同口径，10-27）。 */
-                    <BossGroupMemberRail members={activeMembersOf(bossGroupMembers.snapshot.members)} />
+                    <BossGroupMemberRail
+                      /* ⛔ 已移出的成员不再出现在轨上（10-27：与办公室/成员名单同口径） */
+                      members={activeMembersOf(bossGroupMembers.snapshot.members)}
+                      /* ⛔⛔ 10-26 用户令：「办公室预览图标放这里」—— 群成员轨**末位**。
+                         ⛔ 传的是**群 id**：办公室靠它认出"这是中枢会话"（坐的是群里的人）。 */
+                      onOpenOffice={() => setCompanyPreviewTeamId(bossGroupId)}
+                    />
                   )}
                   {railTeam && (
                     <TeamMemberRail
