@@ -232,7 +232,7 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "右栏「文件」页 = 工作区文件树 + 预览（tab 显示「文件」，标题/提示同源）");
   ok(/单击在\*\*右侧栏\*\*预览，双击才开居中编辑器/.test(reviewPanel) && reviewPanel.includes("onDoubleClick"),
     "树里单击在右栏预览、双击才开居中编辑器");
-  ok(/window\.codex\.readFile\(path\)/.test(workspacePreview) && /FilePreviewCode/.test(workspacePreview) && /Markdown/.test(workspacePreview)
+  ok(/window\.codex\.readFile\((?:path|target)\)/.test(workspacePreview) && /FilePreviewCode/.test(workspacePreview) && /Markdown/.test(workspacePreview)
     && /workspace-file-preview-pdf/.test(workspacePreview) && /workspace-file-preview-image/.test(workspacePreview),
     "预览走 fs:read，覆盖 Markdown / 代码 / 图片 / PDF / 二进制占位");
   /* ⛔ 10-29 用户令：shell:open **故意**不判可信根（任意位置的文件都要能打开）。 */
