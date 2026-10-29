@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-28 | 调度面板专家数改专家库总数（同步主仓） | 修复 | `DispatchMenu.tsx`、`dispatch-core.ts`、`dispatch.ts`、`vite-env.d.ts` | 与主仓同轮（c9bfa170e）：专家数 = 单人专家 + 各团（主理人+成员），目录补 memberCount。界面已部署。 | 待提交 |
 | 2026-10-28 | 调度弹层数量实时同步（同步主仓） | 修复 | `DispatchMenu.tsx` | 与主仓同轮（7ec6c4c08）：打开时拉真实目录 + 打开期间 3 秒轮询。界面已部署。 | 待提交 |
 | 2026-10-28 | 侧栏教程弹窗瘦身（同步主仓） | 改动 | `SidebarGuideModal.tsx`、`41-sidebar-guide.css` | 与主仓同轮（2f30df336）：删顶部长说明与「Codex 已配备工具」整卡（全部弹窗），仅前端 UI 留「小提醒：组件库与 AI 画布工作流都配好了配套工具」。界面已部署。 | 待提交 |
 | 2026-10-28 | 调度弹层文案收敛（同步主仓） | 改动 | `DispatchMenu.tsx` | 与主仓同轮（9d8141cdf）：头部一句、底部去重复、chips 改「单人专家 / 子智能体 —— 一直可派，不用开关」。界面已部署。 | 待提交 |
@@ -368,3 +369,4 @@
 | 2026-10-29 | 飞书 CLI 审查修复：更新放行 postinstall / 配置进程去重 / 卡片不再卡「等待中」 | 修复 | `electron/features/feishu-cli-ipc.ts`、`src/features/settings-devtools/FeishuCliCard.tsx`、守卫 04/09 | 同步主仓。① `runtime:update` 没带 allow-scripts ⇒ 点「更新」会把飞书二进制装丢、只剩空壳（放行名单改 `NPM_ALLOW_SCRIPTS` 单一真相源）；② 重复点「去配置」会起两个 `config init` 抢同一份配置 ⇒ 起新的前先杀旧的；③ 卡片 `busy` 只在登录成功时释放，放弃浏览器后按钮永久 disabled ⇒ 完成即释放 + 10 分钟兜底。守卫【139f】共 9 条。 | 本轮 |
 | 2026-10-29 | 飞书 CLI 卡片重做 + 自动拉起默认浏览器 + 取消授权 | 改动 | `src/features/settings-devtools/FeishuCliCard.tsx`、`electron/features/feishu-cli-ipc.ts`、`src/styles/12-settings-skills.css`、manifest/registry/生成物、守卫 04 | 同步主仓。① 卡片原自造 `feishu-cli-step` 但无 CSS ⇒ 原生排版；改 `.runtime-row` 三行 + 细边框 + `.feishu-cli-*` 样式；② 授权链接由主进程 `shell.openExternal` 自动拉起默认浏览器，卡片保留「打开浏览器 / 复制 / 取消授权」；③ 新增 `feishu-cli:cancel`（杀后台 config init / device-code 轮询进程）。守卫【139f】共 10 条；界面已部署。 | 本轮 |
 | 2026-10-29 | 飞书 CLI「一直转」修复：auth status 按真实输出解析 | 修复 | `electron/features/feishu-cli-ipc.ts`、守卫 04 | 同步主仓。1.0.98 的 `auth status --json` 输出没有 `ok` 字段（实际是 `appId` + `identities.bot.ready` / `identities.user`），旧实现按 `data.ok` 判 ⇒ 永远「未配置」、卡片一直转。改按真实结构判配置/登录，旧形状保留兜底。守卫【139f】共 11 条。 | 本轮 |
+| 2026-10-29 | 飞书 CLI 全流程走查：失败回中文下一步 / 配置进程 10 分钟上限 / 版本查询缓存 | 修复 | `electron/features/feishu-cli-ipc.ts`、守卫 04 | 同步主仓。① 工具失败只回英文原文 ⇒ 模型反复重试，改为翻成「去设置哪一步」；② `config init` 用户放弃时无限挂 ⇒ 10 分钟硬上限；③ 等待授权时每 2 秒刷状态会多 spawn 一次 `--version` ⇒ 缓存 60 秒。守卫【139f】共 12 条。 | 本轮 |
