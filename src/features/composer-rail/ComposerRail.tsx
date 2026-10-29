@@ -16,14 +16,15 @@
  * 弹层：portal 到 body，按**实测矩形**定位，右开优先、放不下翻左、上下夹进视口。
  * 跨会话：挂在输入框上 ⇒ 每个会话同一个组件；展开状态存 localStorage，所有会话一致。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bookmark, ExternalLink, Keyboard, KeyRound, NotebookPen, Puzzle, Smile, X } from "lucide-react";
+import { Bookmark, ExternalLink, Keyboard, KeyRound, NotebookPen, Puzzle, ShieldCheck, Smile, X } from "lucide-react";
 import type { HarnessAppApi } from "../app-state";
 import { FavoritesSettingsSection } from "../settings-favorites";
 import { PasswordBookPanel } from "./PasswordBookPanel";
 import { DevJournalPanel } from "./DevJournalPanel";
 import { MoodStickersPanel } from "./MoodStickersPanel";
+import { DataAccessPanel } from "../data-access";
 
 /** 内置面板（IPC 拿不到目录时的兜底；正常情况以主进程 `extensions:catalog` 为准）。 */
 const FALLBACK_PANELS: RailPanelSpec[] = [
@@ -32,6 +33,9 @@ const FALLBACK_PANELS: RailPanelSpec[] = [
   { id: "journal", label: "开发日记", icon: "notebook", kind: "builtin", order: 30 },
   { id: "stickers", label: "心情表情", icon: "smile", kind: "builtin", order: 40 },
   { id: "shortcuts", label: "快捷键", icon: "keyboard", kind: "builtin", order: 50 },
+  /* 10-29：三模块对模型的授权开关（会话级、默认关）—— 用户要求"删除类不开放给模型"，
+     所以这里只提供读/写两档，没有删除相关入口。 */
+  { id: "data-access", label: "数据授权", icon: "shield", kind: "builtin", order: 60 },
 ];
 
 const ICONS: Record<string, typeof Bookmark> = {
@@ -40,6 +44,7 @@ const ICONS: Record<string, typeof Bookmark> = {
   notebook: NotebookPen,
   smile: Smile,
   keyboard: Keyboard,
+  shield: ShieldCheck,
 };
 
 /* 10-28 用户令：「这四个按键都做成弹窗…这个弹窗可以应用居中，不用非要贴这里，展示太少了，
@@ -47,7 +52,7 @@ const ICONS: Record<string, typeof Bookmark> = {
    ⇒ 四个面板统一走**居中弹窗**（`.modal-backdrop` + `.composer-rail-modal`），
      尺寸与位置交给 CSS（这里不再按面板逐个算宽高，也不再有"贴边/翻边"）。 */
 
-export function ComposerRail({ app }: { app: HarnessAppApi }) {
+export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threadId?: string }) {
   const [open, setOpen] = useState<boolean>(() => {
     try { return localStorage.getItem("composer-rail-open") === "1"; } catch { return false; }
   });
@@ -61,8 +66,16 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   const userTouchedRef = useRef(false);
   /** 居中弹窗容器：打开时把焦点收进来（键盘用户 Tab 不会从背后开始）。 */
   const modalRef = useRef<HTMLElement>(null);
-  /** 打开弹窗之前焦点在哪：关闭时还回去（否则焦点掉到 body，键盘用户要从头 Tab）。 */
+  /** 打开弹窗之前焦点在哪：关闭时还回去（否则焦点掉到 body，键盘用户从头 Tab）。 */
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  /** 整条（手柄 + 图标列）：判「点击是否在条内」用 */
+  const railRef = useRef<HTMLDivElement>(null);
+  /** 图标列容器：判「是否被侧栏等元素遮住」用 */
+  const iconsRef = useRef<HTMLDivElement>(null);
+  /** 10-29 用户：「被侧边栏展示后小粗条展示面板被切了一半，这时候可以自适应变成一排往上」
+      left = 图标列向输入框**左侧**竖着长（默认）；top = 改成一排**向上**横放。
+      判据不是窗口宽度，而是"打开后这一列**是否真的被别的元素盖住**"（实测 elementsFromPoint）。 */
+  const [layout, setLayout] = useState<"left" | "top">("left");
 
   /* Esc / Tab 都在这里处理（capture 阶段）：
      · Esc 只关这一层 —— `stopPropagation()` 防止同一次按键连带关掉背后的浮层/设置；
@@ -143,6 +156,27 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
 
   const active = panels.find((entry) => entry.id === panelId) ?? null;
 
+  /* 10-29：打开后量一次「图标列有没有被盖住」，被盖住就换成"一排往上"。
+     ⛔ 必须在 useLayoutEffect 里量（paint 之前拿到真实矩形），⛔ 不靠窗口宽度猜：
+        同样是 1080 宽，右栏开/关时主区左缘差 200px，用宽度阈值会把两种都判成"够用"。 */
+  useLayoutEffect(() => {
+    if (!open) { setLayout("left"); return; }
+    const el = iconsRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    /* 取图标列**左缘**的一点探测：左侧竖排时它最先撞到侧栏。
+       侧栏盖住时 elementsFromPoint 里根本不会有这个容器（或它的祖先）⇒ 判为遮挡。 */
+    const hit = document.elementsFromPoint(Math.max(rect.left + 2, 1), rect.top + rect.height / 2);
+    const covered = hit.length > 0 && !hit.some((node) => el === node || el.contains(node) || node.contains(el));
+    /* ⛔ 只判"被盖住"不够：10-29 实测 1200 宽时图标列左缘正好 215px = 侧栏右缘 ——
+       差 0 像素没重叠，判为"够用"，但视觉上已经贴死侧栏（用户说的"被切了一半"就是这一档）。
+       ⇒ 再判一次"是否贴边"：主区左缘（= 侧栏右缘）留不出 6px 余量就换成一排往上。 */
+    const hostLeft = (el.closest(".composer")?.parentElement ?? el.parentElement)?.getBoundingClientRect().left ?? 0;
+    const tooClose = rect.left < hostLeft + 6;
+    setLayout(covered || tooClose ? "top" : "left");
+  }, [open, panels, order]);
+
   /* 10-27 用户：「这个一直展示不会自动隐藏，10秒后自动隐藏，打开了这些按键的里面的弹窗
      就暂时不触发自动隐藏」⇒ 展开后 10s 自动收回；**有面板打开时不收**；
      鼠标进竖条 / 移动一次重新计时（不然手刚伸过去就消失了）。 */
@@ -156,6 +190,25 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
     }, 10_000);
     return () => window.clearTimeout(timer);
   }, [open, panelId, bump]);
+
+  /* 10-29 用户：「这个小粗条，鼠标点击外面后，自动隐藏」。
+     ⛔ mousedown + capture：拖拽选择/输入框聚焦都算"外面"，要立刻收；
+     ⛔ 面板是 portal 到 body 的，所以"里面"要同时认 rail 与 `.composer-rail-panel`。 */
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target) return;
+      if (railRef.current?.contains(target)) return;
+      if (target.closest?.(".composer-rail-panel")) return;
+      setOpen(false);
+      setPanelId(null);
+      try { localStorage.setItem("composer-rail-open", "0"); } catch { /* 隐私模式 */ }
+      void window.codex.saveAppSettings?.({ composerRailOpen: false })?.catch(() => undefined);
+    };
+    document.addEventListener("mousedown", onDown, true);
+    return () => document.removeEventListener("mousedown", onDown, true);
+  }, [open]);
 
   const toggleOpen = useCallback(() => {
     setOpen((prev) => {
@@ -178,7 +231,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   }, [app]);
 
   return (
-    <div className={`composer-rail${open ? " is-open" : ""}`} onMouseEnter={() => setBump((value) => value + 1)}>
+    <div className={`composer-rail${open ? " is-open" : ""}${layout === "top" ? " is-top" : ""}`} ref={railRef} onMouseEnter={() => setBump((value) => value + 1)}>
       <button
         type="button"
         className="composer-rail-toggle"
@@ -191,7 +244,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
       </button>
 
       {open && (
-        <div className="composer-rail-icons" role="toolbar" aria-label="输入框快捷条">
+        <div className="composer-rail-icons" role="toolbar" aria-label="输入框快捷条" ref={iconsRef}>
           {orderedPanels.map((entry) => {
             const Icon = ICONS[String(entry.icon ?? "")] ?? (entry.kind === "external" ? Puzzle : Bookmark);
             const isPanel = entry.kind === "builtin" || entry.action?.type === "text";
@@ -262,6 +315,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
             )}
             {active.id === "passwords" && <PasswordBookPanel onToast={app.showToast} onNotice={app.setNotice} />}
             {active.id === "journal" && <DevJournalPanel onInsert={(text) => app.setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text))} />}
+            {active.id === "data-access" && <DataAccessPanel threadId={threadId} onClose={() => setPanelId(null)} />}
             {active.id === "stickers" && <MoodStickersPanel onDone={() => setPanelId(null)} onInsert={(text) => app.setPrompt((current: string) => (current.trim() ? `${current} ${text}` : text))} />}
             {active.kind === "external" && (
               <div className="crp-external">

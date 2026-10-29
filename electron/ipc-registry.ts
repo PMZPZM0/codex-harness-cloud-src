@@ -219,9 +219,9 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["runtime:health", "runtime:install", "runtime:list", "runtime:uninstall", "runtime:cancel", "runtime:update-check", "runtime:update"],
     note: "09-21 拆出：跨域符号经 main 导出的活绑定取用；10-07 +cancel（取消安装：杀子进程+清临时文件）；10-12 +update-check/update（工具链 nuphus / playwright-cli 从 npm 国内镜像检查并升级到 @latest；与「修复安装」的随包 zip 重解压是两条不同的路）",
   },
-  { prefix: "browser", count: 6, status: "in-features", file: "features/browser-ipc.ts",
-    channels: ["browser:ego-status", "browser:ego-install", "browser:ego-open", "browser:ego-upgrade", "browser:ego-cleanup", "browser:popout"],
-    note: "09-21 拆出：跨域符号经 main 导出的活绑定取用；10-22 CloakBrowser → Ego Lite（外部安装 + 每会话 TaskSpace）",
+  { prefix: "browser", count: 7, status: "in-features", file: "features/browser-ipc.ts",
+    channels: ["browser:ego-status", "browser:ego-install", "browser:ego-open", "browser:ego-upgrade", "browser:ego-cleanup", "browser:popout", "browser:clear-data"],
+    note: "09-21 拆出：跨域符号经 main 导出的活绑定取用；10-22 CloakBrowser → Ego Lite（外部安装 + 每会话 TaskSpace）；10-29 加 clear-data（清内置浏览器持久分区的登录态/缓存）",
   },
   { prefix: "git", count: 1, status: "in-features", file: "features/git-ipc.ts",
     channels: ["git:diff"],
@@ -297,6 +297,16 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
   { prefix: "journal", count: 6, status: "in-features", file: "features/journal-ipc.ts",
     channels: ["journal:append", "journal:list", "journal:read", "journal:remove", "journal:save", "journal:search"],
     note: "开发日记：按天一个 md",
+  },
+  /* 10-29：收藏夹 / 开发日记 / 密码本**对模型开放**的授权闸 + 执行通道。
+     授权 = 会话 + 模块 + 读/写 三元组，纯内存（退出即失效）；
+     ⛔ 没有任何删除/覆盖通道；密码本明文永不出主进程（只有 copy + 存在性查询）。 */
+  { prefix: "dataaccess", count: 11, status: "in-features", file: "features/data-access-ipc.ts",
+    channels: ["dataaccess:state", "dataaccess:grant", "dataaccess:revoke-all",
+      "dataaccess:favorites-list", "dataaccess:favorites-append",
+      "dataaccess:journal-read", "dataaccess:journal-search", "dataaccess:journal-append",
+      "dataaccess:vault-find", "dataaccess:vault-copy", "dataaccess:vault-save"],
+    note: "三模块的模型授权闸（会话+模块+读写，纯内存）与执行通道；无删除能力",
   },
   /* 10-28：快捷键统一读口。应用内键存 userData/shortcuts.json（本域独占）；
      截图 / 语音仍是各自存储 —— 本域只读来聚合展示，写入走各自通道（先注册成功再落盘）。 */
