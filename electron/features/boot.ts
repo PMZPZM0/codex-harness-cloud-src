@@ -16,6 +16,7 @@ import { Readable } from "node:stream";
 import os from "node:os";
 import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
+import { gcSessionWorkspaces, removeSessionWorkspace, setSessionWorkspaceState } from "./session-workspace";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { bossMemoryWorkspace, isBossSession } from "../boss-groups/session-registry";
 import { debugTurnFiles } from "../debug/turn-files-debug";
@@ -442,6 +443,14 @@ export async function bootApp() {
   // 已删除会话的墓碑必须在**第一次 thread/list 之前**载入：渲染层启动就会拉列表，靠懒加载
   // 会让首屏短暂出现幽灵会话（见 purgeDeletedThread 注释）。失败不阻塞启动。
   try { await loadDeletedThreads(); } catch (error) { console.warn("deleted-threads 载入失败：", error); }
+
+  /* 10-29 用户令：启动时收口「孤立工作区」（记录在目录不在 / 目录在记录不在）。
+     ② 超过 30 天才删 —— 刚建出来还没登记的目录立刻删会误伤正在创建的会话。不 await。 */
+  void gcSessionWorkspaces(app.getPath("userData")).then((stats) => {
+    if (stats.recordsRemoved || stats.dirsRemoved) {
+      console.log(`[sessionspace] 启动收口：清记录 ${stats.recordsRemoved} 条、清孤儿目录 ${stats.dirsRemoved} 个（扫描 ${stats.scanned} 条）`);
+    }
+  }).catch((error) => console.warn("[sessionspace] 启动收口失败（不影响启动）：", String(error?.message ?? error).slice(0, 160)));
   // ⛔ 协议桥必须赶在**任何 config.toml 写入之前**起来：写配置时 base_url 要换成桥地址，
   //    桥没起来就只能直连（chat-only 网关由此不可用）。启动失败不致命：bridgeDial 自动降级直连，
   //    与旧版本行为一致；同样必须包 try/catch —— 裸 await 抛出会掐死整条启动链（界面能开、引擎不 spawn）。
@@ -822,6 +831,13 @@ export async function bootApp() {
           // ⛔ 引擎侧发起的删除（不经渲染层 thread/delete 请求）同样要清磁盘残留 + 记墓碑，
           //   否则侧栏的 rollout 兜底扫描在下次启动把它捞回来（见 purgeDeletedThread 注释）。
           if (event.method === "thread/deleted") void purgeDeletedThread(goneId).catch(() => undefined);
+          /* 10-29 用户令：会话专属工作区的状态跟着引擎事件走。
+             删除 ⇒ 目录 + 记录一起清；归档 ⇒ 只打标记，目录保留（取消归档要能接着用）。
+             ⛔ 这是第二条入口（引擎侧发起），codex-ipc 的 purgeTarget 是第一条 —— 两处都要有。 */
+          if (goneId) {
+            if (event.method === "thread/deleted") void removeSessionWorkspace(app.getPath("userData"), goneId).catch(() => undefined);
+            else void setSessionWorkspaceState(app.getPath("userData"), goneId, "archived").catch(() => undefined);
+          }
           /* 10-05 角色记忆：会话被删 ⇒ 它的角色归属索引也清掉（否则索引无限增长，
              且那个 threadId 永远查不到归属、也永远占着一条记录）。记忆内容本身**留着** —
              角色还在（专家/子智能体定义没删），下次派出会继续用它自己的记忆。 */
