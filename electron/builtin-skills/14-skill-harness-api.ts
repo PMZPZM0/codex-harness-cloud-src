@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（109 个能力域 / 602 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（110 个能力域 / 607 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -58,6 +58,10 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 ### boss-groups（15 通道）
 创世 boss 群编排：建群/派活/独立评审/打回换人/预算闸（成员各自一个常驻会话，浏览器用 ego lite 独立 TaskSpace）
 通道：boss-groups:list, boss-groups:status, boss-groups:create, boss-groups:delete, boss-groups:assign, boss-groups:review, boss-groups:escalate, boss-groups:browser, boss-groups:member, boss-groups:pin, boss-groups:say, boss-groups:pool, boss-groups:rebind, boss-groups:session, boss-groups:memory
+
+### feishu-cli（5 通道）
+飞书官方 CLI（@larksuite/cli）：安装（约 51MB，npm 国内镜像）、飞书应用配置（config init）、用户登录授权（device flow）与命令执行；安装/登录在「设置 → 开发工具 → 飞书 CLI」完成，Codex 通过 feishu_cli 工具调用
+通道：feishu-cli:status, feishu-cli:setup-start, feishu-cli:login-start, feishu-cli:logout, feishu-cli:run
 
 ### pet（20 通道）
 桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置
