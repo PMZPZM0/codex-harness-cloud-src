@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-28 | 指挥中枢说明卡改版 + 文案润色（同步主仓） | 改动 | `BossGroupHelpButton.tsx`、`47-boss-group-view.css` | 与主仓同轮（7422a8068 / b144091c3）：说明卡改编号条目 + 示例 chips；润色文案并修正事实（「中枢只有一个」不成立 → 每个群一条中枢会话、可多条）。界面已部署。 | 待提交 |
 | 2026-10-28 | 悬浮球任务姿态 + 安静陪伴（同步主仓） | 改动 | `VoiceCallFloat`（组件 / 状态 hook / 新增 `use-voice-task-mood`）、`VoiceSettingsSection`、`18-openai-dialog.css`、`electron/voice/voice-settings.ts`、`11z`、`accept` | 与主仓同轮（dec5eba9b）：悬浮球接引擎回合状态（在想 / 在干活 / 等你确认 / 干完 6s / 出错 4s 垂眼），事件按会话过滤、waiting 优先；安静陪伴（设置页 + 右键菜单，落盘 ball.quiet）；自适应降噪（连续 3 条没人理当天静音，交互解除）；prefers-reduced-motion 降级。11z +13 条；验收 `voice-ball-task` 3/3。 | 待提交 |
 | 2026-10-28 | 本机测试端口自动展开右栏浏览器（同步主仓） | 改动 | `src/features/dev-port/`（新板块）、`AppView.tsx`、`12ag-dev-port.mjs`、`accept` | 与主仓同轮（13c670ed2）：当前会话命令输出出现带端口的 localhost ⇒ 自动开右栏浏览器 + 加宽到 560；只认正在跑的回合、每 URL 只开一次、0.0.0.0 归一。守卫 12ag 11 条（真值表真跑）；验收 `dev-port` 3/3（秒级）。 | 待提交 |
 | 2026-10-28 | 钩子页工具栏（搜索 + 筛选 + 刷新） | 改动 | `src/features/settings-hooks/HooksSettingsSection.tsx`、`src/styles/06-market-icons.css`、`scripts/accept.mjs` | 用户截图指出：钩子页只有统计卡与右上角刷新。改成一条工具栏：搜索（事件 / 命令 / 来源）+ 状态筛选（全部 / 启用中 / 已停用 / 未信任）+ 来源筛选（按插件分组）+ 刷新，「信任全部」同排右对齐；筛选时实时提示「匹配 N / 共 M」，无命中给空态与「清除筛选」。⛔ 筛选只影响**显示**，不改启用 / 信任 / 联动开关语义（空插件组在无筛选时仍保留）。验收 `hooks-toolbar` 3/3。 | 待提交 |
