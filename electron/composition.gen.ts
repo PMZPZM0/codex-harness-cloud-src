@@ -59,6 +59,7 @@ import { htmlPreviewFeature as feat_html_preview } from "./features/html-preview
 import { htmlVideoFeature as feat_html_video } from "./features/html-video-ipc";
 import { imageLabFeature as feat_image_lab } from "./features/image-lab";
 import { journalFeature as feat_journal } from "./features/journal-ipc";
+import { dataAccessFeature as feat_dataaccess } from "./features/data-access-ipc";
 import { knowledgeBaseFeature as feat_kb } from "./features/knowledge-base-ipc";
 import { layaFeature as feat_laya } from "./features/laya-service";
 import { limitedBenefitFeature as feat_limited_benefit } from "./features/limited-benefit-ipc";
@@ -111,6 +112,7 @@ import { wecomWebhookFeature as feat_wecom_webhook } from "./features/wecom-webh
 import { weixinFeature as feat_weixin } from "./features/weixin-ipc";
 import { whatsNewFeature as feat_whatsnew } from "./features/whats-new-ipc";
 import { workLogsFeature as feat_work_logs } from "./features/work-logs";
+import { shortcutsFeature as feat_shortcuts } from "./features/shortcuts-ipc";
 
 import { app } from "electron";
 import { readAppSettingsSync } from "./app-settings";
@@ -176,6 +178,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "html-video", plugin: feat_html_video as Plugin<unknown>, config: null },
   { id: "image-lab", plugin: feat_image_lab as Plugin<unknown>, config: null },
   { id: "journal", plugin: feat_journal as Plugin<unknown>, config: null },
+  { id: "dataaccess", plugin: feat_dataaccess as Plugin<unknown>, config: null },
   { id: "kb", plugin: feat_kb as Plugin<unknown>, config: null },
   { id: "laya", plugin: feat_laya as Plugin<unknown>, config: null },
   { id: "limited-benefit", plugin: feat_limited_benefit as Plugin<unknown>, config: null },
@@ -228,6 +231,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "weixin", plugin: feat_weixin as Plugin<unknown>, config: null },
   { id: "whatsnew", plugin: feat_whatsnew as Plugin<unknown>, config: null },
   { id: "work-logs", plugin: feat_work_logs as Plugin<unknown>, config: null },
+  { id: "shortcuts", plugin: feat_shortcuts as Plugin<unknown>, config: null },
 ];
 
 /**
