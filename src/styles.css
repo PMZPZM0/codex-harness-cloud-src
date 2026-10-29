@@ -63,6 +63,7 @@
 @import "./styles/42-provider-setup" layer(components);
 @import "./styles/43-ego-lite" layer(components);
 @import "./styles/44-function-menu" layer(components);
+@import "./styles/56-skill-usage" layer(components);
 @import "./styles/45-settings-experience" layer(pages);
 @import "./styles/47-boss-group-view" layer(pages);
 @import "./styles/48-app-lock" layer(pages);
