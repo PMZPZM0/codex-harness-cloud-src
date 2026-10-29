@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-28 | 调度弹层/说明卡审查修复（同步主仓） | 修复 | `DispatchMenu.tsx`、`BossGroupHelpButton.tsx` | 与主仓同轮（440727d5d）：弹层定位宽度 300→352（右对齐不再溢出视口 52px）；成员会话表述改准（常驻复用，不是每次派活新开）。 | 待提交 |
 | 2026-10-28 | 调度弹层改版（同步主仓） | 改动 | `src/features/dispatch/DispatchMenu.tsx`、`src/styles/19-misc-hints.css` | 与主仓同轮（a04b1f263）：弹层改 352 宽卡片（图标块 + 标题 + 说明 / 专家团整行卡 + 共享 ToggleSwitch / 数量 chips / 主次按钮）；修复 `.composer-menu-pop button{width:100%}` 把开关拉成 292px 导致文字竖排。界面已部署。 | 待提交 |
 | 2026-10-28 | 指挥中枢说明卡改版 + 文案润色（同步主仓） | 改动 | `BossGroupHelpButton.tsx`、`47-boss-group-view.css` | 与主仓同轮（7422a8068 / b144091c3）：说明卡改编号条目 + 示例 chips；润色文案并修正事实（「中枢只有一个」不成立 → 每个群一条中枢会话、可多条）。界面已部署。 | 待提交 |
 | 2026-10-28 | 悬浮球任务姿态 + 安静陪伴（同步主仓） | 改动 | `VoiceCallFloat`（组件 / 状态 hook / 新增 `use-voice-task-mood`）、`VoiceSettingsSection`、`18-openai-dialog.css`、`electron/voice/voice-settings.ts`、`11z`、`accept` | 与主仓同轮（dec5eba9b）：悬浮球接引擎回合状态（在想 / 在干活 / 等你确认 / 干完 6s / 出错 4s 垂眼），事件按会话过滤、waiting 优先；安静陪伴（设置页 + 右键菜单，落盘 ball.quiet）；自适应降噪（连续 3 条没人理当天静音，交互解除）；prefers-reduced-motion 降级。11z +13 条；验收 `voice-ball-task` 3/3。 | 待提交 |
