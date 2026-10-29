@@ -1316,6 +1316,18 @@ interface Window {
     dataaccessVaultSave(input: { threadId: string; item: Record<string, unknown> }): Promise<{ ok: boolean; total: number }>;
     /* 清内置浏览器（persist:harness-browser）的登录态/缓存 */
     browserClearData(kind?: string): Promise<{ ok: boolean; partition: string; cleared: string }>;
+    /* 为会话建专属工作区 <project>/.codex-harness/sessions/<threadId>（幂等） */
+    sessionspaceEnsure(threadId: string, projectRoot: string): Promise<{ ok: boolean; dir?: string; reason?: string }>;
+    /* 查某会话的工作区记录 */
+    sessionspaceState(threadId: string): Promise<SessionWorkspaceRecord | null>;
+    /* 列全部会话工作区记录 */
+    sessionspaceList(): Promise<SessionWorkspaceRecord[]>;
+    /* 改状态 active/archived（删除走 remove） */
+    sessionspaceSetState(threadId: string, state: string): Promise<{ ok: boolean; record?: SessionWorkspaceRecord; reason?: string }>;
+    /* 删会话工作区（目录+记录）；有安全闸 */
+    sessionspaceRemove(threadId: string): Promise<{ ok: boolean; removed: boolean; reason?: string }>;
+    /* 收口孤儿：记录在目录不在 / 目录在记录不在（后者超过 maxAgeDays 才删） */
+    sessionspaceGc(options?: { maxAgeDays?: number; dryRun?: boolean }): Promise<{ recordsRemoved: number; dirsRemoved: number; scanned: number }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
