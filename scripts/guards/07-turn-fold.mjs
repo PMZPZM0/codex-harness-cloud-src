@@ -4403,6 +4403,26 @@ export async function run() {
       (cd.shortenPath("D:\\a\\b\\c\\d\\e\\f\\g\\h\\i\\01-seg.tsx").endsWith("01-seg.tsx") ? ok : fail)(
         "【118】超长路径从左截（保文件名，不许把文件名切掉）"
       );
+      /* ⛔ 10-29 用户实测（「已运行为啥后面不显示运行了啥命令」）：标题映射的**真值表** ——
+         用户截图里这几种都是坏映射（「跑脚本 --version」「跑脚本 -e」「已查看 dir」），逐条钉住。 */
+      (cd.commandAction("node --version") === "看 node 版本" ? ok : fail)(
+        `【118】裸开关不算脚本名（实得 ${JSON.stringify(cd.commandAction("node --version"))}）`
+      );
+      (cd.commandAction('node -e "console.log(1)"') === "跑 node 脚本" ? ok : fail)(
+        "【118】node 内联脚本给中性动作（不把 -e 当脚本名）"
+      );
+      (cd.commandAction('node -e "const x=\'a\';fs.writeFileSync(\'b\',\'c\')"') === "写文件" ? ok : fail)(
+        "【118】内联脚本里写文件时按「写文件」判（写语义优先；引号里的 `;` 不许拆成两步 ⇒ 否则拼出「跑 node 脚本并写文件」）"
+      );
+      (cd.commandAction("dir") === "看目录内容" && cd.commandAction("ls -la") === "看目录内容" ? ok : fail)(
+        "【118】列目录有中文动作（原来只剩「已查看 dir」）"
+      );
+      (cd.commandAction("cat package.json") === "读文件 package.json" ? ok : fail)(
+        "【118】读文件带上文件名"
+      );
+      (cd.commandPurpose('"Write-Output \'=== 当前目录 ===\'; Get-Location"') === "当前目录" ? ok : fail)(
+        "【118】整段命令被一层引号包住时，用途取里面的标签字面量（不许把整段脚本当标签）"
+      );
     }
 
     /* ③ 折叠口径（真跑 planCompletedFold）—— ⛔⛔ 10-10 用户定稿（原话）：
@@ -4626,11 +4646,28 @@ export async function run() {
     (/import \{ INTENT_VERB, commandAction, commandIntentOf/.test(termCode) ? ok : fail)(
       "【127】命令卡真的 import 了 commandAction（声明了不用 = 装饰品）"
     );
-    (/const action = command \? commandAction\(command\) : "";/.test(termCode) && /\{headline \|\| verb\}/.test(termCode) ? ok : fail)(
+    // 10-29 晚：并行线 7b49fa4ef 把局部变量 command 改名成 commandText（headline 另带失败后缀）
+    //   ⇒ 判据跟着**实现语义**走（动作优先、认不出退回 verb），不钉变量拼写。
+    (/const action = command\w* \? commandAction\(command\w*\) : "";/.test(termCode) && /\{headline \|\| verb\}/.test(termCode) ? ok : fail)(
       "【127】命令卡表头优先用动作短语、认不出退回 verb（`headline || verb`）"
     );
-    (/const headline = action && !\(waitingForApproval && running\)/.test(termCode) ? ok : fail)(
+    (/const headline = headlineText && !\(waitingForApproval && running\)/.test(termCode) ? ok : fail)(
       "【127】动作短语只给审批态让位（技能态已整体搬去技能卡 10-29，命令卡不再因子句让位）"
+    );
+    /* ★ 10-29 用户实测令：「中间有失败，不要在这里显示×显示√就行了」——
+       结束的命令行一律 ✓：非零退出大多是正常探测（`git config --get user.name` 没配就 exit 1、
+       非仓库里 `git status` 也非零），标成失败只会让人误以为出错。
+       ⛔ 退出码仍留在展开体（.cmd-exit），细节不丢；⛔ 不许退回按 exitCode 标 error / 追加「失败」。
+       ⛔ 判据取**命令卡切片**（"失败" 在终端面板的加载失败文案里是合法的，不能全文件一刀切）。 */
+    const cardSlice = termCode.slice(termCode.indexOf("export function CommandExecutionCard"), termCode.indexOf("export function TerminalPanel"));
+    (/const status: ActionStatus = running \? \(waitingForApproval \? "pending" : "running"\) : "done";/.test(cardSlice) ? ok : fail)(
+      "【127】结束的命令行状态恒为 done（✓），不按退出码标 ×（10-29 用户令）"
+    );
+    (cardSlice.length > 1000 && !/失败/.test(cardSlice) ? ok : fail)(
+      "【127】命令卡里不再出现「失败」字样（10-29 同一句令；退出码只在展开体里以「退出码 N」出现）"
+    );
+    (/failed && <div className="cmd-exit">/.test(cardSlice) ? ok : fail)(
+      "【127】退出码仍留在展开体（状态收敛不等于细节丢失）"
     );
     (/\[purpose, target\]\.filter\(Boolean\)\.join\(" · "\)/.test(termCode) ? ok : fail)(
       "【127】元信息串 = 用途 · 目标（10-22 起只在**展开体**里显示，看不出目的才算没映射）"
@@ -4802,7 +4839,7 @@ export async function run() {
     );
     /* 运行时真跑（⛔ 只断言源码文本会「自洽地错」）：动作行与「打开技能说明」的路径判定 */
     {
-      const toolMod = await import("../../../src/lib/tool-display.mjs");
+      const toolMod = await import("../../src/lib/tool-display.mjs");
       (toolMod.skillActionOf('Get-Content -LiteralPath "C:/a/skills/x/SKILL.md"') === "读取技能说明"
         && toolMod.skillActionOf("node C:/a/skills/x/run.mjs") === "运行技能脚本 run.mjs"
         && toolMod.skillActionOf("echo hi") === "执行技能命令"
