@@ -10,26 +10,29 @@ import { HelpCircle, X } from "lucide-react";
 
 const ROWS: Array<{ title: string; body: string }> = [
   {
-    title: "这就是一个普通会话",
-    body: "和你平时跟 Codex 对话一样：直接说需求、看回复、随时打断。区别只在于这个会话里多了一套「群编排」工具 —— 它能拉群、派活、审活。",
+    title: "跟平时一样聊，只是手边多了个群",
+    body: "怎么跟 Codex 说话，就怎么跟它说：提需求、看回复、随时打断。只是这里多了一套「群编排」工具 —— 拉群、派活、验活。",
   },
   {
-    title: "说需求就行，它自己拉群喊人",
-    body: "比如「做个落地页，要设计 + 前端 + 测试」。它会建群、按岗位拉人，然后把活派下去。拉的人可以是专家、专家团，也可以是你本机的 CLI agent（zcode / qoder / WorkBuddy / DeepSeek / 豆包…）。",
+    title: "需求说清楚，人就到齐了",
+    body: "比如「做个落地页，要设计、前端、测试」：它会建群、按岗位拉人、把活分下去。人可以从专家、专家团里挑，也可以是你本机的命令行 agent（zcode、qoder、WorkBuddy、DeepSeek、豆包…）。",
   },
   {
-    title: "成员在各自的会话里干活",
-    body: "派出去的活由成员自己开一个会话去做，侧栏会给它们标上「中枢调度」。它们干完把成品交回来，指挥中枢审查，不过就打回重做（默认最多 2 次，再不过会来问你）。",
+    title: "各干各的，干完交回来验",
+    body: "派出去的活，成员各自开一个会话去做，侧栏会标上「中枢调度」。成品交回来由中枢验收：不合格就打回重做，默认最多两轮，还不行会来问你。",
   },
   {
-    title: "这个会话会一直用下去",
-    body: "指挥中枢是固定的那一个，不会每轮对话又新建一个。只有成员干活才会在下面多出会话。",
+    title: "一个群对应一条中枢会话",
+    body: "点侧栏「指挥中枢」会回到这个群的中枢会话，不会每轮另起一条；群与群、会话与会话互不串项。下面多出来的会话，是成员在干活。",
   },
   {
-    title: "顶栏的「调度」开关这里不需要",
-    body: "群编排自带一套独立调度（谁做什么、进度、审查都在群里走），所以这个会话里那个手动的「允许本会话调度」开关已经收起来了，避免两套调度打架。",
+    title: "顶栏那个「调度」开关，这里可以不管",
+    body: "群编排自带一套调度，谁做什么、进度、验收都在群里走；所以这里手动的「允许本会话调度」已经收起 —— 两套同时开只会互相打架。",
   },
 ];
+
+/** 底部示例：告诉用户「一句话就能开工」，比再写一段说明有用。 */
+const EXAMPLES = ["做个落地页，要设计、前端、测试", "把这份文档整理成 PPT", "查一下这个报错的根因"];
 
 export function BossGroupHelpButton() {
   const [open, setOpen] = useState(false);
@@ -78,15 +81,30 @@ export function BossGroupHelpButton() {
         ? createPortal(
             <div className="boss-help-pop" role="dialog" aria-label="指挥中枢说明" style={{ top: pos.top, left: pos.left, right: "auto" }}>
               <div className="boss-help-head">
-                <b>指挥中枢怎么用</b>
+                <span className="boss-help-ico"><HelpCircle size={14} /></span>
+                <div className="boss-help-headtext">
+                  <b>指挥中枢怎么用</b>
+                  <span className="boss-help-sub">一个常驻会话，替你拉群、派活、验活</span>
+                </div>
                 <button type="button" className="boss-panel-mini" aria-label="关闭" onClick={() => setOpen(false)}><X size={11} /></button>
               </div>
-              {ROWS.map((row) => (
-                <div className="boss-help-row" key={row.title}>
-                  <span className="boss-help-title">{row.title}</span>
-                  <span className="boss-help-body">{row.body}</span>
+              <div className="boss-help-list">
+                {ROWS.map((row, index) => (
+                  <div className="boss-help-row" key={row.title}>
+                    <span className="boss-help-num">{String(index + 1).padStart(2, "0")}</span>
+                    <div className="boss-help-text">
+                      <span className="boss-help-title">{row.title}</span>
+                      <span className="boss-help-body">{row.body}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="boss-help-examples">
+                <span className="boss-help-examples-label">一句话就能开工，比如</span>
+                <div className="boss-help-chips">
+                  {EXAMPLES.map((text) => <span className="boss-help-chip" key={text}>{text}</span>)}
                 </div>
-              ))}
+              </div>
             </div>,
             document.body,
           )
