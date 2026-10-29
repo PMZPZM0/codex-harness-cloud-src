@@ -6,7 +6,8 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, us
 import { createPortal } from "react-dom";
 import { BossProjectDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
 import { isMacPlatform } from "../../../lib/is-mac-platform";
-import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
+import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, setFunctionMenuSettingsOpener, setFunctionMenuSettingsTargets, useFunctionMenuConfig } from "../../function-menu";
+import { settingsNav } from "../helpers";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { hk } from "../../../lib/hk";
 import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
@@ -485,12 +486,23 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   useEffect(() => {
     setFunctionMenuActionHandler((id) => {
       if (id === "schedule") { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); return; }
+      /* 10-29 用户：「功能入口里面帮我加个开发工具跳转按键」 */
+      if (id === "devtools") { setSettingsPage("devtools"); setSettingsOpen(true); setMobileNav(false); return; }
+      if (id === "favorites") { setSettingsPage("favorites"); setSettingsOpen(true); setMobileNav(false); return; }
       if (id === "login") { setLoginMgrOpen(true); return; }
       if (id === "newbie") { setNewbieOpen(true); return; }
       if (id === "team") { setGuideKey("agents"); return; }
       setGuideKey(id);
     });
     return () => setFunctionMenuActionHandler(null);
+  }, [setSettingsPage, setSettingsOpen, setMobileNav]);
+
+  /* 10-29：功能入口「自定义添加」的可选项与跳转 —— 唯一来源是本页的 settingsNav（⛔ 不另立清单）；
+     功能菜单只消费，不反向依赖 AppView。 */
+  useEffect(() => {
+    setFunctionMenuSettingsTargets(settingsNav.flatMap((group) => group.items.map(([page, label]) => ({ page: page as string, label: String(label), group: group.group }))));
+    setFunctionMenuSettingsOpener((page) => { setSettingsPage(page as any); setSettingsOpen(true); setMobileNav(false); });
+    return () => { setFunctionMenuSettingsTargets([]); setFunctionMenuSettingsOpener(null); };
   }, [setSettingsPage, setSettingsOpen, setMobileNav]);
 
   /** 侧栏里只留折叠头；入口组是**右侧浮层**（portal 到 body），不再占用纵向空间。

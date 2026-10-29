@@ -380,6 +380,8 @@ contextBridge.exposeInMainWorld("codex", {
   listExpertMarketPackages: (input: { page?: number; pageSize?: number; query?: string } = {}) => __ipc("expert-market:list", 0, [input]),
   /* 竖条 + 功能入口菜单的可扩展目录 */
   extensionsCatalog: () => __ipc("extensions:catalog", 0, []),
+  /* 10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限） */
+  extensionsMenuSet: (input: unknown) => __ipc("extensions:menu-set", 1, [input]),
   openExternal: (url: string) => __ipc("external:open", 1, [url]),
   addFavorite: (input: unknown) => __ipc("favorites:add", 1, [input]),
   clearFavorites: () => __ipc("favorites:clear", 0, []),
