@@ -375,3 +375,4 @@
 | 2026-10-29 | 飞书 CLI 登录成功后卡片仍「等待授权」修复 | 修复 | `src/features/settings-devtools/FeishuCliCard.tsx`、守卫 04 | 同步主仓。上一版「见到 configured 就收起链接」⇒ 登录阶段链接被清、轮询被掐断 ⇒ 永远「等待授权」。改为按当前流程收起（busyRef）。守卫【139f】共 13 条；界面已部署。 | 本轮 |
 | 2026-10-29 | 飞书 CLI 卡片补「能做什么 / 怎么用」说明区 | 改动 | `src/features/settings-devtools/FeishuCliCard.tsx`、`src/styles/12-settings-skills.css`、守卫 04 | 同步主仓。三步下新增说明区：8 项能力两列卡 + 3 条使用原则 + 6 条示例胶囊 + 3 条注意项。守卫【139f】共 15 条；界面已部署。 | 本轮 |
 | 2026-10-29 | 飞书 CLI 已配置后可「重新配置」换应用 | 改动 | `src/features/settings-devtools/FeishuCliCard.tsx`、`src/lib/feishu-card.mjs`、`electron/features/feishu-cli-ipc.ts`、manifest、守卫 04 | 同步主仓。已配置行补「重新配置」按钮；切换完成按 appId 变化判断（期间保持轮询），完成后提示重新登录。守卫【139f】共 16 条；界面已部署。 | 本轮 |
+| 2026-10-29 | 飞书 CLI 重新配置审查修复：旧登录态提前收尾 / 空 appId 误判 / 退出登录可误点 | 修复 | `src/features/settings-devtools/FeishuCliCard.tsx`、`src/lib/feishu-card.mjs`、守卫 04 | 同步主仓。reconfig 分支提到 loggedIn 之前；appId 为空不算切换完成；等待中禁用退出登录；文案改「浏览器授权」。界面已部署。 | 本轮 |
