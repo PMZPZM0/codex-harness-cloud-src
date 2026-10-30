@@ -4680,8 +4680,12 @@ export async function run() {
       {
         const preview = readFileSync(join(ROOT, "src", "hooks", "useFilePreview.ts"), "utf8");
         const rail = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "03-workspace-files.tsx"), "utf8");
-        (/resolveExistingFile\(/.test(preview) && /resolveExistingFile\(/.test(rail) ? ok : fail)(
-          "【127】两处预览面都接了回落（居中编辑器 + 右栏）"
+        const bridge = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "RightFileBridge.tsx"), "utf8");
+        /* 10-30：三处入口（居中预览 / 右栏 / 跳转桥）必须走同一套回落 —— 各写一份拼路径逻辑，
+           就是"修好一个、另外两个照旧"的来源（用户三次同一现象）。 */
+        (/resolveForOpen\(/.test(preview) && /resolveExistingFile\(/.test(rail)
+          && /registerRightFileResolver\(/.test(bridge) && /resolveForOpen\(/.test(bridge) ? ok : fail)(
+          "【127】三处入口（居中预览 / 右栏 / 跳转桥）都接同一套回落"
         );
       }
     }
