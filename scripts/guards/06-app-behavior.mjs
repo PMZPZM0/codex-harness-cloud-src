@@ -702,7 +702,11 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   //    （import 与调用都算）——手动安装路径在 04-dev-runtime-install.ts，不在此文件。
   //    ⛔ 必须过 codeOnly 剥注释：boot.ts 头注释里会提到这个符号，裸 includes 会被注释顶成假红。
   const bootTs = codeOnly(readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8"));
-  (bootTs.includes("ensurePonytailPlugin") ? fail : ok)("ponytail 启动**不再自动种**（09-27 改按需安装：boot.ts 里不得出现任何形式的 ensurePonytailPlugin；自动种会让每会话多注入 ~640 token）");
+  // ★ 10-30 事故后放宽**一个且仅一个**形态：引擎 0.16x 要求 marketplace 目录带清单文件，
+  //    旧布局被丢 ⇒ 插件/技能/钩子一起消失、开关假死。允许「写代码模式 ≠ off」时在启动阶段
+  //    补齐市场段（先落盘再启动引擎），⛔ 必须紧跟 getPonytailMode() 判断（默认仍不装）。
+  const bootHealGated = /getPonytailMode\(\)\) !== "off"[\s\S]{0,500}ensurePonytailPlugin/.test(bootTs);
+  (!bootTs.includes("ensurePonytailPlugin") ? ok : bootHealGated ? ok : fail)("ponytail 启动不自动种（仅「写代码模式 ≠ off」时自愈，且必须紧跟模式判断）");
   // ⛔ 09-16 实测教训：引擎对 config/value/write 要求**必填** mergeStrategy，缺了整条请求被拒
   //    （Invalid request: missing field `mergeStrategy`）。这些调用普遍带 .catch(() => undefined)
   //    静默吞掉 → 表现成「开关点了没生效」。这里按结构守：**只认真正的调用点**

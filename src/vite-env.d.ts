@@ -1106,7 +1106,7 @@ interface Window {
     /* 下载仓库 skills/ 子树 → 逐个 auditSkill → 落 codex-home/skills → 重启引擎；同名目录跳过、不覆盖 */
     installSkillPack(input: { id: string }): Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number }>;
     /* 只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动） */
-    uninstallSkillPack(input: { id: string }): Promise<{ removed: string[]; remaining: string[] }>;
+    uninstallSkillPack(input: { id: string }): Promise<{ removed: string[]; remaining: string[]; kept: string[] }>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;
     removeLocalSkill(input: { folder: string; name?: string }): Promise<{ ok: boolean; engineRemoved?: boolean; engineCheckMessage?: string }>;
     installMarketSkill(skill: MarketSkillEntry): Promise<LocalSkillEntry>;
