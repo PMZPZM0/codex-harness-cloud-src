@@ -432,6 +432,13 @@ export async function run() {
     (/cancelPromptEnhance\(\)/.test(appC2) && /setPrompt\(enhanceBackupRef\.current\)/.test(appC2))
       ? ok("【32】增强结果可还原为原文（revert 路径在）")
       : fail("【32】还原原文路径缺失 —— 用户对增强结果不满意就回不去了");
+    /* ⛔ 正则**不带 bag. 前缀**：readAppUi() 的聚合视图会剥掉切分引入的前缀（见 _ctx 说明）。 */
+    (/enhanceResultRef\.current = next;/.test(appC2) && /prompt === enhanceResultRef\.current\) return;/.test(appC2))
+      ? ok("【32】增强写回的那一拍不清原文备份（prompt === enhanceResultRef ⇒ 放行）")
+      : fail("【32】备份失效判定没给「模型刚写回」放行 —— 增强完成后按钮停在 ✨，还原不回去（真 bug）");
+    (/enhanceBackupRef\.current = null;\s*\r?\n\s*enhanceResultRef\.current = "";/.test(appC2))
+      ? ok("【32】还原后清掉「增强结果标记」（否则复用到同一字符串会误放行）")
+      : fail("【32】还原路径没清 enhanceResultRef —— 同一段文本再增强一次后仍会误放行");
     // 气泡宽度：绝对定位在窄容器里 shrink-to-fit 会压成竖排窄条（截图实测踩到）
     // ⛔ 必须先去注释再判 —— 注释里也提到了这个属性名，直接正则会被注释顶成假绿（本轮踩到）。
     const cssC2 = readStyles();
