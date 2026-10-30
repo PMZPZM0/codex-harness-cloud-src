@@ -2492,7 +2492,9 @@ w.postMessage({id:1,op:"list",root});
   const fmSrc180 = codeOnly(readFileSync(join(ROOT, "src", "features", "function-menu", "FunctionMenu.tsx"), "utf8"));
   const fmStore180 = codeOnly(readFileSync(join(ROOT, "src", "features", "function-menu", "store.ts"), "utf8"));
   const fmDefault180 = normalizeFunctionMenu(null);
-  (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>extensions>team>identity>login>newbie"
+  /* ⛔ 10-26：extensions（拓展）拉出为侧栏常驻行，已不在默认顺序里。
+     ⛔ 10-30 用户令：默认再加「开发工具 / 收藏夹」（位置在「团队」之后）—— 名单随之变长。 */
+  (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>team>devtools>favorites>identity>login>newbie"
     && fmDefault180.location === "bottom" && fmDefault180.overflow.length === 0
     ? ok : fail)(
     "【180】功能入口默认顺序 + 默认位置 = 侧栏底部（安装默认，可折叠），数据模型单一真相源"
