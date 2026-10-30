@@ -1369,6 +1369,12 @@ interface Window {
     feishuCliCancel(): Promise<{ ok: boolean }>;
     /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
     feishuCliRun(input: { args: string[]; cwd?: string }): Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>;
+    /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物与自我改进建议（⛔ 只认传入的 threadId） */
+    readTaskMonitor(threadId?: string): Promise<{ threadId: string; turns: any[] }>;
+    /* 10-30 任务监控：用户编辑后的自我改进建议落盘 */
+    saveMonitorSuggestion(input: { threadId?: string; turnId?: string; text?: string }): Promise<{ ok: boolean; error?: string }>;
+    /* 10-30 任务监控：重跑一次模型生成 */
+    regenerateMonitorSuggestion(input: { threadId?: string; turnId?: string }): Promise<{ ok: boolean; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
