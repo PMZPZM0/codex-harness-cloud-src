@@ -109,6 +109,10 @@ await probe("dispatchNotice",
    —— 漏了就是面板点「检测」永远返回 undefined、点「保存」写空对象（【2】那类静默丢参）。 */
 await probe("detectCliAgent", [{ id: "builtin-claude-code" }], "cliagents:detect", [{ id: "builtin-claude-code" }]);
 await probe("saveCliAgent", [{ name: "探针", bin: "probe" }], "cliagents:save", [{ name: "探针", bin: "probe" }]);
+/* 10-30 按文件名找回（fs:locate）：invokeArgs 必须是 { path, threadId } 对象形态
+   —— 写成位置参数时主进程拿不到 input、只回空串（表现像"没找到"，其实是"没收到参数"）。 */
+await probe("locateFile", ["D:\\probe\\a.mjs"], "fs:locate", [{ path: "D:\\probe\\a.mjs", threadId: undefined }]);
+await probe("readFile", ["D:\\probe\\a.txt"], "fs:read", [{ path: "D:\\probe\\a.txt", threadId: undefined }]);
 await probe("removeCliAgent", ["cli-abc"], "cliagents:remove", ["cli-abc"]);
 
 /* 反向：无参通道不许被塞进 undefined 占位（__ipc 的 trim 语义）。
