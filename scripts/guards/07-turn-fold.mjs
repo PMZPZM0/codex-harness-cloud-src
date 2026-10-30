@@ -3381,7 +3381,7 @@ export async function run() {
   try { caps274 = req274(join(ROOT, "dist-electron", "capability-registry.js")); } catch { caps274 = null; }
   const probeBase = {
     arch: "arm64", desktopSwitch: true, browserSwitch: true, nuphusAvailable: true, uiaAvailable: true,
-    computerUseAvailable: true, nuphusVisionEnv: true, visionPlugin: true, imagePlugin: true, egoBrowser: true, markitdown: true,
+    computerUseAvailable: true, imagePlugin: true, egoBrowser: true, markitdown: true,
   };
   const desktopItem = (resolution, platform) => {
     const item = (resolution ?? []).find((entry) => entry.id === "desktop");
@@ -3394,118 +3394,20 @@ export async function run() {
   );
 }
 
-// ---------- 【76】nuphus 视觉插件接线（09-20）----------
-// 背景：用户报「视觉插件配置好了总是不生效」。根因 = `[mcp_servers.nuphus]` 从来没有 env 段，
-// 插件里的 baseUrl/apiKey/model 根本没进 nuphus 进程（`desktop_vision` 恒报 API_KEY required，
-// 模型只好回落本地 OCR → 体感「一调用就空转」）。
-// 格式 `[mcp_servers.X.env]` 已用**真实 app-server 探针**实证（假 stdio MCP 把自己 env 落盘，
-// 4 个哨兵值全部命中、stderr 无 Invalid configuration），这里只守「接线没被改回去 / 没写歪」。
+// ---------- 【76】视觉辅助插件移除后的负向防线（10-30）----------
+// ⛔ 视觉辅助插件整体移除：nuphus-env.ts 已删（原【76】的映射/写出/漂移断言随之退役）。
+//   NUPHUS_MCP_VISION_* 链不许复活 —— 插件没了，env 没有配置来源，复活只会长出一段永远空转的死链。
 {
-  const req76 = createRequire(import.meta.url);
-  let nv = null;
-  try { nv = req76(join(ROOT, "dist-electron", "nuphus-env.js")); } catch { nv = null; }
-  (nv ? ok : fail)("【76】dist-electron/nuphus-env.js 可加载（视觉 env 映射的唯一来源）");
-
-  if (nv) {
-    const full = { enabled: true, baseUrl: "https://x.example/v1", apiKey: "  sk-abc  ", model: " glm-v " };
-    const pairs = nv.nuphusVisionEnv(full);
-    const map = Object.fromEntries(pairs);
-    (pairs.length === 4
-      && map.NUPHUS_MCP_VISION_PROVIDER === "openai"
-      && map.NUPHUS_MCP_VISION_API_KEY === "sk-abc"
-      && map.NUPHUS_MCP_VISION_MODEL === "glm-v"
-      && map.NUPHUS_MCP_VISION_BASE_URL === "https://x.example/v1" ? ok : fail)(
-      "【76】配好时产出 4 个 NUPHUS_MCP_VISION_*（provider 恒 openai，值 trim 后原样下发）"
-    );
-    (nv.NUPHUS_VISION_PROVIDER === "openai" ? ok : fail)(
-      "【76】provider 固定 openai（内置视觉插件与 nuphus 同为 OpenAI 兼容 /chat/completions）"
-    );
-    // 缺一即不写：半截 env 只会让 nuphus 报一句更难懂的错
-    (nv.nuphusVisionEnv({ enabled: false, baseUrl: "https://x", apiKey: "k", model: "m" }).length === 0
-      && nv.nuphusVisionEnv({ baseUrl: "https://x", apiKey: "", model: "m" }).length === 0
-      && nv.nuphusVisionEnv({ baseUrl: "", apiKey: "k", model: "m" }).length === 0
-      && nv.nuphusVisionEnv({ baseUrl: "https://x", apiKey: "k", model: "  " }).length === 0
-      && nv.nuphusVisionEnv(undefined).length === 0 ? ok : fail)(
-      "【76】停用或缺 apiKey/model/baseUrl ⇒ 返回空（整段 env 不写，不产出半截配置）"
-    );
-  }
-
   const main76 = readMainSource();
-  const nvSrc76 = readFileSync(join(ROOT, "electron", "nuphus-env.ts"), "utf8");
-  // ⛔ 只能有一处**生成**：出现两次就是重复段（TOML duplicate key ⇒ 引擎起不来，09-16 踩过同类）。
-  //   数「生成数组里那一个元素」的形态（`["", NUPHUS_VISION_ENV_TABLE, ...]`）——
-  //   表名字面量只允许出现在 nuphus-env.ts 的常量定义里，两处各写一次就会悄悄漂移。
-  const envTableCount = (main76.match(/\["", NUPHUS_VISION_ENV_TABLE,/g) || []).length;
-  (envTableCount === 1 ? ok : fail)(
-    `【76】视觉 env 段只由一处生成（实际 ${envTableCount} 处 —— 两处会写出重复表，引擎直接起不来）`
+  (!/NUPHUS_MCP_VISION|nuphusVisionEnv|NUPHUS_VISION_ENV_TABLE/.test(main76) ? ok : fail)(
+    "【76】NUPHUS_MCP_VISION_* env 链不许复活（10-30 视觉辅助插件整体移除）"
   );
-  (/export const NUPHUS_VISION_ENV_TABLE = "\[mcp_servers\.nuphus\.env\]"/.test(nvSrc76) ? ok : fail)(
-    "【76】表名字面量只在 nuphus-env.ts 定义一次（写出侧与漂移判定共用，不各写一遍）"
+  (!existsSync(join(ROOT, "electron", "nuphus-env.ts")) ? ok : fail)(
+    "【76】electron/nuphus-env.ts 保持已删除状态（原视觉 env 映射的唯一来源）"
   );
-  (/\$\{key\} = "\$\{escapeToml\(value\)\}"/.test(main76) ? ok : fail)(
-    "【76】env 值走 escapeToml 转义（key 里出现过 \\ / \" 会写坏 TOML）"
-  );
-  (/nuphusVisionEnv\(devInput\.nuphusVision\)/.test(main76) ? ok : fail)(
-    "【76】config.toml 的 nuphus 段用 nuphusVisionEnv(devInput.nuphusVision) 取 env"
-  );
-  (/nuphusVision: builtinPlugins\.vision,/.test(main76) ? ok : fail)(
-    "【76】devInstructionsInput 把原始视觉配置带出来（同一份来源，改插件时两处一起变）"
-  );
-  (/nuphusVisionEnvDrift\(\{[\s\S]{0,220}?escape: escapeToml,/.test(main76) ? ok : fail)(
-    "【76】漂移判定注入的 escape 就是写出用的 escapeToml（换一个实现 ⇒ 判定永远对不上 ⇒ 每次启动重写）"
-  );
-  (/nuphusRegisteredNow = shouldRegisterNuphus\(/.test(main76) ? ok : fail)(
-    "【76】注册前提走 shouldRegisterNuphus + 覆盖表（与 config.toml 写出侧同一判据）"
-  );
-  (/\|\| instructionsOutdated \|\| nuphusVisionStale \|\| disabledMissing/.test(main76) ? ok : fail)(
-    "【76】nuphusVisionStale 真的进了重写条件（只算出变量、不参与判断 = 死代码）"
-  );
-
-  if (nv) {
-    // ---- 漂移判定的**行为断言**（这块内联时只能 grep；「恒真 ⇒ 每次启动整份重写」是最危险的失效模式）----
-    const V = { enabled: true, baseUrl: "https://x.example/v1", apiKey: "sk-abc", model: "glm-v" };
-    // 用**生产同一个** escapeTomlString（config-toml.js 的真产物），不要自己另写一份 ——
-    // 判定两端只要有一端转义口径不同，就会恒判漂移（每次启动整份重写）。
-    const esc = req76(join(ROOT, "dist-electron", "config-toml.js")).escapeTomlString;
-    const withEnvText = [
-      "[mcp_servers.nuphus]",
-      'command = "nuphus.exe"',
-      "",
-      nv.NUPHUS_VISION_ENV_TABLE,
-      `NUPHUS_MCP_VISION_PROVIDER = "${nv.NUPHUS_VISION_PROVIDER}"`,
-      `NUPHUS_MCP_VISION_API_KEY = "${esc(V.apiKey)}"`,
-      `NUPHUS_MCP_VISION_MODEL = "${esc(V.model)}"`,
-      `NUPHUS_MCP_VISION_BASE_URL = "${esc(V.baseUrl)}"`,
-    ].join("\n");
-    const noEnvText = '[mcp_servers.nuphus]\ncommand = "nuphus.exe"\n';
-    const D = (o) => nv.nuphusVisionEnvDrift(o);
-    (D({ vision: V, registered: true, configText: noEnvText, escape: esc }) === true
-      && D({ vision: V, registered: true, configText: withEnvText, escape: esc }) === false ? ok : fail)(
-      "【76】已配插件 + 已注册：缺 env 判漂移、逐字一致不判（用户改 key 后会自动重写）"
-    );
-    // ⛔ 这条就是「恒真」防线：没注册时我们本来就不写这段，绝不能判漂移
-    (D({ vision: V, registered: false, configText: noEnvText, escape: esc }) === false ? ok : fail)(
-      "【76】已配插件但 nuphus 未注册 ⇒ **不**判漂移（否则每次启动整份重写 config.toml）"
-    );
-    // 插件停用/清空 ⇒ 残留段必须清掉；清完就不再命中（收敛，不会每轮重写）
-    (D({ vision: undefined, registered: true, configText: withEnvText, escape: esc }) === true
-      && D({ vision: { ...V, enabled: false }, registered: true, configText: withEnvText, escape: esc }) === true
-      && D({ vision: undefined, registered: false, configText: withEnvText, escape: esc }) === true
-      && D({ vision: undefined, registered: false, configText: noEnvText, escape: esc }) === false ? ok : fail)(
-      "【76】不需要 env 时（停用/清空/未注册）残留段判漂移；重写后即不再命中（收敛）"
-    );
-    // 值变了必须判漂移（否则「改完 key 仍然不生效」）
-    (D({ vision: { ...V, apiKey: "sk-other" }, registered: true, configText: withEnvText, escape: esc }) === true
-      && D({ vision: { ...V, model: "other" }, registered: true, configText: withEnvText, escape: esc }) === true
-      && D({ vision: { ...V, baseUrl: "https://y.example/v1" }, registered: true, configText: withEnvText, escape: esc }) === true ? ok : fail)(
-      "【76】key / model / baseUrl 任一改动都判漂移（重复不生效的另一种成因）"
-    );
-  }
-
-  // 密钥不许出现在 developer_instructions（那是发给模型与落 rollout 的文本）
   const di76 = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
-  (!/nuphusVision|NUPHUS_MCP_VISION/i.test(di76) ? ok : fail)(
-    "【76】视觉密钥不进 developer_instructions（只写进 config.toml 的 env 表）"
+  (!/describe_image|NUPHUS_MCP_VISION/i.test(di76) ? ok : fail)(
+    "【76】识图命令行用法不许回到 developer_instructions（视觉插件 10-30 已移除）"
   );
 }
 
@@ -3816,18 +3718,9 @@ export async function run() {
   (!/\+\s*result\.url/.test(app84) ? ok : fail)(
     "【84】App 侧不得再把 result.url 直接拼进返回文本（一拼就有 MB 级 base64 进对话历史）"
   );
-  // 识图工具的**入参**同样要劝退 data URL：模型若填了内联 base64，一样几 MB 进历史
-  (/imageUrl[\s\S]{0,240}?不要传 data URL/.test(app84) ? ok : fail)(
-    "【84】describe_image 的 imageUrl 参数描述明确劝退 data URL"
-  );
-  // 识图工具也要能吃**本地路径** —— 引擎消息里的图片就是本地文件路径，模型照用法传过来时
-  // 上游会 400「invalid image」。命令行那条路径（harness-media.mjs 的 vision 分支）早就做对了，
-  // 主进程侧曾经没有 ⇒ 同一件事两条路径行为不一致（最难查的一类问题）。
-  (/async function toImageSource\(ref: string\)/.test(main84) ? ok : fail)(
-    "【84】有 toImageSource（本地图片路径读成 data URL，与命令行路径 harness-media 同口径）"
-  );
-  (/image_url: \{ url: await toImageSource\(input\.imageUrl\) \}/.test(main84) ? ok : fail)(
-    "【84】describe_image 真的走了 toImageSource（否则模型传本地路径必然 400）"
+  // ⛔ 10-30 视觉辅助插件整体移除：describe_image 工具 / toImageSource 识图链已删，负向防复活。
+  (!/builtin:describe-image|name: "describe_image"/.test(main84 + app84) ? ok : fail)(
+    "【84】describe_image 工具链不许复活（10-30 视觉辅助插件整体移除）"
   );
   const pkg84 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
   (/verify-image-plugin/.test(String(pkg84.scripts?.check ?? "")) ? ok : fail)(
@@ -3859,8 +3752,7 @@ export async function run() {
     const base = {
       platform: "win32", arch: "x64",
       desktopSwitch: true, browserSwitch: true,
-      nuphusAvailable: true, nuphusVisionEnv: true,
-      visionPlugin: true, imagePlugin: true,
+      nuphusAvailable: true, imagePlugin: true,
       egoBrowser: false, markitdown: false,
     };
     const pick = (rows, id) => rows.find((r) => r.id === id) || {};
@@ -3870,39 +3762,29 @@ export async function run() {
     (pick(allOn, "browser").activeId === "nuphus-cli-browser" && pick(allOn, "desktop").activeId === "nuphus-desktop" ? ok : fail)(
       "【85】总闸开着时桌面走 nuphus；未装 Ego Lite 时浏览器回落 browse-skills（nuphus-call 默认浏览器）"
     );
-    (pick(allOn, "vision").activeId === "nuphus-vision" ? ok : fail)(
-      "【85】视觉 env 已下发时，看图首选 nuphus desktop_vision（BYOK）"
+    // ⛔ 10-30 视觉辅助插件整体移除：看图能力只剩本地 OCR 一条后端；BYOK 视觉模型两条旧后端不许复活。
+    const visionBackends = (reg.CAPABILITIES.find((c) => c.id === "vision")?.backends ?? []).map((b) => b.id);
+    (visionBackends.length === 1 && visionBackends[0] === "local-ocr" ? ok : fail)(
+      `【85】看图能力只剩本地 OCR 一条后端（实测 ${visionBackends.join("/")}；nuphus-vision / 内置识图工具不许复活）`
+    );
+    (pick(allOn, "vision").activeId === "local-ocr" ? ok : fail)(
+      "【85】总闸开着时看图走本地 OCR（视觉插件已移除，无 BYOK 视觉模型路径）"
     );
 
     // 反转用例：总闸关掉 ⇒ **依赖 nuphus 的后端**全部不可用（掩码是硬阻断，不是提示词约束）。
-    // ⛔ 别把「总闸关掉」误写成「视觉彻底不可用」：describe_image 走的是**内置视觉插件**
-    //    （渲染层 dynamicTool → 主进程直接请求视觉 API，不经 nuphus），所以它不受总闸影响。
-    //    我第一版断言就写错了这个假设，被这条"能反转"的断言当场抓出来。
     const allOff = reg.resolveCapabilities({ ...base, desktopSwitch: false, browserSwitch: false });
     (pick(allOff, "browser").activeId === null
       && pick(allOff, "desktop").activeId === null
-      && alt(allOff, "vision", "nuphus-vision").available === false
-      && alt(allOff, "vision", "local-ocr").available === false
-      && pick(allOff, "vision").activeId === "describe-image" ? ok : fail)(
-      "【85】总闸关掉后依赖 nuphus 的后端全不可用，而 describe_image（不经 nuphus）依旧可用"
-    );
-
-    // 视觉回退链：env 未下发 → describe_image；插件也没配 → 本地 OCR
-    const noEnv = reg.resolveCapabilities({ ...base, nuphusVisionEnv: false });
-    (pick(noEnv, "vision").activeId === "describe-image" ? ok : fail)(
-      "【85】视觉 env 未下发时退到 describe_image（不是仍报 desktop_vision 可用）"
-    );
-    const noPlugin = reg.resolveCapabilities({ ...base, nuphusVisionEnv: false, visionPlugin: false });
-    (pick(noPlugin, "vision").activeId === "local-ocr" ? ok : fail)(
-      "【85】视觉插件也没配时退到本地 OCR（无需 key 的免费路径）"
+      && pick(allOff, "vision").activeId === null ? ok : fail)(
+      "【85】总闸关掉后依赖 nuphus 的后端全不可用（看图只剩 OCR 一条，跟着总闸一起关）"
     );
 
     // Intel Mac 没有本地 OCR 的平台二进制（ONNX 已放弃 osx-x64）；Apple Silicon 必须相反
-    const intelMac = reg.resolveCapabilities({ ...base, platform: "darwin", arch: "x64", nuphusVisionEnv: false, visionPlugin: false });
+    const intelMac = reg.resolveCapabilities({ ...base, platform: "darwin", arch: "x64" });
     (pick(intelMac, "vision").activeId === null && alt(intelMac, "vision", "local-ocr").available === false ? ok : fail)(
       "【85】Intel Mac 上本地 OCR 判为不可用，视觉能力整体判为无可用后端"
     );
-    const armMac = reg.resolveCapabilities({ ...base, platform: "darwin", arch: "arm64", nuphusVisionEnv: false, visionPlugin: false });
+    const armMac = reg.resolveCapabilities({ ...base, platform: "darwin", arch: "arm64" });
     (pick(armMac, "vision").activeId === "local-ocr" ? ok : fail)(
       "【85】Apple Silicon 同条件下本地 OCR 可用（与 Intel Mac 结论相反 ⇒ 平台判据真的生效）"
     );
@@ -3927,8 +3809,12 @@ export async function run() {
     "【85】界面走 capabilities:snapshot 取快照（不是自己拼一套判据）"
   );
   const main85 = readMainSource();
-  (/devInstructionsInput\(\)[\s\S]{0,500}?nuphusVisionEnv\(devInput\.nuphusVision\)\.length > 0/.test(main85) ? ok : fail)(
-    "【85】主进程采集判据复用 devInstructionsInput（总闸与视觉配置的唯一来源，不另读一遍）"
+  (/devInstructionsInput\(\)/.test(main85) ? ok : fail)(
+    "【85】主进程采集判据复用 devInstructionsInput（总闸与插件配置的唯一来源，不另读一遍）"
+  );
+  // ⛔ 10-30 视觉辅助插件整体移除：探针字段不许复活
+  (!/nuphusVisionEnv|visionPlugin/.test(main85) ? ok : fail)(
+    "【85】能力探针的 nuphusVisionEnv / visionPlugin 字段不许复活（视觉插件已移除）"
   );
 }
 
