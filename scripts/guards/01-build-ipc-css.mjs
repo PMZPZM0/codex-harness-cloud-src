@@ -401,7 +401,7 @@ if (!existsSync(stylesEntry)) {
        composer-form 的输入框拖动把手内联注入，CSS 侧都带结构 fallback）· --vscode-scrollbar-shadow（xterm/VS Code 宿主约定，fallback #000）
      · --group-hue（10-26：群汇报成员头像色相 —— UserMessageView 按成员名 hash 逐条内联注入，
        消费端 `hsl(var(--group-hue, 205) …)` 带 fallback；同名成员恒同色，故不适合写进 CSS 单一值） */
-  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page", "--group-hue"]);
+  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page", "--group-hue", "--tag-color", "--bot-gaze-x", "--bot-gaze-y", "--bot-eye-scale", "--skin-stage"]);
   const orphan = [...refs].filter((v) => !defined.has(v) && !whitelist.has(v));
   (orphan.length === 0 ? ok : fail)(
     orphan.length

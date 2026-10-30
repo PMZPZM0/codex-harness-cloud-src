@@ -17,7 +17,7 @@ productName: Codex Assistant
 npmRebuild: false
 extraMetadata:
   main: dist-electron/headless.js
-  version: 0.0.48
+  version: 0.0.49
   # ⛔ 这两行是「拆开」的关键：name → 独立 userData（%APPDATA%/codex-harness-assistant）
   #   + 独立安装目录（%LOCALAPPDATA%/Programs/codex-harness-assistant）；productName → 窗口/快捷方式名
   name: codex-assistant
