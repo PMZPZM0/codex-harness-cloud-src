@@ -78,7 +78,7 @@ jobs:
           NAME="CodexHarnessAssistant-${VERSION}-win-x64-setup.exe"
           sha256sum "${ASSET}" | tee "sha256-${NAME}.txt"
           if gh release view "${TAG}" --repo "${PUBLIC_REPO}" >/dev/null 2>&1; then
-            gh release edit "${TAG}" --repo "${PUBLIC_REPO}" --notes-file "${NOTES}"
+            gh release edit "${TAG}" --repo "${PUBLIC_REPO}" --title "Codex Harness Assistant ${VERSION}" --notes-file "${NOTES}"
           else
             gh release create "${TAG}" --repo "${PUBLIC_REPO}" --title "Codex Harness Assistant ${VERSION}" --notes-file "${NOTES}"
           fi
