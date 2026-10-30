@@ -709,7 +709,7 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (!bootTs.includes("ensurePonytailPlugin") ? ok : bootHealGated ? ok : fail)("ponytail 启动不自动种（仅「写代码模式 ≠ off」时自愈，且必须紧跟模式判断）");
   /* ★ 10-30 用户实测「这个界面没有返回功能」（机器人面板）：返回键与其它内页同款，Esc 等效且捕获阶段拦。 */
   const botConsole = codeOnly(readFileSync(join(ROOT, "src/features/app-view/AppView/05-remote-console.tsx"), "utf8"));
-  (botConsole.includes('className="secondary-setting bot-back"') ? ok : fail)("机器人面板有「返回」（左箭头 + 次要按钮，在标题行最左）");
+  (botConsole.includes('className="secondary-setting bot-back"') && /setBotManagerOpen\(false\); setMobileRemoteOpen\(true\)/.test(botConsole) ? ok : fail)("机器人面板「返回」= 回到「移动端远程控制」面板（⛔ 不是又一个关闭按钮）");
   (/if \(!botManagerOpen\) return;[\s\S]{0,240}event\.key !== "Escape"[\s\S]{0,240}stopPropagation\(\)[\s\S]{0,240}setBotManagerOpen\(false\)/.test(botConsole) ? ok : fail)("机器人面板 Esc 可关（捕获阶段 stopPropagation，不误关底下面板）");
   // ⛔ 09-16 实测教训：引擎对 config/value/write 要求**必填** mergeStrategy，缺了整条请求被拒
   //    （Invalid request: missing field `mergeStrategy`）。这些调用普遍带 .catch(() => undefined)
