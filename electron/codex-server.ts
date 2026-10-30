@@ -6,6 +6,7 @@ import nodeFs from "node:fs";
 import { app } from "electron";
 import { toolchainEnv } from "./toolchain";
 import { ensureSessionWorkspace } from "./features/session-workspace";
+import { threadCwd } from "./thread-cwd";
 
 type RpcId = number | string;
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
@@ -534,6 +535,9 @@ export class CodexServer extends EventEmitter {
       const threadId = String(started?.thread?.id ?? "");
       const cwd = String(started?.thread?.cwd ?? (params as any)?.cwd ?? "");
       if (threadId && cwd) {
+        /* ⛔⛔ 10-30（用户：「调度会话的记忆/归档删除都要跟主会话一样」）：threadCwd 必须在这一处登记，
+           见主仓 electron/codex-server.ts 的完整说明（渲染层那条拦截只覆盖渲染层发起的 thread/start）。 */
+        if (!threadCwd.get(threadId)) threadCwd.set(threadId, cwd);
         void ensureSessionWorkspace(app.getPath("userData"), threadId, cwd)
           .then((out) => console.log(out.ok
             ? `[sessionspace] 已建工作区：${threadId.slice(0, 8)} → ${out.dir}`

@@ -3066,8 +3066,22 @@
         }).join("");
         if ($("prodFeatPill")) $("prodFeatPill").textContent = (j.features || []).length + " 项";
       }
-      /* ⛔ 10-23 用户令：mac 首次启动指令 —— App 名随站点产品（Codex Harness / PPcode）动态拼。 */
-      var prodName = (j.product && j.product.name) || "Codex Harness";
+      /* ⛔ 10-23 用户令：mac 首次启动指令 —— App 名随站点产品（Codex Harness / PPcode）动态拼。
+         ⛔⛔ 10-30 用户实测：这条指令**跑不通**（GitHub 发布页那条能跑）。根因是拿「产品名」当
+            App **包名** —— 产品叫 `Codex Harness`，而 .app 实际叫 `Codex Harness Desktop.app`
+            （= 桌面版 package.json 的 productName）⇒ 路径不对，xattr 作用在不存在的位置。
+            ⇒ 包名一律从**下载资产文件名**推（它就是按 productName 命名的）：
+              `Codex.Harness.Desktop-0.0.51-x64-mac.zip` → `Codex Harness Desktop`
+              `PPcode-0.1.7-x64-mac.zip`             → `PPcode`
+            服务端若显式给了 `product.appName`（HARNESS_APP_NAME），优先用它。 */
+      var appName = String((j.product && j.product.appName) || "").trim();
+      if (!appName) {
+        var assetUrl = String((macArm && macArm.url) || (macX64 && macX64.url) || "");
+        var assetName = assetUrl.split("/").pop().replace(/\.zip$/i, "");
+        assetName = assetName.replace(/[-_]v?\d+\.\d+\.\d+.*$/, "");   /* 去掉 -版本-架构尾巴 */
+        appName = assetName.replace(/[._]+/g, " ").replace(/\s+/g, " ").trim();
+      }
+      var prodName = appName || (j.product && j.product.name) || "Codex Harness";
       var xattrCmd = 'xattr -cr "/Applications/' + prodName + '.app"';
       ["prodXattrX64", "prodXattrArm"].forEach(function (id) { var el = $(id); if (el) el.textContent = xattrCmd; });
       [["prodXattrCopyX64"], ["prodXattrCopyArm"]].forEach(function (pair) {
