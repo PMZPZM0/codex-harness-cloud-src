@@ -38,20 +38,20 @@ import { codexHome, server } from "../runtime-refs";
 import { defineFeature } from "../context";
 import { recordToolRemoved } from "./tool-persistence";
 import type { IpcHost } from "../ipc-host";
-/* ⛔⛔ 10-30 Windows 真机事故（0.0.51 装了打不开，用户截图：Cannot find module
-   '../../scripts/lib/tools-versions.cjs'）：这张**版本表**原先在模块顶层裸 require，而 build.files
-   白名单里没有 scripts/** ⇒ 文件没进 asar ⇒ 主进程启动即死。两件事都要有：
-   ① 已经把它加进 build.files（守卫【96】② /【288】钉住「产物树外的 require 必须被覆盖」）；
-   ② 这里**降级**：读不到就给空表 —— 用到它的地方（飞书 CLI 的版本号）自己退化成 latest。
-   ⛔ 原则：一张数据表读不到，绝不允许把应用搞崩（这条比"一定要读到"更重要）。 */
-const TOOLS_VERSIONS: Record<string, string> = (() => {
-  try {
-    const loaded = (require("../../scripts/lib/tools-versions.cjs") as { TOOLS_VERSIONS?: Record<string, string> }).TOOLS_VERSIONS;
-    return loaded && typeof loaded === "object" ? loaded : {};
-  } catch (error) {
-    console.warn("[runtime-ipc] 读不到 scripts/lib/tools-versions.cjs（打包缺文件？）—— 版本号退化为 latest", error);
-    return {};
-  }
+/* ⛔⛔ 10-30 Windows 真机事故（0.0.51 装了打不开，用户截图：Cannot find module
+   '../../scripts/lib/tools-versions.cjs'）：这张**版本表**原先在模块顶层裸 require，而 build.files
+   白名单里没有 scripts/** ⇒ 文件没进 asar ⇒ 主进程启动即死。两件事都要有：
+   ① 已经把它加进 build.files（守卫【96】② /【288】钉住「产物树外的 require 必须被覆盖」）；
+   ② 这里**降级**：读不到就给空表 —— 用到它的地方（飞书 CLI 的版本号）自己退化成 latest。
+   ⛔ 原则：一张数据表读不到，绝不允许把应用搞崩（这条比"一定要读到"更重要）。 */
+const TOOLS_VERSIONS: Record<string, string> = (() => {
+  try {
+    const loaded = (require("../../scripts/lib/tools-versions.cjs") as { TOOLS_VERSIONS?: Record<string, string> }).TOOLS_VERSIONS;
+    return loaded && typeof loaded === "object" ? loaded : {};
+  } catch (error) {
+    console.warn("[runtime-ipc] 读不到 scripts/lib/tools-versions.cjs（打包缺文件？）—— 版本号退化为 latest", error);
+    return {};
+  }
 })();
 
 function specFor(id: DevRuntimeId, spec: DevRuntimeSpec): DevRuntimeSpec {
@@ -103,6 +103,30 @@ const FALLBACK_STEPS: Partial<Record<DevRuntimeId, string>> = {
   openssl: "系统级安装：界面按钮会打开官网（slproweb 的 Windows 版），按官网步骤装",
   ponytail: "重跑一键脚本重新种插件（界面上的「修复安装」走的是同一条路）",
 };
+
+/**
+ * mac 专用「首选做法」（10-30 全链路审计）。
+ *
+ * ⛔⛔ 上面那批文案是**按 Windows 写的**（MinGit / win-x64 zip / `.exe` / slproweb），而这段提示词
+ *   会被用户**原样复制给 Codex 照着装** ⇒ 在 mac 上等于让模型去下 Windows 包，然后反复失败。
+ *   只覆盖 darwin 上说法确实会错的条目；`mingw` 在 mac 已被隐藏（DARWIN_HIDDEN），不必覆盖。
+ *   镜像站与 install-runtimes.cjs 的 mac 分支同源（清华 miniconda / 清华 pypi / evermeet 兜底）。
+ */
+const DARWIN_FALLBACK_STEPS: Partial<Record<DevRuntimeId, string>> = {
+  git: "mac 不装 MinGit：直接用系统自带 git（随 Xcode 命令行工具）。若 `git --version` 报错就执行 `xcode-select --install`，系统弹窗里点安装，装完再验证一次",
+  pwsh: "从 GitHub 的 PowerShell release 下 **osx-arm64 / osx-x64 的 tar.gz**（约 70 MB），解压后把 `pwsh` 可执行文件放进 tools/pwsh（mac 上没有 .exe 后缀、也不是 zip）",
+  ffmpeg: "下 **darwin** 构建（ffmpeg-static 的 ffmpeg-darwin-<arch>.gz，或 evermeet 的 zip），把 `ffmpeg` 与 `ffprobe` 两个可执行文件放进 tools/ffmpeg/bin（无 .exe）",
+  conda: "用清华镜像的 Miniconda3-**MacOSX**-<arch>.sh 安装器：`bash Miniconda3-*.sh -b -p <tools>/miniconda`（静默装到目标目录，不要用 Windows 安装器）",
+  openssl: "mac 用系统自带的 LibreSSL（`/usr/bin/openssl`），一般无需安装；确实需要新版才 `brew install openssl` 并把它加进 PATH",
+  markitdown: "在随包 python 下执行：`<tools>/python/bin/python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \"markitdown[pdf,docx,pptx]\" openpyxl`（mac 的 python 是 python3，没有裸 python）",
+  laya: "在随包 python 下执行：`<tools>/python/bin/python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple laya[serve]`（含 PyTorch，约 800 MB，要耐心等）",
+  "phone-harness": "在随包 python 下执行：`<tools>/python/bin/python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple phone-harness`，装完把它的 CLI 注册成引擎技能",
+};
+
+/** 该工具在本机平台的「首选做法」（darwin 先查专用表，其余沿用上面那份）。 */
+function fallbackStepsOf(id: DevRuntimeId): string | undefined {
+  return (process.platform === "darwin" ? DARWIN_FALLBACK_STEPS[id] : undefined) ?? FALLBACK_STEPS[id];
+}
 
 /** 发命令用的解释器与脚本路径：优先用随包 node（与主进程跑安装时同源）。
  *  ⛔ 10-08 自审改：**不要写成 `VAR="x" cmd`**（POSIX 写法在 Windows 的 cmd/PowerShell 里跑不了，
@@ -169,7 +193,7 @@ function fallbackPromptFor(id: DevRuntimeId, spec: DevRuntimeSpec): string {
       "· 装完请验证：MoeKoe Music 能启动，且 http://127.0.0.1:6521/register/dev 返回 dfid；把结果发给我。",
     ].join("\n");
   }
-  const steps = FALLBACK_STEPS[id] ?? `重跑本机的一键安装脚本（一条命令只装这一个工具，脚本自带「国内镜像优先 + 逐通道回落 + 坏缓存先删」）：\n    ${fallbackRunner()} ${id}`;
+  const steps = fallbackStepsOf(id) ?? `重跑本机的一键安装脚本（一条命令只装这一个工具，脚本自带「国内镜像优先 + 逐通道回落 + 坏缓存先删」）：\n    ${fallbackRunner()} ${id}`;
   const head = spec.description.split("；")[0];
   const purpose = head.length > 70 ? `${head.slice(0, 70)}…` : head;
   const lines = [
@@ -805,9 +829,9 @@ export const runtimeFeature = defineFeature<null>({
       // 引导型（docker/openssl）：静默安装需要管理员/重启/登录，这里打开官方下载页由用户自己装
       if (spec.kind === "guide") {
         const url = id === "openssl"
-          ? "https://slproweb.com/products/Win32OpenSSL.html"
+          ? (IS_MAC ? "" : "https://slproweb.com/products/Win32OpenSSL.html")
           : "https://www.docker.com/products/docker-desktop/";
-        await shell.openExternal(url);
+        if (url) await shell.openExternal(url);
         return { ok: true, guide: url, runtimes: runtimeList() };
       }
       // 随包内置且已就位：无需「修复」。再解压/重种一遍只会覆盖同名文件（无收益，还多一次引擎重启）。
