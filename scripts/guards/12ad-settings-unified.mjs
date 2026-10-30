@@ -323,6 +323,13 @@ ok(/changeAdaptiveTone/.test(generalPage), "控制台语气自适应开关接的
   ok(existsSync(join(ROOT, "public/avatars/agent-expert-a.webp")) && existsSync(join(ROOT, "public/avatars/agent-team-a.webp"))
     && existsSync(join(ROOT, "public/avatars/agent-subagent-a.webp")),
     "三套图集文件真的在 public/avatars（缺文件 = 空白方块）");
+  /* ★ 10-31 用户实测「卡片没展示全，没有滚动功能」：sm 弹窗曾经走 grid + `minmax(0, auto)`，
+     auto 行不随 max-height 收缩 ⇒ 内容被裁、body 也没有可滚动高度。
+     判据：sm 必须是 flex 列 + body flex:1/min-height:0/overflow:auto（结构级，防回归）。 */
+  const dialogCss = read("src/styles/34-devtools-cards.css");
+  ok(/\.settings-dialog\[data-size="sm"\] \{[^}]*display: flex;[^}]*flex-direction: column;/.test(dialogCss)
+    && /\.settings-dialog\[data-size="sm"\] \.settings-dialog-body \{ flex: 1 1 auto; min-height: 0; overflow: auto; \}/.test(dialogCss),
+    "预览类弹窗（sm）超高时正文自己滚（⛔ 不许退回 grid + auto 行 → 内容被裁）");
 }
 
 /* 10-27 用户令：「就在 codex 的个性化指令里面加一条，让 codex 自主询问（是否 handoff 交接）」
