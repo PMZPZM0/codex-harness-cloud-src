@@ -56,6 +56,8 @@ const AgentsSettingsSection = lazy(() => import("../../../../settings-agents/Age
 const BackupSettingsSection = lazy(() => import("../../../../settings-backup/BackupSettingsSection").then((m) => ({ default: m.BackupSettingsSection })));
 const AppearanceSettingsSection = lazy(() => import("../../../../settings-appearance/AppearanceSettingsSection").then((m) => ({ default: m.AppearanceSettingsSection })));
 const ExpertCenterSection = lazy(() => import("../../../../settings-expert-center/ExpertCenterSection").then((m) => ({ default: m.ExpertCenterSection })));
+/* 10-31：CLI 智能体入口挪到专家/专家团（与主仓同步） */
+const CliAgentsSettingsSection = lazy(() => import("../../../../settings-cli-agents/CliAgentsSettingsSection").then((m) => ({ default: m.CliAgentsSettingsSection })));
 const ComputerSettingsSection = lazy(() => import("../../../../settings-computer/ComputerSettingsSection").then((m) => ({ default: m.ComputerSettingsSection })));
 const RelayCenterPage = lazy(() => import("../../../../relay").then((m) => ({ default: m.RelayCenterPage })));
 const CloudAccountPage = lazy(() => import("../../../../settings-cloud").then((m) => ({ default: m.CloudAccountPage })));
@@ -464,6 +466,8 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
     "boss-groups": { render: () => <BossGroupsSection openAppConfirm={openAppConfirm} onNotice={setNotice} /> },
     "expert-center": { render: () => expertMarketOpen ? <ExpertMarketSection localSkills={localSkills} onBack={() => setExpertMarketOpen(false)} onInstalled={() => void refreshExpertCenterData()} onNotice={(m) => setNotice(m)} /> : <><ExpertCenterSection expertTeams={expertTeams} EXPERT_CATEGORY_DEFS={EXPERT_CATEGORY_DEFS} expertTeamMemberDirect={expertTeamMemberDirect} startMemberDirectSession={startMemberDirectSession} onOpenMarket={() => setExpertMarketOpen(true)} onBack={() => setSettingsPage("agentteam")} /></> },
+    /* 10-31 用户令：CLI 智能体入口从「开发工具」挪到「专家/专家团」。 */
+    "cli-agents": { render: () => <CliAgentsSettingsSection setNotice={setNotice} onBack={() => setSettingsPage("agentteam")} /> },
     user: { render: () => <UserCenterSection
                           username={username}
                           onUsernameChange={(name) => { setUsername(name); }}
