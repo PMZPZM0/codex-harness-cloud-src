@@ -94,6 +94,8 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
   const [mode, setMode] = useState<"custom" | "pptoken" | "relay" | "openai">("pptoken");
   /* 10-31 与桌面版同一套：默认只列选项，点选后卡片展开出表单（见 16-settings-ssh.css 的 .login-form-wrap）。 */
   const [expanded, setExpanded] = useState(false);
+  /* 与桌面版同规则：点卡片展开、点卡片外面收起。 */
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
   const [apiBase, setApiBase] = useState(PPTokenEndpoints[0].url);
   const [apiKey, setApiKey] = useState("");
@@ -114,6 +116,17 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
   const [openaiProxy, setOpenaiProxy] = useState(() => localStorage.getItem("openai-proxy") ?? "");
   const openaiTimerRef = useRef<number | null>(null);
   useEffect(() => () => { if (openaiTimerRef.current) window.clearInterval(openaiTimerRef.current); }, []);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onDown = (event: MouseEvent) => {
+      const el = cardRef.current;
+      if (!el || el.contains(event.target as Node)) return;
+      setExpanded(false);
+    };
+    document.addEventListener("mousedown", onDown, true);
+    return () => document.removeEventListener("mousedown", onDown, true);
+  }, [expanded]);
 
   useEffect(() => {
     if (!endpointOpen) return;
@@ -242,7 +255,11 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
 
   return (
     <div className="login-screen">
-      <div className={`login-card${expanded ? " is-expanded" : ""}`}>
+      <div
+        ref={cardRef}
+        className={`login-card${expanded ? " is-expanded" : ""}`}
+        onClick={() => { if (!expanded) setExpanded(true); }}
+      >
         <div className="login-brand"><img className="login-logo-img" src="./icon.png" alt="" width={40} height={40} /><div><strong>Codex Harness</strong></div></div>
         <h1>开始使用</h1>
         <p className="login-sub">配置 API 即可开始；暂不登录可直接体验主界面</p>
