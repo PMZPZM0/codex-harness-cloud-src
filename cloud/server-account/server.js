@@ -1872,7 +1872,13 @@ const server = http.createServer(async (req, res) => {
   const PRODUCT_SUB = process.env.HARNESS_PRODUCT_SUB
     || "把 Codex 引擎、多会话、专家团、技能与记忆整合成一个本地优先的桌面环境 —— 你的代码与会话始终留在自己机器上。";
   const PRODUCT_DESC = process.env.HARNESS_PRODUCT_DESC || "完整内核与全部能力；云端账号开箱即用，本地优先存储。";
-  const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=10`;
+  /* ⛔⛔ 10-31 事故（用户截图「Codex Harness 云管理的下载按钮不见了」）：
+   桌面安装包在 `v0.0.51`（10-30），而 10-31 一天里连发了十几个 `mobile-remote-v0.1.x`
+   —— 每个 release 只有 APK、没有 exe/dmg。per_page=10 时**前 10 条全是手机远控**，
+   桌面版被挤出窗口 ⇒ 产品首页的 latest 变成 mobile release ⇒ downloads 三个平台全空
+   ⇒ 前端把「镜像下载 / GitHub」整行隐藏，只剩一个什么也复制不到的「复制」按钮。
+   ⇒ 一次多拉一些（40 条，够跨过一整天的手机发版），再在下面按「有没有桌面资产」过滤。 */
+const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=40`;
   const PRODUCT_TTL_MS = Math.max(60_000, Number(process.env.HARNESS_PRODUCT_TTL_MS || 10 * 60_000));
   const PRODUCT_CACHE_FILE = path.join(path.dirname(DATA_FILE), "product-cache.json");
   /* 功能介绍：唯一真相源在这里（发版时跟着改这一处即可，不用碰页面） */
@@ -1921,6 +1927,15 @@ const server = http.createServer(async (req, res) => {
       sha256: assets.filter((a) => a.kind === "sha256"),
     };
   }
+  /** 这条 release 有没有**桌面**安装包（exe / msi / dmg / mac zip）。
+   *  ⛔ 产品首页是「下载桌面客户端」的页面：手机远控的 APK release 不该占住 latest ——
+   *  它们一多，latest 就是 APK 版，三个平台的下载按钮全部消失（用户实测过）。
+   *  ⛔ 判据用已归类的 downloads 而不是文件名后缀：分类规则只有 productAssetKind 一份。 */
+  function hasDesktopAsset(rel) {
+    const d = (rel && rel.downloads) || {};
+    return Boolean(d.win || d.macArm || d.macX64);
+  }
+
   let productMem = null;   /* 进程内缓存：命中后不再读盘（页面每次打开都会调这个接口） */
   function readProductCache() {
     if (productMem) return productMem;
@@ -2021,7 +2036,12 @@ const server = http.createServer(async (req, res) => {
   if (p === "/product/home" && req.method === "GET") {
     const force = /(?:^|&)refresh=1(?:&|$)/.test(String(req.url || "").split("?")[1] || "");
     const data = await productHome(force);
-    const latest = (data.releases && data.releases[0]) || null;
+    /* ⛔ 只从**含桌面安装包**的 release 里挑 latest（见 hasDesktopAsset 的说明）。
+       一条都没有时 latest=null 且给明确文案 —— 不要退回 APK 版：那样页面会渲染出三张
+       "只有复制按钮"的空卡，比直接说清楚更让人困惑（正是用户这次截图的样子）。 */
+    const allReleases = Array.isArray(data.releases) ? data.releases : [];
+    const desktopReleases = allReleases.filter(hasDesktopAsset);
+    const latest = desktopReleases[0] || null;
     const repoUrl = "https://github.com/" + PRODUCT_REPO;
     return send(200, {
       ok: Boolean(latest),
@@ -2037,9 +2057,14 @@ const server = http.createServer(async (req, res) => {
       latest,
       /* ⛔ 10-23 用户定稿：产品首页更新日志只展示最新 2 个版本（先前给 8 条，日志区太长）。
          上游 per_page=10 保持（取最高版本用的 latest 兜底不受影响），这里只裁展示面。 */
-      releases: (data.releases || []).slice(0, 2),
+      /* 更新日志也只列桌面版：和上面的下载卡保持同一个版本，别让用户读到手机远控的日志 */
+      releases: (desktopReleases.length ? desktopReleases : allReleases).slice(0, 2),
       features: PRODUCT_FEATURES,
-      message: latest ? "" : (data.message || "暂无发布版本"),
+      message: latest
+        ? ""
+        : (allReleases.length
+          ? "该仓库最近的发布只有手机端安装包（APK），还没有桌面安装包 —— 去 Releases 页看历史版本"
+          : (data.message || "暂无发布版本")),
     });
   }
 
