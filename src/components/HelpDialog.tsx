@@ -32,13 +32,13 @@ export type OverviewGroup = {
 export const OVERVIEW_GROUPS: OverviewGroup[] = [
   {
     group: "账户与模型",
-    purpose: "决定 Codex 用哪个「大脑」：账户登录（中转站 / OpenAI 订阅）会自动生成供应商并带来源倍率；自定义供应商只认你自己的地址和 Key。",
+    purpose: "决定 Codex 用哪个「大脑」：账户登录（云账号 / 中转站 / OpenAI 订阅）会自动生成供应商并带来源倍率；自定义供应商只认你自己的地址和 Key。",
     startHere: "模型",
     items: [
       { page: "用户中心", what: "昵称、头像（含 Codex 形象）、账户偏好与个性化入口", when: "想让 Codex 认识你、换个头像，或管理账户时" },
       { page: "模型", what: "供应商与模型的添加、测试、切换；模型下拉显示能力徽标、账户来源与上游倍率（自定义供应商不显示倍率）", when: "第一次用必须配（否则发不出消息）；觉得模型慢 / 贵也来这里" },
       { page: "中转站", what: "接入常见中转服务，多账号按额度 / 权重轮转；模型同样显示上游倍率", when: "手上有中转站账号、不想手填地址时" },
-      { page: "云账号", what: "登录云端账号后自动配齐模型 / 云端知识库 / 云端记忆（云助手专属的设备与座位在页内「云助手专属」入口）", when: "想用云端模型、跨设备知识库与记忆，或换台电脑接着干时" },
+      { page: "云账号", what: "登录一次，自动同步云端模型 / 知识库 / 记忆，并显示云端倍率与本轮积分", when: "有云账号、想让模型列表自动跟上云端时" },
       { page: "OpenAI 订阅", what: "登录 ChatGPT 账号，直接用官方额度", when: "有订阅、想用官方模型时" },
     ],
   },
@@ -121,7 +121,6 @@ export const OVERVIEW_ROUTES: { label: string; page: string }[] = [
   { label: "让它说话合我口味", page: "个性化" },
   { label: "装技能 / 插件 / 接 MCP", page: "技能" },
   { label: "让它记住项目资料", page: "知识库" },
-  { label: "登录云端 / 换电脑接着干", page: "云账号" },
   { label: "派一群 AI 干活", page: "专家/专家团" },
   { label: "每天定时自动跑", page: "定时任务" },
   { label: "换电脑 / 怕丢历史", page: "会话备份" },
@@ -140,6 +139,7 @@ export const OVERVIEW_OUTSIDE: { label: string; where: string; hint: string }[] 
   { label: "命令面板", where: "Ctrl+K", hint: "直接搜任务与会话，不用翻侧栏" },
   { label: "独立弹窗", where: "会话顶栏最右", hint: "把当前会话开到新窗口；运行中暂不可用" },
   { label: "应用锁", where: "设置 → 数据 → 应用锁", hint: "密码只显示一次；输错 10 次清空应用数据，务必先备份" },
+  { label: "用户配置引导", where: "首次登录后自动弹出", hint: "称呼 / 头像 / 职业 / Codex 人格 / 兴趣；填完下一条消息生效，也可稍后配置" },
 ];
 
 export type HelpTopic = HelpKey | "overview";
@@ -430,6 +430,7 @@ export function HelpDialog({ helpKey, onClose, onNavigate }: { helpKey: HelpTopi
           </header>
           <div className="help-body">
             <p className="help-intro">{renderRich(`设置分 ${OVERVIEW_GROUPS.length} 组、共 ${OVERVIEW_GROUPS.reduce((n, g) => n + g.items.length, 0)} 页。**新手只需先配「模型」**，其余按需。不知道去哪一页，就先点下面的「我想做…」；每页都写了「它是干什么的」和「什么时候会用到它」，点页名可直接跳过去。`)}</p>
+            <p className="help-intro">{renderRich("**手机远控不在设置里**：点顶栏的 📱 图标打开「移动端远程控制」—— 扫码或输 6 位码配对，断开连接会同时移除电脑端这台设备。")}</p>
             <div className="overview-quick">
               <div className="overview-quick-head"><h3>我想做…</h3><span>点一下直接跳到那一页</span></div>
               <div className="overview-quick-grid">
