@@ -939,7 +939,7 @@ function applyWindowChrome(dark: boolean) {
   for (const win of targets) {
     try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch (e) { themeDiag("  setBackgroundColor 失败：" + String(e)); }
     try {
-      win.setTitleBarOverlay({ color: "#00000000", symbolColor: symbol, height: 43 });
+      win.setTitleBarOverlay({ color: "#00000000", symbolColor: symbol, height: 55 });
       themeDiag("  → setTitleBarOverlay 已调用（无异常）");
     } catch (e) { themeDiag("  setTitleBarOverlay 抛错：" + String(e)); }
   }
