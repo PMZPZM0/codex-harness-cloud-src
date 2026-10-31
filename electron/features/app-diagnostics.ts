@@ -38,6 +38,7 @@ import type { HostCaps } from "../runtime/seams";
 const APP_CHANNELS = [
   "app:userData", "app:home-dir", "app:doctor", "app:storage-info",
   "app:storage-clear", "app:perf-counters", "app:engine-info", "app:relaunch",
+  "app:boss-project-dir",
 ];
 
 /** 跑一次外部命令取输出，带超时，失败返回空串（诊断用，绝不抛错） */
@@ -254,6 +255,21 @@ export const appFeature = defineFeature<null>({
         sessions: (dirEntries(path.join(codexHome, "sessions"))?.length ?? 0),
         archived: (dirEntries(path.join(codexHome, "archived_sessions"))?.length ?? 0),
       };
+    });
+
+    /* 10-25 用户令：「或者自动在软件安装的对应盘…在对应盘自动新建项目文件」。
+       ⇒ 在**软件所在盘**（安装目录的盘根）建一个专属项目目录，返回绝对路径。
+       同名目录已存在就复用（不报错、不叠目录）。
+       ⛔ 这个 handler 本仓原先漏同步（preload / ipc-registry 都声明了通道，实现没跟过来
+         ⇒ invoke 落到没有 handler 的通道上直接 reject，界面表现是「点了没反应」）。
+       ⛔ 三仓同轮同步时必须带上它 —— 只同步 `src/` 不带 `electron/` 就会出现
+         「主仓能选、这台点了没反应」。 */
+    ipcHost.handle("app:boss-project-dir", async () => {
+      const base = path.dirname(process.execPath);
+      const root = path.parse(base).root || base;
+      const dir = path.join(root, `指挥中枢项目-${new Date().toISOString().slice(0, 10)}`);
+      await fs.mkdir(dir, { recursive: true });
+      return dir;
     });
 
     ipcHost.handle("app:relaunch", () => {
