@@ -93,8 +93,12 @@ ok(/prev\.compactionTurnId === next\.compactionTurnId/.test(ruler) && /prev\.com
 const css = read("src/styles/09-settings-workspace-memory.css");
 ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,260}var\(--green\)/.test(css),
   "绿段颜色与压缩线同一个 token（var(--green)）");
-ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,260}margin:\s*4px 0 4px 12px/.test(css),
-  "绿段与刻度同槽（2px 线 + 上下 4px margin + gap 4px = 14px，不撑乱 visibleCount = h/14）");
+/* ⛔ 10-26：为消灭刻度间 4px 死区，轨道 gap 4→0、上下 padding 4→6（单槽仍 14px，外观不变）。
+   判据打「命中区首尾相接」这个**结果**，别锚死某一代的 padding 数值。 */
+ok(/\.message-ruler \.ruler-track\s*\{[\s\S]{0,400}?gap:\s*0/.test(css)
+  && /\.message-ruler \.ruler-tick\s*\{[\s\S]{0,400}?padding:\s*6px 0/.test(css)
+  && /\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,260}margin:\s*6px 0 6px 12px/.test(css),
+  "刻度与绿段同槽 14px 且**命中区首尾相接**（gap 0 + 上下 6px；⛔ 4px 缝隙会让悬停断开）");
 ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,300}?width:\s*12px/.test(css)
   && /className=\{`ruler-compaction\$\{wave\}`\}/.test(ruler)
   && /className=\{`ruler-compaction\$\{endWave\}`\}/.test(ruler)
@@ -114,7 +118,7 @@ ok(/const currentPos = currentItemId \? marks\.findIndex\(\(m\) => m\.itemId ===
   "⛔ 波浪只在滚轮滚动期间触发（默认静止无波浪；hover 仍以鼠标为准），上下两格按距离衰减");
 ok(/addEventListener\("wheel", onWheel/.test(ruler)
   && /setWheelWave\(true\)/.test(ruler)
-  && /setWheelWave\(false\), 600\)/.test(ruler)
+  && /setWheelWave\(false\); \}, 600\)/.test(ruler)
   && /removeEventListener\("wheel", onWheel\)/.test(ruler),
   "滚轮点亮波浪 + 停止 600ms 自动收起 + 卸载时摘监听（⛔ 程序化滚动/贴底/跳转都不许触发）");
 ok(/const threadCompactToast = thread && compactToast && compactToast\.threadId === thread\.id \? compactToast : null/.test(timeline)
@@ -126,6 +130,104 @@ ok(/contentOffsetTop\(el, scroller\) <= probe/.test(ruler) && !/if \(el\.offsetT
 ok(/className=\{`ruler-tick[\s\S]{0,900}?onClick=\{\(\) => onJump\(mark\.turnId\)\}/.test(ruler)
   && /data-turn-id=\{mark\.turnId\}/.test(ruler),
   "每根刻度线都可点击跳转（带 data-turn-id，验收/键盘可用）");
+
+/* ⛔ 10-26 用户：「都没压缩过，好多绿线」「绿线跟着滚轮跑，压根不是压缩线的位置」——
+   根因是**没有压缩证据也照画**（纯函数兜底 = visible 最后一回合 ⇒ 窗口一滚它就跟着跑）。 */
+const timelineSrc = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
+ok(/const hasEvidence = cs\.state === "done" \|\| cs\.state === "compacting" \|\| Boolean\(record\);[\s\S]{0,200}?if \(!hasEvidence\) return \{ turnId: "", atEnd: false \};/.test(timelineSrc),
+  "⛔ 没有压缩证据就不画绿线（否则每个没压缩过的会话都凭空长一条）");
+ok(/if \(!boundary && !\(compactionAt > 0\)\) return \{ turnId: "", atEnd: false \};/.test(timelineSrc),
+  "⛔ 有证据但定不了位置也不画（宁可不画，不画到 visible 最后一回合 —— 那会跟着滚动跑）");
+
+/* ── 与消息/滚落的联动（10-26 用户实测「中枢会话里刻度线跟消息和滚轮没有联动」「波浪没声音」）── */
+const userMsgSrc = read("src/features/shared/UserMessageView.tsx");
+ok(/if \(refs\.groupEvents\?\.length\) \{[\s\S]{0,700}?data-ruler-mark="user"/.test(userMsgSrc),
+  "⛔ 群广播（中枢会话里绝大多数「用户消息」）也必须带 data-ruler-mark —— 漏了刻度尺一个参照点都没有，滚动不联动");
+/* ⛔ 10-26 用户：「刻度线声音触发有延迟，延迟还挺高，有时候触发不出来」——三条一起钉住：
+   ① 音频上下文必须**预解锁**（懒创建 + suspended ⇒ 第一声丢/延迟）；
+   ② 三条播声路径各用**独立节流通道**（共用一个窗口会互相吞）；
+   ③ 悬停定位用**槽位数学**，不再逐格 getBoundingClientRect（12~50 次强制布局 = 延迟主因）。 */
+const tickSrc = read("src/lib/wheel-tick.mjs");
+ok(/export function primeWheelTick\(\)/.test(tickSrc)
+  && /latencyHint: "interactive"/.test(tickSrc)
+  && /const UNLOCK_EVENTS = \[/.test(tickSrc)
+  && /"wheel", \{ capture: true, passive: true \}/.test(tickSrc),
+  "音频上下文**预解锁**（pointerdown/keydown/wheel 任一次交互就建好 + latencyHint:interactive）");
+ok(/const lastAtByChannel = new Map\(\)/.test(tickSrc) && /channel/.test(tickSrc)
+  && !/let lastAt = 0;/.test(tickSrc),
+  "节流按 channel 分开（⛔ 三条路径共用一个 lastAt 会把彼此的声音吞掉）");
+ok(/if \(c\.state !== "running"\)/.test(tickSrc) && /return false;/.test(tickSrc),
+  "上下文没 running 时**不排延迟音**（排进去只会在恢复后突然响一下，比不响更怪）");
+ok(/playWheelTick\(waveDirRef\.current, \{ channel: "scroll"/.test(ruler)
+  && /playWheelTick\(prev == null \|\| best > prev \? 1 : -1, \{ channel: "hover"/.test(ruler)
+  && /playWheelTick\(direction, \{ channel: "ruler"/.test(ruler),
+  "三条播声路径各走各的通道（scroll / hover / ruler）");
+/* ⛔ 10-26 用户：「从上往下有声音，从下往上没声音」——分方向埋点实测三个方向全出声（8/8/8），
+   根因是 hover **恒传 -1 ⇒ 两个方向同一个 2300Hz 高音**：划回去音调不变 + 快速扫回被节流压密
+   ⇒ 听觉适应后感知成"没声音"。⇒ 悬停必须有方向音（往下低 / 往上高，与棘轮同一套语义），
+   且上一格判定用 ref（⛔ hoverIndex 是渲染闭包旧值，快速划动时算出的方向是错的）。 */
+ok(/const lastHoverRef = useRef<number \| null>\(null\);/.test(ruler)
+  && /if \(best !== prev\) \{/.test(ruler)
+  && /lastHoverRef\.current = null; setHoverIndex\(null\);/.test(ruler),
+  "悬停方向音：上一格用 ref 判定（⛔ 用渲染闭包的 hoverIndex 快速划动时方向必算错），离开轨道重置");
+ok(/const startY = rect\.top \+ Math\.max\(0, \(rect\.height - total \* RULER_SLOT\) \/ 2\)/.test(ruler)
+  && !/tickEls\[i\]\.getBoundingClientRect\(\)/.test(ruler),
+  "悬停定位是**槽位数学**（1 次 rect，⛔ 不再逐格读布局 —— 每 mousemove 12~50 次强制布局就是延迟来源）");
+/* ⛔ 10-26 用户：「刻度线中间那么小一个缝隙，我鼠标在上面上下滑动，都会断，都没有很好的连贯性」
+   ⇒ 悬停改成**整条轨道**按指针 Y 取最近刻度（每格自己 enter/leave 必然在缝隙处断开）。 */
+ok(/onMouseMove=\{\(event\) => hoverAt\(event\.clientY\)\}/.test(ruler)
+  && /const hoverAt = \(clientY: number\) => \{/.test(ruler)
+  && /minGapMs: 24/.test(ruler),
+  "悬停/划动是**整条轨道连续响应**（按指针取最近刻度，⛔ 不靠每格 enter/leave —— 缝隙处必断）；节流 24ms（45ms 快速扫回时密度不够 ⇒「划回去没声音」）");
+ok(!/onMouseEnter=\{\(event\) => \{[\s\S]{0,200}?setTip\(/.test(ruler),
+  "刻度自身不再承担 hover（避免与轨道处理器互相打断：tip 闪断 / 声音漏）");
+/* ⛔ 10-26 用户：「刻度线要对应消息和群里展示的事件，不要对应那些不展示的」——
+   判据不是"文本像刷屏"，而是**与群汇报卡同一份可见性**；并且必须判在**剥完注入段之后**
+   （`parseUserRefs(raw).groupEvents`）—— 读原文时，注入的记忆 / 引用记录里只要有一行
+   **以** `[群事件]` 开头，普通消息就被算成群广播：块被全部过滤时它的刻度直接消失
+   （气泡照常显示）。10-26 审查用真实探针实测过这个残留分支。 */
+ok(ruler.includes("parseUserRefs, userDisplayText")
+  && ruler.includes("parseUserRefs(raw).groupEvents")
+  && ruler.includes("groupBlocks.every(isHiddenNoticeBlock)")
+  && !ruler.includes("visibleGroupBlocks(raw)"),
+  "刻度的取舍与群汇报卡**同一份**可见性判据，且判在剥完注入段的文本上（⛔ 读原文会把行首标签算成群广播 ⇒ 普通消息丢刻度）");
+
+ok(/wheelTimer = setTimeout\(\(\) => \{ waveRef\.current = false; setWheelWave\(false\); \}, 600\)/.test(ruler),
+  "停下 600ms 后波浪与声音一起收（⛔ 不许常驻呼吸）");
+
+/* ── 放大镜（10-31 用户：「刻度线放上去能不能做出这种放大镜效果，这样找起来更快」）──────
+   判据只钉**几何与同源关系**，不判"好不好看"（观感靠 `.workbuddy/tmp/ruler-lens` 的真机采样）。 */
+ok(/const LENS_ROW = 26;/.test(ruler) && /const LENS_SPREAD = 0\.85;/.test(ruler) && /const LENS_SIGMA = 36;/.test(ruler)
+  && /\.message-ruler \.ruler-lens \{[\s\S]{0,900}?height: 234px/.test(css),
+  "放大镜参数单一来源：组件 26px/格 + σ36；CSS 面板高 234 = 9×26（两处不同值就会出现「线在这、字在那」）");
+ok(/const fanDy = \(base: number, pointerY: number\) => \{[\s\S]{0,240}?d \* LENS_SPREAD \* Math\.exp\(-\(d \* d\) \/ \(2 \* LENS_SIGMA \* LENS_SIGMA\)\)/.test(ruler),
+  "刻度鱼眼是**连续放大映射** d·SPREAD·e^(-d²/2σ²)：⛔ 不用 sign(d)·A·falloff —— 后者在 d=0 处符号翻转，指针正上/正下两根会瞬跳一个 A");
+ok(/const slotOf = \(index: number\) => index \+ \(compactionIndex >= 0 && index >= compactionIndex \? 1 : 0\);/.test(ruler)
+  && /style=\{fanStyleOf\(slotOf\(index\)\)\}/.test(ruler)
+  && /style=\{fanStyleOf\(marks\.length \+ \(compactionIndex >= 0 \? 1 : 0\)\)\}/.test(ruler),
+  "鱼眼位移按**槽位**算（绿段也占一格 ⇒ 它之后的刻度 +1），末尾绿段接在最后");
+ok(/rowY: anchor - top - LENS_ROW \/ 2/.test(ruler),
+  "高亮行**顶边** = 锚点 − 半行高（漏了这 13px，字会比指针下那根刻度低半行，像串行）");
+ok(/className=\{`ruler-lens-row\$\{dist === 0 \? " is-active" : ""\}`\}/.test(ruler)
+  && /translate: `0 \$\{\(lens\.rowY \+ \(i - active\) \* LENS_ROW\)\.toFixed\(1\)\}px`/.test(ruler)
+  && /const active = Math\.min\(lens\.index, marks\.length - 1\);/.test(ruler)
+  && /\{lens && marks\.length > 0 && \(/.test(ruler),
+  "镜头行位置 = rowY + (i−active)×26 ⇒ 指针走一格、整列滑一行（=「里面滚动」）；⛔ active 必须夹住（滑窗口后旧下标越界 = marks[i] undefined ⇒ 整页崩）");
+ok(/\.message-ruler \.ruler-lens \{[\s\S]{0,1200}?animation: ruler-lens-in 0\.2s var\(--ease-enter\) both/.test(css)
+  && /@keyframes ruler-lens-in \{[\s\S]{0,200}?scale: 0\.9/.test(css)
+  && !/@keyframes ruler-lens-in \{[\s\S]{0,240}?[^-]transform:/.test(css),
+  "进场是「撑开」动画（scale 0.9→1 + 左移 8px），⛔ 关键帧不写 transform（会盖掉定位）");
+ok(/\.message-ruler \.ruler-lens \{[\s\S]{0,1200}?background: var\(--bg\)/.test(css)
+  && /\.message-ruler \.ruler-lens \{[\s\S]{0,1200}?pointer-events: none/.test(css),
+  "面板底用 --bg（⛔ 不用 --panel：与消息卡同色，暗色下只剩一圈边框）+ 不吃指针（吃了滑进面板就触发轨道 mouseleave，镜头当场消失）");
+/* ⛔⛔ 用户 10-31 明确交代：「波浪效果和刻度线声音记得保留」——
+   放大镜是**叠加**层，不许拿它替换既有反馈：长波浪（wave-0/1/2）与三条播声通道必须一条不少。 */
+ok(/wave-0" : dist === 1 \? " wave-1" : dist === 2 \? " wave-2"/.test(ruler)
+  && /hoverIndex != null \? hoverIndex : \(wheelWave && currentPos >= 0 \? currentPos : null\)/.test(ruler)
+  && /playWheelTick\(prev == null \|\| best > prev \? 1 : -1, \{ channel: "hover", minGapMs: 24 \}\)/.test(ruler)
+  && /playWheelTick\(waveDirRef\.current, \{ channel: "scroll", minGapMs: 28 \}\)/.test(ruler)
+  && /playWheelTick\(direction, \{ channel: "ruler", minGapMs: 30 \}\)/.test(ruler),
+  "放大镜叠加在原有反馈之上：波浪（wave-0/1/2）+ 三条播声通道（hover/scroll/ruler）全部保留");
 
 console.log(fails ? `\n【compaction-anchor】${checks} 条断言 / ${fails} 条失败` : `\n【compaction-anchor】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);
