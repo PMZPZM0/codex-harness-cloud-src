@@ -4,27 +4,18 @@
  * 原先这里是 25,454 行的单文件，已按域拆到 src/styles/ 下的 19 个分节文件；
  * 本文件只做按序引入。
  *
- * ⛔ 10-27 起**层叠顺序由下面声明的 @layer 决定**（导入顺序只决定同层内次序）；
- *    改优先级请换层，不要靠调换导入顺序或堆选择器特异性（理由与判据见下方注释块）。
+ * ⛔ 下面 @import 的**顺序就是级联优先级**，禁止随意调换或插入 —— 拆分前后构建产物
+ *    逐字节一致（scripts 侧有校验）。
  * ⛔ @import 必须位于所有其它规则之前（CSS 规范），别在本文件里直接写选择器。
  * 新增样式：加到对应分节文件；新域：在 src/styles/ 新增分节并在下面按顺序引入。
  */
 
-/* ⛔ 10-27 架构审查：**层叠顺序由 @layer 决定，不再靠文件导入顺序**（导入顺序仍保留，作为同层内的次序）。
-   base      = 设计令牌 / 全局基础（01）
-   components = 组件与各域样式（02 … 44）
-   pages      = 页面级覆盖（45 设置体验壳 起，含 46~54）
-   overrides  = 预留：只给「必须赢」的极少数规则（目前为空，别随手往里塞）
-   ⛔⛔ **base 层禁止新增 `!important`**：important 声明的层序是**反的**（早层赢），
-   base 里一条同属性不同值的 important 会莫名其妙压过 pages —— 极难排查。
-   base 现有 10 处全是 xterm 覆盖与 reduced-motion 兜底，守卫 12af 按实测基线卡死，只许降。
-   规则：① 新样式选对层，不要靠「多写两个类」去压别层；② 不要再写不带 layer 的 @import
-   （无层规则优先于所有层 ⇒ 一条裸导入就能让全部层失效，守卫 12af 会红）。 */
+/* 10-27：层叠顺序由 @layer 决定（导入顺序仅决定同层内次序）。 */
+/* ⛔⛔ base 层禁止新增 `!important`：important 声明的层序是反的（早层赢），
+   base 里一条同属性不同值的 important 会莫名压过 pages —— 守卫 12af 按实测基线卡死。 */
 @layer base, components, pages, overrides;
 
-/* 第三方：xterm 的终端样式。⛔ 只在这里导入一次（原来是 68 个 TSX 各 import 一遍），
-   且必须落在 base 层**最前面** —— 同层内后写的赢，01 里的覆盖才能压过它。
-   不挂层会让它变成"未分层"，反过来压掉我们所有分层规则。 */
+/* 第三方：xterm 终端样式，只在这里导入一次，且落在 base 层最前面（同层内后写者赢）。 */
 @import "@xterm/xterm/css/xterm.css" layer(base);
 @import "./styles/01-base-and-chrome" layer(base);
 @import "./styles/02-sidebar-threads" layer(components);
@@ -50,8 +41,6 @@
 @import "./styles/22-pet" layer(components);
 @import "./styles/23-ui-skin" layer(components);
 @import "./styles/24-soul-market" layer(components);
-@import "./styles/37-update-ready" layer(components);
-@import "./styles/38-close-confirm" layer(components);
 @import "./styles/25-codex-official-market" layer(components);
 @import "./styles/26-ui-sketch" layer(components);
 @import "./styles/27-model-viewer" layer(components);
@@ -63,16 +52,19 @@
 @import "./styles/33-image-lab" layer(components);
 @import "./styles/34-devtools-cards" layer(components);
 @import "./styles/36-boot-550c" layer(components);
-@import "./styles/37-cloud-account" layer(components);
+@import "./styles/37-update-ready" layer(components);
+@import "./styles/38-close-confirm" layer(components);
+@import "./styles/39-cloud-manage" layer(components);
+@import "./styles/46-cloud-account" layer(components);
+
 @import "./styles/39-media-preview" layer(components);
 @import "./styles/40-reasoning-strip" layer(components);
 @import "./styles/41-sidebar-guide" layer(components);
-@import "./styles/44-function-menu" layer(components);
-@import "./styles/56-skill-usage" layer(components);
 @import "./styles/42-provider-setup" layer(components);
 @import "./styles/43-ego-lite" layer(components);
+@import "./styles/44-function-menu" layer(components);
+@import "./styles/56-skill-usage" layer(components);
 @import "./styles/45-settings-experience" layer(pages);
-@import "./styles/46-boss-groups" layer(pages);
 @import "./styles/47-boss-group-view" layer(pages);
 @import "./styles/48-app-lock" layer(pages);
 @import "./styles/49-profile-guide" layer(pages);
