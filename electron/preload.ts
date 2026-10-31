@@ -485,7 +485,8 @@ contextBridge.exposeInMainWorld("codex", {
   /* 切换记忆后端并回传新状态；本仓未内置云记忆 ⇒ 云端请求不落盘，回执 refused=cloud-not-implemented */
   setMemoryBackend: (backend: "builtin" | "mcp" | "cloud") => __ipc("memory:backend:set", 1, [backend]),
   deleteMemory: (id: string) => __ipc("memory:delete", 1, [id]),
-  distillMemory: (workspace?: string) => __ipc("memory:distill", 0, [workspace]),
+  /* 10-31：蒸馏**不再开新会话**，在传入的会话里跑这一轮（会话正忙时才退回一次性内部会话） */
+  distillMemory: (workspace?: string, threadId?: string) => __ipc("memory:distill", 0, [workspace, threadId]),
   /* 10-05 统一记忆只读：某命名空间的条目（含来源智能体/权重/归档态） */
   listFabricEntries: (input: unknown) => __ipc("memory:fabric-entries", 1, [input]),
   /* 10-05 统一记忆只读：命名空间概览（两种作用域 + 条数）—— 前端分区渲染用 */
@@ -1006,14 +1007,8 @@ contextBridge.exposeInMainWorld("codex", {
   feishuCliCancel: () => __ipc("feishu-cli:cancel", 0, []),
   /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
   feishuCliRun: (input: unknown) => __ipc("feishu-cli:run", 1, [input]),
-  /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物与自我改进建议（⛔ 只认传入的 threadId）；suggestion 是**建议文件的全文**（Codex 往里写，新的覆盖旧的） */
+  /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物（⛔ 只认传入的 threadId） */
   readTaskMonitor: (threadId: unknown) => __ipc("monitor:read", 1, [threadId]),
-  /* 10-30 任务监控：用户编辑后的自我改进建议落盘 */
-  saveMonitorSuggestion: (input: unknown) => __ipc("monitor:save-suggestion", 1, [input]),
-  /* 10-30 任务监控：重跑一次模型生成 */
-  regenerateMonitorSuggestion: (input: unknown) => __ipc("monitor:regenerate", 1, [input]),
-  /* 10-30 任务监控：采纳一条自我改进建议 —— 落盘 adoptedAt，并往本会话投一条 [群事件]（与群聊同通道），由 Codex 自己沉淀成经验 */
-  adoptMonitorSuggestion: (input: unknown) => __ipc("monitor:adopt", 1, [input]),
   windowClose: () => __ipc("shell:window-close", 0, []),
   /* 窗口控制（无边框窗自定义按钮；只作用于调用者自己的窗口） */
   windowMinimize: () => __ipc("shell:window-minimize", 0, []),
