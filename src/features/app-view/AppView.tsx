@@ -5,7 +5,7 @@
  * · props 类型 = useHarnessApp() 的返回类型（type-only import ⇒ 运行时零依赖）。
  */
 import { createPortal } from "react-dom";
-import { useSyncExternalStore, useMemo } from "react";
+import { useSyncExternalStore, useMemo, useRef, useState, type CSSProperties } from "react";
 import { hk } from "../../lib/hk";
 import { basename } from "../../lib/basename";
 import { ShortcutsDialog } from "../shortcuts";
@@ -161,6 +161,10 @@ import { AppViewRemoteConsole } from "./AppView/05-remote-console";
 import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { TeamOfficePreview } from "../team-office";
 import { PetFocusBridge } from "../pet";
+/* 云账号「登录即用」的后台联动桥（10-22）：只刷新已接通的云端知识库/记忆，返回 null。 */
+import { CloudAccountSyncBridge } from "../settings-cloud";
+import { RightFileBridge } from "./AppView/RightFileBridge";
+import { RemoteAskBridge } from "./RemoteAskBridge";
 import { DramaCanvas } from "../drama-canvas";
 import { UiSketchModal } from "../ui-sketch";
 import { WhatsNewDialog } from "../whats-new";
@@ -183,9 +187,6 @@ import { HtmlPreviewBridge } from "../html-preview";
 import { DevPortBridge } from "../dev-port";
 /* OpenFilm Studio → 右栏内置浏览器（10-27）：主进程 open 完广播 studio 事件，这里接管打开。 */
 import { OpenfilmBridge } from "../openfilm";
-import { RightFileBridge } from "./AppView/RightFileBridge";
-import { RemoteAskBridge } from "./RemoteAskBridge";
-import { CloudAccountSyncBridge } from "../settings-cloud";
 /* 汇总卡 → 右栏「审阅」（10-18 用户对照 Qoder）：点文件行打开右栏审阅页。
    与 HTML 预览桥同款：只在主窗口挂，返回 null。 */
 import { TurnReviewBridge } from "../status";
@@ -213,8 +214,7 @@ const OFFICE_PROBE_TEAM = {
     id: `probe-m${i}`,
     name: ["观澜", "察本", "衡值", "执绳"][i],
     profession: { zh: ["工程", "风控", "行情", "文档"][i], en: "-" },
-  })),
-} as unknown as ExpertTeamConfig;
+  })),} as unknown as ExpertTeamConfig;
 
 /* 顶栏标题按**字符数**截断（10-06 夜八轮用户令：「那个会话窗口左上角那个字最多 6 个字，
    其他省略」）：CSS 只能按像素裁，同样 6em 在拉丁文下会放进来十几个字符 —— 按 code point
@@ -227,6 +227,43 @@ function truncateThreadTitle(text: string, max = 6): string {
 }
 
 export function AppView({ app }: { app: HarnessAppApi }) {
+
+  /* ★ 10-31 用户令：「左侧栏也加一个拖动功能」——拖侧栏右缘改宽度（200–420px），
+     localStorage 持久化；折叠 / 窄屏 / 独立弹窗三种状态不响应（那里宽度是布局决定的）。
+     ⛔ 只改 CSS 变量 --side-w（grid 用它的那条），不换模板：轨道数不变才能插值动画。 */
+  const SIDEBAR_MIN = 220;
+  const SIDEBAR_MAX = 420;
+  const SIDEBAR_DEFAULT = 256;
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const stored = Number(localStorage.getItem("sidebar-width"));
+      return Number.isFinite(stored) && stored >= SIDEBAR_MIN && stored <= SIDEBAR_MAX ? stored : SIDEBAR_DEFAULT;
+    } catch { return SIDEBAR_DEFAULT; }
+  });
+  const sidebarWidthRef = useRef(sidebarWidth);
+  sidebarWidthRef.current = sidebarWidth;
+  const sidebarDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const beginSidebarResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    sidebarDragRef.current = { startX: event.clientX, startWidth: sidebarWidthRef.current };
+    /* ⛔ 落盘用闭包里的最新值：pointermove 里 setState 是异步的，pointerup 紧跟着到的话
+       sidebarWidthRef 还停在旧值（实测只存到默认 256），下次启动就"拖了没记住"。 */
+    let latestWidth = sidebarWidthRef.current;
+    const onMove = (move: PointerEvent) => {
+      const drag = sidebarDragRef.current;
+      if (!drag) return;
+      latestWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(drag.startWidth + (move.clientX - drag.startX))));
+      setSidebarWidth(latestWidth);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      try { localStorage.setItem("sidebar-width", String(latestWidth)); } catch { /* 隐私模式 */ }
+      sidebarDragRef.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
 
   // ↓ useHarnessApp() 暴露的视图接口（751 个名字；与原实现的局部作用域逐个对应）
@@ -463,7 +500,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     指挥中枢一旦已经有自己的地址，**改不了** —— 引擎是用这个 cwd 起的会话，
      再选一次只会写进 dirByThread[已存在的会话]（没有任何读取方，见 part08/01-seg 的
      `sessionCwd`：它只在**建会话那一次**取值）⇒ 菜单项照旧显示就等于骗人。
-     ⇒ 中枢上下文里：没地址才给「选择项目地址」；已有地址就收起这一项（地址只读回显仍在）。 */
+     ⇒中枢上下文里：没地址才给「选择项目地址」；已有地址就收起这一项（地址只读回显仍在）。 */
   const canPickDir = !bossDirContext || !topbarDir;
   const pickDirLabel = bossDirContext ? "选择项目地址" : topbarDir ? "选择其他目录…" : "选择工作区目录";
   return (
@@ -474,18 +511,30 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       ref={shellRef}
       className={`app-shell ${rightOpen ? "with-context" : ""} ${sidebarCollapsed ? "side-collapsed" : ""} ${narrow ? "narrow" : ""} ${popoutThreadId ? "popout-shell" : ""}`}
       data-thread-id={thread?.id ?? ""}
-      // 右侧上下文面板仅在用户显式开启后参与网格；收起左栏时不能塞入一个 0px 首列，
-      // 否则 CSS Grid 会保留隐式轨道，把 workspace 挤到最右侧。
-      style={rightOpen ? { gridTemplateColumns: popoutThreadId ? `minmax(0, 1fr) 1px ${panelWidth}px` : `var(--side-w, 256px) minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
+      // 右侧上下文面板（10-31 抽屉化）：**不再 inline 写列模板** —— 模板由 CSS 恒定为
+      // 4 条轨道（popout 3 条），这里只给面板宽度变量，`--right-w` 才能在 0 ↔ 面板宽之间插值。
+      // ⛔ 别退回"开右栏才 inline 换模板"：轨道数变了不能插值，面板与主区一起瞬移。
+      style={{
+        "--panel-w": `${panelWidth}px`,
+        /* 拖动改的侧栏宽度：只在展开态下写（折叠 / 窄屏 / 独立窗口由布局决定） */
+        ...(!sidebarCollapsed && !narrow && !popoutThreadId ? { "--side-w": `${sidebarWidth}px` } : {}),
+      } as CSSProperties}
     >
+      {/* ★ 10-31 用户令：侧栏右缘可拖动改宽度（折叠 / 窄屏 / 独立窗口不出现） */}
+      {!sidebarCollapsed && !narrow && !popoutThreadId && (
+        <div className="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="拖动调整侧栏宽度"
+          title="拖动调整侧栏宽度（双击恢复默认）"
+          onPointerDown={beginSidebarResize}
+          onDoubleClick={() => { setSidebarWidth(SIDEBAR_DEFAULT); try { localStorage.setItem("sidebar-width", String(SIDEBAR_DEFAULT)); } catch { /* 隐私模式 */ } }} />
+      )}
       {/* 壁纸层（wallpaper 域）：app-shell 首子元素 + isolation 堆叠上下文，负 z 层透出在
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
       {!popoutThreadId && <HtmlPreviewBridge app={app} />}
       {/* 本机测试端口（10-29）：当前会话命令输出里出现带端口的 localhost ⇒ 自动开右栏浏览器 + 加宽 */}
       {!popoutThreadId && <DevPortBridge app={app} threadId={thread?.id ?? ""} />}
-      {!popoutThreadId && <CloudAccountSyncBridge />}
       <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice, rightOpen: app.rightOpen, rightTab: app.rightTab }} />
+      {!popoutThreadId && <CloudAccountSyncBridge />}
       {!popoutThreadId && <RightFileBridge app={app} />}
       {!popoutThreadId && <RemoteAskBridge agentAsk={agentAsk} setAgentAsk={setAgentAsk} />}
       {!popoutThreadId && <TurnReviewBridge onOpen={() => {
@@ -545,7 +594,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
 
       <AppViewMainStage app={app} />
 
-      {rightOpen && <div className="panel-divider" onMouseDown={startPanelDrag} />}
+      {/* 分隔条**常驻**（10-31 抽屉化）：关右栏时它只淡出（pointer-events: none），
+          不卸载 —— 卸载会让那条 1px 线跟着面板一起"啪"地消失。 */}
+      <div className="panel-divider" data-state={rightOpen ? "open" : "closed"} onMouseDown={startPanelDrag} />
 
       <AppViewReviewPanel app={app} />
 
@@ -629,11 +680,14 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         />
       )}
       <AppViewSettingsSheet app={app} />
+      {/* 登录后的一次性新人配置引导：只有完全没配置过的新 profile 会弹；完成后不再出现。 */}
       <ProfileOnboardingWizard
         onNotice={showToast}
         onUserAvatar={(avatar) => setUserAvatar(avatar)}
         onApplied={(cfg) => {
           if (cfg.nickname) setUsername(cfg.nickname);
+          /* 引导里选的「务实 / 友好 / 默认」要同步到账户级回复风格；用户中心的风格胶囊读的是这个状态。 */
+          if (cfg.replyStyle !== undefined) changePersonality(cfg.replyStyle === "友好" ? "friendly" : cfg.replyStyle === "务实" ? "pragmatic" : "none");
           app.setIdentityGreeted(true);
         }}
       />
@@ -740,7 +794,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 悬浮球右键菜单里的「语音设置」：把「打开设置并跳到语音页」注册给 VoiceCallFloat
       （悬浮球是 body portal，拿不到这里的 setSettingsPage） */}
       <VoiceCallFloat threadId={thread?.id ?? ""} />
-      {/*指挥中枢群面板（boss-groups 域）：右侧停靠浮层，开关在侧栏「指挥中枢」。 */}
+      {/*指挥中枢群面板（boss-groups 域）：右侧停靠浮层，全局开关在侧栏「指挥中枢」按钮。
+          ⛔ 传入当前会话 id ⇒ 面板里的群/成员**按会话隔离**（指挥中枢可创建多个，各会话互不串项）。 */}
       <BossGroupPanel threadId={thread?.id ?? ""} />
       <VoiceSettingsBridge onOpen={() => { setSettingsPage("voice"); setSettingsOpen(true); }} />
       {/* 语音通话 开/关 → 往对话里发一条告知（10-08 用户要求：让 Codex 感知实时语音何时开、何时关，
@@ -754,6 +809,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           通话中的播报由 VoiceCallFloat 负责 —— 它会喂 AEC 参考环、走音量与打断那一套。
           ⛔ threadId = 会话闸：`voice_announce` 工具走主进程广播（全窗口），不能让别的会话插播到这里。 */}
       <VoiceAnnounceBridge threadId={thread?.id ?? ""} />
+      {/* 10-22：宠物活动气泡跟随当前会话（切会话立即重排，后台 waiting/running 仍保留）。 */}
       {!popoutThreadId && <PetFocusBridge threadId={thread?.id ?? ""} />}
       {/* 轮询板块（10-09）：把主进程广播的异步任务轮询事件收进本地任务表。
           卡挂在**回合**下（对话流里的独立分支），胶囊挂在输入框左上角 —— 两者读的是同一张表。

@@ -181,5 +181,46 @@ const preload = read("electron/preload.ts");
   ok(!/from "[^"]+\.(png|jpe?g|webp|gif|svg)\?/.test(guide + figures) && !/\.(png|jpe?g|webp|gif)"/.test(figures),
     "⛔ 不用位图资产（截图会过期、生成图与界面对不上；JS import 的位图还会被 before-pack 当死块删掉）");
 }
+
+/* ── 10-31 用户截图：侧栏能力教程弹窗被压成侧栏宽度、文字一字一行 ──
+   根因：弹窗挂在 `.sidebar` 子树里，而侧栏有 translate（transform）⇒ 作为 fixed 的包含块，
+   把遮罩/弹窗关进 256px；同时「能做什么」写死 3 列，窄宽度下挤成竖排。
+   判据：① 两个侧栏内弹窗都必须 portal 到 body；② 卡片网格按宽度自适应（不许写死 3 列）。 */
+{
+  const guideModal = read("src/features/app-view/AppView/SidebarGuideModal.tsx");
+  const loginModal = read("src/features/app-view/AppView/LoginManagerModal.tsx");
+  const guideCss = read("src/styles/41-sidebar-guide.css");
+  ok(/createPortal\(/.test(guideModal) && /document\.body/.test(guideModal),
+    "教程弹窗 portal 到 body（⛔ 侧栏有 transform，内嵌时 fixed 会被压成侧栏宽度）");
+  ok(/createPortal\(/.test(loginModal) && /document\.body/.test(loginModal),
+    "登录管理弹窗同样 portal（同一坑，别只修一个）");
+  ok(/grid-template-columns: repeat\(auto-fit, minmax\(210px, 1fr\)\)/.test(guideCss)
+    && !/repeat\(3, minmax\(0, 1fr\)\)/.test(guideCss),
+    "「能做什么」卡片按可用宽度自适应列数（⛔ 不许写死 3 列 → 窄窗口一字一行）");
+  ok(/@media \(max-width: 720px\)[\s\S]{0,400}?\.sidebar-guide-caps \{ grid-template-columns: 1fr; \}/.test(guideCss),
+    "窄窗口兜底：单列（媒体查询阈值 720，覆盖平板宽度）");
+  /* 外圈边框（10-31 三次定稿）：外圈保持 6px + 细边；中间（侧栏↔内容）3px 且不画线。 */
+  const shellCss = read("src/styles/01-base-and-chrome.css");
+  ok(/\.app-shell > \.topbar \{[\s\S]{0,200}?margin: 0 6px 0 3px;[\s\S]{0,120}?border-left: 0;/.test(shellCss)
+    && /\.app-shell > \.workspace \{[\s\S]{0,200}?margin: 0 6px 6px 3px;[\s\S]{0,120}?border-left: 0;/.test(shellCss),
+    "外圈卡：上/右/下 6px + 细边；中间只留 3px 且不画线（用户：外边保持，减少中间的缝和线）");
+  ok(/\.app-shell > \.sidebar \{ border-right: 0; \}/.test(shellCss),
+    "侧栏右边界线去掉（中间只剩底色过渡）");
+  /* ★ 10-31 用户令：「左侧栏也加拖动功能」「右侧栏中间一条灰色细线就行」 */
+  const appViewSrc = read("src/features/app-view/AppView.tsx");
+  ok(/className="sidebar-resizer"/.test(appViewSrc) && /onPointerDown=\{beginSidebarResize\}/.test(appViewSrc)
+    && /SIDEBAR_MIN = 220/.test(appViewSrc) && /SIDEBAR_MAX = 420/.test(appViewSrc),
+    "侧栏右缘可拖动改宽（200–420 钳制，双击复位）");
+  ok(/localStorage\.setItem\("sidebar-width"/.test(appViewSrc) && /localStorage\.getItem\("sidebar-width"\)/.test(appViewSrc)
+    && /"--side-w": `\$\{sidebarWidth\}px`/.test(appViewSrc),
+    "侧栏宽度落盘 + 用 --side-w 下发（换算一条真相源，轨道数不变）");
+  ok(/\.sidebar-resizer \{[\s\S]{0,260}?left: calc\(var\(--side-w, 256px\) - 3px\)[\s\S]{0,260}?cursor: col-resize/.test(shellCss)
+    && /\.sidebar-resizer::after \{[\s\S]{0,200}?width: 1px;[\s\S]{0,120}?background: var\(--line-soft\)/.test(shellCss),
+    "拖动条 = 7px 命中面 + 1px 细线（⛔ 不做成一条粗条）");
+  ok(/\.app-shell\.with-context > \.panel-divider \{ background: var\(--line-soft\); \}/.test(shellCss),
+    "右栏与主区之间是一条灰色细线（10-31 用户令；再用更浅一档避免看起来太粗）");
+  ok(/\.app-shell > \.topbar \{[\s\S]{0,220}?margin: 0 6px 0 3px;[\s\S]{0,160}?border-top: 0;/.test(shellCss),
+    "顶栏贴顶（系统窗口钮与顶栏图标同一行；顶部不留缝）");
+}
 console.log(`\n【newbie-guide】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
