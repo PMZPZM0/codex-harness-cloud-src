@@ -2585,15 +2585,18 @@ export async function run() {
   (/const rawList: Array<\{ provider\?: string \}> = raw \? JSON\.parse\(raw\) : \[\]/.test(mainSrc67) ? ok : fail)(
     "【67】自愈按原始档案判断是否需要改名（不是按已归一化的结果）"
   );
-  const calls67 = (mainSrc67.match(/model_provider: safeProviderId\(/g) || []).length;
+  /* ⛔ 10-31 口径升级：建会话的 model_provider 一律写统一别名 HARNESS_PROVIDER_ID（= harness），
+     原始供应商 id 只喂 bridgeDial 做协议路由（传原始 id 会被引擎拒：provider 不一致）。
+     守卫**原意仍成立**：写进 config 的必须是归一化/安全 id（保留名 openai 会让引擎整份拒载）。 */
+  const calls67 = (mainSrc67.match(/model_provider: (?:safeProviderId\(|HARNESS_PROVIDER_ID)/g) || []).length;
   (calls67 >= 7 ? ok : fail)(
-    `【67】会话级 config 覆盖也过 safeProviderId（${calls67} 处）`
+    `【67】会话级 config 覆盖都写归一化/别名 provider（${calls67} 处）`
   );
   /* 09-22：harness-services.ts 拆成 memory-store.ts + scheduler.ts（原文件是两个无关的域）⇒ 断言跟着搬 */
   for (const rel of ["electron/channel-bot.ts", "electron/scheduler.ts"]) {
     const src = readFileSync(join(ROOT, rel), "utf8");
-    (/model_provider: safeProviderId\(model\.provider\)/.test(src) ? ok : fail)(
-      `【67】${rel} 的会话/子代理 config 同样过 safeProviderId`
+    (/model_provider: (?:safeProviderId\(model\.provider\)|HARNESS_PROVIDER_ID)/.test(src) ? ok : fail)(
+      `【67】${rel} 的会话/子代理 config 同样写归一化/别名 provider`
     );
   }
 }
@@ -4466,7 +4469,8 @@ export async function run() {
     const seqLine = readFileSync(join(ROOT, "src", "features", "session-queue", "SessionQueue.tsx"), "utf8")
       .replace(/\r/g, "")
       .replace(/\/\*[\s\S]*?\*\//g, "");
-    const leadTernary = (seqLine.match(/variant=\{(?:index === leadFoldIndex|lead) \? "completed" : "summary"\}/g) || []).length;
+    /* ⛔ 10-31：插队分段后多一道 completedSkin 门（非末段不挂回合收尾皮肤），两种写法都算。 */
+    const leadTernary = (seqLine.match(/variant=\{(?:index === leadFoldIndex|lead)(?: && completedSkin)? \? "completed" : "summary"\}/g) || []).length;
     (leadTernary === 2 ? ok : fail)(
       `【122】两条渲染分支的 completed 皮肤都只给 lead 段（实得 ${leadTernary} 处，需 2）`
     );
