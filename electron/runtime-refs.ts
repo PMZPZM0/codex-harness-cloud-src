@@ -247,7 +247,7 @@ export function titleBarOverlayOptions() {
   const dark = appThemeDark ?? nativeTheme.shouldUseDarkColors;
   // ⛔ 符号色必须与 main.ts 的 CHROME_SYMBOL_DARK/LIGHT 逐字一致（664/666 行）——
   //   改任一处都要同步另一处（守卫【132】比对）。
-  return { color: "#00000000", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 43 };
+  return { color: "#00000000", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 55 };
 }
 
 /* ⛔ appThemeDark 的取值在 main.ts 的 applyWindowChrome 维护——上面 titleBarOverlayOptions
