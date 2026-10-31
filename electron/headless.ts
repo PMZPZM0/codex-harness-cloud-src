@@ -1523,8 +1523,15 @@ if (p === "/api/pair-code/refresh" && req.method === "POST") {
       }
       try {
         // ⛔ ipcMain.handle 的 handler 首参是 IpcMainInvokeEvent；多数域不读它，
-        //   少数读 sender —— 给一个无害假体（无头没有真 renderer）。
-        const fakeEvent = { sender: { isDestroyed: () => true, send: () => undefined }, processId: -1, frameId: 0 };
+        //   少数读 sender —— 无头形态没有真 renderer 的 invoke 事件。
+        // ⛔⛔ 10-31 用户实测「云助手点右上角 × 关不掉」的根因：这里原来给的是**死 sender**
+        //   （`isDestroyed: () => true`），而 `shell:window-close/-minimize/-toggle-maximize/-state`
+        //   全靠 `fromWebContents(event.sender)` 反查窗口 ⇒ 永远拿到空 ⇒ 三个窗口钮全是静默空操作。
+        //   ⇒ 有本机窗口时把**本机窗口**的 webContents 当 sender（窗口钮本来就只该操作本机窗口）；
+        //     真·外部浏览器访问且本机没有窗口时，才退回无害假体。
+        const localWin = getAssistantWindow() ?? mutableState.mainWindow;
+        const localSender = localWin && !localWin.isDestroyed() ? (localWin as unknown as { webContents: unknown }).webContents : null;
+        const fakeEvent = { sender: localSender ?? { isDestroyed: () => true, send: () => undefined }, processId: -1, frameId: 0 };
         const result = await handler(fakeEvent, ...args);
         res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ id, ok: true, result }));
       } catch (error) {
