@@ -477,7 +477,7 @@ async function runNpmInstall(id: string, pkg: string, label: string, source: Non
  * ⛔ CLI 输出/取消：下载用流式 + 进度（同 skill-packs 的 10-30 口径「要真安装」），取消走
  *   isCancelRequested 轮询（fetch 不能被 trackRuntimeProc 杀，每 chunk 自查）。
  */
-const FILEE_REPO = "KnifeLemon/Filee";
+export const FILEE_REPO = "KnifeLemon/Filee";
 function fileeInstallDir(): string { return path.join(writeToolsRoot(), "filee"); }
 function fileeVersionFile(): string { return path.join(fileeInstallDir(), "version.txt"); }
 
