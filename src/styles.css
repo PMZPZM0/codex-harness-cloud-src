@@ -73,3 +73,4 @@
 @import "./styles/57-cli-agents" layer(pages);
 @import "./styles/58-task-monitor" layer(pages);
 @import "./styles/59-motion" layer(components);
+@import "./styles/60-event-broadcast" layer(components);
