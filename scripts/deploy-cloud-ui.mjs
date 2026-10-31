@@ -44,16 +44,25 @@ function ssh(script) {
 
 if (!skipBuild) run("npm", ["run", "build"], { shell: process.platform === "win32" });
 
-// ① 备份旧版（可回滚）+ 建干净目录
+/* ⛔⛔ 10-31 事故（用户截图「云端界面暂时取不到 / 云端 index.html HTTP 404」）：
+   原流程是「mv app → 备份，再 mkdir 空 app，然后逐个 scp」—— 上传那几十秒里远端目录是**空的**，
+   正好刷新的用户就吃 404。现在改成「先传到 staging 目录，传完再一步换名」：
+   换名是同一文件系统上的 rename，窗口只有毫秒级，网页不会再看到半成品。
+   ⛔ staging 目录必须与 app 同级（同一分区），否则 mv 会退化成跨盘拷贝，又变成长时间空窗。 */
 const stamp = new Date().toISOString().slice(5, 16).replace(/[-:T]/g, "");
-console.log(`\n== 备份服务器旧版 → app.bak.${stamp} ==`);
-ssh(`cd ${path.posix.dirname(REMOTE_DIR)} && rm -rf app.bak.${stamp} && mv app app.bak.${stamp} && mkdir -p app`);
+const STAGING = `${REMOTE_DIR}.new.${stamp}`;
+console.log(`\n== 上传到 staging（${path.posix.basename(STAGING)}）==`);
+ssh(`cd ${path.posix.dirname(REMOTE_DIR)} && rm -rf ${STAGING} && mkdir -p ${STAGING}`);
 
-// ② 上传 dist 内容
+// ② 上传 dist 内容到 staging（此时线上仍是旧版，可正常访问）
 console.log("\n== 上传 dist ===");
 /* ⛔ 必须拼正斜杠：Windows 下 path.join 会给出 `dist\assets`，scp 认成转义/非法路径
    （本机同步脚本栽过同一处）。 */
-run("scp", ["-r", "-o", "ConnectTimeout=10", ...fs.readdirSync(path.join(root, "dist")).map((f) => `dist/${f}`), `${SSH_HOST}:${REMOTE_DIR}/`]);
+run("scp", ["-r", "-o", "ConnectTimeout=10", ...fs.readdirSync(path.join(root, "dist")).map((f) => `dist/${f}`), `${SSH_HOST}:${STAGING}/`]);
+
+/* ③ 原子切换：旧版改名留作回滚，staging 一步换成正式目录 —— 中间不存在"空目录"状态。 */
+console.log(`\n== 切换（旧版 → app.bak.${stamp}）==`);
+ssh(`cd ${path.posix.dirname(REMOTE_DIR)} && rm -rf app.bak.${stamp} && mv app app.bak.${stamp} && mv ${STAGING} app`);
 
 // ③ version.json（主进程靠它判定能不能用云端）
 const versionFile = path.join(root, ".workbuddy/tmp/version.deploy.json");
