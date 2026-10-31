@@ -22,8 +22,8 @@
       "src": "cloud/web/account.html",
       "kind": "web",
       "as": "account.html",
-      "sha256": "b3f8f3abd19b6e6699827f1c7f158685218f702e9d539d39bf96aa9da492aebc",
-      "bytes": 600440
+      "sha256": "11768b94cc3b31a1cfa475a1a6a54990054c5bc4c48121b5102068a02e43db39",
+      "bytes": 601268
     },
     {
       "src": "cloud/web/index.html",
