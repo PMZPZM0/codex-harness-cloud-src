@@ -1879,6 +1879,18 @@ const server = http.createServer(async (req, res) => {
    ⇒ 前端把「镜像下载 / GitHub」整行隐藏，只剩一个什么也复制不到的「复制」按钮。
    ⇒ 一次多拉一些（40 条，够跨过一整天的手机发版），再在下面按「有没有桌面资产」过滤。 */
 const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=40`;
+  /* ── 手机端 APP（APK）：10-31 用户令「两个界面都加 APK，自动同步 GitHub 主仓里的安装包」──
+     ⛔ 数据源**不是** PRODUCT_REPO：桌面安装包与手机端 APK 都在主仓
+     `PMZPZM0/codex-harness-desktop` 的 `mobile-remote-vX` release 里（同一 release 两个 APK：
+     CodexRemote-*.apk / PPcodeRemote-*.apk）。客户机形态（PRODUCT_REPO=PPcode）那边没有 APK，
+     所以这里必须独立配置，别跟着 PRODUCT_REPO 走。
+     ⛔ 按文件名前缀挑：产品名含 ppcode ⇒ PPcodeRemote，否则 CodexRemote；挑不到就退回任意 .apk
+     （宁可给一个能装的包，也不要让卡片空着）。 */
+  const MOBILE_REPO = process.env.HARNESS_MOBILE_REPO || "PMZPZM0/codex-harness-desktop";
+  const MOBILE_APK_MATCH = String(process.env.HARNESS_MOBILE_APK_MATCH
+    || (/ppcode/i.test(PRODUCT_NAME) ? "ppcoderemote" : "codexremote")).toLowerCase();
+  const MOBILE_RELEASES_PATH = `/repos/${MOBILE_REPO}/releases?per_page=10`;
+  const MOBILE_CACHE_FILE = path.join(path.dirname(DATA_FILE), "mobile-cache.json");
   const PRODUCT_TTL_MS = Math.max(60_000, Number(process.env.HARNESS_PRODUCT_TTL_MS || 10 * 60_000));
   const PRODUCT_CACHE_FILE = path.join(path.dirname(DATA_FILE), "product-cache.json");
   /* 功能介绍：唯一真相源在这里（发版时跟着改这一处即可，不用碰页面） */
@@ -2007,6 +2019,64 @@ const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=40`;
     });
     return result;
   }
+  /* 手机端 APK：单独一路（另一个仓、另一种资产），失败就返回 null —— ⛔ 不许因它拖垮产品首页。 */
+  let mobileMem = null;
+  let mobileInflight = null;
+  function readMobileCache() {
+    if (mobileMem) return mobileMem;
+    try {
+      const j = JSON.parse(fs.readFileSync(MOBILE_CACHE_FILE, "utf8"));
+      if (j && j.repo === MOBILE_REPO && j.apk && j.apk.url) { mobileMem = j; return j; }
+    } catch { /* 没缓存过 / 坏了都当没有 */ }
+    return null;
+  }
+  function writeMobileCache(payload) {
+    mobileMem = payload;
+    try { fs.writeFileSync(MOBILE_CACHE_FILE, JSON.stringify(payload), { mode: 0o600 }); } catch { /* 写不了不影响返回 */ }
+  }
+  function pickMobileApk(assets) {
+    const apks = (Array.isArray(assets) ? assets : [])
+      .filter((a) => /\.apk$/i.test(String(a && a.name || "")))
+      .map((a) => ({ name: String(a.name), size: Number(a.size || 0), url: String(a.browser_download_url || "") }))
+      .filter((a) => a.url);
+    if (!apks.length) return null;
+    const hit = apks.find((a) => a.name.toLowerCase().includes(MOBILE_APK_MATCH));
+    return hit || apks[0];
+  }
+  async function fetchMobile(force) {
+    const disk = readMobileCache();
+    const fresh = disk && Date.now() - Number(disk.fetchedAt || 0) < PRODUCT_TTL_MS;
+    if (disk && fresh && !force) return disk;
+    if (mobileInflight) return mobileInflight;
+    mobileInflight = (async () => {
+      try {
+        const r = await fetch("https://api.github.com" + MOBILE_RELEASES_PATH, {
+          headers: { "Accept": "application/vnd.github+json", "User-Agent": "codex-harness-cloud" },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const rows = await r.json();
+        /* ⛔ 找**含 apk 的最新一条**：桌面版 release 与手机端 release 同仓混发，不能只看 rows[0]。 */
+        for (const row of Array.isArray(rows) ? rows : []) {
+          const apk = pickMobileApk(row && row.assets);
+          if (apk) {
+            const payload = {
+              repo: MOBILE_REPO,
+              fetchedAt: Date.now(),
+              tag: String(row.tag_name || ""),
+              publishedAt: row.published_at || row.created_at || "",
+              apk,
+            };
+            writeMobileCache(payload);
+            return payload;
+          }
+        }
+        return disk || null;
+      } catch { return disk || null; }
+    })().finally(() => { mobileInflight = null; });
+    return mobileInflight;
+  }
+
   async function productHome(force) {
     const disk = readProductCache();
     const fresh = disk && Date.now() - Number(disk.fetchedAt || 0) < PRODUCT_TTL_MS;
@@ -2042,6 +2112,8 @@ const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=40`;
     const allReleases = Array.isArray(data.releases) ? data.releases : [];
     const desktopReleases = allReleases.filter(hasDesktopAsset);
     const latest = desktopReleases[0] || null;
+    /* 手机端 APK：失败返回 null（卡片整块隐藏），不影响桌面下载区 */
+    const mobile = await fetchMobile(force).catch(() => null);
     const repoUrl = "https://github.com/" + PRODUCT_REPO;
     return send(200, {
       ok: Boolean(latest),
@@ -2055,6 +2127,8 @@ const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=40`;
       /* 下载加速：与镜像表同源，前端只拼前缀，不在页面里写死域名 */
       mirrors: UPDATE_MIRRORS.filter((m) => m.prefix).map((m) => ({ name: m.name, prefix: m.prefix })),
       latest,
+      /* 手机端 APP（APK）：与桌面 latest 分开取 —— 见 MOBILE_REPO 那段说明 */
+      mobile: mobile ? { tag: mobile.tag, publishedAt: mobile.publishedAt, apk: mobile.apk } : null,
       /* ⛔ 10-23 用户定稿：产品首页更新日志只展示最新 2 个版本（先前给 8 条，日志区太长）。
          上游 per_page=10 保持（取最高版本用的 latest 兜底不受影响），这里只裁展示面。 */
       /* 更新日志也只列桌面版：和上面的下载卡保持同一个版本，别让用户读到手机远控的日志 */
