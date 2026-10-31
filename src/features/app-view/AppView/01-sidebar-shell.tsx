@@ -12,6 +12,7 @@ import { settingsNav } from "../helpers";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { hk } from "../../../lib/hk";
 import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
+import { getThreadRowColors, subscribeThreadRowColors } from "../../../lib/thread-row-colors.mjs";
 import { EntityTagEditorHost } from "../../../components/EntityTagEditor";
 import {
   AlertTriangle,
@@ -173,6 +174,21 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         stage 布尔值 —— 那个布尔值和真实会话状态会对不上（用户实测：切走了按钮还亮着）。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const entityTags = useSyncExternalStore(subscribeEntityTags, getEntityTagState, getEntityTagState);
+  /* 10-31 用户令：会话行底色自选 —— 订阅让选色立刻重渲染本列表（行组件读 store 取色）。 */
+  useSyncExternalStore(subscribeThreadRowColors, getThreadRowColors, getThreadRowColors);
+  /* 10-31 用户令（截图点名）：「标签一列、会话列表开头一列，中间别留一大截」——
+     标签列宽**自适应**：量出当前所有行里最宽的标签内容，钉成根上的 `--tag-col-w`，
+     所有行共用 ⇒ 名称起点仍逐行对齐，但标签与名称之间不再有定宽列留下的空白。
+     每次渲染后重量（标签 / 徽标 / 选中态变化即时跟上）；⛔ 没有标签的列表列宽为 0。 */
+  useLayoutEffect(() => {
+    let max = 0;
+    for (const el of document.querySelectorAll(".thread-row-tags")) {
+      const kids = Array.from(el.children) as HTMLElement[];
+      const w = kids.reduce((s, c) => s + c.offsetWidth, 0) + Math.max(0, kids.length - 1) * 4;
+      if (w > max) max = w;
+    }
+    document.documentElement.style.setProperty("--tag-col-w", `${Math.min(max, 96)}px`);
+  });
   /* 10-25：新建指挥中枢时弹**应用内**对话框选项目地址（两个选项），⛔ 不用系统弹窗 / 内联 toast。 */
   const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
   const bossDirOpen = bossDirState.open;
