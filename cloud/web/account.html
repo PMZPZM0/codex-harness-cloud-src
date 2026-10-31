@@ -97,6 +97,7 @@
   .mark > img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; background: var(--card); }
   /* 品牌名**不换行**：侧栏 232px 里 "Codex Assistant" 会折成两行、把 logo 挤歪（实拍确认）；过长截断，不压右侧主题开关。 */
   .brand > #brandName { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .brand > #brandName:empty::before { content: "…"; color: var(--muted); }
   .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; color: var(--text); font-size: 13.5px; font-weight: 500; border: 0; background: transparent; width: 100%; text-align: left; }
   .nav-item:hover { background: var(--field); text-decoration: none; }
   .nav-item.on { background: var(--brand-soft); color: var(--brand-ink); font-weight: 600; }
@@ -796,7 +797,7 @@
   <aside class="side">
     <!-- 10-18 主题开关：嵌在侧栏品牌行内（用户令：不要悬浮，放进侧边栏） -->
     <div class="brand">
-      <span class="mark">CA<img src="/cloud-api/api/favicon?size=256" alt="" /></span><span id="brandName">PPcode</span>
+      <span class="mark">CA<img src="/cloud-api/api/favicon?size=256" alt="" /></span><span id="brandName"></span>
       <label for="themeSwitch" title="切换白天 / 夜间主题" class="brand-theme">
         <input type="checkbox" id="themeSwitch" aria-label="切换白天/夜间主题" />
       </label>
@@ -3027,7 +3028,7 @@
 
   /* ── 侧栏品牌（10-23）：名字跟部署走（客户机 PPcode / 主站 Codex Harness）。
      ⛔ 只取公开的 /api/brand；取不到就保留页面里的默认文案，不弹错、不阻塞其它加载。 */
-  api("/brand").then(function (r) {
+  api("/api/brand").then(function (r) {
     var j = (r && r.j) || {};
     if (!r.ok || !j.ok || !j.name) return;
     if ($("brandName")) $("brandName").textContent = j.name;
