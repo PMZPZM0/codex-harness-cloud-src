@@ -36,6 +36,7 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-10-31 | 旧成员会话自动跟随（复用线程即重绑） | 勘误 | `team-invoke.ts`、`boss-groups/runner.ts`、守卫 11f | 复用常驻成员线程改走 thread/resume 官方迁移通道重绑（excludeTurns:true + model/config，必须带 sandbox/approvalPolicy 防权限重置）；旧会话不用删，下次派活自动跟随主会话当前模型。（同步主线 ea4503d81） | 本轮 |
 | 2026-10-31 | 被调度会话默认跟随主会话的模型配置 | 修复 | `delegation.ts`、`team-invoke.ts`、`boss-groups/runner.ts`、`01-model-catalog.ts`、守卫 11f | 用户实测「中枢派活被挡住：This chat uses custom964, but your current provider is harness」。根因：被派会话（子智能体 / CLI / 专家 / 专家团 / 成员）的模型取实体存档或全局，发起方换了模型后就旧模型 + 旧供应商撞车。① 新增 `originSessionModel`（发起方会话级模型 + 按激活供应商清单归一）；② 三条派活链模型优先级：显式指定 → 子智能体显式关闭跟随的存档 → **发起方会话级模型** → 实体存档 → 全局；③ 中枢群成员每次派活重新跟随 boss 当前模型。（同步主线 fdb97c6cf + 4d38a03cc） | 本轮 |
 | 2026-10-31 | 会话列表与侧栏菜单左缘对齐 | 勘误 | `15-queued-messages.css` | 用户截图：「标签和会话选项再往左边来一点，对齐上面的菜单选项」。`.project-item-body` 缩进 22px → 0，标签/名称起点（x≈20）与侧栏菜单图标（x≈21）同竖线。（同步主线 b4907c2c6） | 本轮 |
 | 2026-10-31 | 会话颜色菜单小修（恢复默认改淡字按钮） | 勘误 | `02-thread-attention-rows.tsx`、`02-sidebar-threads.css` | 用户截图两连：「恢复按键放到标签行」→「这个恢复按键做好看一点」。圆圈 × 观感差 ⇒ 改成标签行右缘的**淡字按钮**「恢复默认」（faint 小字、悬停显字色 + 浅底），标签行 nowrap 防折行；色板仍单行 8 点。（同步主线 974597185） | 本轮 |
