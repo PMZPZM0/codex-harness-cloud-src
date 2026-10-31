@@ -1529,8 +1529,14 @@ if (p === "/api/pair-code/refresh" && req.method === "POST") {
         //   全靠 `fromWebContents(event.sender)` 反查窗口 ⇒ 永远拿到空 ⇒ 三个窗口钮全是静默空操作。
         //   ⇒ 有本机窗口时把**本机窗口**的 webContents 当 sender（窗口钮本来就只该操作本机窗口）；
         //     真·外部浏览器访问且本机没有窗口时，才退回无害假体。
-        const localWin = getAssistantWindow() ?? mutableState.mainWindow;
-        const localSender = localWin && !localWin.isDestroyed() ? (localWin as unknown as { webContents: unknown }).webContents : null;
+        //   ⛔ 无头形态下主窗可能只是个隐藏的壳（show:false），真正给用户看的是助手窗 ⇒
+        //     先按「助手窗 → 主窗」挑，且优先**可见**的那个；否则 × 关掉的是看不见的窗口，界面照旧关不掉。
+        const winCandidates = [getAssistantWindow(), mutableState.mainWindow]
+          .filter(Boolean) as unknown as Array<{ isDestroyed: () => boolean; isVisible: () => boolean; webContents: unknown }>;
+        const localWin = winCandidates.find((w) => !w.isDestroyed() && w.isVisible())
+          ?? winCandidates.find((w) => !w.isDestroyed())
+          ?? null;
+        const localSender = localWin ? localWin.webContents : null;
         const fakeEvent = { sender: localSender ?? { isDestroyed: () => true, send: () => undefined }, processId: -1, frameId: 0 };
         const result = await handler(fakeEvent, ...args);
         res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ id, ok: true, result }));
