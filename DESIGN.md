@@ -263,12 +263,16 @@ hover 回落 `--text` 保原行为）。⛔ **窗口控制钮（— □ ✕）�
 |---|---|---|
 | `--dur-theme` | `240ms` | 主题 / 代码高亮切换的**全站颜色**过渡 |
 | `--dur-ui` | `160ms` | 交互反馈（hover / 选中 / 切换类控件）|
+| `--dur-switch` | `520ms` | 明暗切场的**整屏涟漪**（View Transitions 的裁切动画）|
 
 **主题与代码高亮切换**（`src/lib/visual-switch.ts` 的 `runVisualSwitch()`，三处共用一条链）：
 
-1. 给 `<html>` 挂 `.fx-theme` ⇒ `html.fx-theme *` 那条临时过渡规则生效；
-2. 应用新状态；
-3. `240ms` 后摘掉类，并**在同一回调里**发出回执（`已切换到「黑夜」主题` / `代码高亮已切换到「One Dark」`）。
+**首选（10-31 起）= 整屏涟漪**：`document.startViewTransition`（⛔ 必须 `.bind(document)`，裸调用抛
+`Illegal invocation` 会被兜底吃掉、表现成"怎么改都没动画"）拍两张整屏快照，新主题以**圆心在点击处**的
+圆形裁切扩散覆盖旧主题（`.fx-ripple` + `--switch-x/y/r`，裁切动画时长 `--dur-switch`）。
+⛔ 调用方必须用 `flushSync` 包住 setState、`dataset.theme` 必须写在 `useLayoutEffect` 里 —— 否则
+update 回调返回时 DOM 还是旧主题，拍到的两张快照一样，动画等于没有。
+
 
 - ⛔ **用完即摘**：常驻 `*{transition}` 会把全站 hover/点击反馈一起拖慢，且大面积重绘影响滚动性能。
 - ⛔ **回执必须在过渡结束之后**（不是点击瞬间）—— 先"已经变了"再"变成什么"，顺序才对得上。
