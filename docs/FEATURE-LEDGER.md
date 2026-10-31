@@ -36,6 +36,7 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-10-31 | 排队消息发出即上屏 + 发送提示统一「消息发送成功」 | 改动 | `02-browser-queue-settings.tsx`、`07-turn-completed-settle.tsx` | 排队消息（定时到点 / 立即 / 自动启动 / 自动续接）发出去**立刻当用户消息上屏**（乐观气泡，复用正常发送的确认合并机制）；发送成功提示统一「消息发送成功」，定时字样只属于设置/取消/忙时重排。（同步主线 bbd1bf774） | 本轮 |
 | 2026-10-31 | 中枢群归属硬闸（跨中枢调度防串） | 修复 | `02-request.tsx`、`boss-groups-ipc.ts`、守卫 22 | 群工具全部携带引擎下发的 callerThreadId；主进程写侧逐个 assertGroupOwned（跨中枢派活/删群拒绝）；group_status 只报自己名下的群；create 归属以 callerThreadId 为权威。（同步主线 44b2d0937） | 本轮 |
 | 2026-10-31 | 旧成员会话自动跟随（复用线程即重绑） | 勘误 | `team-invoke.ts`、`boss-groups/runner.ts`、守卫 11f | 复用常驻成员线程改走 thread/resume 官方迁移通道重绑（excludeTurns:true + model/config，必须带 sandbox/approvalPolicy 防权限重置）；旧会话不用删，下次派活自动跟随主会话当前模型。（同步主线 ea4503d81） | 本轮 |
 | 2026-10-31 | 被调度会话默认跟随主会话的模型配置 | 修复 | `delegation.ts`、`team-invoke.ts`、`boss-groups/runner.ts`、`01-model-catalog.ts`、守卫 11f | 用户实测「中枢派活被挡住：This chat uses custom964, but your current provider is harness」。根因：被派会话（子智能体 / CLI / 专家 / 专家团 / 成员）的模型取实体存档或全局，发起方换了模型后就旧模型 + 旧供应商撞车。① 新增 `originSessionModel`（发起方会话级模型 + 按激活供应商清单归一）；② 三条派活链模型优先级：显式指定 → 子智能体显式关闭跟随的存档 → **发起方会话级模型** → 实体存档 → 全局；③ 中枢群成员每次派活重新跟随 boss 当前模型。（同步主线 fdb97c6cf + 4d38a03cc） | 本轮 |
