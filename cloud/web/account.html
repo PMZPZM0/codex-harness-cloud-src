@@ -605,6 +605,15 @@
       linear-gradient(rgba(160,200,255,.06) 1px, transparent 1px),
       linear-gradient(90deg, rgba(160,200,255,.06) 1px, transparent 1px);
   }
+  /* 产品区（下载卡/版本徽标）也跟随品牌色：⛔ 只覆盖这几个组件，
+     不动全站 --brand（侧栏/表格用同一支变量，整体换色会牵扯一大片对比度）。 */
+  .pf[data-brand="ch"] .pf-os-btn.primary {
+    background: linear-gradient(135deg, #4f8dff, #1d4ed8);
+    box-shadow: 0 6px 16px rgba(29,78,216,.32);
+  }
+  .pf[data-brand="ch"] .pf-os.rec { border-color: color-mix(in srgb, #2563eb 42%, var(--line)); }
+  .pf[data-brand="ch"] .pf-ver { color: #1d4ed8; background: #e8efff; }
+  .pf[data-brand="ch"] .pf-head h2 { color: var(--text); }
 
   /* ── 通用面板（下载 / 特色 / 日志共用）─────────────────────────────── */
   .pf-panel { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 20px 22px; box-shadow: var(--shadow); }
@@ -3103,6 +3112,9 @@
         var isPP = /ppcode/i.test(String(pr.name || ""));
         var hero = document.querySelector(".pf-hero");
         if (hero) hero.setAttribute("data-brand", isPP ? "pp" : "ch");
+        /* 产品区（下载卡/版本徽标）也挂同一个品牌标记 —— 主按钮与徽标才跟 hero 同色 */
+        var pf = document.querySelector(".pf");
+        if (pf) pf.setAttribute("data-brand", isPP ? "pp" : "ch");
         var t = $("prodTitle");
         if (t) {
           t.innerHTML = isPP
