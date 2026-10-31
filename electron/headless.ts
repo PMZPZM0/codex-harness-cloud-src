@@ -1607,12 +1607,36 @@ function diag(msg: string) {
     appendFileSync(join(dir, "theme-chrome.log"), `${new Date().toISOString()} [headless] ${msg}\n`);
   } catch { /* 诊断写失败不影响功能 */ }
 }
+/* ── 界面自更新（10-31 用户实测「都试了还是旧的」）──────────────────────────
+   云端界面虽然"每次刷新都取最新"，但**已经开着的助手窗口不会自己刷新** ——
+   部署完新界面，用户看到的仍是启动那一刻的旧页面，还以为"没同步"。
+   ⇒ 借每 60s 的 version.json 探测顺带比对 manifestSha256（部署脚本每次都重写）：
+     变了就自动 reload 一次助手窗口。引擎是独立进程不受影响；输入框草稿有落盘。 */
+let uiShaSeen = "";
+function maybeReloadOnUiUpdate(sha: string): void {
+  if (!sha) return;
+  const isFirstProbe = uiShaSeen === "";
+  const changed = uiShaSeen !== "" && uiShaSeen !== sha;
+  uiShaSeen = sha;
+  if (isFirstProbe || !changed) return;
+  const win = getAssistantWindow() as unknown as
+    | { isDestroyed(): boolean; webContents: { isLoading(): boolean; reload(): void } }
+    | null;
+  if (!win || win.isDestroyed()) { diag(`界面版本变化 ${uiShaSeen}：窗口不在，下次打开即新版`); return; }
+  try {
+    if (win.webContents.isLoading()) return;
+    diag(`界面版本变化 → 自动刷新助手窗口（${uiShaSeen}）`);
+    console.log("[headless] 云端界面已更新 → 自动刷新窗口");
+    win.webContents.reload();
+  } catch (e) { diag("界面自动刷新失败：" + String(e)); }
+}
+
 function probeAssetBase(): void {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
   fetch(`${CLOUD_APP_BASE}/version.json?t=${Date.now()}`, { signal: controller.signal, cache: "no-store" })
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-    .then((meta: { protocolVersion?: number }) => {
+    .then((meta: { protocolVersion?: number; manifestSha256?: string }) => {
       clearTimeout(timer);
       /* ⛔ 10-14 用户令「服务器上有，本地就是一个壳」：只要云端 version.json 协议对得上
          ⇒ **一律用云端资产**（界面更新跟服务器走，用户刷新即最新）。
@@ -1622,6 +1646,7 @@ function probeAssetBase(): void {
         if (assetBaseCache !== CLOUD_APP_BASE) console.log(`[headless] 界面资产来自云端 ${CLOUD_APP_BASE}（本地只是壳，更新跟服务器走）`);
         diag(`界面选址：云端 ${CLOUD_APP_BASE}（protocolVersion=1）`);
         assetBaseCache = CLOUD_APP_BASE;
+        maybeReloadOnUiUpdate(String(meta.manifestSha256 ?? ""));
       } else {
         /* ⛔ 协议不匹配**也不再回本地**（10-16 用户令「把本地兜底删了」）：
            回本地只会让用户拿到一份与服务器不同步的旧界面，把问题藏起来。
