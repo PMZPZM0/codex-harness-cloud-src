@@ -22,7 +22,6 @@ import { closePetWindow } from "./pet-window";
 /* ⛔ 10-26（守卫【132】）：`titleBarOverlayOptions` 的**真来源**是 runtime-refs，
    main.ts 只是转发导出。域直接连真来源，别从 main 绕一圈（那会让 main 变成依赖黑洞）。 */
 import { mutableState } from "../main";
-import { titleBarOverlayOptions } from "../runtime-refs";
 import { isInsideTrustedRoots } from "../runtime-refs";
 export function createWindow() {
   /* ⛔⛔ 防重入（10-22 用户实测「应用还能重复打开」= 两个一模一样的主窗口）：
@@ -74,12 +73,9 @@ export function createWindow() {
     // （右上角贴靠/双击最大化等原生行为）；mac 上硬传只是被忽略，红绿灯仍画在左上角，
     // 而渲染层按 Windows 预留的右上 145px 空白就成了纯浪费。mac 走 hiddenInset——
     // 红绿灯按系统标准内缩，渲染层用 [data-os="darwin"] 把顶行内容让开（styles.css）。
-    ...(process.platform === "win32"
-      ? {
-        titleBarStyle: "hidden" as const,
-        titleBarOverlay: { color: "#00000000", symbolColor: titleBarOverlayOptions().symbolColor, height: 55 },
-      }
-      : { titleBarStyle: "hiddenInset" as const }),
+    /* ⛔⛔ 10-31：win32 改 frame:false（原生 WCO 三钮尺寸渲染层改不了），
+       三个钮由 src/components/WindowControls.tsx 自绘；mac 不动（红绿灯）。 */
+    ...(process.platform === "win32" ? { frame: false } : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
       preload: path.join(app.getAppPath(), "dist-electron", "preload.js"),
       contextIsolation: true,
@@ -282,16 +278,8 @@ export function createPopoutWindow(threadId: string) {
     icon: existsSync(windowIcon) ? windowIcon : undefined,
     autoHideMenuBar: true,
     // 独立弹窗同款平台分叉（mac hiddenInset / win overlay），理由见 createWindow
-    ...(process.platform === "win32"
-      ? {
-        titleBarStyle: "hidden" as const,
-        titleBarOverlay: {
-          color: "#00000000",
-          symbolColor: titleBarOverlayOptions().symbolColor,
-          height: 55,
-        },
-      }
-      : { titleBarStyle: "hiddenInset" as const }),
+    // 独立弹窗同款平台分叉（mac hiddenInset / win32 自绘三钮），理由见 createWindow
+    ...(process.platform === "win32" ? { frame: false } : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
       preload: path.join(app.getAppPath(), "dist-electron", "preload.js"),
       contextIsolation: true,

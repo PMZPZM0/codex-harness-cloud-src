@@ -18,7 +18,6 @@ import { homedir } from "node:os";
 import { assistantUrl } from "./open-browser";
 import { resolveWindowIcon } from "./app-icon";
 import { applyRoundedCorners } from "./window/win-rounded-corners";
-import { titleBarOverlayOptions } from "./runtime-refs";
 import { registerBusWindow, unregisterBusWindow } from "./features/window-bus";
 import { mutableState } from "./main";
 
@@ -72,9 +71,8 @@ export async function createAssistantWindow(): Promise<boolean> {
   //   dist-electron（入口脚本目录）⇒ 不给 icon 就回退 electron.exe 默认图标。
   //   解析走 app-icon.ts 唯一真相源（多源兜底，含 __dirname 上溯）。
   const windowIcon = resolveWindowIcon();
-  /* 建窗时刻的 overlay 取值 = 由 `appThemeDark` 决定（null 时退系统主题）。
-     ⛔ 无头形态没有可见终端，stdout 拿不到 ⇒ 落文件才查得动「右上角系统钮没跟着主题变」。 */
-  const overlayAtCreate = titleBarOverlayOptions();
+  /* ⛔⛔ 10-31：win32 改 frame:false，三个窗口钮由渲染层自绘（src/components/WindowControls.tsx）
+     ⇒ 不再是"系统绘图标的 overlay"，也就没有建窗期符号色可记（颜色由 CSS 变量跟着主题走）。 */
   try {
     created = new BrowserWindow({
       width: 1280,
@@ -89,13 +87,11 @@ export async function createAssistantWindow(): Promise<boolean> {
       // ⛔ 显式保留任务栏按钮：browser-window-created 那套隐藏逻辑会摘任务栏，
       //   助手窗必须明确声明"我要出现在任务栏"（10-12："任务栏没有"即此处缺失/被摘）。
       skipTaskbar: false,
-      // ⛔ 无边框 + 原生窗口钮（10-12 用户指出「上面边框跟 Codex Harness 不一样」）：
-      //   桌面版主窗就是 hidden + titleBarOverlay（应用 topbar 顶到窗口边缘，右上角是
-      //   原生最小化/最大化/关闭钮）—— 助手加载同一份 dist，同一套 topbar，必须同形态。
-      //   overlay 参数取 runtime-refs.titleBarOverlayOptions()（符号色跟主题走的唯一真相源）。
-      //   mac 走 hiddenInset（与桌面版同理由：红绿灯在左上，右上预留区不浪费）。
+      // ⛔ 无边框（10-12 用户指出「上面边框跟 Codex Harness 不一样」）：助手加载同一份 dist、
+      //   同一套 topbar ⇒ 必须与桌面版同形态。10-31 起桌面版 win32 走 `frame: false`（三个窗口钮
+      //   由渲染层自绘，尺寸可调），助手窗跟着走同一条分支；mac 仍 hiddenInset（红绿灯）。
       ...(process.platform === "win32"
-        ? { titleBarStyle: "hidden" as const, titleBarOverlay: titleBarOverlayOptions() }
+        ? { frame: false }
         : { titleBarStyle: "hiddenInset" as const }),
     });
   } catch (error) {
@@ -118,7 +114,7 @@ export async function createAssistantWindow(): Promise<boolean> {
   let busRegistered = false;
   try { registerBusWindow(created, { primary: true }); busRegistered = true; }
   catch (e) { chromeDiag("registerBusWindow 失败（窗口将收不到主题下发）：" + String(e)); }
-  chromeDiag(`建窗完成：overlay.symbolColor=${overlayAtCreate.symbolColor}，登记到窗口总线=${busRegistered}`);
+  chromeDiag(`建窗完成：登记到窗口总线=${busRegistered}`);
   created.once("closed", () => { try { unregisterBusWindow(created as BrowserWindow); } catch { /* 忽略 */ } });
   // ⛔ 任务栏图标重申（照抄桌面版主窗 09-27 的修法）：relaunch/快速重启场景下任务栏分组
   //   重建可能吞掉构造期的 icon ⇒ ready-to-show 后 setIcon 再申明一次，幂等、零成本。

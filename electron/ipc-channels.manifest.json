@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 619,
+  "count": 623,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6161,6 +6161,46 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "10-30 任务监控：采纳一条自我改进建议 —— 落盘 adoptedAt，并往本会话投一条 [群事件]（与群聊同通道），由 Codex 自己沉淀成经验"
+    },
+    {
+      "name": "windowClose",
+      "channel": "shell:window-close",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "windowMinimize",
+      "channel": "shell:window-minimize",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "窗口控制（无边框窗自定义按钮；只作用于调用者自己的窗口）"
+    },
+    {
+      "name": "windowState",
+      "channel": "shell:window-state",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ maximized: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "windowToggleMaximize",
+      "channel": "shell:window-toggle-maximize",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ maximized: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
     }
   ]
 }

@@ -243,12 +243,8 @@ export { memoryBackend, type MemoryBackend } from "./memory-backend";
 /** 当前主题是否深色（main.ts 的 applyWindowChrome 维护；未设置时回退系统）。 */
 let appThemeDark: boolean | null = null;
 export function setAppThemeDark(v: boolean | null) { appThemeDark = v; }
-export function titleBarOverlayOptions() {
-  const dark = appThemeDark ?? nativeTheme.shouldUseDarkColors;
-  // ⛔ 符号色必须与 main.ts 的 CHROME_SYMBOL_DARK/LIGHT 逐字一致（664/666 行）——
-  //   改任一处都要同步另一处（守卫【132】比对）。
-  return { color: "#00000000", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 55 };
-}
+/* ⛔⛔ 10-31 删掉 titleBarOverlayOptions()：win32 已改 frame:false，三钮由渲染层自绘
+   （src/components/WindowControls.tsx）⇒ 系统不画钮，符号色只由 CSS 变量决定。 */
 
 /* ⛔ appThemeDark 的取值在 main.ts 的 applyWindowChrome 维护——上面 titleBarOverlayOptions
  *   依赖它 ⇒ main.ts 每次设置主题时调 setAppThemeDark(dark)。symbolColor 的明暗两值
@@ -268,5 +264,4 @@ export function applyThemeToWindow(win: BrowserWindow): void {
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
   const dark = appThemeDark ?? nativeTheme.shouldUseDarkColors;
   try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch { /* 窗口可能正在销毁 */ }
-  try { win.setTitleBarOverlay(titleBarOverlayOptions()); } catch { /* overlay 未启用（非 win32 等）时忽略 */ }
 }

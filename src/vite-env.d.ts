@@ -1384,6 +1384,11 @@ interface Window {
     regenerateMonitorSuggestion(input: { threadId?: string; turnId?: string }): Promise<{ ok: boolean; error?: string }>;
     /* 10-30 任务监控：采纳一条自我改进建议 —— 落盘 adoptedAt，并往本会话投一条 [群事件]（与群聊同通道），由 Codex 自己沉淀成经验 */
     adoptMonitorSuggestion(input: { threadId?: string; turnId?: string; text?: string }): Promise<{ ok: boolean; delivered?: boolean; error?: string }>;
+    windowClose(): Promise<{ ok: boolean }>;
+    /* 窗口控制（无边框窗自定义按钮；只作用于调用者自己的窗口） */
+    windowMinimize(): Promise<{ ok: boolean }>;
+    windowState(): Promise<{ maximized: boolean }>;
+    windowToggleMaximize(): Promise<{ maximized: boolean }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
