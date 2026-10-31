@@ -192,9 +192,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
   const bossDirOpen = bossDirState.open;
   const [bossDirBusy, setBossDirBusy] = useState(false);
+  const [bossDirError, setBossDirError] = useState("");
+  /* 每次打开都从干净状态开始：上一次的失败原因不该跟到这一次 */
+  useEffect(() => { if (bossDirOpen) setBossDirError(""); }, [bossDirOpen]);
   const onBossProjectDir = async (choice: "pick" | "auto" | "cancel") => {
-    if (choice === "cancel") { closeBossDirDialog(); return; }
+    if (choice === "cancel") { closeBossDirDialog(); setBossDirError(""); return; }
     setBossDirBusy(true);
+    setBossDirError("");
     try {
       let dir = "";
       if (choice === "pick") {
@@ -204,6 +208,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       } else {
         dir = String(await window.codex.createBossProjectDir());
       }
+      /* ⛔ 主进程没返回绝对路径 = 没建成。原先这里直接往下走 ⇒ 记了个空目录、弹窗照关，
+         界面表现就是"闪一下什么都没变"（10-31 用户：「点了没法确认」）。 */
+      if (!dir || !dir.trim()) throw new Error("没有拿到项目目录（主进程未返回路径）");
       /* ⛔ 不写全局 localStorage("workspace")：普通会话的项目不能被 中枢带走。 */
       /* ⛔⛔⛔ **不写全局 workspace**（10-25 用户实测：「下面已经自动选了别的会话的项目地址，
          你这还有别的」「每次指挥中枢都不要自动选择旧的会话项目地址」）：
@@ -218,7 +225,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       bossHomePending.current = true;
       /* ⛔ 这里**不再调 startNewThread()**：进入欢迎界面时已经起过一个新的空会话了，
          再调一次会把用户刚在欢迎界面上打的提示词清掉（saveDraft + setPrompt("")）。 */
-    } catch { /* 目录没选成：对话框继续开着 */ }
+    } catch (error) {
+      /* ⛔ 不许再静默：失败要把原因写在弹窗里（"点了没反应"是最难自查的一类故障）。
+         常见两种：① 主进程那条通道没有实现（invoke 到空 handler ⇒ 直接 reject）；
+                   ② 盘根不可写 / 权限被拦。 */
+      const message = error instanceof Error ? error.message : String(error ?? "");
+      setBossDirError(message || "自动新建失败，请手动选择项目地址");
+    }
     finally { setBossDirBusy(false); }
   };
   const currentThreadId = app.thread?.id ?? "";
@@ -525,7 +538,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const renderOptionsGroup = (menuLocation: "top" | "bottom") => (
     <div className={`sidebar-options ${menuLocation === "top" ? "sidebar-options-top" : ""}`}>
       {/* 新建指挥中枢：项目地址对话框（应用内模态） */}
-      <BossProjectDirDialog open={bossDirOpen} busy={bossDirBusy} onChoose={(choice) => void onBossProjectDir(choice)} />
+      <BossProjectDirDialog open={bossDirOpen} busy={bossDirBusy} error={bossDirError} onChoose={(choice) => void onBossProjectDir(choice)} />
       <button
         ref={optionsToggleRef}
         type="button"
