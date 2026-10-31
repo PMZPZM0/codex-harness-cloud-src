@@ -1014,6 +1014,11 @@ contextBridge.exposeInMainWorld("codex", {
   regenerateMonitorSuggestion: (input: unknown) => __ipc("monitor:regenerate", 1, [input]),
   /* 10-30 任务监控：采纳一条自我改进建议 —— 落盘 adoptedAt，并往本会话投一条 [群事件]（与群聊同通道），由 Codex 自己沉淀成经验 */
   adoptMonitorSuggestion: (input: unknown) => __ipc("monitor:adopt", 1, [input]),
+  windowClose: () => __ipc("shell:window-close", 0, []),
+  /* 窗口控制（无边框窗自定义按钮；只作用于调用者自己的窗口） */
+  windowMinimize: () => __ipc("shell:window-minimize", 0, []),
+  windowState: () => __ipc("shell:window-state", 0, []),
+  windowToggleMaximize: () => __ipc("shell:window-toggle-maximize", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

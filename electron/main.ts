@@ -87,7 +87,7 @@ import {
   rpaStore, server, setAppThemeDark, setDelegateRegistry, setMainWindow, setMemoryLayers,
   setMemoryStore, setRpaStore, setServer, setTeamRunStore, setThreadRuntimeStore,
   setVoiceModelsRoot, setVoiceService, sshSessions,
-  syncEngineWatchdog, teamRunStore, terminals, threadCwd, threadRuntimeStore, titleBarOverlayOptions,
+  syncEngineWatchdog, teamRunStore, terminals, threadCwd, threadRuntimeStore,
   trustPicked, upsertCustomModel,
 } from "./runtime-refs";
 import { readCustomModel, readCustomModels, writeCustomModels, healReservedProviderConfig, normalizeProvider, writeModelCatalogToml, readUserConfigSplit } from "./main/01-model-catalog";
@@ -233,7 +233,7 @@ try {
   }
   /* 主题也在这里（app ready 前、**窗口创建前**）落地一次。
      ⛔ 为什么必须落盘再读：窗口创建时 `assistant-window` / `window-factory` 会取
-        `titleBarOverlayOptions()` 画标题栏 overlay 的符号色（右上角最小化/最大化/关闭），
+        按主题设**窗口底色**（10-31 起窗口钮自绘，符号色不再是主进程的事），
         而渲染层的主题存在 localStorage —— 主进程读不到 ⇒ 只能退 `nativeTheme.shouldUseDarkColors`
         （**系统**主题）。系统亮 + 应用暗时符号色是近黑的 #1b1b1a，画在深色顶栏上几乎看不见；
         要等渲染层挂载后调 theme:apply 才修正（那之前一直是错的，且渲染层那个 effect 在
@@ -907,11 +907,6 @@ let sessionProviderIdsCache: { at: number; ids: Set<string> } | null = null;
  *  渲染层通过 URL query `?popout=<threadId>` 进入弹窗模式（只渲染对话区并锁定该会话）。
  *  主题/事件都走全局广播，弹窗无需额外维护。 */
 
-// 无边框标题栏（Windows titleBarOverlay）的符号色：深色主题用浅符号，亮色主题近黑。
-const CHROME_SYMBOL_DARK = "#e8e8e5";
-
-const CHROME_SYMBOL_LIGHT = "#1b1b1a";
-
 /** 应用当前主题（由 theme:apply 写入）。null = 渲染层还没告知过 ⇒ 退回跟随系统。 */
 let appThemeDark: boolean | null = null;
 
@@ -933,17 +928,14 @@ function themeDiag(msg: string) {
 }
 
 function applyWindowChrome(dark: boolean) {
-  const symbol = dark ? CHROME_SYMBOL_DARK : CHROME_SYMBOL_LIGHT;
+  /* ⛔⛔ 10-31：win32 改 frame:false，三个窗口钮由渲染层自绘（src/components/WindowControls.tsx）
+     ⇒ 不再下发标题栏符号色（颜色由 CSS 变量跟着主题走），主进程少一份真相源。 */
   const targets = allBusWindows().filter((win) => Boolean(win && !win.isDestroyed()));
-  themeDiag(`applyWindowChrome(dark=${dark}) 目标窗口=${targets.length} 期望符号色=${symbol}`);
+  themeDiag(`applyWindowChrome(dark=${dark}) 目标窗口=${targets.length}`);
   for (const win of targets) {
     try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch (e) { themeDiag("  setBackgroundColor 失败：" + String(e)); }
-    try {
-      win.setTitleBarOverlay({ color: "#00000000", symbolColor: symbol, height: 55 });
-      themeDiag("  → setTitleBarOverlay 已调用（无异常）");
-    } catch (e) { themeDiag("  setTitleBarOverlay 抛错：" + String(e)); }
   }
-  if (targets.length) console.log(`[theme] 窗口外观 → ${dark ? "dark" : "light"}；已给 ${targets.length} 个窗口下发标题栏符号色 ${symbol}`);
+  if (targets.length) console.log(`[theme] 窗口外观 → ${dark ? "dark" : "light"}；已给 ${targets.length} 个窗口下发底色`);
 }
 
 // 前端切主题时同步窗口外观：nativeTheme.themeSource 让系统标题栏与 Chromium 默认
@@ -1512,7 +1504,7 @@ export { filePreviewAllowed, fileStat, pastedTextDir, sshSessions, syncEngineWat
 export { devInstructionsInput };
 export { applyMemoryMode, distillSummarize, memoryGatewayFile, memoryLayers, memoryStore, memoryWorkspaceFile, readMemoryMode, rpaStore, scheduler, workspaceMemoryEnabled };
 export { collectSessionProviderIds, connectorToml, dispatchHttpPort, dispatchToken, ensureDispatchHttp, escapeToml, mcpToolRulesOf, readUserConfigSplit, writeModelCatalogToml };
-export { notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions };
+export { notifyPopoutClosed, popoutThreadIds };
 export { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, ensureDispatchToken, stableKey };
 export { appSourceRoot, voiceService };
 export { botStreamSessions, channelLog, channelThreadChat, qqReplyContexts };
