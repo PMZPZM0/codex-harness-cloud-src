@@ -9,7 +9,6 @@ import { BossProjectDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDir
 import { isMacPlatform } from "../../../lib/is-mac-platform";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, setFunctionMenuSettingsOpener, setFunctionMenuSettingsTargets, useFunctionMenuConfig } from "../../function-menu";
 import { settingsNav } from "../helpers";
-import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { hk } from "../../../lib/hk";
 import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
 import { getThreadRowColors, subscribeThreadRowColors } from "../../../lib/thread-row-colors.mjs";
@@ -972,8 +971,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             {/* ⛔ 10-13 关闭确认弹窗（应用内卡片，替代原生系统框）：自包含组件（自己订阅
                 close-confirm:ask / 自己回包），主进程关窗守卫 preventDefault 后推事件到这里。
                 它 portal 到 body ⇒ 放在 aside 里的位置不影响定位。 */}
-            <CloseConfirmDialog />
-            {/* 工作区外文件预览的授权确认（10-18，应用内模态） */}
+                    {/* 工作区外文件预览的授权确认（10-18，应用内模态） */}
                     {/* 受控：传 open ⇒ NewbieGuide 不再画自己那行入口（否则底部会出现两个「新手」） */}
             <NewbieGuide open={newbieOpen} onOpenChange={setNewbieOpen} onOpenSettings={onOpenSettings} />
           </aside>
