@@ -1384,6 +1384,12 @@ interface Window {
     windowMinimize(): Promise<{ ok: boolean }>;
     windowState(): Promise<{ maximized: boolean }>;
     windowToggleMaximize(): Promise<{ maximized: boolean }>;
+    /* 10-31：会话笔名全量快照（threadId → alias/上级/寓意） */
+    sessionAliasSnapshot(): Promise<Record<string, any>>;
+    /* 10-31：用户改笔名（两字中文 + 全局不重名，主进程校验后广播） */
+    sessionAliasSet(input: { threadId?: string; alias?: string }): Promise<{ ok: boolean; error?: string; record?: any; snapshot?: any }>;
+    /* 10-31：新建会话后确保有笔名（幂等；主会话不传上级） */
+    sessionAliasEnsure(input: { threadId?: string; supervisorThreadId?: string }): Promise<{ ok: boolean; error?: string; record?: any; snapshot?: any }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

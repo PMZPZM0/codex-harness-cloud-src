@@ -1014,6 +1014,12 @@ contextBridge.exposeInMainWorld("codex", {
   windowMinimize: () => __ipc("shell:window-minimize", 0, []),
   windowState: () => __ipc("shell:window-state", 0, []),
   windowToggleMaximize: () => __ipc("shell:window-toggle-maximize", 0, []),
+  /* 10-31：会话笔名全量快照（threadId → alias/上级/寓意） */
+  sessionAliasSnapshot: () => __ipc("session-alias:snapshot", 0, []),
+  /* 10-31：用户改笔名（两字中文 + 全局不重名，主进程校验后广播） */
+  sessionAliasSet: (input: unknown) => __ipc("session-alias:set", 1, [input]),
+  /* 10-31：新建会话后确保有笔名（幂等；主会话不传上级） */
+  sessionAliasEnsure: (input: unknown) => __ipc("session-alias:ensure", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

@@ -34,6 +34,7 @@ import { bridgeDial, mutableState, readCustomModel } from "../main";
 import { codexHome, delegateRegistry, engineActiveTurnIds, internalThreads, server, threadCwd } from "../runtime-refs";
 import { clearGrants } from "./data-access-ipc";
 import { removeSessionWorkspace } from "./session-workspace";
+import { ensureSessionAlias } from "../session-alias";
 import { clearSessionPrivateMemory } from "../memory-fabric";
 import { broadcastHarnessEvent } from "./window-bus";
 import { ensureProjectAgentsMd } from "../project-conventions";
@@ -90,6 +91,10 @@ export const codexFeature = defineFeature<null>({
       if (method === "thread/start") {
         const startCwd = String((params as any)?.cwd ?? "");
         if (startCwd) ensureProjectAgentsMd(startCwd);
+        /* 10-20：把已配 MCP 连接器的工具接进 dynamicTools —— 引擎 0.157 起内置 MCP 工具
+           **延迟暴露**（模型侧看不到 memory_write / 云端知识库的 ask 等），dynamicTools 不受此限。
+           ⛔ 只合并、不覆盖调用方传进来的那批（memory_recall / team_member_invoke 等）。
+           ⛔ 失败静默：拉不到工具不能挡住 thread/start。 */
         try {
           const { listMcpDynamicTools, toDynamicTools } = await import("../mcp-bridge");
           const mcpTools = toDynamicTools(await listMcpDynamicTools());
@@ -249,10 +254,13 @@ export const codexFeature = defineFeature<null>({
           // 「记录已丢失」标记：判据与实测口径见 session-tools.ts 的 markMissingRollouts 注释
           const present = new Set(fallback.map((entry: any) => String(entry?.id ?? "").toLowerCase()));
           markMissingRollouts(merged, present);
-          /* ⛔⛔ 10-31 用户（截图「开个中枢新会话，一直自动新建这个，有病吗」）：
-             内省 / 蒸馏 / 记忆提炼用的**内部会话**（internalThreads）原先只挡了事件转发，没挡列表
-             ⇒ 每轮复盘都在侧栏多出一行「你是这个桌面助手的…」（标题就是内省提示词首句）。
-             ⇒ 列表出口统一剔除：这些是宿主的临时工作区，用户不该看见、也不该被点开续聊。 */
+          /* ⛔⛔ 10-31 用户（截图 + 原话「开个中枢新会话，一直自动新建这个，有病吗」）：
+             内省 / 蒸馏 / 记忆提炼用的**内部会话**（`internalThreads`，由 distillSummarize 建）
+             原先只挡了事件转发，**没挡列表** ⇒ 每轮复盘都在侧栏多出一行
+             「你是这个桌面助手的…」（标题就是内省提示词首句），看着像应用在自我繁殖。
+             ⇒ 列表出口统一剔除：这些会话是宿主的临时工作区，用户不该看见，也不该被点开续聊。
+             ⛔ 剔除点放在**这里**（thread/list 唯一出口）：只挡渲染层的话，
+                引擎索引 / rollout 兜底扫描两条来源会各自漏一次。 */
           result = { ...response, data: merged.filter((entry: any) => !internalThreads.has(String(entry?.id ?? ""))) };
         } catch (error: any) {
           console.warn("[thread/list] rollout 兜底扫描（worker）失败，本次仅返回引擎索引：", error?.message);
@@ -266,6 +274,10 @@ export const codexFeature = defineFeature<null>({
           // ⛔ 结果优先（10-07）：引擎回执里的 cwd 是**解析后的权威值**；请求参数可能是空串
           //   （`?? ` 只挡 null/undefined，空串会赢）⇒ 空串会让快照被静默跳过（文件追踪失明）。
           threadCwd.set(String(r.thread.id), String(r.thread.cwd ?? p?.cwd ?? ""));
+          /* ★ 10-31 用户令：新建会话**自动取一个两字笔名**（主会话 = 「XX主管」，用户 = 总经理）。
+             ⛔ 主进程自建的会话（delegation / teams / runner）不经过这里，它们在自家建会话处
+                另外调 `ensureSessionAlias(threadId, originThreadId)`（带上上级）。 */
+          void ensureSessionAlias(String(r.thread.id)).catch(() => undefined);
         } else if (method === "thread/resume" && r?.thread?.id) {
           // 零阻塞宿主（09-12）：rollout 增强解析也在 worker 线程里，失败就退化为「不增强」。
           const __t0 = performance.now();
