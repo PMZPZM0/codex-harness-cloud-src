@@ -476,7 +476,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       data-thread-id={thread?.id ?? ""}
       // 右侧上下文面板仅在用户显式开启后参与网格；收起左栏时不能塞入一个 0px 首列，
       // 否则 CSS Grid 会保留隐式轨道，把 workspace 挤到最右侧。
-      style={rightOpen ? { gridTemplateColumns: popoutThreadId ? `minmax(0, 1fr) 1px ${panelWidth}px` : sidebarCollapsed ? `minmax(0, 1fr) 1px ${panelWidth}px` : `256px minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
+      style={rightOpen ? { gridTemplateColumns: popoutThreadId ? `minmax(0, 1fr) 1px ${panelWidth}px` : `var(--side-w, 256px) minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
     >
       {/* 壁纸层（wallpaper 域）：app-shell 首子元素 + isolation 堆叠上下文，负 z 层透出在
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
