@@ -14,7 +14,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT } from "./_ctx.mjs";
+import { ROOT, codeOnly, readSettingsSurface } from "./_ctx.mjs";
 import { isLikelySelfEcho, echoSimilarity, ECHO_TAIL_MS } from "../../src/lib/voice-echo.mjs";
 import { splitSentences } from "../../src/lib/voice-summary.mjs";
 import { AUTO_TOOL_CALL_LIMIT, REWORK_REPEAT_LIMIT, createAutoSpeakTracker, isWorkItem } from "../../src/lib/voice-auto-speak.mjs";
@@ -148,9 +148,11 @@ ok(/numSteps: options\?\.numSteps \?\? this\.currentSettings\.tts\.numSteps/.tes
   "speak 把 numSteps 下发到 worker（漏下发 = worker 用默认 4，设置里的档位形同虚设）");
 ok(/tts: \{ \.\.\.settings\.tts, numSteps: Number\(v\) \}/.test(announceCard),
   "设置页「播报音质」三档可选（写回 tts.numSteps，与播报/通话/试听共用）");
-ok(/checked=\{enabled\}/.test(announceCard) && /apply\(\{ announce: \{ enabled: e\.target\.checked \} \}\)/.test(announceCard)
+/* ⛔ 10-26：显示态改成 `enabled && ttsReady`（没装引擎时显示为关）——
+   意图不变：这一张卡上**只有一个**总开关，别把「正文实时 / 汇总」两个旧开关加回来。 */
+ok(/checked=\{enabled && ttsReady\}/.test(announceCard) && /apply\(\{ announce: \{ enabled: e\.target\.checked \} \}\)/.test(announceCard)
   && (announceCard.match(/type="checkbox"/g) || []).length === 1,
-  "设置页「语音播报」卡片上**只有一个**总开关（正文实时 / 汇总两个旧开关已删）");
+  "设置页「语音播报」卡片上**只有一个**总开关（旧的两个开关已删；显示态 = 设置值 AND 引擎就绪）");
 ok(/if \(announceRef\.current\.enabled\) void speakDelta\(piece\)/.test(hook),
   "通话的正文朗读受总开关门控（关掉 ⇒ 只出字幕不出声）");
 ok(/await flushSpeech\(\);[\s\S]{0,120}?await speakScript\(finalText\)/.test(hook),
@@ -349,21 +351,15 @@ ok(/<details className="voice-profile-guide">/.test(read("src/components/VoiceSe
 
 /* ── ⑨ 语音模型 / 音色克隆模型迁移到「语音通话」页 ─────────────────────── */
 const devtoolsPage = read("src/features/settings-devtools/DevtoolsSettingsSection.tsx");
-ok(/<VoiceDevToolsSection onNotice=\{onNotice\} \/>/.test(read("src/components/VoiceSettingsSection.tsx")),
-  "语音模型 / 音色克隆模型的卡片渲染在「语音通话」页（用户要求迁移到语音相关的那一页）");
+/* ⛔ 10-26：按组拆成两处渲染（`only="base"` 归「必需」组、`only="zipvoice"` 归「可选克隆」组）——
+   判据打"在这一页里确实渲染了这两张卡"，别锚死自闭合形态（拆组后必然变化）。 */
+ok(/<VoiceDevToolsSection[\s\S]{0,80}?only="base"/.test(read("src/components/VoiceSettingsSection.tsx"))
+  && /<VoiceDevToolsSection[\s\S]{0,80}?only="zipvoice"/.test(read("src/components/VoiceSettingsSection.tsx")),
+  "语音模型 / 音色克隆模型的卡片渲染在「语音通话」页（两处分开挂：必需组 / 可选克隆组）");
 ok(!/<VoiceDevToolsSection/.test(codeOnlyTs(devtoolsPage)),
   "开发工具页**不再渲染**它（是迁移不是复制 —— 同一份状态两处渲染 = 双真相源）");
-ok(!/VoiceDevToolsSection/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")),
+ok(!/VoiceDevToolsSection/.test(codeOnly(readSettingsSurface())),
   "settings-registry 里那条 prop 传递也清掉了（死 prop 只会骗下一个读它的人）");
-/* 10-27 用户（语音页截图）：「把必须放到基础模型里面…上面一块空白删除，
-   右上角帮助❓号…放到基础模型卡片右上角」⇒ 页头 .settings-copy 整块删掉（上方不留空行）、
-   必需标签与帮助 ? 都进基础模型卡的卡头、副标题与路径下沉正文区。 */
-const voiceSectionSrc = read("src/components/VoiceSettingsSection.tsx");
-const voiceDevtoolsSrc = read("src/components/VoiceDevToolsSection.tsx");
-ok(!/settings-copy/.test(codeOnlyTs(voiceSectionSrc)) && /<PageInfo[\s\S]{0,400}?helpKey="voice"/.test(voiceSectionSrc)
-  && /helpSlot/.test(voiceSectionSrc) && /helpSlot/.test(voiceDevtoolsSrc),
-  "语音页页头已删（上方不留空行）；帮助 ? 由本页创建、挂到基础模型卡卡头右上角");
-
 ok(/设置 → 语音通话/.test(devtoolsPage),
   "开发工具页留了一句指路（按老习惯找不到时不至于迷路）");
 
@@ -785,12 +781,14 @@ ok(/<span className="turn-head-name">\{codexName\}<\/span>\s*<SessionAnnounceTog
   "📢 开关就渲染在回合头的 Codex 名字**后面**（不是别处；顺序错了用户找不到）");
 ok(/const muted = useSyncExternalStore\(/.test(announceToggleTsx)
   && /const globalOn = useSyncExternalStore\(/.test(announceToggleTsx)
-  && /const enabled = globalOn && !muted/.test(announceToggleTsx)
+  /* 10-31：enabled 还要叠加引擎就绪（没装模型时不能看着是开的），
+     总开关关着仍然禁用（`disabled={engineReady && !globalOn}`）—— 两个条件都在。 */
+  && /const enabled = engineReady && globalOn && !muted/.test(announceToggleTsx)
   && /function AnnounceIcon\(/.test(announceToggleTsx)
   && /announce-slash/.test(announceToggleTsx)
   && /aria-pressed=\{enabled\}/.test(announceToggleTsx)
   && /<AnnounceIcon muted=\{!enabled\}/.test(announceToggleTsx)
-  && /disabled=\{!globalOn\}/.test(announceToggleTsx)
+  && /disabled=\{engineReady && !globalOn\}/.test(announceToggleTsx)
   && /is-off/.test(announceToggleTsx)
   && /语音播报总开关已关闭 —— 去「设置 → 语音通话 → 语音播报」打开/.test(announceToggleTsx)
   && /requestAnnounceStop\(threadId\)/.test(announceToggleTsx)
@@ -1009,10 +1007,51 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     && /\.voice-ball-keyboard \{[^}]*pointer-events:\s*none/.test(reactionCss)
     && /\.voice-keyboard-key \{[^}]*animation:\s*voice-key-tap/.test(reactionCss),
     "位移层、瞳孔缩放（独立 scale 属性）与迷你键盘样式在位（键盘不占布局、不拦点击）");
-}
 
-/* ── 任务姿态 + 安静陪伴（10-29 用户令：人性化联动 + 情绪价值；同步主仓 dec5eba9b）── */
-{
+  /* ── 语音模型区：状态语义与布局（10-26 用户实测「我都没下载，怎么显示使用中」）── */
+  const enginesSrc = read("src/components/VoiceSettingsSection/02-tts-engines.tsx");
+  ok(/const inUse = selected && ready/.test(enginesSrc)
+    && !/\{active && <span className="voice-engine-flag"/.test(enginesSrc),
+    "「使用中」= 选中 **且** 已安装（⛔ 只看设置里选了谁 ⇒ 没下载也打「使用中」= 假声明）");
+  ok(enginesSrc.includes("去装基础模型") && enginesSrc.includes("jumpToModels"),
+    "基础模型只在「语音模型」区下载：引擎卡只做跳转（⛔ 不挂第二个下载入口）");
+  const enginesCss = read("src/styles/18-openai-dialog.css");
+  ok(/\.voice-engine-grid \{ display: grid; grid-template-columns: minmax\(0, 1fr\)/.test(enginesCss)
+    && /\.voice-engine-lists \{ display: grid/.test(enginesCss),
+    "引擎卡是单列长卡片 + 优点/缺点并排（⛔ 别回 auto-fit 三小列：长句被挤成五六个字一行）");
+  const sectionSrc = read("src/components/VoiceSettingsSection.tsx");
+  ok(sectionSrc.indexOf("<VoiceDevToolsSection") < sectionSrc.indexOf("<VoiceSettingsSectionTtsEngines"),
+    "页面顺序：模型下载区排在引擎选择之前（先装再选，别让用户先被三个下载按钮糊住）");
+  ok(/voice-engine-progress-line/.test(enginesSrc) && /Math\.round\(progress!\.percent\)/.test(enginesSrc),
+    "模型下载有**进度条 + 百分比读数**（⛔ 只有一条会跑的进度条，用户不知道还剩多少）");
+  ok(/voice-engine-feedback/.test(enginesSrc) && /kind: "ok" \| "err" \| "info"/.test(enginesSrc),
+    "安装成功/失败、切换引擎都在卡片内留一条反馈（⛔ 不靠一闪而过的 toast）");
+  ok(/voice-engine-tag/.test(enginesSrc) && /badge: "默认 · 随基础模型"/.test(enginesSrc),
+    "每个引擎带角色标签（默认 / 可选·更自然 / 可选·有情绪）—— 新手第一眼能分清必装与可选");
+  /* 10-27 用户（语音页截图）：「把必须放到基础模型里面…上面一块空白删除，
+     右上角帮助❓号…放到基础模型卡片右上角」⇒ 「必需」标签并进基础模型卡头、
+     页头 .settings-copy 整块删掉、帮助 ? 挂到卡头右上角。
+     ⛔ 标签的判据要跟着落点走：原来在 VoiceSettingsSection.tsx 的组头上，
+        现在在 VoiceDevToolsSection.tsx 的卡头里 —— 断言「有标签」而不是「标签在哪个文件」。 */
+  const devtoolsSrc = read("src/components/VoiceDevToolsSection.tsx");
+  ok(/voice-group-tag is-required/.test(sectionSrc + devtoolsSrc) && /voice-group-head/.test(sectionSrc),
+    "页面分组带性质标签（必需 / 可选 / 选声音 / 日常），⛔ 标签只做说明、不做准入");
+  ok(!/settings-copy/.test(codeOnly(sectionSrc)) && /<PageInfo[\s\S]{0,400}?helpKey="voice"/.test(sectionSrc)
+    && /helpSlot/.test(sectionSrc) && /helpSlot/.test(devtoolsSrc),
+    "语音页页头已删（上方不留空行）；帮助 ? 由本页创建、挂到基础模型卡卡头右上角");
+  /* ── 缺模型联动（10-26 用户：「我没装语音模型，播报开关是不是也不能打开」）── */
+  const voiceHookSrc = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
+  const announceSrc = read("src/components/VoiceSettingsSection/10-announce.tsx");
+  ok(/const ttsReady = /.test(voiceHookSrc) && /ttsReady,/.test(voiceHookSrc),
+    "父级派生出「当前引擎是否可合成」的 ttsReady（⛔ 不能各卡片自己猜）");
+  ok(announceSrc.includes("checked={enabled && ttsReady}"),
+    "播报开关的**显示态** = 设置值 AND 引擎就绪（没装引擎时显示为关，⛔ 不许「开着却没声音」）");
+  ok(/if \(e\.target\.checked && !ttsReady\)/.test(announceSrc) && announceSrc.includes("去装模型"),
+    "缺引擎时打开播报被拦下，并给一句能照做的说明 + 直达下载（⛔ 不做点了没反应的灰按钮）");
+  ok(/ttsReadyRef\.current/.test(voiceHookSrc) && /还没有可用的合成引擎/.test(voiceHookSrc),
+    "试听（音色 / 专属音色）在缺引擎时直接给说明，⛔ 不进「合成中」空转");
+
+  /* ── 任务姿态 + 安静陪伴（10-29 用户令：人性化联动 + 情绪价值）── */
   const moodFile = "src/components/VoiceCallFloat/use-voice-task-mood.ts";
   const moodSrc = codeOnlyTs(read(moodFile));
   const ballFloat = codeOnlyTs(floatTsx);
@@ -1041,10 +1080,35 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     && /@keyframes voice-task-done/.test(ballCssTask)
     && /prefers-reduced-motion: reduce[\s\S]{0,200}\.voice-ball\[data-task\] \.voice-mascot \{ animation: none/.test(ballCssTask),
     "CSS：收尾动效 + 减动效降级（prefers-reduced-motion 下一律静止）");
-  const ballVoiceSettings = read("electron/voice/voice-settings.ts");
-  ok(/quiet\?: boolean/.test(ballVoiceSettings) && /quiet: \(ball as any\)\.quiet === true/.test(ballVoiceSettings),
+  const ballElectron = read("electron/voice/voice-settings.ts");
+  ok(/quiet\?: boolean/.test(ballElectron) && /quiet: \(ball as any\)\.quiet === true/.test(ballElectron),
     "voice-settings 落盘 quiet（缺省 false，老档案升级不改行为）");
-}
 
-console.log(`\n【voice-call】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
+  /* ⛔⛔ 10-31 用户：「我没有下载语音模型啊，ppcode 怎么开开关语音播报」——
+     10-26 只把**设置页那张卡片**的开关与引擎就绪联动，回合头的 📢 和主进程下发的
+     「当前播报：已开启」都没看引擎 ⇒ 没装模型时：开关亮着、模型回复里承诺"念给你"、
+     真播却静默无声（连报错都没有）。三仓同一份代码，所以三边现象一致。
+     判据三条：渲染层有就绪探针 + 📢 用它门控 + 主进程拼指令前也看引擎。 */
+  {
+    const ready = read("src/voice/engine-ready.ts");
+    const toggle = codeOnlyTs(read("src/features/voice-announce/SessionAnnounceToggle.tsx"));
+    const bootTsx = read("src/main.tsx");
+    const dirMain = read("electron/features/voice-ipc/01-voice-hotkey-models.ts");
+    const discipline = read("electron/main/12-skill-discipline.ts");
+    ok(/export function getAnnounceEngineReady/.test(ready)
+      && /voiceModelsStatus/.test(ready)
+      && /downloadDone/.test(ready)
+      && /const next = base \|\| kokoro \|\| emotivoice;/.test(ready),
+      "播报引擎就绪探针：**任一套引擎可用**即就绪（基础 / Kokoro / 情感语音），装完 downloadDone 自动重探");
+    ok(/const engineReady = useSyncExternalStore/.test(toggle)
+      && /const enabled = engineReady && globalOn && !muted;/.test(toggle)
+      && /if \(!engineReady\) \{[\s\S]{0,200}?setNotice\(/.test(toggle),
+      "回合头 📢 与就绪联动：没装模型时置灰 + 点击给「去哪下载」（⛔ 不翻转、不静默吞点击）");
+    ok(/startAnnounceEngineProbe\(\)/.test(bootTsx) && !/isPetWindow \|\| isPetActivityWindow\) startAnnounceEngineProbe/.test(bootTsx),
+      "开机起一次探针（宠物浮窗不探）");
+    ok(/announceEngineReadyCached\(\),/.test(discipline)
+      && /export function announceEngineReadyCached/.test(dirMain),
+      "主进程下发 announceEnabled 前也看引擎（否则模型会承诺播报，实际静默失败）");
+  }
+}
 process.exit(fails ? 1 : 0);
