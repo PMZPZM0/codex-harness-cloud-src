@@ -927,8 +927,20 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  /* 10-31 用户令：标签/会话行与侧栏菜单图标同竖线对齐 —— 收掉 22px 缩进（行内 button 自带 10px）。 */
+  /* 10-31 用户令：「标签和会话选项再往左边来一点，对齐上面的菜单选项」——
+     原 22px 缩进让会话行比侧栏菜单（图标 x≈21）整体靠右 ⇒ 收到 0，
+     行内 button 自带 10px 左内边距，标签/名称起点正好落在菜单图标同一竖线上。 */
   padding: 2px 0 4px 0;
+}
+/* ⛔ 10-30 用户截图：展开一个**没有会话**的项目时，「暂无任务」套用了整页空态
+   （`.empty-list` 上下各 28px）⇒ 树里凭空多出一块约 70px 的空洞，两个空项目叠起来更明显。
+   树内的空态是**行级提示**不是整页空态：收成一行、小一号；⛔ 但**文字仍居中**（10-30 用户二次点名：
+   靠左看着像会话行，居中才是「这块是空的」）。 */
+.project-item.is-empty > .project-item-body > .empty-list {
+  padding: 2px 0 6px;
+  text-align: center;
+  font-size: 11.5px;
+  line-height: 1.4;
 }
 .project-menu {
   position: absolute;

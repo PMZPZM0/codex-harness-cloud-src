@@ -295,6 +295,12 @@ bag.earlyView = earlyView as typeof bag.earlyView;
        子树里（DispatchMenu 的 10-04 事故：只判按钮 ⇒ 弹层内点一下就被当外部关掉）。
        Esc 并列监听：键盘用户与遮罩失效环境的最后退路。 */
   useEffect(() => {
+    if (!bag.activeThreadRunning) return;
+    // 运行开始时收掉会改会话状态的顶栏菜单；按钮本身也已 disabled。
+    bag.setCtxMenuOpen(false);
+    bag.setTaskMenuOpen(false);
+  }, [bag.activeThreadRunning]);
+  useEffect(() => {
     if (!bag.ctxMenuOpen) return;
     const onDown = (event: globalThis.MouseEvent) => {
       const target = event.target as Element | null;
