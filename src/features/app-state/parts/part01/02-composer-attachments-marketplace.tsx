@@ -149,6 +149,7 @@ bag.enhanceBusy = enhanceBusy as typeof bag.enhanceBusy; bag.setEnhanceBusy = se
   const enhanceBackupRef = useRef<string | null>(null);
 bag.enhanceBackupRef = enhanceBackupRef as typeof bag.enhanceBackupRef;
 
+
   /** 本次增强写回输入框的文本（见 bag-types 的说明）：备份失效判定据此放行「刚写回」这一拍。 */
   const enhanceResultRef = useRef<string>("");
 bag.enhanceResultRef = enhanceResultRef as typeof bag.enhanceResultRef;

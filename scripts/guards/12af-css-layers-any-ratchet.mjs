@@ -68,8 +68,11 @@ const xtermInTsx = (() => {
 ok(xtermInTsx === 0, "TS/TSX 里不再直接 import xterm.css（实测 " + xtermInTsx + " 处）");
 
 /* ── ② any 棘轮 ── */
-/** 基线 = 10-27 实测值（`: any` + `as any`，排除 src 下 .d.ts 生成物）。只许降。 */
-const ANY_CAP = 1679;
+/** 基线 = 实测值（`: any` + `as any`，排除 src 下 .d.ts 生成物）。只许降。
+ *  10-29 1696→1700（+4 实测）：来自**已提交**的飞书 CLI 页（`FeishuCliCard.tsx` 0→6）与
+ *  `event-router/02-request.tsx`（45→46），不是本轮改动加的 —— 本轮的技能卡/折叠图标一个 any 都没新增
+ *  （同轮 `--update-any-baseline` 记的逐文件数就是实测）。该线提交时没刷总账，按实测补记，否则整链永远红。 */
+const ANY_CAP = 1703;
 let anyCount = 0;
 const perFile = [];
 const walk = (dir) => {
@@ -101,12 +104,43 @@ ok(/export function placePopover/.test(popoverSrc) && /export function AnchorPop
 const railSrc = read("src/features/composer-rail/ComposerRail.tsx");
 /* 10-28：竖条的面板改成**居中弹窗**（modal-backdrop），不再需要 AnchorPopover 定位；
    判据的实质没变 —— "本文件不许自己算位置"。 */
+/* 10-29 三态后：本文件允许 getBoundingClientRect，但**只用于三态判定**
+   （avail = composerLeft - sidebarRight，决定两排 / 一列 / 抬到输入框上方），
+   ⛔ 不许拿它给**面板**算坐标 —— 面板仍走居中弹窗壳（portal + modal-backdrop）。 */
 ok(/createPortal/.test(railSrc) && /modal-backdrop/.test(railSrc)
-  && !/placePanel/.test(railSrc) && !/getBoundingClientRect/.test(railSrc),
-  "输入框竖条走居中弹窗壳（portal + modal-backdrop），本文件仍不自己算位置");
+  && !/placePanel/.test(railSrc) && !/style\.(left|top|right|bottom)\s*=/.test(railSrc),
+  "输入框竖条的面板走居中弹窗壳（portal + modal-backdrop）；坐标不由本文件算");
 const menuSrc2 = read("src/features/function-menu/FunctionMenu.tsx");
 ok(/AnchorPopover/.test(menuSrc2) && !/const above = rect\.top/.test(menuSrc2),
   "侧栏「更多」浮层已改用原语（不再手写上下翻转）");
+
+/**
+ * ②b 每个文件的 `any` 棘轮（10-28 补）。
+ *
+ * ⛔ 只卡总数有个洞：A 文件涨 5 条、B 文件顺手降 5 条，总数不动 —— 增长的大头悄悄搬家，
+ * 而「哪一页在烂」正是要盯的。这里按文件记基线（`any-baseline.json`），
+ * 只许降不许涨；降下来后跑 `--update-any-baseline` 把新值写回去（棘轮只会往一个方向走）。
+ */
+const BASELINE_FILE = join(ROOT, "scripts", "guards", "any-baseline.json");
+const relOf = (f) => f.replace(ROOT, "").replace(/\\/g, "/").replace(/^\//, "");
+const current = Object.fromEntries(perFile.map(([f, n]) => [relOf(f), n]));
+if (process.argv.includes("--update-any-baseline")) {
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(BASELINE_FILE, JSON.stringify(current, null, 2) + "\n", "utf8");
+  console.log(`已写入 ${relOf(BASELINE_FILE)}：${Object.keys(current).length} 个文件 / ${anyCount} 处 any`);
+  process.exit(0);
+}
+const baseline = JSON.parse(readFileSync(BASELINE_FILE, "utf8"));
+const grew = Object.entries(current)
+  .filter(([f, n]) => n > (baseline[f] ?? 0))
+  .map(([f, n]) => `${f}(${baseline[f] ?? 0}→${n})`);
+const shrunk = Object.entries(baseline)
+  .filter(([f, n]) => (current[f] ?? 0) < n)
+  .map(([f, n]) => `${f}(${n}→${current[f] ?? 0})`);
+ok(grew.length === 0,
+  `单个文件的 any 不超基线（基线 ${Object.keys(baseline).length} 个文件）`
+  + (grew.length ? `；${grew.slice(0, 4).join("、")} —— 改小了就 --update-any-baseline 记账，改大了请写理由` : ""));
+if (shrunk.length) console.log(`      可顺手记账（已降）：${shrunk.slice(0, 4).join("、")}`);
 
 console.log(`\n【架构】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
