@@ -1726,7 +1726,10 @@ const server = http.createServer(async (req, res) => {
      （名字 + 图标地址）统一由这里给：客户机 PPcode / 主站 Codex Harness。
      ⛔ 公开端点，只回品牌名与图标地址，不含任何账号信息；⛔ 名字一律读 env，页面不写死。 */
   if (p === "/api/brand" && req.method === "GET") {
-    const name = String(process.env.HARNESS_PRODUCT_NAME || "PPcode");
+    /* ⛔ 默认值也按部署仓库判定（与 /product/home 同一口径）：写死 "PPcode" 会让
+       Codex Harness 那台的侧栏顶着 PPcode 的牌子（10-31 用户「LOGO 名别串了」）。 */
+    const name = String(process.env.HARNESS_PRODUCT_NAME
+      || (/ppcode/i.test(String(process.env.HARNESS_PRODUCT_REPO || "PMZPZM0/PPcode")) ? "PPcode" : "Codex Harness"));
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
     res.end(JSON.stringify({ ok: true, name, logo: "/api/favicon?size=256" }));
     return;
@@ -1866,12 +1869,21 @@ const server = http.createServer(async (req, res) => {
         还会把访客 IP 暴露给 GitHub。⇒ 服务端取 + TTL 缓存 + 落盘兜底。
      ⛔ 国内镜像与直连**并行**问、取版本最高的那份：镜像缓存滞后会给旧版本（与 /api/updates 同一条纪律）。 */
   const PRODUCT_REPO = process.env.HARNESS_PRODUCT_REPO || "PMZPZM0/PPcode";
-  /* 10-23 用户令「我的首页放 Codex Harness，客户机放 PPcode」：仓库与文案走环境变量，
-     代码只留默认值（= 客户机形态 PPcode）。⛔ 页面里不再写死产品名。 */
-  const PRODUCT_NAME = process.env.HARNESS_PRODUCT_NAME || "PPcode";
-  const PRODUCT_SUB = process.env.HARNESS_PRODUCT_SUB
-    || "把 Codex 引擎、多会话、专家团、技能与记忆整合成一个本地优先的桌面环境 —— 你的代码与会话始终留在自己机器上。";
-  const PRODUCT_DESC = process.env.HARNESS_PRODUCT_DESC || "完整内核与全部能力；云端账号开箱即用，本地优先存储。";
+  /* ⛔⛔ 10-31 用户令：「codex harness 的 LOGO 名别串了」——
+     根因就是这里把默认产品名写死成 `PPcode`：Codex Harness 那台只要没配
+     `HARNESS_PRODUCT_NAME`，侧栏就顶着 PPcode 的牌子（而 favicon 是 CH 的，看着像串台）。
+     ⇒ 默认值改为**按部署仓库判定**：repo 含 ppcode ⇒ PPcode，否则 Codex Harness。
+     两套部署都不需要再配 env，也不会互相串。（env 仍优先，客户机想改名照样能改。） */
+  const IS_PPCODE_DEPLOY = /ppcode/i.test(String(PRODUCT_REPO));
+  const PRODUCT_NAME = process.env.HARNESS_PRODUCT_NAME || (IS_PPCODE_DEPLOY ? "PPcode" : "Codex Harness");
+  /* 10-31 用户：「宣传文字太 low」—— 换成有信息量、能落地的说法（谁在用、解决什么、代价是什么），
+     不再用「为深度使用而生」这类空口号。⛔ 文案只描述事实，别堆形容词。 */
+  const PRODUCT_SUB = process.env.HARNESS_PRODUCT_SUB || (IS_PPCODE_DEPLOY
+    ? "完整 Codex 内核，装完就能干活：多会话并行、专家团分工、技能库与记忆全在本地 —— 账号放云端，项目留本机。"
+    : "多会话并行、专家团分工、技能与记忆都在你自己的机器上跑 —— 代码、对话与凭据不出本机，云端只负责账号与更新。");
+  const PRODUCT_DESC = process.env.HARNESS_PRODUCT_DESC || (IS_PPCODE_DEPLOY
+    ? "完整内核与全部能力；云端账号开箱即用，项目与记忆本地优先。"
+    : "完整内核与全部能力；账号与更新走云端，代码与会话本地优先。");
   /* ⛔⛔ 10-31 事故（用户截图「Codex Harness 云管理的下载按钮不见了」）：
    桌面安装包在 `v0.0.51`（10-30），而 10-31 一天里连发了十几个 `mobile-remote-v0.1.x`
    —— 每个 release 只有 APK、没有 exe/dmg。per_page=10 时**前 10 条全是手机远控**，
