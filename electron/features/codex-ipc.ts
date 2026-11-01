@@ -34,7 +34,7 @@ import { bridgeDial, mutableState, readCustomModel } from "../main";
 import { codexHome, delegateRegistry, engineActiveTurnIds, internalThreads, server, threadCwd } from "../runtime-refs";
 import { clearGrants } from "./data-access-ipc";
 import { removeSessionWorkspace } from "./session-workspace";
-import { ensureSessionAlias } from "../session-alias";
+import { ensureAliasesFor, ensureSessionAlias } from "../session-alias";
 import { clearSessionPrivateMemory } from "../memory-fabric";
 import { broadcastHarnessEvent } from "./window-bus";
 import { ensureProjectAgentsMd } from "../project-conventions";
@@ -272,6 +272,15 @@ export const codexFeature = defineFeature<null>({
         const listed = (result as any)?.data;
         if (Array.isArray(listed)) {
           (result as any).data = listed.filter((entry: any) => !internalThreads.has(String(entry?.id ?? "")));
+          /* ⛔⛔ 11-01 用户（截图：「名字没同步左侧栏…这里还是显示未命名任务」）：
+             名字（笔名）原先只在"新建会话那一刻"分配 ⇒ 存量会话永远没有名字，
+             侧栏只能显示「未命名任务」，而顶栏显示的是引擎名。
+             ⇒ 列表出口（侧栏数据的唯一来源）统一补齐缺名字的会话，一次扫全量、只补缺的。 */
+          try {
+            await ensureAliasesFor((result as any).data.map((entry: any) => String(entry?.id ?? "")));
+          } catch (error: any) {
+            console.warn("[thread/list] 补分配会话名失败（不影响列表）：", error?.message);
+          }
         }
       }
       // 记忆捕获用：记录 threadId → cwd（新建线程响应 / 线程设置更新都带 cwd）
