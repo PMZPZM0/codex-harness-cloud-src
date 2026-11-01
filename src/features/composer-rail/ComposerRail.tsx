@@ -25,6 +25,7 @@ import { PasswordBookPanel } from "./PasswordBookPanel";
 import { DevJournalPanel } from "./DevJournalPanel";
 import { MoodStickersPanel } from "./MoodStickersPanel";
 import { DataAccessPanel } from "../data-access";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 /** 内置面板（IPC 拿不到目录时的兜底；正常情况以主进程 `extensions:catalog` 为准）。 */
 const FALLBACK_PANELS: RailPanelSpec[] = [

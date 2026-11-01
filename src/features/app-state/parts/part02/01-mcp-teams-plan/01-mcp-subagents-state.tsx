@@ -8,6 +8,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { SearchPreviewTarget } from "../../../../../components/IndexLibrary";
 import type { Bag } from "../../bag-types";
+import { useEscapeLayer } from "../../../../../hooks/useEscapeLayer";
 
 export function usePart02a1(bag: Bag) {
   // app-server MCP 状态卡：引擎直管服务器的启停覆盖表 + 勾选/忙碌态。

@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../hooks/useEscapeLayer";
 
 export type AnchorRect = { left: number; right: number; top: number; bottom: number };
 export type PopoverAxis = "x" | "y";
