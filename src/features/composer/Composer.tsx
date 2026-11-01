@@ -9,6 +9,7 @@ import { serializeComposerDom } from "../../lib/serialize-composer-dom";
 import { basename } from "../../lib/basename";
 import { isImagePath } from "../../lib/is-image-path";
 import { isMacPlatform } from "../../lib/is-mac-platform";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export function ThreadFilePicker({ query, onQuery, candidates, onPick, onClose }: { query: string; onQuery: (value: string) => void; candidates: { path: string; source: string }[]; onPick: (path: string) => void; onClose: () => void }) {
   const filtered = useMemo(() => {
@@ -180,11 +181,10 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
   useEffect(() => {
     if (!open) return;
     const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
     window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+    return () => { window.removeEventListener("mousedown", onDown); };
   }, [open]);
+  useEscapeLayer(open, () => setOpen(false));
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   const current = options.find((option) => option.value === value);
   const Icon = icon;

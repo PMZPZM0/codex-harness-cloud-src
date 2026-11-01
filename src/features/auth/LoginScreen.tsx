@@ -12,6 +12,7 @@ import { performRelayLogin, writeRelayActive } from "../../lib/relay";
 import { normalizeCredential } from "../../lib/relay-input.mjs";
 import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
 import { useRef, useState, useLayoutEffect, useEffect, KeyboardEvent } from "react";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export function FieldHelp({ text }: { text: string }) {
   const anchorRef = useRef<HTMLElement | null>(null);
@@ -41,22 +42,18 @@ export function FieldHelp({ text }: { text: string }) {
     // 下方装得下就保持向下；装不下才向上，且上方必须比下方更宽裕（两边都紧就选大的那侧）
     if (below < h && above > below) setBox((prev) => (prev ? { ...prev, up: true } : prev));
   }, [box]);
+  useEscapeLayer(Boolean(box), () => setBox(null));
   useEffect(() => {
     if (!box) return;
     // 滚动/改窗口后锚点会移动，而 fixed 浮层不跟随 —— 直接收起比错位好
     const dismiss = () => setBox(null);
     // 形参用 Event + 断言：本文件的 KeyboardEvent 是 React 类型（导入遮蔽了 DOM 那个），
     // 直接标它会让 addEventListener("keydown") 的重载匹配失败（同 18082 既有写法）
-    const onKey = (event: Event) => {
-      if (String((event as unknown as { key?: string }).key ?? "") === "Escape") setBox(null);
-    };
     window.addEventListener("scroll", dismiss, true);
     window.addEventListener("resize", dismiss);
-    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("scroll", dismiss, true);
       window.removeEventListener("resize", dismiss);
-      window.removeEventListener("keydown", onKey);
     };
   }, [box]);
   return (
@@ -131,11 +128,10 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
   useEffect(() => {
     if (!endpointOpen) return;
     const onDown = (event: MouseEvent) => { if (!endpointRef.current?.contains(event.target as Node)) setEndpointOpen(false); };
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setEndpointOpen(false); };
     window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+    return () => { window.removeEventListener("mousedown", onDown); };
   }, [endpointOpen]);
+  useEscapeLayer(endpointOpen, () => setEndpointOpen(false));
 
   const finishSetup = async ({ result, intent }: ProviderSetupCompleted, options: { restart: boolean }) => {
     const saved = result.saved;

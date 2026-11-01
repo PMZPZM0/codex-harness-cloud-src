@@ -163,6 +163,7 @@ import { SidebarGuideModal, type SidebarGuideKey, type SidebarGuideTarget } from
 import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { UpdateReadyToast } from "./UpdateReadyToast";
+import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   /* ──指挥中枢 = **一个普通会话**（10-25 用户令，推翻覆盖层）──────────────────
@@ -451,16 +452,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       const item = target.closest(".function-menu-popover-item");
       if ((row && !row.classList.contains("function-menu-more")) || item) closeOptions();
     };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") closeOptions(); };
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("click", onClick);
-    document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("click", onClick);
-      document.removeEventListener("keydown", onKey);
     };
   }, [optionsCollapsed, closeOptions]);
+  useEscapeLayer(!optionsCollapsed, () => closeOptions());
   /* 10-25 分类视图入口撤下：本地存过 "source" 的旧偏好一次性回落 projects。 */
   useEffect(() => { if (viewTab === "source") setViewTab("projects"); }, [viewTab, setViewTab]);
   /* 10-25：项目行的「+」= 在该项目下开新会话。先切 workspace（三处同步：state/ref/localStorage，

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Zap } from "lucide-react";
 import { blockedEffortsOf } from "../lib/effort-support";
+import { useEscapeLayer } from "../hooks/useEscapeLayer";
 
 /** 每个档位一个固定色（由低到高：冷 → 暖）。
  *  用户 09-17：「每个等级颜色都不一样」。颜色按**档位名**取而不是按位置下标 ——
@@ -108,11 +109,10 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
       if (popRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
       setOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
     window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+    return () => { window.removeEventListener("mousedown", onDown); };
   }, [open]);
+  useEscapeLayer(Boolean(open), () => setOpen(false));
 
   if (levels.length === 0) return null;
   const shown = levels[Math.min(draft, levels.length - 1)] ?? value;

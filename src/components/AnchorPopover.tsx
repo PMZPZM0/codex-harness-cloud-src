@@ -133,14 +133,12 @@ export function AnchorPopover({
       if (element?.contains(target)) return;
       onClose();
     };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("mousedown", onDown, true);
-    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("mousedown", onDown, true);
-      window.removeEventListener("keydown", onKey);
     };
   }, [open, anchor, ignoreRef, onClose]);
+  useEscapeLayer(Boolean(open), () => onClose());
 
   if (!open) return null;
   return createPortal(
