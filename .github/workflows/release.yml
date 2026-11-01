@@ -6,9 +6,9 @@ name: Release
 #   所以「用 SSH 发版」的唯一可行形态就是：`git push origin v0.0.18` → 本工作流用仓库自带的
 #   GITHUB_TOKEN 构建三端包并发布。发版动作 = 推一个 tag，其余全在这里完成。
 on:
-  push:
-    tags:
-      - "cloud-v*"   # ⛔ 本仓约定：更新器按 ASSISTANT_TAG_PREFIX="cloud-v" 过滤 release
+  # ⛔ 11-01：本仓的**唯一发布流水线**是 release-cloud.yml（tag cloud-v* 触发，资产名
+  #   CodexHarnessAssistant-*，已实测可用）。这份 release.yml 是遗留副本，⛔ 不能再被 tag 触发 ——
+  #   否则同一个 tag 会起两个发布作业，一起往同一个 Release 传**名字不同**的资产，互相污染。
   workflow_dispatch:
 
 # 建 Release / 传资产需要写权限（默认只读）；actions: read 供 publish 取构建 artifact
