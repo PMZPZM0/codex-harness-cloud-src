@@ -16,7 +16,7 @@ import { reasoningItemText } from "./reasoning-text";
 import { remoteStepOf } from "./remote-step";
 import { mobileMentionBlock } from "./dispatch";
 import { harnessProviderConfig } from "./thread-provider";
-import { BotPairingService } from "./bot-pairing";
+import { BotPairingService } from "./bots/bot-pairing";
 import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
 import { Scheduler } from "./scheduler";
 import { MemoryLayers } from "./memory-layers";

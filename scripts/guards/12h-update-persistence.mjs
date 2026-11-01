@@ -70,21 +70,16 @@ ok(/try \{ recordToolRemoved\(id\); \} catch/.test(un),
   "清账包在 try/catch 里（账本坏了不该让卸载报错）");
 
 console.log("【④ 静默下载与重启安装的安全/顺序口径】");
-/* ⛔⛔ 本组**只在桌面版那套通道存在时**才断言（10-13 同步到云助手时补）：
-     云助手有自己的更新系统（`updates:check-silent` / `state-read` / `cancel-download` /
-     `defer-install` / `skip-version`，9 条，比桌面版更完整：带 .part 续传、退避、跳过版本），
-     刻意**没有**再引入桌面版的 `download-silent` / `restart-install` ——
-     两套并存会让「谁触发下载、谁负责安装」没有单一真相源。
-     ⇒ 这里按通道是否存在分流：有就验桌面版口径，没有就明说"本仓用自有实现"，**不留假红**。 */
-const hasDesktopSilent = ui.includes('handle("updates:download-silent"');
-if (!hasDesktopSilent) {
-  console.log("  — 本仓用自有更新系统（check-silent/state-read/defer-install/skip-version），跳过桌面版专属口径");
-} else {
 const dl = ui.slice(ui.indexOf('handle("updates:download-silent"'), ui.indexOf('handle("updates:restart-install"'));
 ok(/lastVerifiedUpdatePath && fileExists\(lastVerifiedUpdatePath\)/.test(dl),
   "静默下载幂等：已校验过就直接返回，不重复下几百 MB");
-ok(!/input\?\.|input\./.test(dl),
-  "⛔ 静默下载**不接受渲染层指定的下载地址**（同 09-13 P0：任意 exe 落盘执行）");
+/* ⛔ 10-26 收紧成「精确禁字段」：原来一刀切禁 `input.` 全字面 —— 10-25 差分更新加了
+   `input.mode`（只决定「差分 or 完整包」的受限枚举），一刀切会把这条安全断言顶成假红。
+   真正要防的是 **渲染层指定地址/路径/哈希**（09-13 P0：任意 exe 落盘执行）⇒ 逐个字段禁。 */
+ok(!/input\??\.(url|downloadUrl|href|path|filename|sha256|version)/.test(dl),
+  "⛔ 静默下载**不接受渲染层指定的下载地址/路径/哈希**（同 09-13 P0：任意 exe 落盘执行）");
+ok(/const url = lastUpdateInfo\?\.downloadUrl;/.test(dl),
+  "下载地址只取主进程校验过的 lastUpdateInfo（渲染层拿不到发言权）");
 ok(/silentDownloading\s*=\s*true/.test(dl) && /finally\s*\{\s*silentDownloading\s*=\s*false/.test(dl),
   "并发闸在 finally 里复位（异常路径漏复位会让后续静默下载永久失败）");
 ok(/sendToWindow\("updates:ready"/.test(dl),
@@ -102,7 +97,6 @@ ok(!/^\s*(await\s+)?server\??\.stop/m.test(rs),
 ok(/path_not_verified|no_verified_update/.test(ui.slice(0, ui.indexOf('handle("updates:restart-install"'))) ||
    /lastVerifiedUpdatePath/.test(rs),
   "restart-install 只认主进程已校验过的那个包（不接受渲染层传路径）");
-}   // ── 结束「桌面版专属口径」分流 ──
 
 console.log("【⑤ 按需下载落点：userData/tools（覆盖安装不丢）】");
 const tc = readFileSync(join(ROOT, "electron/toolchain.ts"), "utf8");

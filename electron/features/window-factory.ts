@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, dialog, shell } from "electron";
 import { existsSync } from "node:fs";
 import { applyRoundedCorners } from "../window/win-rounded-corners";
+import { resolveWindowIcon } from "../app-icon";
 import { sendToWindow } from "./window-bus";
 import { popoutBusWindows, registerBusWindow, unregisterBusWindow } from "../features/window-bus";
 import { flushBootTiming, markBoot } from "../boot-timing";
@@ -57,7 +58,9 @@ export function createWindow() {
     // 进程 cwd（dev 从仓库根启动时命中）
     path.join(process.cwd(), "build", iconName),
   ];
-  const windowIcon = iconCandidates.find((candidate) => existsSync(candidate)) ?? iconCandidates[0];
+  /* ⛔ 10-12 已抽出 electron/app-icon.ts（findBuildAsset / resolveWindowIcon）作为图标唯一真相源，
+     主窗/助手窗/托盘共用；下面的内联候选只保留为兜底，⛔ 不要再各自拼路径。 */
+  const windowIcon = resolveWindowIcon() ?? iconCandidates.find((candidate) => existsSync(candidate)) ?? iconCandidates[0];
   mutableState.mainWindow = new BrowserWindow({
     // 默认桌面尺寸要容纳展开侧栏和完整输入工具栏；小屏仍由响应式布局处理。
     width: 1280,

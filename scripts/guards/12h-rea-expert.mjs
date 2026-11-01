@@ -98,7 +98,7 @@ ok(/id: "rea",/.test(read("electron/update-registry.ts")) && /REA 逆向分析�
   "控制台组件更新清单登记 rea（npm-tool + 镜像；后端复用 UPDATEABLE_TOOLS 的镜像更新链）");
 
 /* ── 五、check 链登记 ────────────────────────────────────────────────── */
-ok(JSON.parse(read("package.json")).scripts.check.includes("12n-rea-expert.mjs"), "package.json check 链已登记本守卫");
+ok(JSON.parse(read("package.json")).scripts.check.includes("12h-rea-expert.mjs"), "package.json check 链已登记本守卫");
 
 console.log(`\n【rea-expert】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

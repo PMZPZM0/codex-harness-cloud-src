@@ -23,6 +23,8 @@ import { LIMITED_BENEFIT_PROVIDER } from "./limited-benefit-ipc";
 import { readModelSource, writeModelSource } from "../main/01-model-catalog";
 import { app } from "electron";
 import { probeCustomModel } from "./custom-model-probe";
+import { healCloudAccess } from "../cloud-heal";
+import { CLOUD_PROVIDER_ID } from "../cloud-provider";
 import { safeProviderId } from "../provider-id";
 import { withExclusiveEnabled } from "../provider-exclusivity";
 import type { CustomModelFile, ProviderModel } from "./custom-model-types";
@@ -79,7 +81,22 @@ export const customModelFeature = defineFeature<null>({
         : "";
       return saved ? { ...input, apiKey: saved } : input;
     };
-    ipcHost.handle("custom-model:probe", async (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(await withSavedKey(input)));
+    /* ⛔⛔ 10-19：云端供应商探活遇 401/403 ⇒ **自动自愈一次**再重试：
+       重签代理令牌 + 写回供应商档案 + 刷新记忆 userKey（cloud-heal，并发去重）。
+       现场症状：订阅/多设备重签把本机 key 挤出令牌环，用户点「测试」只看到 401。
+       ⛔ 只对云端供应商生效 —— 别的供应商 401 就是 key 错，不该被静默换掉。 */
+    ipcHost.handle("custom-model:probe", async (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => {
+      const first = await withSavedKey(input);
+      try {
+        return await probeCustomModel(first);
+      } catch (error: any) {
+        const message = String(error?.message ?? error);
+        if (String(first.provider ?? "") !== CLOUD_PROVIDER_ID || !/认证失败（HTTP (401|403)）/.test(message)) throw error;
+        const healed = await healCloudAccess();
+        if (!healed.ok) throw error;
+        return await probeCustomModel(await withSavedKey(input));
+      }
+    });
 
     ipcHost.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; upstreamProtocol?: BridgeMode }) => {
       const provider = safeProviderId(input.provider.trim());

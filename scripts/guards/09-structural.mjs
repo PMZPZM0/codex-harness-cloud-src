@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, codeOnly, dirname, existsSync, fail, join, ok, pathToFileURL, readFileSync, readdirSync, relative, statSync, warn,
+  C, ROOT, codeOnly, dirname, existsSync, fail, join, ok, pathToFileURL, readFileSync, readSettingsSurface, readdirSync, relative, statSync, warn,
 } from "./_ctx.mjs";
 import { resolve as resolvePath } from "node:path";
 import { createRequire } from "node:module";
@@ -409,6 +409,9 @@ export async function run() {
   const CATALOG = "src/features/app-view/helpers/catalogs.ts";
   const contentSrc = readFileSync(join(ROOT, CONTENT), "utf8");
   const regSrc = readFileSync(join(ROOT, REGISTRY), "utf8");
+  /* 10-28 P1-2：注册表按 nav 分组拆进 pages/**，条目搬走后「id 齐全 / 返回入口」要读整个设置台渲染面
+     （语义不变：盯的是设置台里有没有这一页；只读注册表会把 39 个页面全判成缺失）。 */
+  const regSurface = readSettingsSurface();
   const catSrc = readFileSync(join(ROOT, CATALOG), "utf8");
 
   /* ① 硬编码渲染分支必须归零（注释里提到不算：只数 `{settingsPage === "x" &&` 形态） */
@@ -420,7 +423,7 @@ export async function run() {
   (/export function settingsPagesOf\(/.test(regSrc) ? ok : fail)("【101】注册表导出 settingsPagesOf");
 
   /* ③ id 无重复 + 覆盖 settingsNav 全部 id */
-  const regIds = [...regSrc.matchAll(/^\s{4}(?:"([\w-]+)"|([A-Za-z_$][\w$]*)):\s*\{/gm)].map((m) => m[1] || m[2]);
+  const regIds = [...regSurface.matchAll(/^\s{4}(?:"([\w-]+)"|([A-Za-z_$][\w$]*)):\s*\{/gm)].map((m) => m[1] || m[2]);
   const dup = regIds.filter((id, i) => regIds.indexOf(id) !== i);
   (dup.length === 0 ? ok : fail)(`【101】注册表 id 无重复${dup.length ? "，重复：" + dup.join(",") : `（共 ${regIds.length} 个）`}`);
   const navIds = [...catSrc.matchAll(/\["([\w-]+)",\s*"/g)].map((m) => m[1]);
@@ -431,7 +434,7 @@ export async function run() {
   //    专家团 / 子智能体把返回键并进页头操作行，由 registry 传 onBack，壳层不再单独占一行）。
   const SECONDARY = ["browser", "computer", "rpa", "agents", "teams", "expert-center"];
   const noBack = SECONDARY.filter((id) => {
-    const line = regSrc.split(/\r?\n/).find((l) => new RegExp("^\\s{4}\"?" + id + "\"?\\s*:\\s*\\{").test(l)) || "";
+    const line = regSurface.split(/\r?\n/).find((l) => new RegExp("^\\s{4}\"?" + id + "\"?\\s*:\\s*\\{").test(l)) || "";
     return !(/back:\s*\{/.test(line) || /onBack=\{/.test(line));
   });
   (noBack.length === 0 ? ok : fail)(`【101】二级入口页都有返回入口（壳层 back 或页面 onBack）${noBack.length ? "，缺：" + noBack.join(",") : `（${SECONDARY.length} 个）`}`);
@@ -447,7 +450,6 @@ export async function run() {
   console.log(C.bold("\n【128】拓展接口目录（完整性 / 数字一致 / 注册在位）"));
   const CATALOG = "src/lib/extensibility-catalog.mjs";
   const PAGE = "src/features/settings-extensibility/ExtensibilitySettingsSection.tsx";
-  const REGISTRY_FILE = "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx";
   const catalogPath = join(ROOT, CATALOG);
   (existsSync(catalogPath) ? ok : fail)("【128】目录数据文件存在（src/lib/extensibility-catalog.mjs）");
   if (existsSync(catalogPath)) {
@@ -483,7 +485,7 @@ export async function run() {
     (/EXTENSIBILITY_ENTRIES|EXTENSIBILITY_GROUPS/.test(pageSrc) ? ok : fail)("【128】页面确实消费清单（分组/条目都来自数据文件）");
     (/ext-page/.test(pageSrc) ? ok : fail)("【128】页面使用 ext- 前缀样式（styles/19-misc-hints.css 末节）");
   }
-  const regNow = readFileSync(join(ROOT, REGISTRY_FILE), "utf8");
+  const regNow = readSettingsSurface(); // 10-28 拆页后读整个设置台渲染面（含 pages/**）
   (/extensibility:\s*\{ render:/.test(regNow) ? ok : fail)("【128】设置注册表已注册 extensibility 页");
   const typeNow = readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8");
   (/"extensibility"/.test(typeNow) ? ok : fail)("【128】SettingsPage 联合类型含 extensibility");
@@ -509,7 +511,6 @@ export async function run() {
   const APP_PART = join(ROOT, "src", "features", "app-state", "parts", "part07", "03-seg.tsx");
   const FAV_PAGE = join(ROOT, "src", "features", "settings-favorites", "FavoritesSettingsSection.tsx");
   const SHOT_PAGE = join(ROOT, "src", "features", "settings-screenshot", "ScreenshotSettingsSection.tsx");
-  const REG_FILE = join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx");
   const NAV_FILE = join(ROOT, "src", "features", "app-view", "helpers", "catalogs.ts");
   const TYPES_FILE = join(ROOT, "src", "features", "app-view", "types.ts");
   const HELP_FILE = join(ROOT, "src", "components", "HelpDialog.tsx");
@@ -910,7 +911,7 @@ export async function run() {
   /* ⑤ 页面与导航注册在位（缺一处用户就找不到/进不去）。
      ⛔ 四处用的写法不同：注册表是对象键（`screenshot: { render:`）、导航与总览用中文标签、
      类型用字符串字面量 —— 不能拿同一个模式去套四个文件（曾据此误报过）。 */
-  const regSrc = readFileSync(REG_FILE, "utf8");
+  const regSrc = readSettingsSurface(); // 10-28 拆页后读整个设置台渲染面（含 pages/**）
   (/screenshot:\s*\{\s*render:/.test(regSrc) && /favorites:\s*\{\s*render:/.test(regSrc) ? ok : fail)("【129】截图页与收藏夹页在注册表里都有登记");
   const navSrc = readFileSync(NAV_FILE, "utf8");
   (/\["screenshot",\s*"截图"/.test(navSrc) && /\["favorites",\s*"收藏夹"/.test(navSrc) ? ok : fail)("【129】截图页与收藏夹页在 settingsNav 里都有登记");
@@ -921,7 +922,7 @@ export async function run() {
   if (existsSync(FAV_PAGE)) {
     const page = readFileSync(FAV_PAGE, "utf8");
     (/确认清空 \{favorites\.length\} 条？/.test(page) ? ok : fail)("【129】清空全部是二次确认（不可再生数据不许一击清空）");
-    (/selected\.filter\(\(id\) => alive\.has\(id\)\)/.test(page) ? ok : fail)("【129】选中集合跟着列表收敛（防幽灵 id 命中下一次批量操作）");
+    (/selected\.filter\(\(id\) => \w+\.has\(id\)\)/.test(page) ? ok : fail)("【129】选中集合跟着列表收敛（防幽灵 id 命中下一次批量操作）");
   }
 }
   }
@@ -1533,24 +1534,24 @@ export async function run() {
           }).length;
 
       const GIANT_CAP = {
-        "scripts/guards/04-misc-and-tools.mjs": 1672,   // 10-31 按实测记账（回复风格/技能 + 手机页修复）；此前 1671   // 10-31 审查按实测记账（android 缺失仓跳过 APK 断言 + 并行线在途改动）；此前 1537   // 10-29 +51（实测净行）：【139f】飞书 CLI 13 条（放行脚本单一真相源 / 配置进程去重 / 浏览器自动拉起 + 取消授权 / runtime-row 卡片 / auth status 真实结构 / 失败中文指引 + 10 分钟上限 / 链接按流程收起）（同步主仓）；此前 1462 = 10-28 +40（实测净行）：【139d】四件基础能力 6 条 + safeJoin 真值表（同步主仓 2af43ea99）；此前 1128 = +5：步骤容器重置：【139b】新建会话重置步骤容器（同步主仓 8672d1522）；此前 1123 = +8：运行步骤同步 + 切片口径（同步主仓 4b4298135）；此前 1115 = +3：端口可覆盖一条：【139c】端口可覆盖一条（同步主仓 634ab3f0c）；此前 1112 = +22：【139c】自建中转 5 条（同步主仓 1a0a67838）；此前 1090 = +25：【139b】补返回/重建胶囊/失败重试/自动登录/浅色气泡/注入剥离 6 条（同步主仓 c8fb61268）；此前 1065 = +22：手机远控会话列表只显示标题（同步主仓 79543c071）；此前 1043 = 10-27 +22：子智能体表单与 Codex 工具同口径；此前 1021 = 10-21 新登记（实测净行）：虚拟滚动条 + 滑窗的 turnHistoryPlan 真值表（尾窗/滑窗/钳制/去重）把本文件推过 1000；守卫载体，按实测记账
-        "scripts/guards/07-turn-fold.mjs": 4006,   // 10-29 +46（实测净行）：命令卡结束态一律 ✓ + 映射补漏（node 开关/目录/读文件，含真值表）（同步主仓 e94d18330）；此前 3960 = 10-29 按实测记账（本线未改本文件）；此前 3950 = 10-25 +2（实测净行）：并行线 b89950947「渐变随档位变化 + 极高粒子特效」两条断言未同步基线 ⇒ 本轮按实测补记账（⛔ 本轮 10-25「折叠尾巴」修复**未改**本文件：细则与回归脚本放 scripts/guards/12aa-turn-review.mjs（不在棘轮名单）+ scripts/verify-fold-tail.mjs）   // 10-24 +1（实测净行）：思考板块两档设置从控制台搬到外观（断言改读 appearance 源 + 顺序在功能入口上方 + 控制台不再出现）   // 10-22 +4（ego 优先 / browse-skills 回落；删除 Playwright 断言）   // 10-22 +57（实测净行）：命令卡/操作卡的「折叠态只留中文 + 展开看详情」判据（含旧口径改判）= 10-21 +63（实测净行；工具卡 step 标题那批已提交的守卫，7fb641b）= 思考长条短内容左对齐后继续扩的 step 断言；此前 3811 = 10-21 晚 +6（实测净行）= 思考长条短内容左对齐 + 负向（无条件 flex-end 不许回来）；此前 3805 = 完成态停滚 / 直播 CSS transform 判据；此前 3802 = 直播末段整段上限   // 10-17 +1 = 【165】新契约：运行中压缩线归位渲染（in-progress 项所在回合），旋转+可停止   // 10-07 夜 +9 = 【161】⑫⑬ 三条防复活断言（组件级探针实测：单块思考直播期间放大 10 次 / 缩小 10 次 ⇒ 直播期间追字追平不许收 ×2 + 吸入动画只给用户点收起）。此前 3750 = 10-07 轮 3697→3750（实测；+53 = 压缩链宿主侦测五条（watchTurnCompleted / rollout tail / 广播 / 渲染层记录 / timeline 第三来源）+【159】下限 0.1 与缓存按路径归属三条 + 【165】互斥链改三源 + 两处烂断言修复（锚点 regex 随 boundaryTurnId 更新 / persist 判据重写）+3 + 压缩侦测判据二次修正（记录按 turn_id 归因 / 不许退回非渲染层回合判据 / worker 增量扫描）+15）
-        "scripts/accept.mjs": 1359,   // 10-29 按实测记账（本线未改本文件）；此前 1256 = 10-28 1152（实测净行）= 云账号替换云端管理的验收项 ①②③；10-27 1115 = 本轮子智能体 ⑰；此前 1082 = 控制台/模型/MCP/技能/命令/插件/组件库/SSH/专家中心/专家团验收
-        "scripts/guards/06-app-behavior.mjs": 3102,   // 10-31 按实测记账（回复风格/技能 + 手机页修复）；此前 3085   // 10-29 按实测记账（本线未改本文件）；此前 3076 = 10-24 -4（实测净行）：移除 both 断言，改为两处位置共用 grid 折叠体 + 贴紧搜索任务 + 直接拖动；此前 3053 = both/拖动   // 10-22 底部入口组可折叠 2907→2946（实测净行）：结构倒置（入口组→账户行）+ 折叠 4 条 + 箭头 2 条 + hidden CSS / 账户行 42px 2 条   // 10-21 侧栏重排 2894→2907（实测净行：底部导航组顺序 + 布局位置 + 新手教程受控 4 条断言）   // 10-21 登录管理收口 2882→2894（实测净行：+4 条可达性断言）；此前并行线在途 +23   // 10-21 模型探活 +9（桥 auto 回落 chat / 指定模型真推理）；10-21 侧栏 +6（专家/专家团/子智能体卡片直达内页）；此前 2844 美术第二轮 +6（实测净行）：【232】③ 动画包看帧改为可选；此前 2819 = 10-21 +16（侧栏重排：连体胶囊 / 定时同款 / 删更多 / 知识库并入人格入口 / 紧凑卡片）；此前 +3（按守卫自身口径实测净行）=【232】入口分流改 ?pet=1 / ?pet=activity + 活动归约判据   // 10-20 +13 = 多租户隔离加固判据（双证一致 / identity-mismatch / memKey-only 不归属 / 扣费用 effectiveUsername）；上一条 +14 = 云端记忆身份判据（桥补 X-Tdai-User-Key + 账号服务按 memKey 映射真实用户）；10-15 2739→2775（实测净行；06 里已新加断言而上限没跟着走 ⇒ check 整链被这一条卡住，棘轮口径按实测值更新）；10-09 +5（2734→2739，实测净行）：【232】⑯ 第 4 条断言改成**按 closed 处理器切片**锚定 —— 变异测试抓到它原先只判「字符串存在」是假绿（closePetWindow 里也有同一行，删 closed 那处仍绿）。此前 10-09 +3（2731→2734，实测净行）：【232】⑯ 负向断言补 codeOnly 剥注释（注释里写着「第一版挂在 mousemove+elementFromPoint 上」被自己顶红 ⇒ 剥完再匹配，含本仓多次同型）。此前 10-09 +19（2712→2731，实测净行）：【232】⑯「宠物透明区域鼠标穿透」四条断言——用户报「打开应用后软件外面无法点」，根因 = 宠物窗是透明矩形且 .pet-float 整块 drag 区，默认整块吃鼠标；修法 = 主进程默认 setIgnoreMouseEvents(true,{forward:true}) + 渲染层按指针是否在宠物本体上（elementFromPoint 取最深元素）动态翻转 + 光标离开窗口回到穿透。此前 2712 = 10-08 夜三 +8（2704→2712，实测净行）：【243】⑥「MinGW 安装支不许绕开共享纪律」——用户报「MinGW-w64 下载失败」，现场 = 临时目录里躺着完好 zip 而 tools/mingw 连目录都没建；该支原先直接调 BSDTAR（无三级降级）且对坏缓存走续传。此前 2704 = 10-08 夜二 +32（2672→2704，实测净行）：【286】「装完不更新」整类根因 5 条断言（pip 元数据单一真相源 pipMetadataDirs / 卸载连元数据一起删 / 装前清孤儿元数据 / 装完复核包目录 / 三条真实安装路径回读 runtimeInstalled）+【241】随 python 判定平台无关化改锚点。此前 10-08 夜 +23（2649→2672，实测净行）：【255】补一条「四条安装链都不让引擎重启失败变成安装失败」——起因：SkillHub「编程专家.Skill」与 Gitee「Agent SDK 开发套件」两次实测，文件都装好了，最后一步重启引擎报 `Codex app-server exited (1)` ⇒ 整体被报成安装失败。⛔ 本段注释续行必须带 ` * ` 前缀，否则被算成净代码行（10-08 实测踩过）。此前 2649 = 10-07 夜三 +27（2622→2649，实测净行）：【285】装/判/卸落点同源三条（用户实测「知识库本地语义检索 / CloakBrowser 卸载不更新状态，一直显示已安装」= 四个根因：marker 推导出不存在的路径、判定认双落位而卸载只删一个、worker 占文件 EBUSY 被吞成成功、包体 join 多一层 node_modules）+ 【242】npmShimPaths 调用形态随显式接根参数更新。此前 2622 = 10-07 夜二 +26（npm 布局双候选 + bundledNpmCli 单一真相源）：1060 那段 = 【27】区补三条 npm 断言（verify-packaged-tools 必须按候选列表探测两种解包布局 + 不许单平台硬编码 + toolchain.bundledNpmCli 是唯一真相源），另 816 段 = 「npm CLI 字面量在主进程源码里只许出现 1 次」（mac 真缺口：runtime-ipc / kb-embed-backend 曾各自写死 Windows zip 布局 ⇒ mac 上「开发工具 / 知识库」装不上）。此前 2596 = 10-07 夜 +4 = 【27】补「resources/tools/node 也要一条独立 node_modules 映射」（实测事故：包内有 node.exe 却无 npm ⇒「开发工具」/知识库全部装不上；builder 只剪 from 根级 node_modules，dev 态不复现）+ 【29】随包源判据泛化（`<X>/node_modules` 姐妹条目的可造性由父条目 X 决定，别再逐条开后门）。此前 2592 / 2590 = 10-07 并行会话在途 +18（【154】办公室缩放钮断言：控制组在关闭钮左 / 三个 zoom 调用 / 缩放回报与句柄 / 托盘 pointer-events），按实测记账。此前 10-05 深夜+1 = 办公室轮（b0e83ff）修活【154】（删陈旧【168】门 + 换当前实现 23 条断言）留下的净增量，回填补账。此前：10-05：【29】防线二从「固定 900 字符窗口」改成按**同级分支边界**切片 + 加一条「切片确实跨到分支体」前置（净 +3）—— 本轮往 boot.ts 那个分支加了一条委托登记表清理，旧窗口立刻假红；窗口类判据一律按边界切，别调大数字。另：本文件 ok/fail 是**单参**版，写 ok(cond,msg) 会恒真
-        "scripts/guards/02-session-logic.mjs": 1292,   // 10-31 按实测记账；此前 1286   // 10-31 +3（实测净行）：【285】标签列宽改 --tag-col-w 自适应（同步主线 17dbff16e）；此前 +28：【285】会话行对齐 + 标签互斥 + 行底色 7 条（同步主线 62688d18b）；此前 10-29 按实测记账 1255（本线未改本文件）；此前 1241 = 10-08 +12（1229→1241，实测净行）：语音「打断链路」判据由**固定字符窗口**改成按**同级分支边界**切片（branchBody：取 event.type==="X" 到下一个 event.type==="Y" 之间），并加「切片非空」前置防恒真假绿 —— 起因：realtime voice 的 final 分支开头插了外放回声剔除（约 8 行），把原来的 `[\s\S]{0,300}?` 撑破 ⇒ 假红。本文件是守卫载体（侧栏会话逻辑域）：每加一条规则基线随之上移 —— 10-04 新增【281】侧栏幽灵消失三条（兜底收编不吃 preview / memberIds 必须是派生量 / singles 与簇体同源）+20；10-04 新增【282】侧栏会话行不展示项目地址两条（渲染器不再引用 cwd / 两处小字各自锚定）+11
-        "src/features/app-state/parts/bag-types.ts": 1435,   // 10-17 +1 = deferredCompactRef（排队压缩）   // 生成物（段内顶层声明的类型面）：本文件不承载任何逻辑，长度随「段内顶层声明数」变化 —— 10-04 补 5 条漏接线的声明（ctxBtnRef / ctxMenuStyle / taskBtnRef / taskMenuStyle / dispatchKey，守卫【93】报的 missing）；10-05 界面草图那一位（uiSketchOpen + setter，【283】钉）+2，非业务代码增长
-        "scripts/guards/09-structural.mjs": 1750,   // 10-21 新登记 04 棘轮一行；本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；+1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据；10-07 夜 +45（1681→1690→1735，**两次实测**）＝ ① +9 = 【100】补统一记忆（fabric）剥离的三条正例 + 一条负例 + 两个样例常量 + 一行读 memory-fabric 源（用户实测「项目记忆铺进气泡 + 同一条消息渲染两遍」的判据盲区）；② +36 = 【253】③ 打包白名单/读取路径两条 + 【268-c】同一 slot id 重复消费两条（含对照组）+ 复用【268-b】那趟扫描的 slotIdsOf 收集（用户实测「功能域全是 0」+「重复展示两次」两位数级事故，两条判据都是它们唯一的结构防线）
+        "scripts/guards/04-misc-and-tools.mjs": 1672,   // 10-31 按实测记账（回复风格+配套技能/手机页修复）；此前 1671   // 10-31 审查按实测记账（android 缺失仓跳过 APK 断言 + 并行线在途改动）；此前 1600   // 10-30 按实测记账 1568→1600（本线未改本文件：并行线 relay 那笔提交增行后未记账）；   // 10-30 按实测记账 1532→1568（本线未改本文件：并行线 remote 那几笔提交增行后未记账）；此前 10-29 +18（实测净行）：【139f】飞书 CLI 13 条（放行脚本单一真相源 / 配置进程去重 / 浏览器自动拉起 + 取消授权 / auth status 真实结构 / 失败中文指引 + 10 分钟上限 / 链接按当前流程收起）；此前 1493 = 10-28 手机首页 +30（实测净行）：【139b】七条（默认落首页 / 中枢首页发送建中枢会话 / 新建两项 / 群卡与群头像 / 会话标签 / 品牌与回调走主进程 / boss-home 与群快照单一来源）；此前 1285 = 审查 +22（实测净行）：【139b】六条 —— 实时文件清单优先 / 回合结束清死询问卡 / 权限请求不得压成 approval / 多问题不答一半 / 绑定页 botName 转义（同源 XSS）/ 加载失败留人重试 + 壳内链接改当前窗导航；此前 1263 = +3：【139b】工具参数摘要一条；此前 1168 = +40：四件基础能力 + safeJoin 真值表；此前 1128 = +5：【139b】新建会话重置步骤容器一条；此前 1123 = +5：运行步骤同步 + 切片口径修正；此前 1118 = +3：配对页 #code= 自动提交一条；此前 1115 = +3：端口可覆盖一条；此前 1112 = +22：【139c】自建中转 5 条（固定端口 / 固定地址优先 / 跳过隧道 / listen 失败必 reject）；此前 1090 = +25：【139b】补「返回/重建胶囊/失败重试/自动登录/浅色气泡/注入剥离」6 条；此前 1065 = +22：【139b】手机远控会话列表只显示标题（标题走 threadTitle / 副标题只留时间 / 两行单行省略 / 负向禁止整段 preview 当标题）；此前 1043 = 10-27 +22：子智能体表单与 Codex 工具同口径（工具 schema 四档 + 共用 saveSubAgentConfig + 派活消费配置）；此前 1021 = 10-21 新登记（实测净行）：虚拟滚动条 + 滑窗的 turnHistoryPlan 真值表（尾窗/滑窗/钳制/去重）把本文件推过 1000；守卫载体，按实测记账
+        "scripts/accept.mjs": 1190,   // 10-31 按实测记账（回复风格+配套技能/手机页修复）；此前 1189   // 10-30 +76（实测净行）：技能包验收项（4 条）+ 控制台技能更新面板验收项（4 条）；此前 1113 = 10-28 审查按实测记账 1043→1113；此前 1113 = 10-28 审查按实测记账 1043→1113（并行工作线在途且仍在增长：1083→1113 是本线收尾时又测到的；本线未改本文件，⚠️ 该线提交时按自身实测复核本数）   // 10-28 +39（实测净行）＝ MCP 分类下拉两条真开真选（弹层在视口内/左对齐、选中后文案变且关闭）；此前净 −226 = 1004＝ function-menu 那项按 10-26 的「侧栏浮层」模型重写（旧的整段折叠动画判据已不存在，长期假红），同时新增 composer-rail 7 条；此前 1230 = +73 composer-rail；更早 1157（实测净行）= MCP 工具条 ⑫（搜索框在最左 + 分类紧跟同一行）+ 子智能体页 ⑬（横幅卡删除 / 返回键并进操作行）两条验收；此前 1126 = 本轮子智能体 ⑲ +32；此前 1094 = 上一轮专家中心/专家团两项 +21（当时基线未跟，HEAD 上本就红）⇒ 按实测一并补记账；更早 1073 = 控制台/模型/MCP/技能/命令/插件/组件库/SSH/专家中心验收
+        "scripts/guards/02-session-logic.mjs": 1292,   // 10-31 按实测记账（侧栏标签列宽分层 / 手机页命令折叠）；此前 1286   // 10-31 +3（实测净行）：【285】标签列宽改 --tag-col-w 自适应（2 条换 1 条 + 新增 sidebar-shell 测量断言）；此前 +28 = 【285】会话行对齐 + 标签互斥 + 行底色 7 条；此前 10-27 晚 1274；此前 1252 = 10-08 +12（1229→1241，实测净行）：语音「打断链路」判据由**固定字符窗口**改成按**同级分支边界**切片（branchBody：取 event.type==="X" 到下一个 event.type==="Y" 之间），并加「切片非空」前置防恒真假绿 —— 起因：realtime voice 的 final 分支开头插了外放回声剔除（约 8 行），把原来的 `[\s\S]{0,300}?` 撑破 ⇒ 假红。本文件是守卫载体（侧栏会话逻辑域）：每加一条规则基线随之上移 —— 10-04 新增【281】侧栏幽灵消失三条（兜底收编不吃 preview / memberIds 必须是派生量 / singles 与簇体同源）+20；10-04 新增【282】侧栏会话行不展示项目地址两条（渲染器不再引用 cwd / 两处小字各自锚定）+11
+        "src/features/app-state/parts/bag-types.ts": 1445,   // 10-30 +2（实测净行）：sendPrefilled 一条声明 + 一行说明（任务监控「进化」走 bag 绑定）；此前 1434 = 10-28 按实测记账 1422→1429（并行工作线在途：同段声明面；本线未改本文件）；此前 10-27 晚 1422 = 并行线在途 +2（同段声明面，按实测记账）；此前 1420 = 10-17 +1 = deferredCompactRef（排队压缩）   // 生成物（段内顶层声明的类型面）：本文件不承载任何逻辑，长度随「段内顶层声明数」变化 —— 10-04 补 5 条漏接线的声明（ctxBtnRef / ctxMenuStyle / taskBtnRef / taskMenuStyle / dispatchKey，守卫【93】报的 missing）；10-05 界面草图那一位（uiSketchOpen + setter，【283】钉）+2，非业务代码增长
+        "scripts/guards/09-structural.mjs": 1752,   // 10-28 +14（实测净行 1736→1750）＝ 【270】真跑段收尾：留挂载句柄 + finally 里卸载所有已挂载域（真跑 mountEnabledDomains 会把每个域的 setup 都执行 —— remote 起 HTTP / scheduler 起 tick / codex 拉引擎，不收拾则守卫永不退出且每跑一次漏一个 codex.exe 握着会话 writer）；此前 1736 = 10-28 净 0（实测净行）＝ 【101】【128】【129】改读设置台渲染面（readSettingsSurface：注册表 + pages/**），拆页后按 id/返回条断言不假红；同时删掉两处只剩一次读取的路径常量；10-21 新登记 04 棘轮一行；本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；+1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据；10-07 夜 +45（1681→1690→1735，**两次实测**）＝ ① +9 = 【100】补统一记忆（fabric）剥离的三条正例 + 一条负例 + 两个样例常量 + 一行读 memory-fabric 源（用户实测「项目记忆铺进气泡 + 同一条消息渲染两遍」的判据盲区）；② +36 = 【253】③ 打包白名单/读取路径两条 + 【268-c】同一 slot id 重复消费两条（含对照组）+ 复用【268-b】那趟扫描的 slotIdsOf 收集（用户实测「功能域全是 0」+「重复展示两次」两位数级事故，两条判据都是它们唯一的结构防线）
+        "scripts/guards/11z-voice-call.mjs": 1010,   // 11-01 新登记（实测净行 1010）：悬浮播报（群事件/语音/系统提示统一播报中心）的断言加厚把它推过 1000；守卫载体，按实测记账
+        "scripts/guards/11z-voice-call.mjs": 1010,   // 11-01 新登记（实测净行 1010）：悬浮播报（群事件/语音/系统提示统一播报中心）的断言加厚把它推过 1000；守卫载体，按实测记账
         "scripts/guards/13-drama-gen.mjs": 1070,
-        "electron/features/boot.ts": 1092,   // 10-31 按实测记账（手机端历史按原顺序回放思考/工具）；此前 1086   // 10-29 按实测记账（本线未改本文件）；此前 1070 = 10-28 新登记（实测净行）：手机远控事件转发（思考 / 步骤 / 文件 / 工具）持续加厚，本仓已过 1000 行
-        "electron/main.ts": 852,   // 10-31 按实测记账（手机端历史按原顺序回放思考/工具）；此前 850   // 10-31 按实测记账（手机端：移除拍照 / 思考历史顺序 / APK 0.1.16）；此前 835   // 10-28 +92（实测净行）：手机四件能力 + 登记 cwd（同步主仓 2af43ea99）；此前 630 = 手机读历史剥注入块 + 本仓云端逻辑= 手机读历史剥注入块（stripHarnessBlocks 接线，+1，同步主仓 c8fb61268）+ 本仓自有的云端逻辑（云端 main.ts 本就比主仓长）；此前 594 = 10-22 并行提交（单实例 / createWindow 防重入）+6（实测净行）；此前 588 = 10-21 577→588（实测净行；step 标题/工具面那批已提交改动，7fb641b —— 上一轮并行线提交时没刷新本数，按实测补记账）；此前 10-20 576→577（实测净行；⚠️ 这 +2 来自**并行工作线**的 harness-media 协议注册，本轮未改该文件 —— 该线提交时请按自身实测复核本数）   // 10-16 557→576（**实测净行**；不是本轮刷新回执的改动）= 主题跟随两笔**已提交**改动（7588b08 主题广播 + 渲染层订阅、1be2dde 独立会话弹窗原生外观按当前主题补设）给 main.ts 加了 19 净行却没同步本条 ⇒ check 整链在 HEAD 上就已经是红的，按「实测值更新」补记账（棘轮只许缩不许长，增长是既成事实，不补就永远卡住后面的守卫）。此前 10-10 +1（556→557，实测净行）= 记忆容量倍率：模块体里**同步**读 app-settings 并 memoryLayers.setScale（⛔ 异步会晚于下面的 setLayers 生效）。此前 10-07 轮 546→556（实测）：组合层改具名 import + setPath(userData) 后 process.nextTick(mountEnabledDomains)（挂载时机修复 + 循环 require 窗口规避，【253】钉）
-        "scripts/guards/03-runtime-boot.mjs": 1184,   // 10-31 审查按实测记账（新增「退出后不许再拉起引擎」断言）；此前 1178   // 10-31 按实测记账（本线新增引擎单实例收口六条断言 +25）；此前 1137   // 10-30 按实测净行：fs:locate 三条断言   // 10-22 +10（实测净行）：单实例（第二实例不 boot）+ createWindow 防重入   // 10-21 滑窗 +18（实测净行）= 渲染滑窗切片/总回合去重/切回恢复关自动跳底；此前虚拟滚动条 +59= 【14】新增：notLoaded 元数据 / 总回合占位区 / 首帧 layout effect 补偿 / 占位边界触发 / 下滚不水合 / contentBottomOf 不扣顶部占位 / HISTORY_PAGE 等；此前 10-20 945→948（按守卫自身口径实测净行；并行工作线在途，⚠️ 该线提交时按其实测复核本数）；10-20 935→945（实测净行；+7 = dd93820 同步扩断言漏记棘轮；+3 = 另一并行工作线在途改动（11:47 仍在写该文件）—— ⚠️ 该线提交时按其自身实测复核本数）；10-08 夜 +18（917→935，实测净行）：引擎启动容错事故（用户实测「装技能/插件报安装失败，其实已经装好了」）四条——doRestart 等旧进程真退出后才 spawn / launch 启动重试接线 / fail 在启动序列中直接返回 / exit|error 监听比对进程身份
+        "electron/features/boot.ts": 1114,   // 10-31 按实测记账（手机端历史按原顺序回放思考/工具）；此前 1086   // 10-30 +7（实测净行）：ponytail 启动自愈（写代码模式 ≠ off 时先补齐带清单的本地市场，再启动引擎）；此前 1079 = 10-29 +14（实测净行）：删除会话时同清「该会话私有记忆目录 private__<id>/」（用工作区记录的 projectRoot 定位，不依赖 threadCwd 缓存）；   // 10-29 +15（实测净行）：会话专属工作区接线（thread/deleted 清理 / thread/archived 打标记 / 启动收口孤儿）+ import；   // 10-29 +2：thread/deleted 分支里同步清「三模块数据授权」（另一入口在 codex-ipc 的 purgeTarget）；   // 10-28 审查 +19（实测净行）：询问/审批不再把权限请求压成 approval（回包形状不同）+ 多问题回落提示 + 命令结束状态本地化（命令完成/失败）+ files 事件带结构化清单（运行中「查看改动」用）与无法结构化时的准确提示文案；此前 1029 = 新登记：手机远控事件转发（思考 / 步骤 / 文件 / 工具 / 询问）持续加厚
+        "electron/main.ts": 820,   // 10-31 按实测记账（手机端历史按原顺序回放思考/工具）；此前 818   // 10-31 按实测记账（手机端：移除拍照 / 思考历史顺序 / APK 0.1.16）；此前 810   // 10-30 按实测记账 802→810（本线未改本文件：并行线 relay/远控提交）；   // 10-28 手机首页 +28（实测净行）：listThreads 标中枢/中枢调度 + 群名、listBossGroups 回调、newThread(boss) 走 boss-home 并登记中枢、品牌名；此前 774 = +122（实测净行）：读历史带 reasoning 摘要；此前 712 = +115：归档 / 设目标 / 思考强度 / 安装包资产名：归档 / 设目标 / 思考强度 / 安装包资产名（按品牌）；：停止按真实 turnId 重试 / 压缩拒绝回合中执行 / 文件读真实路径校验；此前 689 = +92：手机四件能力 + 登记 cwd：手机四件能力（图片 localImage 闸 / 技能目录 / 中断 / 压缩 / 列文件 / 读文件）；此前 597 = +3：手机读历史剥注入块（stripHarnessBlocks 接线）；此前 594 = 10-22 并行提交（单实例 / createWindow 防重入）+6（实测净行）；此前 588 = 10-21 577→588（实测净行；step 标题/工具面那批已提交改动，7fb641b —— 上一轮并行线提交时没刷新本数，按实测补记账）；此前 10-20 576→577（实测净行；⚠️ 这 +2 来自**并行工作线**的 harness-media 协议注册，本轮未改该文件 —— 该线提交时请按自身实测复核本数）   // 10-16 557→576（**实测净行**；不是本轮刷新回执的改动）= 主题跟随两笔**已提交**改动（7588b08 主题广播 + 渲染层订阅、1be2dde 独立会话弹窗原生外观按当前主题补设）给 main.ts 加了 19 净行却没同步本条 ⇒ check 整链在 HEAD 上就已经是红的，按「实测值更新」补记账（棘轮只许缩不许长，增长是既成事实，不补就永远卡住后面的守卫）。此前 10-10 +1（556→557，实测净行）= 记忆容量倍率：模块体里**同步**读 app-settings 并 memoryLayers.setScale（⛔ 异步会晚于下面的 setLayers 生效）。此前 10-07 轮 546→556（实测）：组合层改具名 import + setPath(userData) 后 process.nextTick(mountEnabledDomains)（挂载时机修复 + 循环 require 窗口规避，【253】钉）
+        "scripts/guards/03-runtime-boot.mjs": 1194,   // 10-31 审查按实测记账（新增「退出后不许再拉起引擎」断言）；此前 1188   // 10-31 +25（实测净行）：引擎单实例收口六条断言（reap / 重启先 reject 再杀 / 并发重启合并 / starting 身份比对 / launchOnce 回收 / 台账全量）；此前 10-30 +16（实测净行）：applyProcessPath 三条断言（工具链导出/幂等/bootApp 开头调用）；此前 1147 = 10-30 +16：fs:locate 三条断言（通道 / 有界 / 尾段打分）；此前 1122 = 10-29 +2 可信根断言按用户令反转（fs 读写 / shell:reveal / harness-image 四条）   // 10-22 +10（实测净行）：单实例（第二实例不 boot）+ createWindow 防重入   // 10-21 滑窗 +18（实测净行）= 渲染滑窗切片/总回合去重/切回恢复关自动跳底；此前虚拟滚动条 +59= 【14】新增：notLoaded 元数据 / 总回合占位区 / 首帧 layout effect 补偿 / 占位边界触发 / 下滚不水合 / contentBottomOf 不扣顶部占位 / HISTORY_PAGE 等；此前 10-20 945→948（按守卫自身口径实测净行；并行工作线在途，⚠️ 该线提交时按其实测复核本数）；10-20 935→945（实测净行；+7 = dd93820 同步扩断言漏记棘轮；+3 = 另一并行工作线在途改动（11:47 仍在写该文件）—— ⚠️ 该线提交时按其自身实测复核本数）；10-08 夜 +18（917→935，实测净行）：引擎启动容错事故（用户实测「装技能/插件报安装失败，其实已经装好了」）四条——doRestart 等旧进程真退出后才 spawn / launch 启动重试接线 / fail 在启动序列中直接返回 / exit|error 监听比对进程身份
         "electron/voice/voice-service.ts": 887,   // 10-24 883→887（**实测净行**，守卫自身 netCodeLines 口径）= 音质档：speak 签名/下发 numSteps、试听复用带上 numSteps、试听 worker 回落 settings.tts.numSteps；此前 883 是 10-21 的「播报低延迟」批次
-        "src/vite-env.d.ts": 1016,   // 10-30 +1（实测）：fs:locate 一条通道签名   // 10-29 +20 = feishu-cli 6 条通道（含 cancel）由 gen:ipc 重生成（同步主仓）；此前 974 = 10-28 971（实测净行），本仓 netCodeLines 口径）= 云账号移植新增的 cloud-auth/models/kb/memory/team 通道 + cloud:sync/list；10-27 深夜 964 = OpenFilm 12 条通道（批次一 7 + studio 2 + desktop 3）+ 并行线在途的 vault/journal/extensions；此前 935 = 9 条时
+        "src/vite-env.d.ts": 1032,   // 10-30 +1（实测净行）：monitor:adopt 一条通道签名（生成物）；此前 1026 = 10-30 +3：monito   // 10-30 +3（实测净行）：monitor:read / save-suggestion / regenerate 三条通道签名（生成物）；此前 1023 = +1：fs:locate 一条通道签名；此前 1022 = +2 skill-packs 三条通道签名；更早 1019 = 10-29 晚 +17 = CLI 智能体板块（CliAgentEntry 类型 + DispatchTargetEntry 的 cli 枚举）；此前 1002 = 10-29 +7 = feishu-cli 6 条通道（含 cancel）由 gen:ipc 重生成；此前 994 = sessionspace 域（ensure/state/list/set-state/remove/gc）由 gen:ipc 重生成；   // 10-27 深夜 993（实测净行）= openfilm 批次三 +3（desktop-info/download/run）+ 并行线在途的 vault/journal/extensions 登记；此前 964 = openfilm 批次二 +2；此前 962 = openfilm 域 7 条通道由 gen:ipc 重生成 +7；此前 955 = boss-groups:delete 通道 +1；此前 954 = 10-26（实测净行）= 免费网关整套移除，7 条 freeGateway 通道（status / download / start / stop / open-admin / models / uninstall）随 manifest 删除后由 gen:ipc 重生成；此前 1185 为 10-11 分页/记忆/图像等批次的累计，明细见 git 历史；生成物通道数变化时必须按实测值更新
         "src/components/VoiceCallFloat/use-voice-call-float-state.tsx": 872,   // 10-09 第二轮 +14（858→872，实测净行）：播报收成一个总开关（announceRef.enabled）+ 结束念的从「本机压缩摘要」换成 Codex 写的播报稿（speakScript）+ 新增播报稿剥离器（scriptStripperRef：正文朗读里把 `voice` 围栏块整块摘掉，不再把反引号念出来）。此前 10-08 夜 +27（831→858，实测净行）：语音播报两个开关接进通话链路（announceRef + delta 门控 + 结束汇总 speakSummary，汇总在 flush 之后念）；此前 +25（806→831，实测净行）：实时语音四改 —— 删 callScreen 全屏通话面（含状态与导出）、补「打断」广播注册（setVoiceSkipHandler）、外放回声剔除（isLikelySelfEcho + 播报下降沿 lastSpokenAtRef/prevSpeakingRef）、通话开关的状态告知（requestVoiceCallNotice，挂断那次用先取后复位的 wasConversation 防假绿）。
-        "scripts/guards/10-memory-audit.mjs": 941,   // 10-20 三改 876→940（按守卫自身口径 netCodeLines 实测净行；934 是上一版按「剥行尾注释」口径算的偏小值，实测 940 —— 修正）+58 = 【200】云端记忆开通闸门 32 条断言：判定单一入口 / 路由只认 entitled&&applied / 主进程第二道闸 refused / 换账号写 inactive 快照（⛔ 不删文件）/ 三个变化点都广播 / 界面三件齐（原生 disabled + 原因提示 + 出口按钮 + 灰灯）/ 引导出口真接到「云账号」页）   // 10-20 +6（870→876，按守卫自身口径实测净行）= 【150】后端判定搬到 backend-routing.ts 后判据跟着接线走：4 条换成"读 memoryRoute / 三态分支全在 / 技能名取自 route.skill / backendRoutingBlock 已拼进指令"，另 +2 = 云端第三态互斥断言 + 知识库技能**不**参与互斥的负向断言（此前两次改动都漏更新棘轮）；10-10 +21（848→869，实测净行）= 【104】注入预算算术自洽 + 倍率四档（归一化/档位/逐档自洽/水位按倍率算）+ 夹具治本两条（L1 超限按**当前预算**生成；水位夹具日期改**相对今天**生成 —— 原写死 2026-09-10..15 已落到 30 天前 ⇒ 走 age 触发、恒红假红）
+        "scripts/guards/10-memory-audit.mjs": 1008,   // 10-30 +36（实测净行）：调度会话记忆隔离 7 条断言（独立 id / dispatch 硬闸 / 团 id / threadCwd）；此前 10-20 三改 876→940（按守卫自身口径 netCodeLines 实测净行；934 是上一版按「剥行尾注释」口径算的偏小值，实测 940 —— 修正）+58 = 【200】云端记忆开通闸门 32 条断言：判定单一入口 / 路由只认 entitled&&applied / 主进程第二道闸 refused / 换账号写 inactive 快照（⛔ 不删文件）/ 三个变化点都广播 / 界面三件齐（原生 disabled + 原因提示 + 出口按钮 + 灰灯）/ 引导出口真接到「云账号」页）   // 10-20 +6（870→876，按守卫自身口径实测净行）= 【150】后端判定搬到 backend-routing.ts 后判据跟着接线走：4 条换成"读 memoryRoute / 三态分支全在 / 技能名取自 route.skill / backendRoutingBlock 已拼进指令"，另 +2 = 云端第三态互斥断言 + 知识库技能**不**参与互斥的负向断言（此前两次改动都漏更新棘轮）；10-10 +21（848→869，实测净行）= 【104】注入预算算术自洽 + 倍率四档（归一化/档位/逐档自洽/水位按倍率算）+ 夹具治本两条（L1 超限按**当前预算**生成；水位夹具日期改**相对今天**生成 —— 原写死 2026-09-10..15 已落到 30 天前 ⇒ 走 age 触发、恒红假红）
         "src/features/drama-canvas/DramaCanvas.tsx": 928,   // 10-06 深夜 Round J +6 = 画布右键菜单加**视口钳制**（用户令「凡事弹窗类都要加自适应，不能被裁剪」）：坐标来自 clientX/Y，贴右/下边缘右键必被裁——Math.max(8, Math.min(…)) 两处
-        "electron/remote.ts": 1047,   // 10-31 按实测记账（手机端：移除拍照 / 思考历史顺序 / APK 0.1.16）；此前 905
-        "electron/remote/web-page.ts": 1776,   // 10-31 审查修正（判重/行数计数）；此前 1767   // 10-31 按实测记账；此前 1749   // 10-31 按实测记账（手机端历史按原顺序回放思考/工具）；此前 1716   // 10-31 按实测记账（手机端：移除拍照 / 思考历史顺序 / APK 0.1.16）；此前 1320
+        "electron/remote.ts": 1047,   // 10-31 按实测记账（手机端：移除拍照 / 思考历史顺序 / APK 0.1.16）；此前 906   // 10-30 按实测记账 905→906（本线未改本文件：并行线顶栏/远控在途改动）；
+        "electron/remote/web-page.ts": 1776,   // 10-31 审查修正（判重/行数计数）；此前 1767   // 10-31 按实测记账（侧栏标签列宽分层 / 手机页命令折叠）；此前 1749   // 10-31 按实测记账（手机端历史按原顺序回放思考/工具）；此前 1716   // 10-31 按实测记账（手机端：移除拍照 / 思考历史顺序 / APK 0.1.16）；此前 1363   // 10-30 按实测记账 1355→1363（本线未改本文件）；   // 10-30 按实测记账 1320→1355（本线未改本文件：并行线顶栏改版+凭据重连两笔提交增行后未记账）；此前 10-28 新登记（实测净行）：手机端首页（普通/中枢）+ 群卡/群管理 + 新建两选项 + 会话标签；页面本身是内嵌 H5，功能都在这一个文件里
       };
       const grew = [];
       const stale = [];
@@ -1988,11 +1989,13 @@ export async function run() {
             fail(`【270】真跑 dist-electron/composition.gen.js 失败：${error270 instanceof Error ? error270.message : String(error270)}`);
           } finally {
             moduleAny("node:module")._load = loadOrig;
-            /* ⛔⛔ 10-28（用户：「保留干净的后台」的根因之一）：这一段真跑 mountEnabledDomains()
+            /* ⛔⛔ 10-28（用户：「保留干净的后台」的根因之一）：这一段 `mountEnabledDomains()` 真跑
                会把**每个启用域的 setup** 都执行 → remote 起 HTTP 监听、scheduler 起 tick、
-               codex 域拉起一个 codex.exe app-server。不收拾：① 守卫进程永不退出（卡死）；
-               ② 每跑一次预检漏一个 codex.exe，握着会话 rollout 的 writer ⇒ 应用里发消息报
-               「thread … already has an active writer」。⇒ 跑完把所有挂载过的域卸掉。 */
+               codex 域拉起一个 codex.exe app-server。不收拾就有两个后果：
+                 ① 守卫进程永不退出（remote server 常驻）⇒ 卡死（实测 09 跑 9 分钟不结束）；
+                 ② 每跑一次预检漏一个 codex.exe，它握着会话 rollout 的 writer
+                    ⇒ 应用里发消息报 `thread … already has an active writer`。
+               ⇒ 断言跑完必须把所有挂载过的域卸掉（域把 stop/关闭挂在 ctx.effect 里，卸载即收尾）。 */
             try {
               for (const id of genG?.mountedDomainIds?.() ?? []) {
                 try { genG.unmountDomainById(id); } catch { /* 单个域卸载失败不该连坐 */ }

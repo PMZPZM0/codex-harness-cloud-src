@@ -70,9 +70,11 @@ jobs:
             esac
             cp "${found[0]}" "dist-assets/${out}"
           }
-          pick artifacts/win-x64   '*.exe' "Codex.Harness.Desktop-${VERSION}-win-x64.exe"
-          pick artifacts/mac-arm64 '*.zip' "Codex.Harness.Desktop-${VERSION}-arm64-mac.zip"
-          pick artifacts/mac-x64   '*.zip' "Codex.Harness.Desktop-${VERSION}-x64-mac.zip"
+          # ⛔ 11-01：资产前缀必须与 electron/updates.ts 的 ASSISTANT_ASSET_PREFIX 一致（CodexHarnessAssistant-），
+          #    ⛔ 不能沿用桌面版的 Codex.Harness.Desktop- —— 名字对不上，应用内更新器永远匹配不到资产。
+          pick artifacts/win-x64   '*.exe' "CodexHarnessAssistant-${VERSION}-win-x64.exe"
+          pick artifacts/mac-arm64 '*.zip' "CodexHarnessAssistant-${VERSION}-arm64-mac.zip"
+          pick artifacts/mac-x64   '*.zip' "CodexHarnessAssistant-${VERSION}-x64-mac.zip"
           echo "=== 待发布资产 ==="
           (cd dist-assets && sha256sum ./* | tee ../assets-sha256.txt && ls -l)
 

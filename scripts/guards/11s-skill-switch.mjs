@@ -164,7 +164,7 @@ for (const ch of CHANNELS) {
   if (entry) ok(/cwd\?:/.test(entry.paramsDecl) === ch.endsWith("-set"), `${ch} 的 cwd 可选性符合设计（set 可空、get 不需要）`);
 }
 const skillsInManifest = manifest.channels.filter((c) => String(c.channel).startsWith("skills:")).map((c) => c.channel);
-ok(skillsInManifest.length === 14, `skills 域在 manifest 里共 ${skillsInManifest.length} 条（12 + 在线更新 2 条：update / update-check —— 本仓此前漏收了桌面版 10-12 的这处对账修正，随本轮同步补齐）`);
+ok(skillsInManifest.length === 14, `skills 域在 manifest 里共 ${skillsInManifest.length} 条（12 + 在线更新 2 条：update / update-check，a54580a 加通道时漏改本断言，10-12 对账修正）`);
 const regLine = (registrySrc.match(/\{ prefix: "skills", count: (\d+),[\s\S]*?channels: \[([^\]]*)\]/) || []);
 ok(regLine[1] === String(skillsInManifest.length),
   `⛔ ipc-registry 的 skills count（${regLine[1]}）== manifest 实际条数（${skillsInManifest.length}）`);
@@ -314,7 +314,6 @@ try {
   ok(/<SkillPoolSection[\s\S]{0,160}open onOpenChange=\{setPoolOpen\}/.test(centerUi) && /hideTrigger/.test(poolUi),
     "共享技能池改受控：按钮在工具栏、池页面按需渲染（两段式），不再自带触发条");
 }
-
 
 console.log(`\n【skills-switch】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

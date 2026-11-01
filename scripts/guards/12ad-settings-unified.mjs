@@ -16,7 +16,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { codeOnly } from "./_ctx.mjs";
+import { codeOnly, readSettingsSurface } from "./_ctx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
@@ -148,10 +148,10 @@ ok(/\.ssh-filter-row/.test(sshCss) && /\.ssh-action-sm\s*\{[^}]*height:\s*28px/.
 ok(/\.app-lock-actions\s*\{[^}]*justify-content:\s*flex-end/.test(read("src/styles/48-app-lock.css")), "应用锁操作按钮靠右");
 const expertCenterSrc = read("src/features/settings-expert-center/ExpertCenterSection.tsx");
 ok(/expert-center-head/.test(expertCenterSrc) && /onBack/.test(expertCenterSrc) && !/PageInfo/.test(expertCenterSrc), "专家中心返回与专家市场并排，帮助问号已删");
-ok(!/"expert-center": \{ back:/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")), "专家中心返回键不再由壳层单独占一行");
+ok(!/"expert-center": \{ back:/.test(codeOnly(readSettingsSurface())), "专家中心返回键不再由壳层单独占一行");
 const teamsSrc = read("src/features/settings-teams/TeamsSettingsSection.tsx");
 ok(/teams-back/.test(teamsSrc) && !/subagent-banner/.test(teamsSrc) && /onBack/.test(teamsSrc), "专家团返回并进操作行，Codex 说明卡已删");
-ok(!/teams: \{ back:/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")), "专家团返回键不再由壳层单独占一行");
+ok(!/teams: \{ back:/.test(codeOnly(readSettingsSurface())), "专家团返回键不再由壳层单独占一行");
 /* ── ⑨ 子智能体编辑器（10-27 用户：「新建子智能体更新一下，都是旧的，工具也是」）──
    ⛔ 只断言 SubAgentEditorModal 段：专家团弹窗在同一个文件里，它的「启用状态」仍是原生 checkbox。 */
 const subAgentModal = codeOnly(read("src/features/experts-teams/ExpertsTeams/01-modals.tsx").split("export function ExpertTeamEditorModal")[0]);
@@ -181,16 +181,11 @@ const refreshAt = modelPage.indexOf("const refreshCardModels");
 const refreshEnd = modelPage.indexOf("const testProviderCard", refreshAt);
 const refreshBlock = refreshAt >= 0 && refreshEnd > refreshAt ? modelPage.slice(refreshAt, refreshEnd) : "";
 ok(refreshBlock.length > 0 && /addedIds/.test(refreshBlock) && /removed/.test(refreshBlock) && /saveCustomDraft/.test(refreshBlock) && /relaunchApp/.test(refreshBlock), "「更新模型」新增/移除模型都保存并重启（与编辑弹窗保存同口径）");
-/* 10-27 用户令（数据管理页截图）：「右上角的帮助问号删了」⇒ 该页页头整块撤掉，
-   从这条「必须有 ? 入口」的名单里移出（其余两页逻辑不变）。 */
-for (const [key, title] of [["hooks", "钩子"], ["agentteam", "专家和专家团"]]) {
+/* 10-28 用户令：「统一那 13 页旧页头」⇒ 页面标题/副标题/帮助 ? 全部收起；
+   这两页的动作与入口必须还在正文里（不是把功能一起删掉）。 */
+for (const [key, title, marker] of [["hooks", "钩子", "settings-actions-row"], ["agentteam", "专家和专家团", "hub-card-grid"]]) {
   const text = pageSrc(key);
-  const at = text.indexOf(`<h2>${title}`);
-  const window = at >= 0 ? text.slice(at, at + 2200) : "";
-  /* 10-26 用户令：「界面左上角一排大字和下面一排小字都删了，纯多余」⇒ 页头不再显示副标题，
-     说明的唯一入口变成标题旁的 ?。判据跟着行为走（⛔ 不是"源码里还有 <p> 就算过"——
-     那样守卫会自洽地绿，而界面上一个字都没有）。 */
-  ok(!text.includes(`<h2>${title}`) && !/PageInfo/.test(text) && /(settings-actions-row|hub-card-grid)/.test(text), `${title}页头已收起（无标题/无 ?，内容入口在位）`);
+  ok(!text.includes(`<h2>${title}`) && !/PageInfo/.test(text) && text.includes(marker), `${title}页头已收起（无标题/无 ?，内容入口在位）`);
 }
 
 /* 10-27 用户（MCP 页截图）：「右上角问号删了」⇒ MCP 页头整块撤掉，
@@ -309,11 +304,11 @@ ok(/语气自适应/.test(generalPage) && /ToggleSwitch/.test(generalPage)
 ok(/changeAdaptiveTone/.test(generalPage), "控制台语气自适应开关接的是全局开关回调");
 
 /* ★ 10-31 用户令：「专家卡片 / 专家团卡片 / 子智能体卡片做成卡通头像+介绍，纯文字卡片好丑，
-   要区分智能体、专家、专家团，不同风格头像」「小卡片+预览模式，像身份证/工作证一样」。
+   要区分智能体、专家、专家团，不同风格头像」。
    判据盯四件事（缺一件就会退回"纯文字卡片"或"三类共用一张脸"）：
      ① 三类各一套图集（expert / team / subagent 分开），每类 ≥2 张、3×3 等分；
      ② 纯函数选脸（同 id 恒定，换列表顺序不跳）；
-     ③ 三个设置页真的用了 AgentBadge + SettingsDialog 预览；
+     ③ 三个设置页真的用了 AgentAvatar（不是画了个组件没人用）；
      ④ 图片走 avatarAsset（BASE_URL）—— 打包后 file:// 下写死 `/avatars/` 会解析到盘符根。 */
 {
   const avatarMod = await import(pathToFileURL(join(ROOT, "src/lib/agent-avatars.mjs")).href);
@@ -338,10 +333,8 @@ ok(/changeAdaptiveTone/.test(generalPage), "控制台语气自适应开关接的
     ["src/features/settings-agents/AgentsSettingsSection.tsx", "子智能体", /kind="subagent"/],
   ]) {
     const page = src(file);
-    ok(/<AgentBadge/.test(page) && kindCheck.test(page) && /agent-badge-grid/.test(page),
-      `${label}列表 = 工作证小卡（头像 + 名字 + 一行身份，不再铺满元数据）`);
-    ok(/<SettingsDialog/.test(page) && /agent-preview/.test(page),
-      `${label}点卡进入预览弹窗（细节在弹窗里，不是内联展开）`);
+    ok(/AgentAvatar/.test(page) && kindCheck.test(page),
+      `${label}卡片真的用了卡通头像（⛔ 组件写了不接 = 纯文字卡片照旧）`);
   }
   ok(existsSync(join(ROOT, "public/avatars/agent-expert-a.webp")) && existsSync(join(ROOT, "public/avatars/agent-team-a.webp"))
     && existsSync(join(ROOT, "public/avatars/agent-subagent-a.webp")),
@@ -353,6 +346,20 @@ ok(/changeAdaptiveTone/.test(generalPage), "控制台语气自适应开关接的
   ok(/\.settings-dialog\[data-size="sm"\] \{[^}]*display: flex;[^}]*flex-direction: column;/.test(dialogCss)
     && /\.settings-dialog\[data-size="sm"\] \.settings-dialog-body \{ flex: 1 1 auto; min-height: 0; overflow: auto; \}/.test(dialogCss),
     "预览类弹窗（sm）超高时正文自己滚（⛔ 不许退回 grid + auto 行 → 内容被裁）");
+  /* ★ 10-31 二级令：「小卡片+预览模式就行，外面一张就简洁展示，身份证或者工作证一样」。
+     ⛔ 判据 = 列表卡必须是 AgentBadge（头像+名字+一行身份），细节必须进 SettingsDialog 预览；
+       退回"一张卡铺满元数据"或"点卡直接跳走没有预览"都会被这条打红。 */
+  for (const [file, label] of [
+    ["src/features/settings-agents/AgentsSettingsSection.tsx", "子智能体"],
+    ["src/features/settings-teams/TeamsSettingsSection.tsx", "专家团"],
+    ["src/features/settings-expert-center/ExpertCenterSection.tsx", "专家"],
+  ]) {
+    const page = src(file);
+    ok(/<AgentBadge/.test(page) && /agent-badge-grid/.test(page),
+      `${label}列表 = 工作证小卡（AgentBadge + 网格），不再铺满元数据`);
+    ok(/<SettingsDialog/.test(page) && /agent-preview/.test(page),
+      `${label}点卡进入预览弹窗（细节在弹窗里，不是内联展开）`);
+  }
 }
 
 /* 10-27 用户令：「就在 codex 的个性化指令里面加一条，让 codex 自主询问（是否 handoff 交接）」

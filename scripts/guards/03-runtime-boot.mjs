@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  ALIGN_RESULT, C, CONTINUITY_TEXT, ROOT, codeOnly, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, mkdtempSync, planCompletedFold, readAppUi, readFileSync, readMainSource, readStyles, readVoiceCallFloatSrc, rmSync, shouldAlignProvider, sliceHandle, spawnSync, statSync, tmpdir, warn, writeFileSync,
+  ALIGN_RESULT, C, CONTINUITY_TEXT, ROOT, codeOnly, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, mkdtempSync, planCompletedFold, readAppUi, readFileSync, readMainSource, readSettingsSurface, readStyles, readVoiceCallFloatSrc, rmSync, shouldAlignProvider, sliceHandle, spawnSync, statSync, tmpdir, warn, writeFileSync,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -332,7 +332,12 @@ console.log(C.bold("\n【8】打包必备件：随包 automation-tools.zip（发
     const ddPath = join(ROOT, "electron", "data-dir.ts");
     const ddSrc = readFileSync(ddPath, "utf8");
     const mainSrc = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
-    (/app\.setPath\("userData",\s*resolveStartupUserData\(\)\)/.test(mainSrc) ? ok : fail)("【152】main.ts 的 setPath 走 resolveStartupUserData()（裸 env 判断不得回归）");
+    /* ⛔ 10-26：应用锁要在 Chromium/引擎碰数据之前清一次应用数据 ⇒ 先算进 `startupUserData`
+       再 setPath（多了一层 reset 覆盖）。意图不变：**必须走 resolveStartupUserData()**，
+       ⛔ 不许退回裸 `process.env` 判断（那会让指路牌/迁移整条链静默失效）。 */
+    (/app\.setPath\("userData",\s*startupUserData\)/.test(mainSrc)
+      && /let startupUserData = resolveStartupUserData\(\);/.test(mainSrc) ? ok : fail)(
+      "【152】main.ts 的 setPath 走 resolveStartupUserData()（裸 env 判断不得回归）");
     (/CODEX_HARNESS_USER_DATA/.test(ddSrc) ? ok : fail)("【152】env 覆盖优先级保留（CODEX_HARNESS_USER_DATA）");
     (ddSrc.includes("data-dir.json") && ddSrc.includes("defaultUserDataDir") ? ok : fail)("【152】指路牌落在默认目录（appData 锚点）下的 data-dir.json");
     (ddSrc.includes('base === "data-dir.json"') ? ok : fail)("【152】迁移排除指路牌本体（复制它会把新目录也标上旧指路）");
@@ -423,7 +428,9 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
     // `scrollTop = scrollHeight` 在那里是正确的语义 —— 按"上文 15 行内绑定的容器"放行。
     .filter((entry) => {
       const context = srcLines.slice(Math.max(0, entry.no - 15), entry.no).join("\n");
-      return !/contentRef\.current|bodyRef\.current/.test(context);
+      /* 10-26：群面板 feed（BossGroupPanel 的 feedRef）也是**面板内部滚动容器** ——
+         里面没有尾部留白，`scrollTop = scrollHeight` 在这里同样是正确语义。 */
+      return !/contentRef\.current|bodyRef\.current|feedRef\.current/.test(context);
     });
   rawScrollHeightHits.length === 0
     ? ok("主时间线没有「scrollTop = scrollHeight」的直写（内容底部一律经 contentTailTarget 计算）")
@@ -686,8 +693,7 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     const generalSrc = existsSync(generalPath) ? readFileSync(generalPath, "utf8") : "";
     const autoPath = join(ROOT, "src", "features", "settings-general", "AutoUpdateCard.tsx");
     const autoSrc = existsSync(autoPath) ? readFileSync(autoPath, "utf8") : "";
-    const registryPath = join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx");
-    const registrySrc = existsSync(registryPath) ? readFileSync(registryPath, "utf8") : "";
+    const registrySrc = readSettingsSurface();
     (/downloadSource/.test(autoSrc) && /下载源/.test(autoSrc)
       && /AutoUpdateCard[^\n]*downloadSource=\{downloadSource\}/.test(generalSrc)
       && /GeneralSettingsSection[^\n]*downloadSource=\{downloadSource\}/.test(registrySrc)
@@ -696,14 +702,17 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
 
   // ⑦ 渲染层入参校验层（09-13 审计 S5；09-19 用户拍板「隐私第一」后全面收紧 fs 通道）
   const mainForSec = readMainSource();
-  // ⛔ fs:write / fs:read 一律收敛到主进程可信根集合（09-19 用户明令「用户隐私必须重之重」，
-  //   推翻 09-13 的「保持原语义」决策）：fs:write 原来用渲染层自报的 root 判包含（传 C:\ 即绕过），
-  //   fs:read 原来完全无校验（任意路径读）。两条守卫都锚定 handler 内部出现 isInsideTrustedRoots 调用。
+  // ⛔⛔ 口径变更史（改这两条前先读）：
+  //   09-13「保持原语义」→ 09-19 用户拍板「隐私第一」全面收紧（fs:write 不再信渲染层自报的 root；
+  //   fs:read 收敛到可信根）→ **10-29 用户令再推翻一次**：「不用授权弹窗，不管哪里的文件都要能
+  //   预览和编辑」⇒ 现在两条通道**故意都不判可信根**。断言因此反向：钉的是"闸不许被加回来"
+  //   （加回去 = 用户又看到"打不开 / 预览失败"，也就是本次要修的症状）。
   // ⛔ 10-03 第三轮：域改成插件形态后注册写的是 `ipcHost.handle`，锚点必须**双形态**
   //    （indexOfHandle 同时认两种）。只认 ipcMain 会得 -1 ⇒ slice(-1, …) 读到聚合面尾部
   //    ⇒ 这两条**安全**断言会以「可信根收敛被去掉」为名报红，而不变量其实没破（实测假红两轮）。
   const fsWrite = sliceHandle(mainForSec, "fs:write", 1400);
-  /* ⛔ 10-29 用户令推翻了「收敛」口径：编辑器保存**故意**不再判可信根（工作区外的文件也要能改）。 */
+  /* ⛔ 10-29 用户令推翻了「收敛」口径：编辑器保存**故意**不再判可信根（工作区外的文件也要能改）。
+     断言翻转成「不许再加回可信根 + 仍然不许拿渲染层自报的 root 当校验依据」。 */
   (!/isInsideTrustedRoots\(resolved\)/.test(fsWrite) && !/input\.root/.test(fsWrite)
     ? ok("fs:write 不判可信根、也不拿渲染层 root 做校验（10-29 用户令：任意文件可编辑）")
     : fail("fs:write 又被加回了可信根 / root 校验 —— 会让工作区外的文件存不下（本次要修的症状）"));
@@ -711,17 +720,21 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   (!/isInsideTrustedRoots\(target\)/.test(fsRead) ? ok : fail)(
     "fs:read 不判可信根（10-29 用户令：任意文件都能预览，不再弹授权）"
   );
-  /* ★ 10-30 用户令：「这后面的文件跳转预览也同步修一下，只要是电脑上有的文件，不管在哪里都能打开，
-     这个路径错」。根因是**卡片手里的路径本身是错的**（按会话目录拼出来的死链）⇒ 新增 fs:locate：
-     路径不存在时按文件名在磁盘找回。⛔ 只回一条路径（不读不写），判定与预算全在 electron/file-locate.ts。 */
+  /* ★ 10-30 用户令（第三次同一现象）：「这后面的文件跳转预览也同步修一下，只要是电脑上有的文件，
+     不管在哪里都能打开，这个路径错」。根因不是读取被拦，而是**卡片手里的路径本身是错的**
+     （按会话目录拼出来的死链）。⇒ 新增 fs:locate：路径不存在时按文件名在磁盘找回。
+     ⛔ 它只回一条路径（不读不写），判定与预算全在 electron/file-locate.ts。 */
   const fsLocate = sliceHandle(mainForSec, "fs:locate", 900);
   (/locateFile/.test(fsLocate) && /resolvePreviewPath/.test(fsLocate) ? ok : fail)(
     "fs:locate 调 locateFile 找回文件，且与 fs:read 同一套路径归一（file:// / ~ / 相对路径口径一致）"
   );
   {
     const locator = codeOnly(readFileSync(join(ROOT, "electron", "file-locate.ts"), "utf8"));
+    /* ⛔ 必须有界：时间预算 + **每根各自的**目录数预算 + 跳过重目录。
+       无界全盘遍历会让用户点一次卡就卡半分钟（这也是「找文件把界面拖死」的唯一防线）。 */
     (/BUDGET_MS/.test(locator) && /MAX_DIRS/.test(locator) && /SKIP_DIRS/.test(locator) && /deadline/.test(locator)
       ? ok : fail)("file-locate 有界（时间预算 + 每根目录数预算 + 跳过重目录），⛔ 不许改成无界全盘遍历");
+    /* ⛔ 同名的可能有多个：必须用**尾段证据**打分，否则会打开另一个同名文件（比报"找不到"更糟）。 */
     (/tailScore\(/.test(locator) && /bestTail/.test(locator) ? ok : fail)(
       "file-locate 用尾段证据打分（多个同名文件时选目录结构对得上的那个，⛔ 不靠「第一个命中」）"
     );
@@ -743,7 +756,7 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   //    读到无关片段而假红（不变量本身并没破）。找不到锚点就切片为空 ⇒ 明红，不静默放过。
   const shellRevealFrom = mainForSec.search(/(?:ipcMain\.handle|ipcHost\.handle)\("shell:reveal"/);
   const shellReveal = shellRevealFrom >= 0 ? mainForSec.slice(shellRevealFrom, shellRevealFrom + 900) : "";
-  /* ⛔ 10-29 用户令：定位也不再判可信根（与预览同口径）。 */
+  /* ⛔ 10-29 用户令：定位也不再判可信根（与预览同口径 —— 能看就能在资源管理器里找到）。 */
   (!/isInsideOrEqualTrustedRoots\(target\)/.test(shellReveal) ? ok : fail)(
     "shell:reveal 不判可信根（10-29 用户令：任意位置的文件都能定位）"
   );
@@ -813,11 +826,11 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   !/url\.protocol !== "file:"\s*\)\s*throw new Error\("Unsupported URL"\)/.test(mainForSec)
     ? ok("external:open / popout 不再无条件放行 file:（只允许工作区内的 .html）")
     : fail("external:open 又放行任意 file: 了 —— 渲染层可让系统执行任意本地程序");
-  // harness-image 必须收敛路径
-  /* ⛔ 10-29 用户令：协议**故意**不再判可信根（图片 / PDF 预览要能看任意位置的文件）。 */
+  /* ⛔ 10-29 用户令：协议**故意**不再判可信根（图片 / PDF 预览要能看任意位置的文件）。
+     反转断言：扩展名白名单必须仍在、可信根必须**不在** —— 防有人把闸加回去。 */
   (/protocol\.handle\("harness-image"[\s\S]{0,1200}?Unsupported media type/.test(mainForSec)
     && !/protocol\.handle\("harness-image"[\s\S]{0,1200}?Forbidden/.test(mainForSec)
-    ? ok("harness-image 只留 MIME 白名单、不判可信根（10-29 用户令）")
+    ? ok("harness-image 只留 MIME 白名单、不判可信根（10-29 用户令：任意位置图片 / PDF 可预览）")
     : fail("harness-image 又被加回了路径收敛，或丢了 MIME 白名单"));
   // 导航与新窗口收敛必须有
   /will-navigate/.test(mainForSec) && /setWindowOpenHandler/.test(mainForSec) && /will-attach-webview/.test(mainForSec)
@@ -1131,16 +1144,19 @@ const appSrc4 = readAppUi();
   // 滚轮滑窗声音反馈（用户 09-19：「鼠标放上去上下滑动，加一个声音反馈，选最贴合的」）：
   // 合成棘轮咔哒（src/lib/wheel-tick.mjs，无音频资产）；⛔ 只在窗口真的移动时响——
   // 响与不响的判据依赖最新 state，所以滚轮闭包必须走 wheelCtxRef（顺路修掉的 stale closure）。
-  (/const next = Math\.max\(-ctxNow\.currentIndex, Math\.min\(maxOffset, ctxNow\.windowOffset \+ direction \* RULER_PAGE\)\);[\s\S]{0,220}if \(next === ctxNow\.windowOffset\) return;[\s\S]{0,120}setWindowOffset\(next\);[\s\S]{0,80}playWheelTick\(direction\);/.test(appSrc4))
+  (/const next = Math\.max\(-ctxNow\.currentIndex, Math\.min\(maxOffset, ctxNow\.windowOffset \+ direction \* RULER_PAGE\)\);[\s\S]{0,220}if \(next === ctxNow\.windowOffset\) return;[\s\S]{0,120}setWindowOffset\(next\);[\s\S]{0,80}playWheelTick\(direction, \{ channel: "ruler"/.test(appSrc4))
     ? ok("刻度尺滚轮：先算 next、窗口真移动才 setWindowOffset + 播放棘轮咔哒（到顶/到底静默）")
     : fail("刻度尺滚轮的声音反馈被摘了 —— 或窗口移动判定没走 wheelCtxRef 最新值");
   (/const wheelCtxRef = useRef\(\{ allMarks, windowSize, currentIndex, windowOffset \}\);/.test(appSrc4) && /wheelCtxRef\.current = \{ allMarks, windowSize, currentIndex, windowOffset \};/.test(appSrc4))
     ? ok("滚轮监听的 stale closure 已修（最新 state 经 wheelCtxRef 进闭包）")
     : fail("滚轮监听又在闭包里直读 state —— 首帧绑死后钳制/容量全用旧值");
   const tickSrc = readFileSync(join(ROOT, "src/lib/wheel-tick.mjs"), "utf8");
-  (/THROTTLE_MS/.test(tickSrc) && /UP_FREQ/.test(tickSrc) && /DOWN_FREQ/.test(tickSrc) && /catch/.test(tickSrc))
-    ? ok("滑窗音效模块：方向音调区分 + 30ms 节流 + 异常静默降级（音频挂起绝不拖垮滚轮交互）")
-    : fail("wheel-tick.mjs 缺节流/方向音调/静默降级 —— 声音会把滚轮交互搞挂或吵人");
+  /* ⛔ 10-26：节流从「一个常量 THROTTLE_MS」改成「按 channel 的 minGapMs」（共用窗口会互相吞声音），
+     并加了预解锁。判据打**意图**：方向音调 + 有节流 + 异常静默降级 + 预解锁。 */
+  (/minGapMs/.test(tickSrc) && /lastAtByChannel/.test(tickSrc) && /UP_FREQ/.test(tickSrc)
+    && /DOWN_FREQ/.test(tickSrc) && /catch/.test(tickSrc) && /primeWheelTick/.test(tickSrc))
+    ? ok("滑窗音效模块：方向音调 + **按通道**节流 + 异常静默降级 + 预解锁（音频挂起绝不拖垮滚轮交互）")
+    : fail("wheel-tick.mjs 缺节流/方向音调/静默降级/预解锁 —— 声音会把滚轮交互搞挂、或吵人/没声");
 }
   }
 

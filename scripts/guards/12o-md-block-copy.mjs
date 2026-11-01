@@ -33,7 +33,7 @@ const ok = (condition, message) => {
 
 const mdSrc = read("src/features/markdown/Markdown.tsx");
 const css = read("src/styles/03-messages-turns.css");
-/* ⛔ 不再 read("scripts/accept.mjs")：④ 的验收登记断言已随「验收脚本收敛」删除。 */
+/* ⛔ 不再 read("scripts/accept.mjs")：④ 的验收登记断言已随「验收脚本收敛为当前 3 项」删除。 */
 
 /* ── ① 渲染层接线：表格被包一层 + 复制走共用两段反馈组件 ── */
 ok(/table: \(\{ children \}\) => <MdTable>\{children\}<\/MdTable>/.test(mdSrc),
@@ -42,6 +42,9 @@ ok(/className="md-table-wrap"/.test(mdSrc) && /querySelector\("table"\)/.test(md
   "表格被包进 .md-table-wrap（绝对定位的锚），复制时从**容器内**取 table（不抓全页第一张）");
 ok((() => {
   const body = mdSrc.slice(mdSrc.indexOf("const MdTable = memo"), mdSrc.indexOf("export const MD_COMPONENTS"));
+  /* 自制两段反馈的形态 = 本地 useState 存 done + 组件自设 data-phase（FeedbackIconButton 在它内部
+     管这两样）。⌛ 非反馈的 setTimeout（如导出 Excel 后 revokeObjectURL 的清理）不在禁列 ——
+     10-28 起从「禁 setTimeout」收窄到「禁自设 data-phase」，清约定时器不再被误伤。 */
   return /<FeedbackIconButton/.test(body) && !/useState/.test(body) && !/data-phase/.test(body);
 })(), "两段反馈**复用** `FeedbackIconButton`（变对勾 + 1.1s 回位是它的时序；自设 useState/data-phase = 全仓两套反馈）");
 ok(/window\.codex\.writeClipboard\(text\)/.test(mdSrc),
@@ -120,6 +123,23 @@ const btnRule = (() => {
   return i < 0 ? "" : css.slice(i, css.indexOf("}", i));
 })();
 ok(/position:\s*relative/.test(wrapRule), "锚点容器 `.md-table-wrap` 是 relative（否则绝对定位的按钮跑到别处）");
+/* 10-27 用户（截图）：「汇总消息，表格展示补齐，卡片底下左右滑动条…灯箱文件预览…右侧侧边栏的
+   文件预览也是，这个要是自适应的」——
+   表格按自然宽度排版、超出时在卡片内横向滚动；复制按钮必须留在**不滚动**的外层，
+   否则会跟着表格一起被滚出可视区（与代码块同一个坑）。 */
+ok(/className="md-table-wrap"/.test(mdSrc) && /className="md-table-scroll"/.test(mdSrc)
+  && mdSrc.indexOf('<div className="md-table-scroll">') < mdSrc.indexOf("<table>"),
+  "表格外面套了一层 `.md-table-scroll`（横向滚动容器），table 在它里面");
+ok(mdSrc.indexOf('className="md-table-copy"') < mdSrc.indexOf('className="md-table-scroll"'),
+  "复制按钮在外层卡片上、**不在**滚动容器里（否则跟着表格一起被滚走）");
+const scrollRule = ruleOf(".md-table-scroll");
+ok(/overflow-x:\s*auto/.test(scrollRule) && /overscroll-behavior-x:\s*contain/.test(scrollRule),
+  "滚动层 `overflow-x:auto` + `overscroll-behavior-x:contain`（滚到头不带着整个对话一起滚）");
+ok(/\.md-table-scroll::-webkit-scrollbar\s*\{[^}]*height:\s*\d+px/.test(css)
+  && /\.md-table-scroll::-webkit-scrollbar-thumb\s*\{[^}]*background:/.test(css),
+  "卡片底部横向滚动条可见（给了高度与滑块底色 —— 只留默认细线等于看不见）");
+ok(/\.md-table-wrap table\s*\{[^}]*width:\s*max-content[^}]*min-width:\s*100%/.test(css),
+  "表格按**自然宽度**排版（max-content + min-width:100%）：窄表撑满、宽表滚动，不再被压成一列一个字");
 ok(/position:\s*absolute/.test(btnRule) && /top:\s*\d+px/.test(btnRule) && /right:\s*\d+px/.test(btnRule),
   "按钮绝对定位在**右上角**（top/right 都给了值）");
 // ⛔ 10-14 二改（用户口径「常驻且更醒目」）：**常驻可见**，不再 hover 才显形。
@@ -138,9 +158,10 @@ ok(/\.md-table-copy\[data-phase="done"\]/.test(reduceBlock) && /\.md-code-copy\[
   "减弱动效里两个按钮也都列了（关掉弹动但保留对勾与颜色 —— 反馈是信息、动效才是装饰）");
 
 /* ── ④ 验收项登记（⛔ 10-26 删除这条断言）──
-   它断言 accept.mjs 里有 `id: "md-block-copy"` 与轮次表，但 `c1344271b`（验收脚本收敛为当前 3 项）
-   已把轮次表机制与该项一起**有意删除**。断言不存在的对象只会恒红 ⇒ 去掉；
-   上面 ①~③ 的结构断言才是这条守卫真正在守的东西。 */
+   它断言 accept.mjs 里有 `id: "md-block-copy"` 与 `"md-block-copy": "10-12"` 轮次表，
+   但 `c1344271b`（「验收脚本收敛为当前 3 项」）已把轮次表机制与该项一起**有意删除**。
+   断言已不存在的对象只会恒红（或被人改成恒真），两种都没价值 ⇒ 去掉；
+   上面 ①~③ 的结构断言才是这条守卫真正在守的东西（复制按钮的类名 / 对勾 / 减弱动效）。 */
 
 console.log(fails ? `\n【md-block-copy】${checks} 条断言 / ${fails} 条失败` : `\n【md-block-copy】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);

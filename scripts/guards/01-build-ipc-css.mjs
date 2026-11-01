@@ -313,7 +313,8 @@ if (!mainSrc || !preloadSrc) {
          09-25 A/B（同一 .ico、同一窗口，任务栏截图 md5 比对）：不设 AUMID ⇒ 图标正确；
          设 .dev AUMID ⇒ 与真实应用逐像素相同的原子图标。 */
       const mainNow = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
-      (/if \(app\.isPackaged\) app\.setAppUserModelId\("com\.codexharness\.desktop"\);/.test(mainNow) ? ok : fail)(
+      /* 11-01：云助手跑同一个 main.ts，AUMID 按 HARNESS_ASSISTANT 分「助手 / 桌面」两值（10-12 事故：写死桌面版会把两者图标互相顶掉）⇒ 断言认块式写法。 */
+      (/if \(app\.isPackaged\)[\s\S]{0,200}?setAppUserModelId\([\s\S]{0,160}?com\.codexharness\.(?:desktop|assistant)/.test(mainNow) ? ok : fail)(
         "【2】AUMID 只在打包版设置（打包由 NSIS 写规范快捷方式，AUMID 可解析）"
       );
       (!/setAppUserModelId\([\s\S]{0,120}?desktop\.dev/.test(mainNow) ? ok : fail)(
@@ -410,7 +411,10 @@ if (!existsSync(stylesEntry)) {
        lib/visual-switch.ts 在点击那一刻按**指针位置**与视口对角线算出来再 setProperty，
        每次点击都不一样，CSS 里只有 fallback（50% / 150vmax）；写死一个值就变成"永远从中间扩散"） */
   const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page", "--group-hue", "--tag-color", "--bot-gaze-x", "--bot-gaze-y", "--bot-eye-scale", "--skin-stage", "--switch-x", "--switch-y", "--switch-r",
-    /* 11-01：以下四个由渲染层注入 —— --tag-col-w / --tag-col-w-nested（侧栏标签列按簇实测 setProperty）/ --row-color（会话行自选底色）/ --dot（色板圆点） */
+    /* 11-01：以下四个都由渲染层注入，不是 CSS 单值 ——
+       --tag-col-w / --tag-col-w-nested：侧栏标签列按簇实测最宽后 setProperty 到根/簇容器上（01-sidebar-shell.tsx）；
+       --row-color：会话行自选底色，内联 style 写在 .thread-row 上；
+       --dot：同上的色板圆点，内联写在 .thread-row-color-dot 上。 */
     "--tag-col-w", "--tag-col-w-nested", "--row-color", "--dot"]);
   const orphan = [...refs].filter((v) => !defined.has(v) && !whitelist.has(v));
   (orphan.length === 0 ? ok : fail)(

@@ -3,7 +3,7 @@ import { useLayoutEffect, useState, useRef, useEffect, useMemo } from "react";
 import type { KeyboardEvent } from "react";
 import { promptImagePaths } from "../../lib/prompt-images";
 import { promptFilePaths, shouldSavePastedTextAsFile } from "../../lib/composer-attachments.mjs";
-import { ChevronDown, Eye, Video, CircleCheck, Search, Image, FileCode2 } from "lucide-react";
+import { ChevronDown, Eye, Video, Search, Image, FileCode2 } from "lucide-react";
 import { rebuildComposerDom } from "../../lib/rebuild-composer-dom";
 import { serializeComposerDom } from "../../lib/serialize-composer-dom";
 import { basename } from "../../lib/basename";
@@ -207,8 +207,8 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
                 {hasIcon && <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}`} />}
                 <span className="menu-item-text"><strong>{option.title}</strong>{option.desc && option.desc !== option.title ? <small>{option.desc}</small> : null}</span>
                 {option.badges?.length ? <span className="menu-item-badges">{option.badges.map((badge) => <em key={badge.text} className={badge.kind ? `badge-${badge.kind}` : undefined}>{badge.kind === "vision" ? <Eye size={10} /> : badge.kind === "video" ? <Video size={10} /> : null}{badge.text}</em>)}</span> : null}
-                {/* 勾选挪到最右侧：左侧图标位让给「供应商色调圆点」，跨供应商的模型一眼看出是哪家 */}
-                {option.value === value ? <CircleCheck size={14} className="menu-item-check" aria-hidden /> : null}
+                {/* ⛔ 10-25 用户令：「选中有底色就行」—— 右侧勾选已删除，当前项只靠 .active 底色标识。
+                    原注释：勾选挪到最右侧：左侧图标位让给「供应商色调圆点」，跨供应商的模型一眼看出是哪家 */}
               </button>
             );
           })}

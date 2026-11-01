@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（114 个能力域 / 624 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（115 个能力域 / 623 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -99,13 +99,13 @@ Laya 智能判断（GitHub NandhaKishorM/laya，Apache-2.0，非自回归决策�
 专家团成员会话映射
 通道：team-threads:map, team-threads:team-of
 
-### thread-runtime（6 通道）
+### thread-runtime（4 通道）
 会话运行态（派发所有权、运行/闲置状态机）
-通道：thread-runtime:dispatch-owner, thread-runtime:get, thread-runtime:list, thread-runtime:patch, thread-runtime:release-dispatch, thread-runtime:seed
+通道：thread-runtime:get, thread-runtime:list, thread-runtime:patch, thread-runtime:seed
 
-### agents（11 通道）
+### agents（9 通道）
 子智能体库（创建/归档/委派/目录；成员会话与角色）
-通道：agents:archive, agents:catalog, agents:delegated, agents:delegated-of, agents:dispatch-call, agents:enabled-notice, agents:invoke, agents:notice, agents:off-notice, agents:thread-role, agents:tool-description
+通道：agents:archive, agents:catalog, agents:delegated, agents:delegated-of, agents:dispatch-call, agents:invoke, agents:notice, agents:thread-role, agents:tool-description
 
 ### theme（1 通道）
 主题（亮/暗/跟随系统）
@@ -282,7 +282,7 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 通道：image-lab:edit, image-lab:generate, image-lab:info, image-lab:read, image-lab:view
 
 ### limited-benefit（4 通道）
-**限时福利**（10-14）：云端账号服务内置的模型供应商（模型目录由 WorkBuddy Manager 同步，逐模型带积分倍率）。这些通道是**宿主管理面**（拉目录 / 取代理令牌 / 同步成本机供应商行），不是模型工具 —— 模型侧永远不调它们；要用它：设置 → 云账号 → 云助手专属 里勾选模型（勾选 = 本机模型下拉框可见）→ 在下拉框里选中的即生效，按倍率扣积分。⛔ 上游真实地址与网关密钥只在服务端，客户端只拿到同源代理路径；代理令牌（wap_ 前缀）明文仅在签发那一次出现。
+限时福利（10-14）：把云端账号侧的服务内置供应商接进本机模型体系 —— 拉当前可用的模型目录（逐模型带积分倍率）、兑换/查看福利状态、把福利令牌写进本机配置。⛔ 目录与倍率都以云端为准，本机不自己编
 通道：limited-benefit:catalog, limited-benefit:token, limited-benefit:status, limited-benefit:apply
 
 ### dialog（7 通道）
@@ -330,27 +330,27 @@ MCP 服务器管理（配置/状态）
 通道：personalization:mark-greeted, personalization:read, personalization:save, personalization:save-identity, personalization:setNickname, personalization:verify
 
 ### app-lock（6 通道）
-应用密码锁（设置 → 应用锁，默认关闭）：开启时生成随机或自定义解锁密码，明文只展示一次、磁盘只存 scrypt 盐哈希；启动/重新显示先锁屏。连续 10 次错误会清空应用数据并重置。⛔ 界面门禁，不是磁盘加密；模型侧不调用它
+应用密码锁（设置 → 应用锁，默认关闭）：开启时生成随机或自定义解锁密码，明文只展示一次、磁盘只存 scrypt 加盐哈希；应用启动/重新显示时先锁屏。错误次数落盘，连续 10 次错误会清空应用数据并重置。⛔ 这是界面门禁，不是磁盘加密；模型侧不调用它
 通道：app-lock:status, app-lock:prepare, app-lock:enable, app-lock:cancel, app-lock:verify, app-lock:disable
 
 ### vault（4 通道）
-本机**密码本**（输入框左侧竖条 → 密码本）：list 列条目 / save 新增或改（password 省略即保留原密码）/ remove 删除 / copy 把某条密码写入系统剪贴板（30 秒后若还是这条就自动清空）。⛔ 密码用系统 safeStorage 加密落 userData/vault.json，**明文永不落盘**；模型侧用不到它
+本机**密码本**（输入框左侧竖条 → 密码本）：list 列条目 / save 新增或改（password 省略即保留原密码）/ remove 删除 / copy 把某条密码写入系统剪贴板（30 秒后若还是这条就自动清空）。⛔ 密码用系统 safeStorage 加密落 userData/vault.json，**明文永不落盘、渲染层与模型侧都拿不到**；加密不可用时拒绝保存。模型侧用不到它
 通道：vault:copy, vault:list, vault:remove, vault:save
 
 ### journal（6 通道）
-**开发日记**（竖条 → 开发日记）：按天一个 Markdown 文件（userData/dev-journal/YYYY-MM-DD.md）—— list 列日期与摘要 / read 看当天全文 / save 整篇覆盖 / append 追加一条 / remove 删当天 / search 全文检索。⛔ 与会话归档、项目工作日志是三件不同的事
+**开发日记**（竖条 → 开发日记）：按天一个 Markdown 文件（userData/dev-journal/YYYY-MM-DD.md）—— list 列日期与摘要 / read 看当天全文 / save 整篇覆盖 / append 追加一条「## HH:mm 标题 + 正文」/ remove 删当天 / search 全文检索。⛔ 与会话归档、项目工作日志是三件不同的事
 通道：journal:append, journal:list, journal:read, journal:remove, journal:save, journal:search
 
 ### dataaccess（11 通道）
-收藏夹 / 开发日记 / 密码本**对模型开放**的授权闸（10-29）：按「会话 + 模块 + 读/写」三元组授权，默认全关、只存在内存（应用退出即失效）。收藏与日记只允许 read + append（不能删/改历史）；密码本只允许存在性查询与「复制到剪贴板」（明文永不出主进程），写入必须先经用户一次性确认；没有删除类通道
+收藏夹 / 开发日记 / 密码本**对模型开放**的授权闸（10-29）：按「会话 + 模块 + 读/写」三元组授权，默认全关、只存在内存（应用退出即失效）。开启后收藏与日记只允许 read + append（⛔ 不能删/改历史）；密码本只允许存在性查询与「复制到剪贴板」（明文永不出主进程），写入必须先经用户在界面一次性确认。⛔ 没有删除类通道 —— 删除只能由用户本人在界面操作
 通道：dataaccess:state, dataaccess:grant, dataaccess:revoke-all, dataaccess:favorites-list, dataaccess:favorites-append, dataaccess:journal-read, dataaccess:journal-search, dataaccess:journal-append, dataaccess:vault-find, dataaccess:vault-copy, dataaccess:vault-save
 
 ### shortcuts（3 通道）
-键盘快捷键统一读口（10-28）：应用内快捷键存 userData/shortcuts.json，弹窗与「设置 → 控制台 → 键盘快捷键」读写同一份；截图/语音的全局键仍存各自设置文件，本域只读来聚合展示。⛔ 模型侧不调用它——改键是用户界面动作，不是工具能力
+键盘快捷键统一读口（10-28）：应用内快捷键存 userData/shortcuts.json，弹窗与「设置 → 控制台 → 键盘快捷键」读写同一份；截图/语音的全局键仍存各自设置文件（它们的 setter 要先注册成功 globalShortcut 再落盘），本域只读来聚合展示。⛔ 模型侧不调用它——改键是用户界面动作，不是工具能力
 通道：shortcuts:read, shortcuts:reset, shortcuts:save
 
 ### extensions（2 通道）
-竖条与功能入口菜单的**可扩展目录**（extensions:catalog）：内置四项面板 + userData/extensions.json 里用户自建项。⛔ 扩展项只能声明封闭动作集（http(s) 链接 / 跳到某个设置页 / 纯说明文字）—— 没有「执行命令」这类动作
+竖条与功能入口菜单的**可扩展目录**（extensions:catalog）：内置四项面板 + userData/extensions.json 里用户自建项，渲染层据此渲染，不改代码就能多一个入口。⛔ 扩展项只能声明封闭动作集（http(s) 链接 / 跳到某个设置页 / 纯说明文字）—— 没有「执行命令」这类动作
 通道：extensions:catalog, extensions:menu-set
 
 ### appSettings（2 通道）
@@ -382,7 +382,7 @@ SSH 服务器库（保存/执行远程命令/导入导出/会话终端）
 通道：teams:invoke-member, teams:list, teams:member-session, teams:remove, teams:reset-defaults, teams:save, teams:session-config, teams:start-session, teams:tools
 
 ### cliagents（6 通道）
-CLI 智能体（10-29）：把外部命令行工具（Claude Code / Codex CLI / Gemini CLI / Aider / OpenClaw / 自建入口）当成**可调度对象**，与专家、子智能体一起出现在输入框 \`@\` 候选里，派活走 \`agent_invoke\`（kind="cli"）→ 同一个 runDelegatedTask。管理面在「设置 → 开发工具 → CLI 智能体」。⛔ 不能替你一键安装（只有核实过的官方命令）；⛔ 模型侧没有增删 CLI 定义的通道
+CLI 智能体（10-29）：把外部命令行工具（Claude Code / Codex CLI / Gemini CLI / Aider / OpenClaw / 自建入口）当成**可调度对象**，与专家、子智能体一起出现在输入框 \`@\` 候选里，派活走 \`agent_invoke\`（kind="cli"）→ 同一个 runDelegatedTask（开独立会话、登记归属、产出回传）。管理面在「设置 → 开发工具 → CLI 智能体」：按分类（编码 / 通用智能体 / 自建）分组、搜索、检测是否已装（where/which + --version）、复制官方安装命令、启停、新增自定义条目。⛔ 这一步**不能**替你一键安装：installCmd 只在核实过官方来源时才有值，其余显示「按官方文档安装」；⛔ 模型侧没有增删 CLI 定义的通道 —— 用户要接入新 CLI 时，请让他在这个面板里添加（或直接填可执行名）
 通道：cliagents:detect, cliagents:install, cliagents:list, cliagents:remove, cliagents:save, cliagents:uninstall
 
 ### clipboard（4 通道）
@@ -402,27 +402,27 @@ SkillHub **专家市场包**（skillhub.cn/skillspackage，55 包）：list 浏�
 通道：whatsnew:ack, whatsnew:history, whatsnew:state
 
 ### cloud（15 通道）
-**云版接口层**（10-11 建，10-28 sync 接真实现）：五组 —— cloud:sync/*（会话按行增量同步：status/list/push/pull/conflict-resolve，凭据用云账号令牌，未登录直接 not-logged-in）、cloud:device/*（本机配对设备管理）、cloud:notify/*（站长公告，本地缓存）、cloud:update/*（助手自更新探测）、cloud:tools/*（工具链按需下载）。⛔ 通道名发布即冻结只增不改
+**云端会话同步**（10-18 自云助手移植）：把本机会话**按行增量**推到云端、按需从云端拉回、以及冲突解决（\`cloud:sync/status|push|pull|conflict/resolve\`）。⛔ 与 cloud-auth（登录）/ cloud-models（模型目录）是并列的独立板块。用户说「上传会话 / 同步会话到云端 / 从云端恢复会话」时用它。⛔ 服务端可能由管理员关闭同步，此时会返回 \`session-sync-disabled\`（人话「管理员已关闭云端会话同步」），不要当成网络故障重试
 通道：cloud:sync/conflict/resolve, cloud:sync/list, cloud:sync/pull, cloud:sync/push, cloud:sync/status, cloud:device/list, cloud:device/unbind, cloud:notify/list, cloud:notify/mark-read, cloud:update/apply, cloud:update/check, cloud:update/download, cloud:tools/download, cloud:tools/progress, cloud:tools/status
 
 ### cloud-auth（5 通道）
-**云账号**的登录 / 登出 / 切换（10-28 自桌面仓移植）：用账号密码换云端会话令牌（⛔ 不是配对流程）；令牌在 safeStorage 里，⛔ 渲染层与模型侧都拿不到明文。用户说「登录云端 / 退出云账号 / 换个云账号」时用它。⛔ 与本机「中转站账号」是两条独立的登录线，别混
+**云账号**的登录 / 登出 / 切换（10-16）：用账号密码换云端会话令牌（⛔ 不是配对流程）；令牌在 safeStorage 里，⛔ 渲染层与模型侧都拿不到明文。用户说「登录云端 / 退出云账号 / 换个云账号」时用它。⛔ 与本机「中转站账号」是两条独立的登录线，别混
 通道：cloud-auth:login, cloud-auth:logout, cloud-auth:switch, cloud-auth:status, cloud-auth:points
 
 ### cloud-models（7 通道）
-**云端模型目录同步**（10-28 自桌面仓移植）：登录后自动把云端「已勾选」的模型写成本机供应商 \`cloud\`（勾选 = 下拉框可见），并默认每 10 分钟自动保持更新。用户说「云端模型没同步 / 拉一下云端模型 / 勾了模型选不到」时用它（sync 是唯一同步入口，force=true 会重签代理令牌）
+**云端模型目录同步**（10-16）：登录后自动把云端「已勾选」的模型写成本机供应商 \`cloud\`（勾选 = 下拉框可见），并默认每 10 分钟自动保持更新。用户说「云端模型没同步 / 拉一下云端模型 / 勾了模型选不到」时用它（sync 是唯一同步入口，force=true 会重签代理令牌）
 通道：cloud-models:catalog, cloud-models:sync, cloud-models:test, cloud-models:token, cloud-models:set-enabled, cloud-models:status, cloud-models:activate
 
 ### cloud-kb（2 通道）
-**云端知识库**（跨设备共享的那一份）→ 本机 MCP 连接器 \`cloud-kb\`（10-28 自桌面仓移植）。⛔ 与「本地项目级知识库」（kb 域，随项目走）**不是一回事**：这份存在服务端，换台机器登录也在。未开通权益时服务端不建库不发钥匙，本域只会如实报 not-activated
+**云端知识库**（跨设备共享的那一份）→ 本机 MCP 连接器 \`cloud-kb\`（10-16）。⛔ 与「本地项目级知识库」（kb 域，随项目走）**不是一回事**：这份存在服务端，换台机器登录也在。未开通权益时服务端不建库不发钥匙，本域只会如实报 not-activated
 通道：cloud-kb:sync, cloud-kb:status
 
 ### cloud-memory（2 通道）
-**云端记忆**的凭据与上游切换（10-28 自桌面仓移植）。⛔ 记忆中枢没有 MCP 端点 ⇒ 记忆不是靠工具调用的，而是在**对话请求层**由服务端自动注入/写入。本域拿到该账号的 userKey 后把**对话上游切到记忆端点**（天然按账号隔离）；未开通/被停用时自动切回
+**云端记忆**的凭据与上游切换（10-16，10-17 修正）。⛔ 记忆中枢**没有记忆读写接口**（所有路径都是同一个 OpenAI 兼容转发口），**也没有 MCP 端点** ⇒ 记忆不是靠工具调用的，而是在**对话请求层**由服务端自动注入/写入。所以本域做的是：拿到该账号的 userKey 后把**对话上游切到记忆端点**（记忆即全域生效，且天然按账号隔离）。未开通/被停用时自动切回。用户说「云端记忆没生效 / 打开云端记忆」时用它。
 通道：cloud-memory:sync, cloud-memory:status
 
 ### team（5 通道）
-**团队工作模式**（10-28 自桌面仓移植）：list 我加入的团队 / enter 进入（对话上游切到团队记忆端点 + 团队知识库接成 cloud-kb-team 连接器）/ exit 退出 / status 生效状态。⛔ 记忆通道独占：进入团队 = 个人记忆暂停；团队库与个人库不能同时接。用户说「切到团队 / 团队记忆不生效」时用它
+**团队工作模式**（10-24）：list 我加入的团队 / enter 进入（把对话上游切到**团队记忆**端点 + 团队知识库接成 cloud-kb-team 连接器）/ exit 退出（记忆回落纯模型、个人知识库按原状态恢复）/ status 生效状态。⛔ 记忆通道是独占的：进入团队 = 个人记忆暂停；团队库与个人库不能同时接（两个 WeKnora 工具名相同）。用户说「切到团队 / 团队记忆不生效 / 团队知识库连不上」时用它
 通道：team:list, team:enter, team:exit, team:status, team:upload
 
 ### soul-market（4 通道）
@@ -454,7 +454,7 @@ SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏�
 通道：custom-model:apply, custom-model:list, custom-model:probe, custom-model:read, custom-model:remove, custom-model:remove-model, custom-model:save, custom-model:select, custom-model:set-effort, custom-model:set-enabled, custom-model:set-model, custom-model:upsert-model
 
 ### model-source（2 通道）
-**云端模型模式开关**（10-15）：两个通道 —— get 读 / set 写，落盘 userData/model-source.json。开启 ⇒ 模型列表只走云端开放目录里勾选的那些（服务端按 /admin/models/available 下发），本地供应商自动停用，且「模型配置」里的供应商开关被锁定打不开；关闭 ⇒ 恢复本地供应商手动开关。⛔ 只停用**除限时福利之外**的本地供应商 —— 限时福利那一行的可用性由云端勾选决定，不占「当前生效供应商」位。开关本体在 设置 → 云账号 → 云助手专属；模型侧用不到（宿主管理面）。
+模型来源模式（10-15）：切换「只用云端开放目录里的模型」与「本机自定义模型」。开云端模式时模型列表只显示服务端勾选过的那些；关掉则回到本机配置的模型
 通道：model-source:get, model-source:set
 
 ### bridge（1 通道）
@@ -469,8 +469,12 @@ IM 通道 Bot（把某个会话接到 IM 机器人上）
 记忆金字塔全链路（L0~L7 分层读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端**三选一**：内置金字塔 / 本地 MCP 记忆服务 / 云端 memapi）
 通道：memory:backend:read, memory:backend:set, memory:delete, memory:distill, memory:fabric-entries, memory:fabric-namespaces, memory:fabric-write, memory:gateway:read, memory:gateway:save, memory:gateway:test, memory:hygiene:apply, memory:hygiene:plan, memory:layers:context, memory:layers:read, memory:layers:write, memory:list, memory:mcp:install, memory:mcp:uninstall, memory:mcp:verify, memory:mode-read, memory:mode-set, memory:recall, memory:reset, memory:role-context, memory:role-sessions, memory:save, memory:scale:read, memory:scale:set, memory:search, memory:workspace-enabled:read, memory:workspace-enabled:set
 
+### session-alias（3 通道）
+会话笔名与上下级（10-31）：每个会话自动分配一个两字笔名（主会话对外是「XX主管」，用户是总经理），被调度会话知道自己的上级主管；用户可改笔名（两字中文、全局不重名），改完主进程广播，子会话那边的上级身份随之更新。⛔ 职级与笔名是展示层与指令层共用的同一份真相源
+通道：session-alias:ensure, session-alias:set, session-alias:snapshot
+
 ### monitor（1 通道）
-任务监控（右栏「监控」页，10-30）：按会话读每轮的技能 / MCP / 插件使用与本轮产物，以及本会话模型产出的「自我改进建议」；建议可编辑、可重生成，一键「进化」带 self-review 技能直接发回对话。⛔ 全部按 threadId 隔离
+任务监控（右栏「监控」页，10-30）：按会话读每轮的技能 / MCP / 插件使用与本轮产物，以及本会话模型产出的「自我改进建议」。建议可编辑、可重生成，一键「进化」会带 self-review 技能直接发回对话。⛔ 全部按 threadId 隔离，一个会话看不到另一个会话的记录
 通道：monitor:read
 
 ### rpa（4 通道）

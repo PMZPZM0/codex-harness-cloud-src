@@ -2,16 +2,17 @@
  * 预检守卫组：16-settings-plugins —— 「设置 → 插件」页的结构分区。
  *
  * 立此组的原因（2026-09-28 用户：「这三个是内置插件，跟下面插件市场区分开，三个布局做好看一点」）：
- *   改造前，三张**内置**卡散在同一页的两个区块里 —— 生图/视觉在页面顶部的「内置插件」块，
+ *   改造前，多张**内置**卡散在同一页的两个区块里 —— 生图在页面顶部的「内置插件」块，
  *   视频生成接口在下方「内置接口」块（与**可安装的**插件市场列表同页），用户分不清
- *   「自带的能力」和「要装的东西」。改造后：三张内置卡同区同构，插件市场独立成区。
+ *   「自带的能力」和「要装的东西」。改造后：内置卡同区同构，插件市场独立成区。
+ *   ⛔ 10-30 起内置卡 = 生图 + 视频生成接口两张（视觉辅助插件按用户令整体移除，不许加回）。
  *
  * ⛔ 另钉一个**我自己踩过的坑**：给这套卡片追加样式时，`.bi-plugin-*` 被**追加了两份**
  *    （后者覆盖前者），导致「grid 改单列」改了没生效 —— 文件里同一选择器只允许一份权威定义。
  *
  * 共享面由 ./_ctx.mjs 注入。
  */
-import { C, ROOT, join, ok, fail, readFileSync, existsSync, codeOnly, walk } from "./_ctx.mjs";
+import { C, ROOT, join, ok, fail, readFileSync, existsSync, codeOnly, readSettingsSurface, walk } from "./_ctx.mjs";
 
 export async function run() {
   console.log(C.bold("\n【195】设置·插件页的内置卡分区"));
@@ -181,7 +182,7 @@ export async function run() {
     const mainSrc228 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
     const registry228 = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
     const manifest228 = readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8");
-    const regSrc228 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    const regSrc228 = codeOnly(readSettingsSurface());
     const idx228 = readFileSync(join(ROOT, "src", "features", "storage-settings", "index.ts"), "utf8");
 
     (!existsSync(join(ROOT, "electron", "features", "codex-logs.ts")) ? ok : fail)(
@@ -280,7 +281,7 @@ export async function run() {
     /* 【226】工作日志管理（09-30 用户：「记忆有记忆管理，会话有归档管理，现在就是工作日志这个
        没有地方管理」）—— 各块各管各的，⛔ 不许把「项目工作日志」和「会话本身」混成一个东西。 */
     const wlSrc226 = readFileSync(join(ROOT, "electron", "features", "work-logs.ts"), "utf8");
-    const regSrc226 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    const regSrc226 = codeOnly(readSettingsSurface());
     const wlComp226 = readFileSync(join(ROOT, "src", "features", "storage-settings", "WorkLogsSection.tsx"), "utf8");
     (/work-logs:scan/.test(wlSrc226) && /work-logs:read/.test(wlSrc226) && /work-logs:delete/.test(wlSrc226) ? ok : fail)(
       "【226】work-logs 三通道齐（scan 扫各项目 memory / read 看正文 / delete 删文件）"

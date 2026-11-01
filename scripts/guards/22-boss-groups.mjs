@@ -37,7 +37,7 @@ try {
   ok(false, `dist-electron/boss-groups/state.js 加载失败（先跑 npm run build:electron）：${String(error?.message ?? error).slice(0, 120)}`);
 }
 if (state) {
-  const { emptyState, createGroup, addMember, addTask, assignTask, markRunning, submitTask, recordReview, pickReassignee, resolveEscalation, checkBudget, parseVerdict, removeMember, setPinned, pushEvent } = state;
+  const { emptyState, createGroup, addMember, addTask, assignTask, markRunning, submitTask, recordReview, pickReassignee, resolveEscalation, parseVerdict, removeMember, setPinned, pushEvent } = state;
   const { MAX_MEMBERS, DEFAULT_POLICY } = require(join(ROOT, "dist-electron", "boss-groups", "types.js"));
 
   const mkGroup = (stateObj, members, policy) => createGroup(stateObj, {
@@ -94,7 +94,6 @@ if (state) {
     ok(!pickReassignee(s4, t4), "群成员全被移出时改派返回 null（不会派给已移出的人）");
     ok(pickReassignee(s, t)?.id === g.members[1].id, "还有在群成员可派时改派选中他（移出的人被跳过）");
   }
-
 
   /* ── 1. 建群：成员数边界 ── */
   {
@@ -201,15 +200,17 @@ if (state) {
     ok(String(throws(() => resolveEscalation(s, t.id, "user-takeover")))?.includes("升级状态"), "非 escalated 状态不能再走升级流程");
   }
 
-  /* ── 8. 预算闸**已删除**（10-26 用户令）── 负向断言，函数不许回来。 */
-  if (false) {
+  /* ── 8. 预算闸**已删除**（10-26 用户令：「正常 Codex 派遣别人干活，不需要这个，Codex 也没有那么笨」）
+     ⛔ 负向断言：既不许自动暂停、也不许把 checkBudget 加回来（它只会往会话里刷「预算已用 80%」）。 */
+  {
+    ok(typeof state.checkBudget === "undefined", "⛔ 预算闸已删除（checkBudget 不该再存在）");
     const s = emptyState();
-    const g = mkGroup(s, [{ name: "甲", role: "写" }], { budgetMinutes: 1 });
-    g.createdAt = Date.now() - 61_000;     // 假装已经用了 61 秒 / 预算 1 分钟
-    const res = checkBudget(s, g.id);
-    ok(res.warn === "100" && g.paused === true, "预算用尽 ⇒ paused + 告警 100");
-    const t = addTask(s, { groupId: g.id, title: "暂停后", brief: "", criteria: "x" });
-    ok(String(throws(() => assignTask(s, t.id, g.members[0].id)))?.includes("暂停"), "暂停后派活被拒（不会偷偷继续烧）");
+    const g = mkGroup(s, [{ name: "甲", role: "写" }]);
+    g.createdAt = Date.now() - 30 * 24 * 3600_000;   // 假装 30 天前建的群
+    const t = addTask(s, { groupId: g.id, title: "很久以后", brief: "", criteria: "x" });
+    assignTask(s, t.id, g.members[0].id);
+    ok(t.status === "assigned" && g.paused !== true,
+      "⛔ 没有任何「到点自动暂停」：再老的群也照常派活");
   }
 
   /* ── 8b. 动态成员：拉人 / 移人（10-24 用户令） ── */
@@ -227,16 +228,22 @@ if (state) {
     const t = addTask(s, { groupId: g.id, title: "T", brief: "", criteria: "能用" });
     assignTask(s, t.id, m2.id);
     markRunning(s, t.id, { threadId: "x" });
-    removeMember(s, g.id, m2.id);
+    const removedRes = removeMember(s, g.id, m2.id);
     ok(m2.status === "removed" && pickReassignee(s, t)?.id !== m2.id, "移出 ⇒ removed 且不再被挑中");
-    // ⛔ 双闸都在：running 状态闸先拒；就算任务回到可派状态，成员状态闸也拒（“已移出群”）
+    /* ⛔⛔ 10-27 用户令（口径变更）：「移除了群成员，这个旧的群成员回合就同步删除掉会话」
+       ⇒ 旧口径「在跑的不打断」已废：会话都删了，那个回合不可能再交活。
+         不结清 ⇒ 任务永远 running（界面「正在做」卡死 + 成员占着并发闸）。 */
+    ok(t.status === "failed",
+      "移出成员 ⇒ 他手上的在办任务**一并终止**（标 failed，不再永远 running）");
+    ok(Array.isArray(removedRes.terminatedTasks) && removedRes.terminatedTasks.includes("T"),
+      "removeMember 回传被终止的任务标题（runner 拿它回投给中枢，模型不用猜）");
+    ok(!("terminatedTasks" in m2), "⛔ terminatedTasks 是返回值、不落进成员档案（回传的是副本）");
+    // ⛔ 双闸都在：任务状态闸先拒（已 failed）；成员状态闸也拒（“已移出群”）
     ok(Boolean(throws(() => assignTask(s, t.id, m2.id))), "派活给已移出成员 ⇒ 被拒");
     {
       const t2 = addTask(s, { groupId: g.id, title: "T2", brief: "", criteria: "能用" });
       ok(String(throws(() => assignTask(s, t2.id, m2.id)))?.includes("移出"), "queued 任务派给已移出成员 ⇒ 成员状态闸拒绝");
     }
-    /* 10-27 口径变更：移出即删会话 ⇒ 在办任务一并结清（上面终态块已逐条断言）。 */
-    ok(t.status === "failed", "移出即终止在办任务（会话都删了，等不到交活）");
     // 置顶：事件由 addMember/removeMember 产生，取一条真实事件
     const ev = s.events[s.events.length - 1];
     setPinned(s, g.id, ev.id, true);
@@ -312,15 +319,15 @@ if (state) {
   ok(/codex-/.test(runner) && /ego-browser/.test(runner), "成员提示词写明浏览器走 ego-browser 且每会话独立 TaskSpace");
   ok(/TURN_WAIT_TIMEOUT_CODE/.test(runner) && /不判失败|转后台/.test(runner), "等待到点按「转后台」处理，不误判失败");
 
-  /* ── 12.指挥中枢 = **普通会话**（10-25 用户令，推翻此前的群聊覆盖层）──
-     用户原话：「一个正常对话框不会做嘛，新建一个会话，常驻成指挥中枢，不就好了嘛」。
+  /* ── 12. BOSS 会话 = **普通会话**（10-25 用户令，推翻此前的群聊覆盖层）──
+     用户原话：「一个正常对话框不会做嘛，新建一个会话，常驻成 BOSS 会话，不就好了嘛」。
      ⛔ 四条负向契约，任何一条被"顺手加回来"都会退回覆盖层形态：
        ① 不许再有 BossGroupStage 组件/文件
        ② 主舞台不许再对 .workspace 做 visibility 隐藏（父级 hidden 会被子元素继承 ⇒ 全白）
        ③ store 不许再有 stage 布尔（它和真实会话状态对不上：切走了按钮还亮）
        ④ CSS 不许再有 .boss-stage 根规则 */
   ok(!existsSync(join(ROOT, "src/features/boss-group-view/BossGroupStage.tsx")),
-    "中枢群聊覆盖层组件已删除（指挥中枢走普通对话框）");
+    "BOSS 群聊覆盖层组件已删除（BOSS 会话走普通对话框）");
   const mainStage = read("src/features/app-view/AppView/02-main-stage.tsx");
   ok(!/BossGroupStage|bossStage|visibility:\s*"hidden"/.test(mainStage),
     "主舞台不再渲染覆盖层、不再隐藏 .workspace");
@@ -336,30 +343,30 @@ if (state) {
      ⛔ 还没建群时要有 home 锚点（localStorage），否则每点一次就多一个「未命名任务」。 */
   const sidebar = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
   /* ⛔ 本条原为「侧栏选中态派生自『当前会话 = 某群 boss 线程』」—— 10-25 用户当场否掉了这个设计：
-     「我选中下面已建的指挥中枢时候，上面那个指挥中枢选项不要亮」。
-     顶部按钮 = **动作**（新建），⛔ 不再有任何"我在不在指挥中枢里"的派生高亮；
+     「我选中下面已建的 BOSS 会话时候，上面那个 BOSS 会话选项不要亮」。
+     顶部按钮 = **动作**（新建），⛔ 不再有任何"我在不在 BOSS 会话里"的派生高亮；
      身份只由会话列表的选中行表达（judgment 见本文件后段「不许 `boss-open`」两条）。 */
   ok(!/bossThreads\.bossIds\.includes\(currentThreadId\)/.test(sidebar),
-    "⛔ 顶部「指挥中枢」按钮不再派生当前会话的选中态（用户令：选下面的指挥中枢时它不许亮）");
-  /* ⛔⛔ 10-25 用户实测（第二轮）：「点指挥中枢，先出来这个弹窗，不会跳转到 欢迎界面，
+    "⛔ 顶部「BOSS 会话」按钮不再派生当前会话的选中态（用户令：选下面的 BOSS 会话时它不许亮）");
+  /* ⛔⛔ 10-25 用户实测（第二轮）：「点 BOSS 会话，先出来这个弹窗，不会跳转到 BOSS 欢迎界面，
      再跳这个弹窗」⇒ **顺序反了**。现在契约是：
-     ① 点「指挥中枢」→ **先落进 欢迎界面**（置 pending + 起一个全新空会话）；
+     ① 点「BOSS 会话」→ **先落进 BOSS 欢迎界面**（置 pending + 起一个全新空会话）；
      ② 项目地址对话框由**欢迎界面上的按钮**再叫出来（走全局 store boss-dir-dialog-store）。
      ⛔ 侧栏按钮自己**不再**直接弹对话框。 */
   ok(/setBossPending\(true\)/.test(sidebar) && /startNewThread\(\)/.test(sidebar) && !/app\.openThread\(home\)/.test(sidebar),
-    "点指挥中枢 = **先落进 欢迎界面**（pending + 全新空会话）；⛔ 不复用上一次的；⛔ 也不再「有群就跳旧群」");
+    "点 BOSS 会话 = **先落进 BOSS 欢迎界面**（pending + 全新空会话）；⛔ 不复用上一次的；⛔ 也不再「有群就跳旧群」");
   ok(!/setBossDirDialog\(true\)/.test(sidebar),
     "⛔ 侧栏按钮不再直接弹项目地址对话框（由欢迎界面的按钮触发 ⇒ 用户先看到欢迎界面）");
   const bossStore = read("src/features/boss-group-view/boss-threads-store.mjs");
   ok(/boss-home-thread/.test(bossStore) && /setBossHomeThreadId/.test(bossStore),
-    "没群时的指挥中枢有固定锚点（localStorage boss-home-thread）");
+    "没群时的 BOSS 会话有固定锚点（localStorage boss-home-thread）");
   /* ⛔⛔ 10-25 用户令（三条，截图实证）：
      ① 「这个子成员都触发一次评审？评审机制有问题…评审上下文子智能体不要默认，删了，让 codex 自己创建」
      ② 「记忆蒸馏器又是什么玩意…删了，让 codex 自己蒸馏记忆」+「到阈值了，会话自己蒸馏就行了」
      ③ 「这个重试又是什么东西…重试删掉」 */
   const runnerSrc = read("electron/boss-groups/runner.ts");
   /* ⛔⛔ 10-25 用户实测：「成员会话的汇总消息没有发送到主对话…这叫什么群聊」「右侧群成员头像也没有」
-     「成员也没有更新，完全看不懂」（同一指挥中枢建过两个群，弹窗停在旧的）
+     「成员也没有更新，完全看不懂」（同一 BOSS 会话建过两个群，弹窗停在旧的）
      ⛔ 10-25 审查后：投递方式改成**出站队列合并投递**（成品 + 评审请求合成一条），
         所以判据从「有 postToBoss(交活…) 直调」改成「settleSubmission 把成品放进队列 delivering 项」。 */
   ok(/kind: "deliverable"/.test(runnerSrc)
@@ -368,15 +375,15 @@ if (state) {
     "成员交活的成品要**汇总到主对话**（出站队列投递；单条且无评审时发全文，与评审同批时成品给摘要、全文在评审正文里）");
   ok(/boss-avatar/.test(read("src/features/boss-group-view/BossGroupPanel.tsx")) && /boss-member-strip/.test(read("src/features/boss-group-view/BossGroupPanel.tsx")),
     "群面板要有成员头像（顶栏头像条 + 成员气泡头像）");
-  /* ⛔ 10-25 用户令：「我每次新建，就是全新的，跟旧的不要有任何关系」「指挥中枢不要归档功能，
+  /* ⛔ 10-25 用户令：「我每次新建，就是全新的，跟旧的不要有任何关系」「BOSS 会话不要归档功能，
      有删除会话功能就行了」 */
   /* ⛔⛔ 10-25 用户实测三处：
-     ① 「中枢他根本不知道他这个会话是干嘛的」—— 之前靠 boss-home/AGENTS.md 注入，
+     ① 「BOSS 他根本不知道他这个会话是干嘛的」—— 之前靠 boss-home/AGENTS.md 注入，
         cwd 改成用户项目后引擎读不到 ⇒ 改成**会话级注入**。
         ⚠️ 10-26 修正：当时是"每轮正文前挂一段 + 显示层剥"，结果被渲染成一大块用户消息（用户截图）
         ⇒ 现在走 thread/start 的 developerInstructions（真正的内置注入）。
-     ② 「指挥中枢跟普通会话串了」—— 自愈重建时无条件登记身份 ⇒ 普通会话被当成 中枢。
-     ③ 「我要经常删了中枢会话，重新建」—— 删了要从身份登记里摘掉，重建要搬迁而不是叠加。 */
+     ② 「BOSS 会话跟普通会话串了」—— 自愈重建时无条件登记身份 ⇒ 普通会话被当成 BOSS。
+     ③ 「我要经常删了BOSS会话，重新建」—— 删了要从身份登记里摘掉，重建要搬迁而不是叠加。 */
   const sendSrc = read("src/features/app-state/parts/part08/02-seg/send.tsx");
   const segSrc = read("src/features/app-state/parts/part08/01-seg.tsx");
   /* ⛔⛔ 10-26 用户截图：角色说明被当**用户消息**整块显示（连 <!--boss-role--> 标记都露出来）。
@@ -395,16 +402,16 @@ if (state) {
   ok(/const withoutRole = clean\.replace\(\/<!--boss-role-->/.test(read("src/lib/user-refs.ts")),
     "⛔ 老会话的角色段在 parseUserRefs.cleanText 这一处剥掉（气泡/标题/复制同一口）");
   ok(/wasBoss/.test(sendSrc) && /if \(wasBoss\) renameBossSessionId/.test(sendSrc),
-    "⛔ 身份搬迁只对**本来就是指挥中枢**的会话做（否则普通会话被串成 中枢）");
+    "⛔ 身份搬迁只对**本来就是 BOSS 会话**的会话做（否则普通会话被串成 BOSS）");
   ok(/removeBossSessionId\(id\)/.test(read("src/features/app-state/parts/part08/01-seg.tsx")),
-    "删除指挥中枢 ⇒ 从身份登记摘掉（删了重建不会被当成旧的）");
+    "删除 BOSS 会话 ⇒ 从身份登记摘掉（删了重建不会被当成旧的）");
   ok(/BossProjectDirDialog/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx"))
     && /createBossProjectDir/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx")),
-    "新建指挥中枢走**应用内对话框**（选目录 / 在软件所在盘自动新建），⛔ 不用系统弹窗或内联 toast");
-  /* ⛔⛔ 10-25 用户实测（第二轮）：「点指挥中枢，先出来这个弹窗，不会跳转到 欢迎界面，
+    "新建 BOSS 会话走**应用内对话框**（选目录 / 在软件所在盘自动新建），⛔ 不用系统弹窗或内联 toast");
+  /* ⛔⛔ 10-25 用户实测（第二轮）：「点 BOSS 会话，先出来这个弹窗，不会跳转到 BOSS 欢迎界面，
      再跳这个弹窗」⇒ 顺序必须是 **欢迎界面 → 欢迎界面上的按钮 → 地址对话框**。
      ⇒ 对话框的开关必须走**全局 store**（欢迎界面在消息区、对话框在侧栏壳，两处要能互相触发）。 */
-  /* ⛔⛔ 10-25 用户令（第四轮）：「这个弹窗逻辑改一下吧，不要进指挥欢迎界面就弹，
+  /* ⛔⛔ 10-25 用户令（第四轮）：「这个弹窗逻辑改一下吧，不要进 BOSS 会话欢迎界面就弹，
      改成点击那个选项再弹，然后把那个项目选项位置改一下，贴着输入框左上角，跟普通会话欢迎界面的位置和逻辑」
      ⇒ 契约变成：**进来不弹**；入口 = 输入框左上角那枚「项目地址」chip（与普通会话同一处）。
      ⇒ 三条一起钉：① 欢迎界面自己不许叫对话框（它只剩文案）；② 侧栏也不许自动弹；
@@ -413,7 +420,7 @@ if (state) {
   ok(!/openBossDirDialog/.test(read("src/features/boss-group-view/BossThreadIntro.tsx"))
     && !/autoOpenBossDirDialog|consumeBossDirAutoOpen/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs"))
     && !/autoOpenBossDirDialog/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx")),
-    "⛔ 进 欢迎界面**不自动弹**项目地址对话框（用户令：点了才弹）");
+    "⛔ 进 BOSS 欢迎界面**不自动弹**项目地址对话框（用户令：点了才弹）");
   ok(/welcome-cwd-picker[\s\S]{0,400}openBossDirDialog\(\)/.test(composerForm)
     && /isEmpty && isBossSession/.test(composerForm)
     && /bossDirState\.pendingDir/.test(composerForm),
@@ -421,45 +428,45 @@ if (state) {
   ok(/export function openBossDirDialog/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs"))
     && /export function closeBossDirDialog/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs")),
     "地址对话框开关是**全局 store**（跨组件触发：欢迎界面 ↔ 侧栏壳）");
-  /* ⛔ 快捷键键位**单一真相源**：侧栏行尾 kbd 徽标 + 欢迎界面 + 快捷键清单三处共用一份，
+  /* ⛔ 快捷键键位**单一真相源**：侧栏行尾 kbd 徽标 + BOSS 欢迎界面 + 快捷键清单三处共用一份，
      否则改键位必漏一处（历史教训：普通会话的 Ctrl+N 就是这么散在三处的）。 */
   /* ⛔ 快捷键键位**单一真相源**：侧栏行尾 kbd 徽标 + 快捷键清单共用 boss-shortcut.ts
      （欢迎界面上一轮已按用户要求撤掉那行小字提示 ⇒ 只剩这两处消费方）。 */
   ok(/export function bossShortcutLabel/.test(read("src/features/boss-group-view/boss-shortcut.ts"))
     && /bossShortcutLabel\(\)/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx")),
-    "指挥中枢快捷键是**单一真相源**（侧栏 kbd 徽标走 boss-shortcut.ts）");
-  /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个中枢会话记忆板块，跟普通会话完全拆开」
-     +「删除了中枢会话，这里就同步更新，新建了就是新的」。
+    "BOSS 会话快捷键是**单一真相源**（侧栏 kbd 徽标走 boss-shortcut.ts）");
+  /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」
+     +「删除了BOSS会话，这里就同步更新，新建了就是新的」。
 
      ① **名单必须在主进程**：记忆层的捕获写入（boot.ts 的 captureTurn）在主进程跑，
-        它得知道这个 thread 是指挥中枢才能把记忆写进它自己的目录 ⇒ 渲染层
+        它得知道这个 thread 是 BOSS 会话才能把记忆写进它自己的目录 ⇒ 渲染层
         localStorage 那份不够用（主进程读不到）⇒ 登记表落 <userData>/boss-sessions.json。
      ② **读写都要路由**：捕获写入（boot.ts）与渲染层注入（send.tsx）都用专属目录；
         只改一边会出现「写进项目、读自己」或反之。
-     ③ **删除同步**：删指挥中枢 ⇒ 名单摘掉 + 记忆目录清掉；新建 ⇒ 全新目录、空记忆。
+     ③ **删除同步**：删 BOSS 会话 ⇒ 名单摘掉 + 记忆目录清掉；新建 ⇒ 全新目录、空记忆。
      ④ **删除类操作要有路径安全闸**（只许删 boss-home/memories 下的目录）。 */
   const bossRegistry = read("electron/boss-groups/session-registry.ts");
   ok(/boss-sessions\.json/.test(bossRegistry) && /export function bossMemoryWorkspace/.test(bossRegistry),
-    "指挥中枢身份登记表落主进程（<userData>/boss-sessions.json）+ 专属记忆目录");
+    "BOSS 会话身份登记表落主进程（<userData>/boss-sessions.json）+ 专属记忆目录");
   ok(/isBossSession/.test(read("electron/features/boot.ts")) && /bossMemoryWorkspace/.test(read("electron/features/boot.ts")),
-    "⛔ 捕获写入按名单路由到 中枢专属目录（不写进用户选的项目）");
+    "⛔ 捕获写入按名单路由到 BOSS 专属目录（不写进用户选的项目）");
   const sendMem = read("src/features/app-state/parts/part08/02-seg/send.tsx");
   ok(/ensureBossMemoryWorkspace/.test(sendMem) && /memWorkspace/.test(sendMem),
-    "⛔ 渲染层注入的常驻记忆/召回按 中枢专属目录取（与项目记忆分开）");
+    "⛔ 渲染层注入的常驻记忆/召回按 BOSS 专属目录取（与项目记忆分开）");
   const reqMem = read("src/features/app-state/parts/part05/event-router/02-request.tsx");
   ok(/ensureBossMemoryWorkspace/.test(reqMem),
-    "⛔ memory_write 写进 中枢专属目录（不污染项目记忆）");
+    "⛔ memory_write 写进 BOSS 专属目录（不污染项目记忆）");
   ok(/action: "remove"/.test(read("src/features/boss-group-view/boss-threads-store.mjs"))
     && /action: "rename"/.test(read("src/features/boss-group-view/boss-threads-store.mjs")),
     "删除/重建指挥中枢时同步主进程名单（⇒ 记忆目录跟着清掉/搬过去）");
   ok(/拒绝清理该路径/.test(bossRegistry) && /boss-home", "memories"/.test(bossRegistry),
-    "⛔ 清空记忆有路径安全闸（只许删 中枢记忆目录内的路径）");
+    "⛔ 清空记忆有路径安全闸（只许删 BOSS 记忆目录内的路径）");
   /* ⛔⛔ 10-25 用户实测两处（截图实证）：
      ① 「旧的还是删不掉」—— 面板上「清空这份记忆」点了报「清空失败」。
         根因：UI 调的方法名与 preload 不一致（写成 deleteBossMemory，preload 里是
         clearBossMemory）⇒ optional call 静默返回 undefined ⇒ 必然失败。
         ⇒ 断言 UI 里调的方法名**必须出现在 preload 里**（这类"名字对不上"编译器查不出）。
-     ② 列表里出现**两个同名**「指挥中枢 01a171d5」——
+     ② 列表里出现**两个同名**「BOSS 会话 01a171d5」——
         真因：codex thread id 是 **uuid v7**，前 8 位是时间戳 ⇒ 同一分钟建的会话前缀一样；
         而且同一个 bossThreadId 出现在**两个群里**时，补登会把它加两次 ⇒ 名单重复。
         ⇒ 断言：registry 读/写/补登三处都去重；显示名不能只取 id 前 8 位。 */
@@ -468,9 +475,9 @@ if (state) {
   ok(Boolean(clearCall) && read("electron/preload.ts").includes(clearCall[1] + ":"),
     `面板调的记忆清理方法名必须在 preload 里存在（实测 ${clearCall ? clearCall[1] : "没匹配到"}）`);
   ok(/seen\.has\(s\.id\)/.test(bossRegistry) && /new Set\(bossThreadIds/.test(bossRegistry),
-    "指挥中枢名单**读/补登**都去重（同一个 bossThreadId 出现在两个群里也不会登记两次）");
+    "BOSS 会话名单**读/补登**都去重（同一个 bossThreadId 出现在两个群里也不会登记两次）");
   ok(/merged\.set\(s\.id, s\)/.test(bossRegistry) && /merged\.set\(entry\.id, entry\)/.test(bossRegistry),
-    "指挥中枢名单**写入**去重（并发 add 不会写两条）");
+    "BOSS 会话名单**写入**去重（并发 add 不会写两条）");
   ok(!/slice\(0, 8\)/.test(bossMemPanel),
     "⛔ 显示名不能只取 id 前 8 位（uuid v7 的时间戳前缀会撞）");
   /* ⛔⛔ 10-25 用户实测三处（截图实证）：
@@ -499,74 +506,75 @@ if (state) {
   const blockStart = new RegExp("\\/" + "\\*", "g");
   const nestedComment = new RegExp("\\/" + "\\*[^\\n]*\\/" + "\\*[^\\n]*\\*" + "\\/", "g");
   ok(!(blockStart.test(bossBlock) && nestedComment.test(bossBlock)),
-    "⛔ 侧栏 中枢那段注释没有嵌套坏掉（之前两段块注释套在一起）");
+    "⛔ 侧栏 BOSS 那段注释没有嵌套坏掉（之前两段块注释套在一起）");
   ok(!/openThread\(groupBoss\)/.test(bossSideSrc),
-    "⛔ 点「指挥中枢」不再「有群就跳旧群」⇒ 行为不随有没有群而变（用户实测：主仓不弹、PPcode 弹）");
+    "⛔ 点「BOSS 会话」不再「有群就跳旧群」⇒ 行为不随有没有群而变（用户实测：主仓不弹、PPcode 弹）");
   ok(/setBossPending\(true\)/.test(bossSideSrc) && /startNewThread\(\)/.test(bossSideSrc),
-    "⛔ 点按钮**先落进 欢迎界面**（置 pending + 起全新空会话）；会话在选定地址后才真正建");
-  /* ⛔⛔ 10-25 用户实测第二轮：「这种情况我点不了上面指挥中枢选项，切不到指挥中枢界面，没修好啊」
-     —— 截图就是**当前正停在一条指挥中枢里**。根因：openBossSession 第一行 `if (bossOn) return;`
-     ⇒ 当前是指挥中枢就点不动（按钮变死按钮，看着能点、点了没反应）。
-     行为必须对齐「新建任务」：每点一次 = 一条全新指挥中枢（可无限建、各自独立）。
+    "⛔ 点按钮**先落进 BOSS 欢迎界面**（置 pending + 起全新空会话）；会话在选定地址后才真正建");
+  /* ⛔⛔ 10-25 用户实测第二轮：「这种情况我点不了上面 BOSS 会话选项，切不到 BOSS 会话界面，没修好啊」
+     —— 截图就是**当前正停在一条 BOSS 会话里**。根因：openBossSession 第一行 `if (bossOn) return;`
+     ⇒ 当前是 BOSS 会话就点不动（按钮变死按钮，看着能点、点了没反应）。
+     行为必须对齐「新建任务」：每点一次 = 一条全新 BOSS 会话（可无限建、各自独立）。
      ⛔ 判据在**剥注释后的代码**上跑：答案就在注释里写着这句（照抄源码会把注释也命中 ⇒ 假红）。 */
   const bossSideCode = codeOnly(bossSideSrc);
   const fnAt = bossSideCode.indexOf("const openBossSession");
   const openBossFn = fnAt >= 0 ? bossSideCode.slice(fnAt, fnAt + 900) : "";
   ok(openBossFn.length > 0 && !/if\s*\(\s*bossOn\s*\)\s*return/.test(openBossFn),
-    "⛔ 在已有指挥中枢里点「指挥中枢」也必须能新建（不许 `if (bossOn) return` 死按钮）");
-  /* ⛔⛔ 10-25 用户令：「我选中下面已建的指挥中枢时候，上面那个指挥中枢选项不要亮」
-     ⇒ 顶部按钮是**动作**（新建一条指挥中枢），不是**状态**（我在不在指挥中枢里）。
-     它一旦挂上「随当前会话变化」的类名 / aria-pressed，选下面任意一条老指挥中枢就会跟着亮
+    "⛔ 在已有 BOSS 会话里点「BOSS 会话」也必须能新建（不许 `if (bossOn) return` 死按钮）");
+  /* ⛔⛔ 10-25 用户令：「我选中下面已建的 BOSS 会话时候，上面那个 BOSS 会话选项不要亮」
+     ⇒ 顶部按钮是**动作**（新建一条 BOSS 会话），不是**状态**（我在不在 BOSS 会话里）。
+     它一旦挂上「随当前会话变化」的类名 / aria-pressed，选下面任意一条老 BOSS 会话就会跟着亮
      （用户已两次点名）。⇒ 判据：侧栏代码里没有该类名与 aria-pressed，CSS 里也没有对应高亮。 */
   ok(!/boss-open/.test(bossSideCode) && !/aria-pressed=\{bossOn\}/.test(bossSideCode),
-    "⛔ 顶部「指挥中枢」按钮不随当前会话高亮（选下面任意一条指挥中枢，它都不许亮）");
+    "⛔ 顶部「BOSS 会话」按钮不随当前会话高亮（选下面任意一条 BOSS 会话，它都不许亮）");
   ok(!/\.sidebar-quick-boss\.boss-open/.test(codeOnly(read("src/styles/47-boss-group-view.css"))),
     "⛔ `.boss-open` 高亮样式已删除（不留死样式）");
-  /* ⛔⛔ 10-25 用户实测：「我在指挥欢迎界面，点这个项目上的新建他不会跳转到普通会话的欢迎界面」
-     —— 根因：`bossThreads.pending`（下一条会话是 中枢）只在侧栏「新建任务」里清过，
-     项目行的 ＋ 走 `startNewThread` 却没清 ⇒ 标签页换新了、时间线还在渲染 中枢引导卡。
+  /* ⛔⛔ 10-25 用户实测：「我在 BOSS 会话欢迎界面，点这个项目上的新建他不会跳转到普通会话的欢迎界面」
+     —— 根因：`bossThreads.pending`（下一条会话是 BOSS）只在侧栏「新建任务」里清过，
+     项目行的 ＋ 走 `startNewThread` 却没清 ⇒ 标签页换新了、时间线还在渲染 BOSS 引导卡。
      ⇒ 判据两条：
        ① 「新建普通会话」的唯一漏斗 startNewThread 必须清这个标记（所有入口一次覆盖：新建任务 /
           Ctrl+N / 项目行 ＋ / 命令面板 /new）；
-       ② 中枢入口必须在 startNewThread **之后**才置 true（否则刚置上就被漏斗清掉，进不去欢迎界面）。 */
+       ② BOSS 入口必须在 startNewThread **之后**才置 true（否则刚置上就被漏斗清掉，进不去欢迎界面）。 */
   const newThreadCode = codeOnly(read("src/features/app-state/parts/part06/03-seg/02-context-fork-backup.tsx"));
-  /* ⛔ 函数签名带可选参 ⇒ 只锚函数名前缀。 */
+  /* ⛔ 函数签名带可选参（opts?: { boss?: boolean }）⇒ 只锚函数名前缀，别锚空括号（10-27 加参数后恒不匹配）。 */
   const newThreadFnAt = newThreadCode.indexOf("function startNewThread(");
+  /* ⛔ 窗口 1600：函数体开头有一段 10-25/10-27 的说明注释，700 字够不到真正的 setBossPending(false)。 */
   const newThreadFn = newThreadFnAt >= 0 ? newThreadCode.slice(newThreadFnAt, newThreadFnAt + 1600) : "";
   ok(newThreadFn.length > 0 && /setBossPending\(false\)/.test(newThreadFn),
-    "⛔ 新建普通会话的统一漏斗 startNewThread 清掉 中枢待建标记（否则停在 欢迎界面时点项目新建切不过去）");
+    "⛔ 新建普通会话的统一漏斗 startNewThread 清掉 BOSS 待建标记（否则停在 BOSS 欢迎界面时点项目新建切不过去）");
   ok(openBossFn.length > 0
     && openBossFn.indexOf("setBossPending(true)") > openBossFn.indexOf("startNewThread(")
     && openBossFn.indexOf("startNewThread(") >= 0,
-    "⛔ 中枢入口在 startNewThread **之后**才置 pending（顺序反了会被漏斗清掉 ⇒ 按钮进不去欢迎界面）");
+    "⛔ BOSS 入口在 startNewThread **之后**才置 pending（顺序反了会被漏斗清掉 ⇒ 按钮进不去欢迎界面）");
   ok(/BossMemoryPanel/.test(read("src/features/settings-memory/MemoryCenterSection.tsx"))
     && existsSync(join(ROOT, "src/features/settings-memory/BossMemoryPanel.tsx")),
-    "记忆设置页有独立的「指挥中枢记忆」板块（与项目共享记忆库分开）");
+    "记忆设置页有独立的「BOSS 会话记忆」板块（与项目共享记忆库分开）");
   ok(/sessionIds/.test(read("src/features/boss-group-view/boss-threads-store.d.mts")),
-    "指挥中枢有独立身份标记 sessionIds（⛔ homeId 不再用于复用会话）");
+    "BOSS 会话有独立身份标记 sessionIds（⛔ homeId 不再用于复用会话）");
   const sideSrc = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
   ok(!/app\.openThread\(home\)/.test(sideSrc),
-    "⛔ 点「指挥中枢」不再回到上一次的会话（每次都是全新会话）");
+    "⛔ 点「BOSS 会话」不再回到上一次的会话（每次都是全新会话）");
   ok(/isBossOwnThread \? null : \([\s\S]{0,120}thread-archive-button/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
-    "指挥中枢不挂归档按钮（只保留删除）");
+    "BOSS 会话不挂归档按钮（只保留删除）");
   ok(/lastActivityAt/.test(read("electron/features/boss-groups-ipc.ts")),
     "群列表按最近活动排序（同一会话建过多个群时，弹窗要落在**现在这个**群上）");
   ok(!/REVIEW_PROMPT/.test(runnerSrc) && !/SYSTEM TASK · 独立评审/.test(runnerSrc),
     "⛔ 不再有「独立评审」提示词/会话（评审由会话自己用技能做）");
   ok(/已交活，请\*\*用你自己的评审技能\*\*判一下/.test(runnerSrc),
-    "⛔ 交活后回投给 中枢（成品 + 验收标准），由它自己用技能判，不再另开评审会话");
+    "⛔ 交活后回投给 BOSS（成品 + 验收标准），由它自己用技能判，不再另开评审会话");
   ok(!/memoryLayers\.autoDistill/.test(read("electron/features/boot.ts")),
     "⛔ 应用不再自动蒸馏记忆（不派内部会话；到 90% 蒸馏线由会话自己按技能蒸）");
   ok(!/boss-groups:recheck/.test(read("electron/features/boss-groups-ipc.ts")) && !/recheckBossTask/.test(read("src/features/settings-boss-groups/BossGroupsSection.tsx")),
     "⛔ 评审的「重跑/retry」通道与按钮已删");
   ok(/memberThreadIds/.test(bossStore),
-    "共享 store 汇总群成员会话 id（侧栏据此打「中枢调度」标签）");
+    "共享 store 汇总群成员会话 id（侧栏据此打「BOSS 调度」标签）");
   ok(/chooseDirectory/.test(sidebar),
     "新建指挥中枢要**重新选**项目地址（⛔ 不沿用上一次的，也不跟其他会话同步）");
   ok(/workspaceRef\.current = dir/.test(sidebar) && /createBossProjectDir/.test(sidebar),
-    "指挥中枢跑在**自己选的项目目录**（同步 workspaceRef；不写全局 workspace ⇒ 别的会话不受影响）");
+    "BOSS 会话跑在**自己选的项目目录**（同步 workspaceRef；不写全局 workspace ⇒ 别的会话不受影响）");
   ok(/isBossThread \? null : \(/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
-    "指挥中枢隐藏顶栏「允许本会话调度」开关（群编排自带独立调度）");
+    "BOSS 会话隐藏顶栏「允许本会话调度」开关（群编排自带独立调度）");
   const timeline = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
   /* ⛔⛔ 10-25 用户实测两处：
      ① 「移除的群成员没有真实生效，Codex 不知道我移除了」—— group_status 原来把整份 snapshot
@@ -577,10 +585,32 @@ if (state) {
     && /当前成员 \$\{activeMembers\.length\} 位/.test(requestFile),
     "group_status 给模型明确口径：当前成员 N 位 + 已移出名单（⛔ 不能把 removed 也算进成员数）");
   const runnerFile = read("electron/boss-groups/runner.ts");
-  ok(/成员已被用户移出群/.test(runnerFile) && /新成员进群/.test(runnerFile),
-    "成员增删都回投给指挥中枢（模型要实时知道，不该只能靠它自己查）");
-  ok(/memberCount: group\.members\.filter\(\(m: any\) => String\(m\?\.status \?\? ""\) !== "removed"\)\.length/.test(read("electron/features/boss-groups-ipc.ts")),
-    "群列表的成员数不含被移出的（弹窗下拉按群显示人数）");
+  /* ── 10-27 用户令：「群编排没有管理功能，codex 自己也删不掉…配套一下删除群的工具，界面上加群管理，
+     但这个删要联动 codex 那边，不然光界面删了，codex 那边不知道群删了不行」──
+     ① 通道登记；② runner 里**先回投中枢、再清账本**（顺序反了就通知不到）；
+     ③ 工具面与界面都在（模型能自己删，用户也能伸手指点）。 */
+  {
+    const ipcSrc = read("electron/features/boss-groups-ipc.ts");
+    const registrySrc = read("electron/ipc-registry.ts");
+    ok(/boss-groups:delete/.test(registrySrc) && /boss-groups:delete/.test(ipcSrc),
+      "删群通道 boss-groups:delete 已在域表与 IPC 注册");
+    const postAt = runnerFile.indexOf("await postToBoss(");
+    const clearAt = runnerFile.indexOf("delete state.groups[group.id]");
+    ok(postAt > 0 && clearAt > postAt && /deleteGroupForBoss/.test(runnerFile),
+      "删群**先回投 [群事件] 给中枢、再清账本**（⛔ 顺序反了模型永远不知道群没了）");
+    ok(/group_delete/.test(read("src/features/app-view/constants/05-boss-group-tools.tsx"))
+      && /group_delete/.test(read("src/features/app-state/parts/part05/event-router/02-request.tsx")),
+      "模型侧有 group_delete 工具且已接线（codex 自己能删群）");
+    const boardSrc = read("src/features/settings-boss-groups/BossGroupsSection.tsx");
+    ok(/deleteBossGroup/.test(boardSrc) && /openAppConfirm/.test(boardSrc) && /askDeleteGroup/.test(boardSrc),
+      "群编排界面有删除入口 + **全站确认弹窗**（⛔ 不许退回标题行内联确认：用户截图否过）");
+    /* 10-27 用户令：「删除成功加一个反馈效果」⇒ 行淡出动画 + 统一 toast（两条缺一不可）。 */
+    ok(/is-removing/.test(boardSrc) && /onNotice\(/.test(boardSrc)
+      && /\.boss-groups-group-item\.is-removing/.test(read("src/styles/46-boss-groups.css")),
+      "删群成功有反馈：列表行淡出 → 重排，并 toast 出「已删除群…」");
+    ok(/group_delete/.test(ipcSrc) && /const BOSS_HOME_AGENTS_VERSION = "v5"/.test(ipcSrc),
+      "中枢角色提示词已更新到 v5 并写明 group_delete / 移出即删会话（⛔ 不抬版本老用户读不到）");
+  }
 
   /* ── 10-27 用户实测三条联动缺口（截图实证）——
      「codex 移除了群成员，这个旧的群成员回合就同步删除掉会话，同步自动刷新会话列表」
@@ -612,20 +642,27 @@ if (state) {
       "移出即结清：在办任务一并终止、且已移出成员的迟到交活直接丢弃（⛔ 不许再往群里投「已移出的人交活」）");
   }
 
+  ok(/成员已被用户移出群/.test(runnerFile) && /新成员进群/.test(runnerFile),
+    "成员增删都回投给 BOSS 会话（模型要实时知道，不该只能靠它自己查）");
+  ok(/memberCount: group\.members\.filter\(\(m: any\) => String\(m\?\.status \?\? ""\) !== "removed"\)\.length/.test(read("electron/features/boss-groups-ipc.ts")),
+    "群列表的成员数不含被移出的（弹窗下拉按群显示人数）");
   ok(/BossThreadIntro/.test(timeline) && /isEmpty && !isBossEmpty/.test(timeline),
-    "指挥中枢空态走自己的组件（BossThreadIntro），普通欢迎页只给非指挥中枢");
+    "BOSS 会话空态走自己的组件（BossThreadIntro），普通欢迎页只给非 BOSS 会话");
   /* ⛔⛔ 10-25 用户令第二轮：「不要复用大卡片样式，整体更简洁」+「欢迎界面的文案要跟普通会话的
-     欢迎界面一样居中啊」⇒ 欢迎界面沿用**普通会话那套骨架**（图标 → 渐变大字标题 → 小字副标题，
+     欢迎界面一样居中啊」⇒ BOSS 欢迎界面沿用**普通会话那套骨架**（图标 → 渐变大字标题 → 小字副标题，
      **居中**浮在上半屏），只换视觉语言（琥珀色皇冠 + 琥珀渐变标题）+ 换内容（群编排）。
      ⛔ 且不共用普通会话的 .welcome-state 那一套类名（各自独立 ⇒ 改一边不影响另一边）。 */
   const bossWelcomeCss = codeOnly(read("src/styles/47-boss-group-view.css"));
   ok(/boss-welcome-mark/.test(bossWelcomeCss) && /boss-welcome-title/.test(bossWelcomeCss)
     && /boss-welcome-sub/.test(bossWelcomeCss),
-    "欢迎界面是独立的一套分层排版（大图标 / 大字标题 / 小字副标题）");
+    "BOSS 欢迎界面是独立的一套分层排版（大图标 / 大字标题 / 小字副标题）");
   ok(!/\.boss-intro-card[\s{,]/.test(bossWelcomeCss) && !/\.boss-welcome-card[\s{,]/.test(bossWelcomeCss),
-    "⛔ 欢迎界面不做成大卡片（用户令：不要复用大卡片样式，整体更简洁）");
+    "⛔ BOSS 欢迎界面不做成大卡片（用户令：不要复用大卡片样式，整体更简洁）");
   ok(!/^\s*\.welcome-(state|greet|sub)[\s{,]/m.test(bossWelcomeCss),
-    "⛔ 欢迎界面不共用普通会话 .welcome-state 那套样式（视觉上明显区分）");
+    "⛔ BOSS 欢迎界面不共用普通会话 .welcome-state 那套样式（视觉上明显区分）");
+  ok(/boss-welcome\s*\{[^}]*align-items:\s*center/.test(bossWelcomeCss)
+    && /boss-welcome-sub\s*\{[^}]*text-align:\s*center/.test(bossWelcomeCss),
+    "⛔ BOSS 欢迎界面的文案**居中**（与普通会话欢迎页同一观感）");
   /* ── 10-27 用户令：「删掉三排文字；主句字号调大、醒目突出；下面加一批语气词 / 情绪表达
      （搞笑 / 哄老板 / 生气 / 无聊），把用户当 BOSS，轮播展示、按早中晚时间」──
      ⛔ 下面四条一起钉住这个形态，免得后面又长回「三步引导 + 小字说明」。 */
@@ -662,32 +699,29 @@ if (state) {
      ⇒ 停留时长写在常量里，且不得低于 60 秒（⛔ 别再按秒级调，用户已经两次嫌快）。 */
   ok(/const MOOD_ROTATE_MS = 60_000;/.test(bossIntroSrc),
     "情绪句轮播 60 秒一条（用户令：改成 1 分钟）");
-  ok(/boss-welcome\s*\{[^}]*align-items:\s*center/.test(bossWelcomeCss)
-    && /boss-welcome-sub\s*\{[^}]*text-align:\s*center/.test(bossWelcomeCss),
-    "⛔ 欢迎界面的文案**居中**（与普通会话欢迎页同一观感）");
   ok(!/^\s*\.welcome-(state|greet|sub)[\s,{]/m.test(bossWelcomeCss),
-    "⛔ 欢迎界面不共用普通会话 .welcome-state 那套样式（视觉上明显区分）");
-  /* ⛔ 10-25 实测：用 isEmpty 判 中枢空态会漏 —— 它要求 thread 为 null，而「会话已建出来但
+    "⛔ BOSS 欢迎界面不共用普通会话 .welcome-state 那套样式（视觉上明显区分）");
+  /* ⛔ 10-25 实测：用 isEmpty 判 BOSS 空态会漏 —— 它要求 thread 为 null，而「会话已建出来但
      一条消息都没有」时 thread 存在 ⇒ isEmpty 恒 false ⇒ 卡片不渲染 ⇒ 整片空白（用户截图）。 */
   ok(/const noTurns = \(thread\?\.turns \?\? \[\]\)\.length === 0/.test(timeline)
     && /isBossHome = Boolean\(thread\?\.id\)/.test(timeline)
     && /isBossEmpty = \(bossThreads\.pending \|\| isBossThreadNow \|\| isBossHome\) && noTurns/.test(timeline),
-    "中枢空态按「0 回合」判定，且三种入口都算（pending / 群 boss 线程 / home 锚点会话）");
+    "BOSS 空态按「0 回合」判定，且三种入口都算（pending / 群 boss 线程 / home 锚点会话）");
   ok(/\{isBossEmpty \? <BossThreadIntro/.test(timeline),
-    "中枢引导卡只在 isBossEmpty 时挂载（普通欢迎页条件保持 isEmpty && !isBossEmpty）");
+    "BOSS 引导卡只在 isBossEmpty 时挂载（普通欢迎页条件保持 isEmpty && !isBossEmpty）");
   ok(!/suggest-row|周报总结|报错修复|PPT 制作|闲时任务/.test(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx")),
     "新会话那排快捷任务（周报总结 / 报错修复 / PPT 制作 / 闲时任务）已按用户要求整体删除（⛔ 不许复活）");
   ok(/thread && historyPlan\.hiddenCount > 0/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
     "空会话不显示「加载更早的消息」（空会话 hiddenCount=0）");
   ok(existsSync(join(ROOT, "src/features/boss-group-view/BossGroupHelpButton.tsx")),
-    "指挥中枢独有的「?」说明组件在位");
+    "BOSS 会话独有的「?」说明组件在位");
   /* ⛔ 10-25 实测：只认 bossIds 会让「还没建群时的 home 会话」顶栏缺成员图标与「?」——
      主窗口与独立弹窗用的是同一个 topbarActionsNode，所以两处一起缺。
      ⛔ 10-25 第二轮：改成**共享判定** isBossSessionContext（顶栏与时间线同源，
-        再多认一种：欢迎界面 pending 时 —— 那时连 thread id 都没有，
+        再多认一种：BOSS 欢迎界面 pending 时 —— 那时连 thread id 都没有，
         但用户要求「欢迎界面右上角要有成员图标与问号图标」）。 */
   ok(/isBossSessionContext\(bossThreads, bag\.thread\?\.id\)/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
-    "顶栏成员图标 /「?」走共享判定 isBossSessionContext（群 boss 线程 + 已登记指挥中枢 + 欢迎界面）");
+    "顶栏成员图标 /「?」走共享判定 isBossSessionContext（群 boss 线程 + 已登记 BOSS 会话 + BOSS 欢迎界面）");
   ok(/export function isBossSessionContext/.test(read("src/features/boss-group-view/boss-threads-store.mjs")),
     "共享判定 isBossSessionContext 在位（顶栏与时间线同一口径 ⇒ 不会再漂移出「一边有一边没有」）");
   /* ⛔ 10-25 用户要求第二轮：成员图标在**未开始对话**时置灰不可点击，开始对话后可点开成员列表。 */
@@ -695,35 +729,35 @@ if (state) {
     && /aria-disabled=\{!started\}/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx"))
     && /boss-members-btn-idle/.test(bossWelcomeCss),
     "成员图标未开始对话时置灰且不可点击（aria-disabled + 灰样式），开始对话后可点开成员列表");
-  /* ⛔⛔ 10-25 用户令第三轮：**指挥中枢可以创建多个、互不干扰** ⇒ 一切「选中哪个群 / 选了哪个目录」
+  /* ⛔⛔ 10-25 用户令第三轮：**BOSS 会话可以创建多个、互不干扰** ⇒ 一切「选中哪个群 / 选了哪个目录」
      都必须**按会话 id** 记，不能是全局单值（否则 A 会话选的群会跑到 B 会话上 ⇒ 成员列表串项）。 */
   const panelStoreSrc = read("src/features/boss-group-view/panel-store.mjs");
   ok(/groupIdByThread/.test(panelStoreSrc) && !/let state = \{ open: false, groupId: "" \}/.test(panelStoreSrc),
-    "⛔ 面板的「选中群」按会话 id 记（groupIdByThread）——指挥中枢可创建多个，各会话互不串项");
+    "⛔ 面板的「选中群」按会话 id 记（groupIdByThread）—— BOSS 会话可创建多个，各会话互不串项");
   ok(/bossPanelGroupFor\(threadId\)/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx"))
     && !/groups\[0\]\?\.id/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx")),
     "⛔ 成员按钮只认**本会话自己的群**，不回落到别的群（回落到 groups[0] 就是串项）");
   ok(/dirByThread/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs")),
-    "⛔ 已选项目地址按会话 id 记（dirByThread）—— 多个指挥中枢各用各的项目目录");
+    "⛔ 已选项目地址按会话 id 记（dirByThread）—— 多个 BOSS 会话各用各的项目目录");
   ok(/const bossDir = isBossSession \? \(app\.thread\?\.cwd \|\| bossDirState\.pendingDir \|\| ""\) : ""/.test(composerForm),
     "⛔ 输入框左上角的项目地址 chip 读**本会话自己的**目录（thread.cwd / pendingDir），⛔ 不读全局 workspace");
   /* ⛔⛔ 10-25 用户实测两处（都是「串到别的会话」的 LOW 错误）：
-     ① 「下面已经自动选了别的会话的项目地址」—— 中枢选目录时**写了全局 workspace**
-        ⇒ 普通会话的顶栏/项目地址芯片显示成 中枢的目录，下一个新会话也继承它。
+     ① 「下面已经自动选了别的会话的项目地址」—— BOSS 选目录时**写了全局 workspace**
+        ⇒ 普通会话的顶栏/项目地址芯片显示成 BOSS 的目录，下一个新会话也继承它。
         ⇒ 断言：选地址**不写**全局 workspace（setWorkspace / workspaceRef 都不许出现在那段里），
            建会话时的 cwd 取**本会话登记的目录**（bossDirFor）。
-     ② 「如果我当前选的是下面已经创建的指挥中枢选项，上面这个会话指挥中枢也会跟着亮」
-        —— 选中态判据里认了 homeId（= 最近一个指挥中枢）⇒ 与当前选中的那个无关 ⇒ 串项。
+     ② 「如果我当前选的是下面已经创建的 BOSS 会话选项，上面这个会话 BOSS 会话也会跟着亮」
+        —— 选中态判据里认了 homeId（= 最近一个 BOSS 会话）⇒ 与当前选中的那个无关 ⇒ 串项。
         ⇒ 断言：侧栏选中态只认当前会话自己的身份，⛔ 不认 homeId 兜底。 */
   const bossDirPickBlock = bossSideSrc.slice(Math.max(0, bossSideSrc.indexOf("onBossProjectDir") - 200), bossSideSrc.indexOf("onBossProjectDir") + 2200);
   ok(!/setWorkspace\(|workspaceRef\.current =/.test(bossDirPickBlock),
-    "⛔ 中枢选项目地址**不写全局 workspace**（否则普通会话的地址被顶掉、下个会话继承它）");
+    "⛔ BOSS 选项目地址**不写全局 workspace**（否则普通会话的地址被顶掉、下个会话继承它）");
   ok(/const sessionCwd = bossDirFor\(bag\.thread\?\.id\)/.test(read("src/features/app-state/parts/part08/01-seg.tsx")),
-    "⛔ 指挥中枢建会话时的 cwd 取**本会话登记的目录**（不继承别的会话的项目地址）");
+    "⛔ BOSS 会话建会话时的 cwd 取**本会话登记的目录**（不继承别的会话的项目地址）");
   ok(!/currentThreadId === bossThreads\.homeId/.test(bossSideSrc),
-    "⛔ 侧栏 中枢按钮的选中态不认 homeId（那是最近一个指挥中枢 ⇒ 与当前选中的无关 ⇒ 串项）");
+    "⛔ 侧栏 BOSS 按钮的选中态不认 homeId（那是最近一个 BOSS 会话 ⇒ 与当前选中的无关 ⇒ 串项）");
   ok(/isEmpty && !isBossSession/.test(read("src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx")),
-    "⛔ 指挥中枢不渲染输入框上方那枚「项目地址」芯片（它显示全局 workspace ⇒ 串到别的会话）");
+    "⛔ BOSS 会话不渲染输入框上方那枚「项目地址」芯片（它显示全局 workspace ⇒ 串到别的会话）");
   /* ⛔ 用户嫌「新建会话+快捷键」小字 LOW ⇒ 欢迎界面上**不放**快捷键小字，
      快捷键只留在侧栏按钮行尾的 kbd 徽标上。 */
   /* ── 10-27 用户令（截图）：「这个提示不对，项目地址选项在左上角」「新建任务提示要是蓝色，
@@ -732,13 +766,14 @@ if (state) {
      颜色由调用方显式指定（中枢 warning=琥珀 / 普通 info=蓝）。 */
   {
     const forkSrc = read("src/features/app-state/parts/part06/03-seg/02-context-fork-backup.tsx");
+    /* ⛔ 负向判据必须剥注释：10-27 那段说明里引用了错误文案「右上角」（讲"别再写右上角"）。 */
     ok(/左上角的「选择项目地址」/.test(forkSrc) && !/右上角/.test(codeOnly(forkSrc)),
       "未选工作区的提示指向**左上角**的「选择项目地址」（⛔ 旧文案写的右上角是错的）");
     ok(/opts\?\.boss\s*\?\s*"warning"\s*:\s*"info"/.test(forkSrc)
       && /startNewThread\(\{ boss: true \}\)/.test(bossSideSrc),
       "提示语气显式指定：指挥中枢=warning（琥珀）/ 普通新建=info（蓝），中枢入口传 boss:true");
   }
-  ok(!/boss-welcome-kbd/.test(bossWelcomeCss) && !/新建指挥中枢/.test(read("src/features/boss-group-view/BossThreadIntro.tsx")),
+  ok(!/boss-welcome-kbd/.test(bossWelcomeCss) && !/新建 BOSS 会话/.test(read("src/features/boss-group-view/BossThreadIntro.tsx")),
     "⛔ 欢迎界面不放快捷键小字提示（用户原话：太LOW、一点个性没有）");
   /* ⛔⛔ 10-25 实测「独立弹窗没有成员图标和问号」：DOM 在、断言全绿，但 CSS 媒体查询把
      `display` 设成了 none（当时断点是 1180，而默认窗口 1080 就命中）。
@@ -758,12 +793,12 @@ if (state) {
   const bossTools = read("src/features/app-view/constants/05-boss-group-tools.tsx");
   ok(/from=\\"expert/.test(bossTools) && /from=\\"cli/.test(bossTools) && /cliName/.test(bossTools) && /cliCommand/.test(bossTools),
     "拉人来源覆盖专家/专家团 + 本机 CLI（group_add_member 的 from 两个分支）");
-  /* ⛔ 10-25 用户令：「指挥中枢」这个称呼改叫**指挥中枢**（四字）⇒ 标签跟着改「中枢调度」
-     （与普通「调度」区分）。判据一起改，否则文案改了守卫还钉着旧字。 */
   /* ⛔ 11-01 用户（截图）：「被调度的会话，就显示调度两个字就行了，不要加中枢两个字」——
-     10-25 的「中枢调度」口径被这一条覆盖：徽标统一成「调度」，被谁派的由缩进层级表达。 */
-  ok(/isBossMemberThread[\s\S]{0,260}?label: "调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
-    "侧栏给群成员会话打「调度」标签（⛔ 不再用「中枢调度」）");
+     10-25 的「中枢调度」口径被这一条**覆盖**：徽标统一成「调度」，被谁派的由缩进层级表达。
+     ⛔ 断言跟着文案一起改，否则改了字守卫还钉着旧值（假红）。 */
+  ok(/isBossMemberThread[\s\S]{0,260}?label: "调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"))
+    && !/"中枢调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
+    "侧栏给群成员会话打「调度」标签（⛔ 不再用「中枢调度」，用户点名去掉「中枢」二字）");
   /* ── 14. rollout 丢失的会话要能自愈（10-25 用户实测：红条 + 消息发不出去 + 输入框被塞记忆）── */
   const sendFile = read("src/features/app-state/parts/part08/02-seg/send.tsx");
   ok(/unavailable = \/not found\|no such thread\|unloaded\|no rollout found\//.test(sendFile),
@@ -843,10 +878,14 @@ if (state) {
      呈现层只在**气泡这一层**换样式（群事件在引擎里就是一条 userMessage —— 换时间线渲染器会踩
      折叠/钉顶/贴底那套按回合单元算的不变量）。 */
   const userMsgView = read("src/features/shared/UserMessageView.tsx");
+  /* ⛔ 10-26：群分支改成包一层只带定位属性的 div（刻度尺要它，见 12r）——
+     判据打「走 GroupFeed 且带 data-ruler-mark」，⛔ 别再锚死单行 return 的写法。 */
   ok(/if \(refs\.groupEvents\?\.length\) \{/.test(userMsgView)
+    && /const visibleBlocks = refs\.groupEvents\.filter\(\(block\) => !isHiddenNoticeBlock\(block\)\)/.test(userMsgView)
+    && /if \(!visibleBlocks\.length\) return null;/.test(userMsgView)
     && /<GroupFeed blocks=\{visibleBlocks\}/.test(userMsgView)
     && /data-ruler-mark="user" data-turn-id=\{turn\?\.id\} data-item-id=\{item\.id\}/.test(userMsgView),
-    "群消息走 GroupFeed 并带刻度尺定位属性（⛔ 不套用户气泡）");
+    "群消息走 GroupFeed 并带刻度尺定位属性；全被过滤的刷屏事件**连外壳都不渲染**（⛔ 不套用户气泡）");
   ok(/group-avatar/.test(userMsgView) && /group-msg-body/.test(userMsgView) && /group-sys/.test(userMsgView)
     && /\.group-avatar \{/.test(read("src/styles/47-boss-group-view.css")),
     "群气泡三件套（头像 / 正文 / 系统行）样式在位");

@@ -1,4 +1,3 @@
-import { pathToFileURL } from "node:url";
 /**
  * 「汇总消息底部 · 已更改 N 个文件」汇报卡判据（10-06 立；用户对照 Qoder 效果图点名：
  * 「汇总消息底部显示文件…这个生成文件直接打开预览就行，和右键打开文件地址和复制文件路径…修改文件下面效果，还有生成的图片」）。
@@ -8,6 +7,7 @@ import { pathToFileURL } from "node:url";
  * 本守卫钉**代码形态 + 复用关系**；行为（真点、真右键、真复制）由验收项 `file-summary` 在真产物上跑。
  * 独立守卫（不进 check-preflight 的 checks 计数）。
  */
+import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -226,7 +226,7 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   ok(/data-testid="turn-output-card"/.test(outputCards) && /createPortal/.test(outputCards),
     "卡片带稳定 testid；打开方式 / 更多操作菜单 portal 到 body（不被回合容器裁剪）");
   /* 10-30 用户令：「右键也要能预览 / 打开 / 编辑」。⛔ 判据要钉三件事，缺一条都等于只有左键能用：
-     ① 卡片挂了 onContextMenu（且 preventDefault —— 否则弹出系统原生菜单，把我们的盖掉）；
+     ① 卡片挂了 onContextMenu（且 preventDefault —— 否则弹出浏览器/系统的原生菜单，把我们的盖掉）；
      ② 右键菜单项 = 预览 / 编辑器 / 默认应用 三种打开方式，**外加** ⋯ 里那两项（同一份动作不另造语义）；
      ③ 开关沿用组件内既有 menu 状态（⛔ 别为右键再造一个 state + 第二套 portal，两处易漂移）。 */
   ok(/onContextMenu=\{\(event\) => openContextMenu\(event, file\.path\)\}/.test(outputCards)
@@ -245,13 +245,17 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "右栏「文件」页 = 工作区文件树 + 预览（tab 显示「文件」，标题/提示同源）");
   ok(/单击在\*\*右侧栏\*\*预览，双击才开居中编辑器/.test(reviewPanel) && reviewPanel.includes("onDoubleClick"),
     "树里单击在右栏预览、双击才开居中编辑器");
+  /* 10-30：读的是**回落之后的** target（卡片给的可能是死链，按会话台账回落）⇒ 断言跟着实现走，
+     仍然钉「预览必须走 fs:read 通道」这一语义。 */
   ok(/window\.codex\.readFile\((?:path|target)\)/.test(workspacePreview) && /FilePreviewCode/.test(workspacePreview) && /Markdown/.test(workspacePreview)
     && /workspace-file-preview-pdf/.test(workspacePreview) && /workspace-file-preview-image/.test(workspacePreview),
     "预览走 fs:read，覆盖 Markdown / 代码 / 图片 / PDF / 二进制占位");
-  /* ⛔ 10-29 用户令：shell:open **故意**不判可信根（任意位置的文件都要能打开）。 */
+  /* ⛔ 10-29 用户令推翻了这里原来的口径（「不用授权弹窗，不管哪里的文件都要能预览和编辑」）：
+     shell:open 现在**故意**不判可信根 —— 断言翻转成「必须是直通」，防的是有人悄悄把闸加回去
+     （那会让用户点「默认应用」又变成"打开失败"，而这正是本次要修的症状）。 */
   ok(Boolean(manifest.channels.find((c) => c.channel === "shell:open")) && /shell:open/.test(shell)
     && !/isInsideOrEqualTrustedRoots\(target\)/.test(shell),
-    "「默认应用」走 shell:open，且**不再判可信根**（10-29 用户令）");
+    "「默认应用」走 shell:open，且**不再判可信根**（10-29 用户令：任意位置的文件都要能打开）");
 
   /* 10-22 用户截图：「我没改嘛，还是这种旧的」——消息末尾的内联文件引用原来还是小芯片。
      普通文件必须换成同一张 FileRefCard（默认右栏），图片/音视频保留缩略芯片。 */
