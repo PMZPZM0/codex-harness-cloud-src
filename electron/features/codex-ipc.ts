@@ -117,6 +117,16 @@ export const codexFeature = defineFeature<null>({
         } catch (error: any) {
           console.warn("[openfilm] 工具注入失败（不影响 thread/start）：", String(error?.message ?? error).slice(0, 160));
         }
+        /* 11-01 影视工具（media_search / media_detail / media_preview）：原来只挂在 harness-dispatch
+           MCP 里，那条链路有身份硬闸（只放行委派/团队会话）⇒ 普通会话调不到（用户实测被拒）。
+           提到 dynamicTools 面向所有会话；安全限制仍在 media-sources.ts 内部。 */
+        try {
+          const { buildMediaTools } = await import("../media-tools");
+          const existingMedia = Array.isArray((params as any)?.dynamicTools) ? (params as any).dynamicTools : [];
+          (params as any).dynamicTools = [...existingMedia, ...buildMediaTools()];
+        } catch (error: any) {
+          console.warn("[media-tools] 工具注入失败（不影响 thread/start）：", String(error?.message ?? error).slice(0, 160));
+        }
         /* 10-21：给工具面注入可选 `step` —— 模型填一句中文「这一步在干什么」，卡片直接当标题。
            ⛔ 位置必须在 MCP 合并**之后**：并进来的那批也要有；且要放在 try **外面**，
               合并失败时渲染层自己那批照样能拿到（漏掉就是"工具卡有时没标题"的幽灵差异）。
@@ -273,9 +283,11 @@ export const codexFeature = defineFeature<null>({
         if (Array.isArray(listed)) {
           (result as any).data = listed.filter((entry: any) => !internalThreads.has(String(entry?.id ?? "")));
           /* ⛔⛔ 11-01 用户（截图：「名字没同步左侧栏…这里还是显示未命名任务」）：
-             名字（笔名）原先只在"新建会话那一刻"分配 ⇒ 存量会话永远没有名字，
-             侧栏只能显示「未命名任务」，而顶栏显示的是引擎名。
-             ⇒ 列表出口（侧栏数据的唯一来源）统一补齐缺名字的会话，一次扫全量、只补缺的。 */
+             名字（笔名）原先只在"新建会话那一刻"分配 ⇒
+               ① 存量会话永远没有名字，侧栏只能显示「未命名任务」，而顶栏显示的是引擎名；
+               ② 建会话发生在渲染层订阅之前时，那次广播丢了 ⇒ 名字在磁盘上、界面永远看不到。
+             ⇒ 列表出口（侧栏数据的唯一来源）统一补齐缺名字的会话，一次扫全量、只补缺的。
+             ⛔ 放在这里而不是渲染层：渲染层只管显示，补名要落盘 + 广播，那是主进程的事。 */
           try {
             await ensureAliasesFor((result as any).data.map((entry: any) => String(entry?.id ?? "")));
           } catch (error: any) {
@@ -294,7 +306,9 @@ export const codexFeature = defineFeature<null>({
           /* ★ 10-31 用户令：新建会话**自动取一个两字笔名**（主会话 = 「XX主管」，用户 = 总经理）。
              ⛔ 主进程自建的会话（delegation / teams / runner）不经过这里，它们在自家建会话处
                 另外调 `ensureSessionAlias(threadId, originThreadId)`（带上上级）。 */
-          /* ⛔ 11-01 用户令「直接改会话名字，而不是在前面加一个主管标签」—— 主会话拿到笔名后直接把会话名设成笔名。 */
+          /* ⛔ 11-01 用户令「直接改会话名字，而不是在前面加一个主管标签」——
+             主会话拿到笔名后**直接把会话名设成笔名**（引擎 name），侧栏标题就与首条消息脱钩了。
+             ⛔ 被调度的子会话不在这里设名（它有"调度·角色"的命名，且带上级关系）。 */
           void ensureSessionAlias(String(r.thread.id))
             .then(async (record) => {
               if (!record?.alias || record.supervisorThreadId) return;
