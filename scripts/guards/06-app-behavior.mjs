@@ -1566,7 +1566,7 @@ w.postMessage({id:1,op:"list",root});
       ? ok : fail)("【29】store 实现 remove");
     (!/dispatchOwnerFromMap|async releaseDispatch\(|dispatch\.enabled/.test(storeCode)
       ? ok : fail)("【29】⛔ 调度独占锁已删除（dispatchOwner / releaseDispatch / enabled 字段）");
-    const coreIdx = appCode.indexOf("async function deleteThreadCore(id: string)");
+    const coreIdx = appCode.indexOf("async function deleteThreadCore(id: string");
     const coreFn = coreIdx < 0 ? "" : appCode.slice(coreIdx, coreIdx + 900);
     const coreCallers = (appCode.match(/await deleteThreadCore\(/g) || []).length;
     (coreIdx >= 0 && coreCallers >= 2)

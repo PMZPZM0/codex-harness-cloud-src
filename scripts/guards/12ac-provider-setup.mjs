@@ -98,7 +98,9 @@ ok(/RELAUNCH_SECONDS/.test(dialog) && !/稍后重启/.test(dialog) && /立即重
 
 /* ── ④ 登录页四路接入 ── */
 ok(/ProviderSetupDialog/.test(login) && /setSetupIntent/.test(login), "登录页接入统一弹窗");
-ok(["source: \"cloud\"", "source: \"relay\"", "source: \"openai\"", "source: \"custom\""].every((s) => login.includes(s)), "四路来源齐全：云 / 中转站 / OpenAI / 自定义");
+/* ⛔ 云助手本身就是云端产品，登录页没有「云账号登录」这一路（不需要再登一层网盘）。
+   ⇒ 断言按本仓口径钉三路；⛔ 别照抄主仓的四路 —— 那会让本仓守卫长期假红。 */
+ok(["source: \"relay\"", "source: \"openai\"", "source: \"custom\""].every((s) => login.includes(s)), "三路来源齐全：中转站 / OpenAI / 自定义（云助手无云账号登录）");
 ok(/deferActivation:\s*true/.test(login) && /pending/.test(login), "中转站登录用 deferActivation 解析候选后再交给弹窗（取消不落档案）");
 ok(/deferActivation/.test(relay) && /pending: \{ provider: resolved\.provider/.test(relay), "performRelayLogin 的 defer 分支返回待启用凭据");
 ok(/if \(info\.saved\)/.test(handleLogin), "handleLogin 支持「弹窗已保存」的收尾路径");

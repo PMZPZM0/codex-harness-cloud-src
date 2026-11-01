@@ -409,7 +409,9 @@ if (!existsSync(stylesEntry)) {
      · --switch-x / --switch-y / --switch-r（10-31：明暗切场涟漪的圆心与半径 ——
        lib/visual-switch.ts 在点击那一刻按**指针位置**与视口对角线算出来再 setProperty，
        每次点击都不一样，CSS 里只有 fallback（50% / 150vmax）；写死一个值就变成"永远从中间扩散"） */
-  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page", "--group-hue", "--tag-color", "--bot-gaze-x", "--bot-gaze-y", "--bot-eye-scale", "--skin-stage", "--switch-x", "--switch-y", "--switch-r"]);
+  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page", "--group-hue", "--tag-color", "--bot-gaze-x", "--bot-gaze-y", "--bot-eye-scale", "--skin-stage", "--switch-x", "--switch-y", "--switch-r",
+    /* 11-01：以下四个由渲染层注入 —— --tag-col-w / --tag-col-w-nested（侧栏标签列按簇实测 setProperty）/ --row-color（会话行自选底色）/ --dot（色板圆点） */
+    "--tag-col-w", "--tag-col-w-nested", "--row-color", "--dot"]);
   const orphan = [...refs].filter((v) => !defined.has(v) && !whitelist.has(v));
   (orphan.length === 0 ? ok : fail)(
     orphan.length

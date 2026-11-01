@@ -29,7 +29,12 @@ export const notifyFeature = defineFeature<null>({
 
     ipcHost.handle("notify:show", (_event, title: string, body: string) => {
       if (!Notification.isSupported()) return false;
-      const n = new Notification({ title: String(title ?? "Codex Harness"), body: String(body ?? ""), silent: false });
+      /* ⛔ 11-01 用户：「现在通知是系统默认的声音不好听，加一个音效」——
+         主进程**只管弹通知、不出声**（silent: true）：系统音三端各异且不可定制，
+         提示音改由渲染层 src/lib/notify-sound.ts 用 WebAudio 合成（唯一调用点在
+         event-router/07-turn-completed-settle.tsx，与「通知真的弹出去了」同源判定）。
+         ⛔ 别再改回 silent: false —— 会和自绘提示音叠成两声。 */
+      const n = new Notification({ title: String(title ?? "Codex Harness"), body: String(body ?? ""), silent: true });
       n.on("click", () => { mainWindow?.show(); mainWindow?.focus(); });
       n.show();
       return true;
