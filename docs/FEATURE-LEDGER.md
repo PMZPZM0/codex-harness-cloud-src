@@ -36,6 +36,7 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-10-31 | 克隆音色不再被内置音色冒充（女声变男声事故） | 修复 | `voice-service.ts`、`02-voice-profiles-presets.ts`、`02-voice-clone-profile.tsx`、守卫 11z | 模型没装/停用时不再静默回退 vits（男声冒充）：服务端显式报错、profiles-select 拒绝、UI radio/试听按 zipReady 禁用并给警示条。（同步主线 1f2059f10） | 本轮 |
 | 2026-10-31 | 活泼女声 · 小夏改为内置音色 | 改动 | `presets.json`、`02-voice-profiles-presets.ts`、`02-voice-clone-profile.tsx`、守卫 11z | 标 builtIn 的预设启动即自动落成档案、档案行带「内置」徽标且不能删除（主进程拒绝）、一键启用列表排除已内置预设。（同步主线 226c0df2a） | 本轮 |
 | 2026-10-31 | 语音资源危险动作统一确认弹窗（删除 / 停用 / 全部清空） | 改动 | `VoiceDevToolsSection.tsx`、`18-openai-dialog.css`、守卫 11z | 删除/停用/全部清空统一走 portal 确认弹窗（z 950、Esc/遮罩/✕ 三路关闭，正文写清体积与可恢复性）；旧内联确认条与 CSS 删净；停用不再点一下直接生效。（同步主线 f4cd1dbdd） | 本轮 |
 | 2026-10-31 | 语音页合并重复卡片 + 基础模型↔引擎卡联动 | 改动 | `VoiceDevToolsSection.tsx`、`VoiceSettingsSection.tsx`、`02-tts-engines.tsx`、`18-openai-dialog.css`、守卫 11z | ① 删除独立「基础语音模型」卡，打开目录/停用/删除/全部清空与下载导入并入轻量播报卡（compact 复用同一套状态与动作）；② 基础模型装完/导入/删除/停用后引擎卡即时刷新（事件 + onStatusChange 联动），读取加 8s 超时与重试出口；③ 修正「三个引擎并存」等过期文案。（同步主线 18b756bde + af0adf90d） | 本轮 |
