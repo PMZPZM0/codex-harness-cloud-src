@@ -36,6 +36,7 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-10-31 | 语音资源危险动作统一确认弹窗（删除 / 停用 / 全部清空） | 改动 | `VoiceDevToolsSection.tsx`、`18-openai-dialog.css`、守卫 11z | 删除/停用/全部清空统一走 portal 确认弹窗（z 950、Esc/遮罩/✕ 三路关闭，正文写清体积与可恢复性）；旧内联确认条与 CSS 删净；停用不再点一下直接生效。（同步主线 f4cd1dbdd） | 本轮 |
 | 2026-10-31 | 语音页合并重复卡片 + 基础模型↔引擎卡联动 | 改动 | `VoiceDevToolsSection.tsx`、`VoiceSettingsSection.tsx`、`02-tts-engines.tsx`、`18-openai-dialog.css`、守卫 11z | ① 删除独立「基础语音模型」卡，打开目录/停用/删除/全部清空与下载导入并入轻量播报卡（compact 复用同一套状态与动作）；② 基础模型装完/导入/删除/停用后引擎卡即时刷新（事件 + onStatusChange 联动），读取加 8s 超时与重试出口；③ 修正「三个引擎并存」等过期文案。（同步主线 18b756bde + af0adf90d） | 本轮 |
 | 2026-10-31 | 回复风格新增「直击本质」+ essence-first 配套技能 | 新增 | `reply-style.mjs`、`PersonalizationPage.tsx`、`UserCenter.tsx`、`26-skill-essence-first.ts`、守卫 12ad | 第五档风格 essence：先看本质目标，点名的手段若绕路就给更上游做法与代价对照；用户坚持就照做并写清风险（只提一次、不抬杠）。配套技能 essence-first 三处注册。（同步主线 24feb0a03） | 本轮 |
 | 2026-10-31 | 插队消息按流中位置渲染（后续内容在消息下面） | 修复 | `03-turn-view.tsx`、`SessionQueue.tsx`、守卫 11q | 回合视图旧渲染把所有用户消息搬到卡片顶上 ⇒ 插队后的回复全在消息上面。改按流中顺序切段渲染；只有最后一段带「耗时」收尾皮肤。（同步主线 85d518c56） | 本轮 |
