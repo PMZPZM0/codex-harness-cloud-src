@@ -244,13 +244,20 @@ w.postMessage({id:1,op:"list",root});
 {
   const wfDir = join(ROOT, ".github", "workflows");
   const release = readFileSync(join(wfDir, "release.yml"), "utf8");
+  /* ⛔ 11-01：本仓**唯一在跑的发布流水线**是 `release-cloud.yml`（cloud-v* tag 触发）。
+     `release.yml` 已改成仅手动触发 —— 同一个 tag 起两个发布作业会往同一个 Release 传
+     **命名不同**的资产，互相污染（本轮 cloud-v0.0.50 实际撞上，mac x64 上传 422）。
+     ⇒ 「发版靠推 tag」「tag 与版本一致」这两条判据必须锚定**真正在跑的那个文件**，
+       否则守的是一个已经停用的脚本，改坏了也不报警。 */
+  const releaseCloudPath = join(wfDir, "release-cloud.yml");
+  const publishWf = existsSync(releaseCloudPath) ? readFileSync(releaseCloudPath, "utf8") : release;
   const buildMac = readFileSync(join(wfDir, "build-mac.yml"), "utf8");
   const buildWin = readFileSync(join(wfDir, "build-win.yml"), "utf8");
   const prepWin = readFileSync(join(ROOT, "scripts", "prepare-windows-tools.cjs"), "utf8");
   const updates = readFileSync(join(ROOT, "electron", "updates.ts"), "utf8");
   const pkg29 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 
-  (/\n\s+push:\s*\n\s+tags:\s*\n\s+- "v\*"/.test(release) ? ok : fail)("【29】release.yml 由 tag 推送触发（SSH 推 tag 即完成发版）");
+  (/\n\s+push:\s*\n\s+tags:\s*\n\s+- "cloud-v\*"/.test(publishWf) ? ok : fail)("【29】发布工作流由 tag 推送触发（cloud-v*，SSH 推 tag 即完成发版）");
   (/permissions:\s*\n\s+contents: write/.test(release) ? ok : fail)("【29】release.yml 声明 contents: write（建 Release / 传资产必需，默认只读）");
   (release.includes("uses: ./.github/workflows/build-mac.yml") && release.includes("uses: ./.github/workflows/build-win.yml") ? ok : fail)("【29】release.yml 复用两个构建工作流（构建步骤只此一份，避免同口径漂移）");
   (/^\s*workflow_call:/m.test(buildMac) && /^\s*workflow_call:/m.test(buildWin) ? ok : fail)("【29】build-mac.yml / build-win.yml 都声明 workflow_call（可被 release 复用）");
@@ -287,7 +294,9 @@ w.postMessage({id:1,op:"list",root});
   // tag ⇄ 版本号：错配会让 Release 的 tag 与包内容对不上（用户装了 0.0.19 却被提示 0.0.18）。
   // ⛔ 同样锚定实际条件表达式（第一版只查 GITHUB_REF_NAME 与 `!= "v${VERSION}"` 两个片段，
   //    把条件首项改成 `"never"` 就恒假、守卫照样绿）。
-  (/if \[ "\$\{GITHUB_REF_TYPE\}" = "tag" \] && \[ "\$\{GITHUB_REF_NAME\}" != "v\$\{VERSION\}" \]; then/.test(release) ? ok : fail)("【29】推送的 tag 必须与 package.json 版本一致（错配直接失败）");
+  /* ⛔ 本仓的版本号**从 tag 反解**（cloud-v0.0.41 → 0.0.41），再拼回 TAG 做一致性校验；
+     锚这两句实际赋值，比匹配某段 if 文案更稳（文案改一次就会假红）。 */
+  (publishWf.includes('VERSION="${GITHUB_REF_NAME#cloud-v}"') && /TAG="cloud-v\$\{VERSION\}"/.test(publishWf) ? ok : fail)("【29】推送的 tag 必须与包版本一致（cloud-v<VERSION> 反解 + 回拼校验）");
 
   // Windows 随包工具链：CI 干净检出里 resources/tools/* 是空的（被 gitignore），必须能由脚本现造
   (buildWin.includes("node scripts/prepare-windows-tools.cjs") ? ok : fail)("【29】Windows job 会现造随包工具链（CI 检出里 resources/tools/* 为空）");
