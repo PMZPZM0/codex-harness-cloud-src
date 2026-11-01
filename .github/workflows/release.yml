@@ -8,7 +8,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "cloud-v*"   # ⛔ 本仓约定：更新器按 ASSISTANT_TAG_PREFIX="cloud-v" 过滤 release
   workflow_dispatch:
 
 # 建 Release / 传资产需要写权限（默认只读）；actions: read 供 publish 取构建 artifact
@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
-          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "cloud-v${VERSION}" ]; then
             echo "::error::tag ${GITHUB_REF_NAME} 与 package.json 的版本 ${VERSION} 不一致——先对齐版本号再打 tag"
             exit 1
           fi
