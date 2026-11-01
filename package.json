@@ -33,7 +33,8 @@
     "verify:packaged-tools": "node scripts/verify-packaged-tools.cjs",
     "verify:reasoning": "node scripts/verify-reasoning-transport.cjs",
     "voice:models": "node scripts/install-voice-models.cjs",
-    "dev:main": "node scripts/watch-electron.mjs"
+    "dev:main": "node scripts/watch-electron.mjs",
+    "verify:runtime": "node scripts/verify-runtime.mjs"
   },
   "dependencies": {
     "@google/model-viewer": "^4.3.1",
