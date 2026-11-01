@@ -239,9 +239,10 @@ try {
         （**系统**主题）。系统亮 + 应用暗时符号色是近黑的 #1b1b1a，画在深色顶栏上几乎看不见；
         要等渲染层挂载后调 theme:apply 才修正（那之前一直是错的，且渲染层那个 effect 在
         非聊天界面还不一定及时跑）。这里补一刀 ⇒ 窗口一出生就是对的。 */
-  if (boot.theme === "dark" || boot.theme === "light") {
-    setAppThemeDark(boot.theme === "dark");
-    nativeTheme.themeSource = boot.theme;
+  if (boot.theme === "dark" || boot.theme === "light" || boot.theme === "obsidian") {
+    const bootDark = boot.theme !== "light";
+    setAppThemeDark(bootDark);
+    nativeTheme.themeSource = bootDark ? "dark" : "light";
   }
 } catch { /* 设置读取失败不影响启动，保持默认（跟随系统） */ }
 
@@ -935,13 +936,13 @@ function themeDiag(msg: string) {
   } catch { /* 诊断写失败不影响功能 */ }
 }
 
-function applyWindowChrome(dark: boolean) {
+function applyWindowChrome(dark: boolean, bg = dark ? "#1b1b1a" : "#ffffff") {
   /* ⛔⛔ 10-31：win32 改 frame:false，三个窗口钮由渲染层自绘（src/components/WindowControls.tsx）
      ⇒ 不再下发标题栏符号色（颜色由 CSS 变量跟着主题走），主进程少一份真相源。 */
   const targets = allBusWindows().filter((win) => Boolean(win && !win.isDestroyed()));
   themeDiag(`applyWindowChrome(dark=${dark}) 目标窗口=${targets.length}`);
   for (const win of targets) {
-    try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch (e) { themeDiag("  setBackgroundColor 失败：" + String(e)); }
+    try { win.setBackgroundColor(bg); } catch (e) { themeDiag("  setBackgroundColor 失败：" + String(e)); }
   }
   if (targets.length) console.log(`[theme] 窗口外观 → ${dark ? "dark" : "light"}；已给 ${targets.length} 个窗口下发底色`);
 }
@@ -977,21 +978,22 @@ ipcMain.handle("theme:apply", (event, theme: string) => {
     themeDiag("  → 忽略（无头形态下 file:// 窗口不得驱动全局窗口外观）");
     return { ok: false, ignored: true };
   }
-  const dark = theme === "dark";
+  const nextTheme = theme === "dark" || theme === "obsidian" || theme === "light" ? theme : "light";
+  const dark = nextTheme !== "light";
   appThemeDark = dark;
   setAppThemeDark(dark);
   nativeTheme.themeSource = dark ? "dark" : "light";
-  applyWindowChrome(dark);
+  applyWindowChrome(dark, nextTheme === "obsidian" ? "#0b0d10" : dark ? "#1b1b1a" : "#ffffff");
   /* 顺带落盘（10-16）：下次启动在窗口创建前就能读回，标题栏符号色不用等渲染层上报。
      ⛔ fire-and-forget：写盘失败不能影响主题切换本身（最坏结果 = 下次启动先跟随系统）。 */
-  void saveAppSettings(app.getPath("userData"), { theme: dark ? "dark" : "light" }).catch(() => undefined);
+  void saveAppSettings(app.getPath("userData"), { theme: nextTheme }).catch(() => undefined);
   /* ⛔ 广播给所有窗口（10-16 用户令「独立窗口的主题色要跟着主界面变」）：
      独立窗口当初只在**打开时**对齐主题（壳里播种），主界面之后换主题它不会动。
      这里把新主题推给全部窗口：独立窗口（真 preload，直收）/ 助手窗与浏览器标签页
      （无头形态下 headless 把 webContents.send 包成 SSE 广播，客户端经 shim 收）。
      渲染层订阅 onThemeChanged 后改自己的主题状态，再由 theme effect 落到
      dataset/localStorage（全窗口一致）。同值重复推送无副作用（React 同值 setState 不重渲染）。 */
-  broadcastToAll("theme:changed", dark ? "dark" : "light");
+  broadcastToAll("theme:changed", nextTheme);
   return { ok: true };
 });
 
