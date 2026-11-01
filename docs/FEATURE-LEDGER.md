@@ -36,6 +36,7 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-10-31 | 回复风格新增「直击本质」+ essence-first 配套技能 | 新增 | `reply-style.mjs`、`PersonalizationPage.tsx`、`UserCenter.tsx`、`26-skill-essence-first.ts`、守卫 12ad | 第五档风格 essence：先看本质目标，点名的手段若绕路就给更上游做法与代价对照；用户坚持就照做并写清风险（只提一次、不抬杠）。配套技能 essence-first 三处注册。（同步主线 24feb0a03） | 本轮 |
 | 2026-10-31 | 插队消息按流中位置渲染（后续内容在消息下面） | 修复 | `03-turn-view.tsx`、`SessionQueue.tsx`、守卫 11q | 回合视图旧渲染把所有用户消息搬到卡片顶上 ⇒ 插队后的回复全在消息上面。改按流中顺序切段渲染；只有最后一段带「耗时」收尾皮肤。（同步主线 85d518c56） | 本轮 |
 | 2026-10-31 | 排队消息发出即上屏 + 发送提示统一「消息发送成功」 | 改动 | `02-browser-queue-settings.tsx`、`07-turn-completed-settle.tsx` | 排队消息（定时到点 / 立即 / 自动启动 / 自动续接）发出去**立刻当用户消息上屏**（乐观气泡，复用正常发送的确认合并机制）；发送成功提示统一「消息发送成功」，定时字样只属于设置/取消/忙时重排。（同步主线 bbd1bf774） | 本轮 |
 | 2026-10-31 | 中枢群归属硬闸（跨中枢调度防串） | 修复 | `02-request.tsx`、`boss-groups-ipc.ts`、守卫 22 | 群工具全部携带引擎下发的 callerThreadId；主进程写侧逐个 assertGroupOwned（跨中枢派活/删群拒绝）；group_status 只报自己名下的群；create 归属以 callerThreadId 为权威。（同步主线 44b2d0937） | 本轮 |
