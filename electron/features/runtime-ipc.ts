@@ -24,8 +24,6 @@ import { existsSync, readFileSync, readdirSync, statSync, createWriteStream } fr
 import { once } from "node:events";
 import { createHash } from "node:crypto";
 import path from "node:path";
-// ⛔ 版本比较统一走 ../updates（含预发布语义）——GitHub 直下型更新行也用它
-import { compareVersions } from "../updates";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
@@ -43,6 +41,8 @@ import { codexHome, server } from "../runtime-refs";
 import { defineFeature } from "../context";
 import { recordToolRemoved } from "./tool-persistence";
 import type { IpcHost } from "../ipc-host";
+// 版本比较统一走 `../updates`（含预发布语义：1.2.3-beta < 1.2.3）——⛔ 别再写第二份。
+import { compareVersions } from "../updates";
 /* ⛔⛔ 10-30 Windows 真机事故（0.0.51 装了打不开，用户截图：Cannot find module
    '../../scripts/lib/tools-versions.cjs'）：这张**版本表**原先在模块顶层裸 require，而 build.files
    白名单里没有 scripts/** ⇒ 文件没进 asar ⇒ 主进程启动即死。两件事都要有：
@@ -335,6 +335,7 @@ const NPM_ALLOW_SCRIPTS: Partial<Record<DevRuntimeId, string[]>> = {
   "feishu-cli": ["@larksuite/cli"],
 };
 
+
 /** npm 包在某个 npm-global 根下留的 shim（不是包体，删完包体要顺手清掉）。
  *  ⛔ 10-07：显式接 `globalRoot` 参数，不再内部取 `npmGlobalRoot()` ——
  *   卸载要遍历**全部候选落位**，内部只取一个就又回到「删不干净」的旧 bug。 */
@@ -476,7 +477,7 @@ async function runNpmInstall(id: string, pkg: string, label: string, source: Non
  * ⛔ 装完写 version.txt：更新链的 installedVersionOf 读它 —— `filee-cli --version` 要 spawn 一次太慢。
  * ⛔ CLI 输出/取消：下载用流式 + 进度（同 skill-packs 的 10-30 口径「要真安装」），取消走
  *   isCancelRequested 轮询（fetch 不能被 trackRuntimeProc 杀，每 chunk 自查）。
- */
+ * ⛔ 导出 FILEE_REPO：filee:status 的声明区（FileeCard 跳转按钮）从它取 —— 前端不写第二份 URL。 */
 export const FILEE_REPO = "KnifeLemon/Filee";
 function fileeInstallDir(): string { return path.join(writeToolsRoot(), "filee"); }
 function fileeVersionFile(): string { return path.join(fileeInstallDir(), "version.txt"); }
@@ -754,7 +755,6 @@ const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?:
   "computer-use": { pkg: "open-computer-use", label: "Mac 电脑操作（Computer Use）", platforms: ["darwin"] },
   // REA 逆向分析（10-13）：同一条在线更新链（fetchRegistryLatest = 国内镜像优先 + 官方回落）。
   rea: { pkg: "rea-agents", label: "REA 逆向分析" },
-  // 飞书官方 CLI（10-29）：同一条在线更新链（国内镜像优先 + 官方回落）。
   "feishu-cli": { pkg: "@larksuite/cli", label: "飞书 CLI" },
 };
 
@@ -778,7 +778,7 @@ export type RuntimeUpdateRow = {
   error: string;
 };
 
-/** 当前平台**真正**可更新的工具 id（桌面 → 浏览器 → 电脑操作，顺序稳定）。
+/** 当前平台**真正**可更新的工具 id（桌面 → 浏览器 → 电脑操作 → GitHub 直下型，顺序稳定）。
  *  ⛔ 界面与后台调度都必须走这里，别各写一份清单（本项目反复栽在两处各写一套上）。 */
 export function updateableToolIds(): string[] {
   return [...Object.keys(UPDATEABLE_TOOLS), ...Object.keys(GITHUB_UPDATEABLE)].filter((id) => {
@@ -1001,7 +1001,7 @@ export const runtimeFeature = defineFeature<null>({
         }).catch(() => undefined);
       }
       sendToWindow("runtime:progress", { id, message: "卸载完成", percent: 100, done: true });
-      // ⛔ 10-13 同步清账：留着记录的话，更新后的「你装过哪些工具」会把一个**用户主动卸载**的
+      // ⛔ 10-12 同步清账：留着记录的话，更新后的「你装过哪些工具」会把一个**用户主动卸载**的
       //   工具算成「待重装」并提示恢复 —— 账本必须跟着真实状态走，不是只增不减。
       try { recordToolRemoved(id); } catch { /* 记账失败不影响卸载结果 */ }
       return { ok: true, runtimes: runtimeList() };
@@ -1017,6 +1017,11 @@ export const runtimeFeature = defineFeature<null>({
       requestRuntimeCancel(id);
       const killed = cancelRuntimeInstall(id);
       cleanupRuntimeTempFiles(id);
+      /* ⛔ 11-01：立刻把这条安装从「进行中」表里摘掉 —— 渲染层的 `busy` 判据是
+         `runtimeInstalls.has(id)`（经 runtime:list 下发），不摘的话取消后界面仍显示
+         「正在下载」并继续画进度条（用户实测：「取消都不刷新状态，界面还在走下载」）。
+         安装 promise 收尾时还会 delete 一次，Map.delete 幂等。 */
+      runtimeInstalls.delete(id);
       sendToWindow("runtime:progress", { id, message: "已取消下载，临时文件已清理", cancelled: true, done: true });
       return { ok: true, killed };
     });
@@ -1039,6 +1044,8 @@ export const runtimeFeature = defineFeature<null>({
       const spec = devRuntimeSpecs[id];
       // 引导型（docker/openssl）：静默安装需要管理员/重启/登录，这里打开官方下载页由用户自己装
       if (spec.kind === "guide") {
+        /* ⛔ mac 的 openssl 是系统自带件（见 runtimeInstalledBySystem 的 darwin 分支）⇒
+           不给 Windows 下载页（slproweb 是 Win32 构建，mac 上装了也用不了），guide 留空。 */
         const url = id === "openssl"
           ? (IS_MAC ? "" : "https://slproweb.com/products/Win32OpenSSL.html")
           : "https://www.docker.com/products/docker-desktop/";
@@ -1129,14 +1136,15 @@ export const runtimeFeature = defineFeature<null>({
           // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关
           await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
         } else if (id === "feishu-cli") {
-          /* 飞书官方 CLI（10-29）：包自身 postinstall 按平台下载 Go 二进制（约 50MB）⇒ 必须放行该包脚本。 */
+          /* 飞书官方 CLI（10-29）：npm 包自身 postinstall 会按平台下载 Go 二进制（约 50MB）⇒ 必须放行该包的脚本。 */
           await runNpmInstall(id, `@larksuite/cli@${TOOLS_VERSIONS.feishuCli ?? "latest"}`, "飞书 CLI", downloadSource, NPM_ALLOW_SCRIPTS["feishu-cli"]);
         } else if (id === "filee") {
           /* Filee 文件转换（10-30）：GitHub release 直下型（151MB，镜像序 + SHA256 校验）。
              更新链（performRuntimeUpdate 的 GITHUB_UPDATEABLE 分支）也走这一个函数。 */
           await installFileeFromGitHub(id, TOOLS_VERSIONS.filee ?? (await fetchGitHubLatestTag(FILEE_REPO)));
         } else if (id === "rea") {
-          // REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 更新到 latest。
+          // REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 更新到 latest
+          // （UPDATEABLE_TOOLS 的 rea 条目让「设置 → 自动化」的在线更新链对它同样成立）。
           await runNpmInstall(id, "rea-agents", "REA 逆向分析", downloadSource);
         } else {
           // ⛔ DOWNLOAD_SOURCE 经环境变量传给安装脚本 —— 脚本 argv 的裸词会被当成工具 id。
