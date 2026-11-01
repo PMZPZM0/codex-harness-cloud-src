@@ -368,7 +368,10 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   useEffect(() => {
     if (prevAnnounceThreadRef.current === threadId) return;
     prevAnnounceThreadRef.current = threadId;
-    stopPlayback(false);
+    /* ⛔⛔ 11-01 用户改判（推翻 10-17 的「切会话=立即停播」）：
+       「切换会话，语音播报直接停，按会话独立，切换就不直接停」
+       ⇒ 切会话**不再打断正在念的那一段**（它属于旧会话，念完自然结束），
+         只重置「本会话已念过」的去重表；新会话的播报仍按 threadId 过滤，不会串台。 */
     clearSpokenKeys();
     /* 切到另一个会话：恢复它自己的喇叭状态（每个会话独立；没关过就是开）。 */
     const threadMuted = isAnnounceMutedForThread(threadId);
@@ -668,6 +671,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
         if (r?.callActive === true) remoteCallActiveRef.current = true;
         /* 挂载时发现「我不是 owner」⇒ 清掉可能残留的队列（弹窗刚开、上一个 owner 的尾巴）。 */
         if (!isOwnerRef.current) stopPlayback(false);
+        publishStatus();
       })
       .catch(() => undefined);  // 取不到 ⇒ 保持默认 true（见 isOwnerRef 注释）
     const offOwner = window.codex.onAnnounceOwnerChanged?.((s: any) => {
