@@ -36,6 +36,7 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-11-01 | 温柔女声 · 晓晨也改为内置音色 | 改动 | `resources/voice-presets/presets.json`、守卫 11z | presets.json 给 cosyvoice-female-zh 标 builtIn（与自带音色同口径：自动落档/内置徽标/不可删/不进一键启用）；阿远 Nature 保持可启用样本。（同步主线 341f9c31c） | 本轮 |
 | 2026-10-31 | 克隆音色不再被内置音色冒充（女声变男声事故） | 修复 | `voice-service.ts`、`02-voice-profiles-presets.ts`、`02-voice-clone-profile.tsx`、守卫 11z | 模型没装/停用时不再静默回退 vits（男声冒充）：服务端显式报错、profiles-select 拒绝、UI radio/试听按 zipReady 禁用并给警示条。（同步主线 1f2059f10） | 本轮 |
 | 2026-10-31 | 活泼女声 · 小夏改为内置音色 | 改动 | `presets.json`、`02-voice-profiles-presets.ts`、`02-voice-clone-profile.tsx`、守卫 11z | 标 builtIn 的预设启动即自动落成档案、档案行带「内置」徽标且不能删除（主进程拒绝）、一键启用列表排除已内置预设。（同步主线 226c0df2a） | 本轮 |
 | 2026-10-31 | 语音资源危险动作统一确认弹窗（删除 / 停用 / 全部清空） | 改动 | `VoiceDevToolsSection.tsx`、`18-openai-dialog.css`、守卫 11z | 删除/停用/全部清空统一走 portal 确认弹窗（z 950、Esc/遮罩/✕ 三路关闭，正文写清体积与可恢复性）；旧内联确认条与 CSS 删净；停用不再点一下直接生效。（同步主线 f4cd1dbdd） | 本轮 |
