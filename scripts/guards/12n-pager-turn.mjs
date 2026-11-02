@@ -53,8 +53,10 @@ const ok = (condition, message) => {
   const css = read("src/styles/11-settings-secrets.css");
   ok(/@keyframes page-turn-in \{/.test(css) && /\.page-turn \{ animation: page-turn-in/.test(css),
     "统一动画 keyframes + .page-turn（淡入 + 上移 10px + 微缩放）");
-  ok(/@media \(prefers-reduced-motion: reduce\) \{ \.page-turn \{ animation: none; \} \}/.test(css),
-    "⛔ 减动效偏好下关动画（全局纪律）");
+  /* ⛔ 11-02 判据更新（用户改判，不是放松）：用户令「把 mac 的『减少动态效果』关了，肯定要动画」。
+     项目语义是 data-motion="force" 无视系统偏好 ⇒ 静音块必须带守卫，不带才是 bug。 */
+  ok(/@media \(prefers-reduced-motion: reduce\) \{ html:not\(\[data-motion="force"\]\) \.page-turn \{ animation: none/.test(css),
+    "⛔ 减动效逃生口必须在 data-motion=\"force\" 守卫下（否则 mac 系统开关会把动画全吃掉）");
 }
 
 /* ── 四、check 链登记 ────────────────────────────────────────────────── */
