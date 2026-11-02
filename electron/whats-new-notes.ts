@@ -42,6 +42,15 @@ export type WhatsNewEntry = {
 
 /** 全部版本的要点，**最新在最前**（弹窗按数组顺序展示）。 */
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
+  {
+    version: "0.0.51",
+    date: "2026-11-02",
+    items: [
+      { t: "倍速下拉跟随主题", d: "媒体预览的播放速度改用应用内下拉，暗色下不再白底" },
+      { t: "OpenFilm 卸载说明补回", d: "卡片写明：卸载只做引导，不会替你删系统目录" },
+      { t: "发版校验更准", d: "几处判据与实现对齐，减少误红" },
+    ],
+  },
   /* ⛔ 云助手自己的版本线（0.0.x，钉在 electron-builder.assistant.yml 的 extraMetadata）——
      与下方桌面版 0.0.38 的条目并存：getVersion() 在云助手包里返回 0.0.7，所以这条放最前才找得到。
      10-23：包内版本已从 0.0.8 对齐到 0.0.47（cloud-v 发布线），最新条目跟着改成 0.0.47。 */
