@@ -23,6 +23,7 @@
 import { systemPreferences } from "electron";
 import os from "node:os";
 import path from "node:path";
+import { bossProjectRoots } from "../../src/lib/boss-project-dir.mjs";
 import fs from "node:fs/promises";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { spawn } from "node:child_process";
@@ -263,13 +264,25 @@ export const appFeature = defineFeature<null>({
        ⛔ 这个 handler 本仓原先漏同步（preload / ipc-registry 都声明了通道，实现没跟过来
          ⇒ invoke 落到没有 handler 的通道上直接 reject，界面表现是「点了没反应」）。
        ⛔ 三仓同轮同步时必须带上它 —— 只同步 `src/` 不带 `electron/` 就会出现
-         「主仓能选、这台点了没反应」。 */
+         「主仓能选、这台点了没反应」。
+       ⛔ 11-02 mac 实测（截图报 `ENOENT: mkdir '/指挥中枢项目-…'`）：mac 没有"盘"的概念，
+          `path.parse(execPath).root` 恒为 `/`，而根目录只读 ⇒ 必然失败。
+          mac / linux 改为在用户「文稿」里建，失败再退用户目录。 */
     ipcHost.handle("app:boss-project-dir", async () => {
-      const base = path.dirname(process.execPath);
-      const root = path.parse(base).root || base;
-      const dir = path.join(root, `指挥中枢项目-${new Date().toISOString().slice(0, 10)}`);
-      await fs.mkdir(dir, { recursive: true });
-      return dir;
+      const now = new Date();
+      const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const name = `指挥中枢项目-${stamp}`;
+      const roots = bossProjectRoots({ platform: process.platform, execPath: process.execPath, home: host.app.getPath("home") });
+      let lastError: any = null;
+      for (const root of roots) {
+        if (!root) continue;
+        const dir = path.join(root, name);
+        try {
+          await fs.mkdir(dir, { recursive: true });
+          return dir;
+        } catch (error) { lastError = error; }
+      }
+      throw new Error(`自动新建项目目录失败（已尝试 ${roots.filter(Boolean).join("、") || "无可用目录"}）：${lastError?.message ?? "未知原因"}`);
     });
 
     ipcHost.handle("app:relaunch", () => {

@@ -7,6 +7,7 @@ import { createPortal, flushSync } from "react-dom";
 import { ThemeQuickSwitch } from "../../../components/ThemeQuickSwitch";
 import { BossProjectDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
 import { isMacPlatform } from "../../../lib/is-mac-platform";
+import { ipcErrorMessageOf } from "../../../lib/ipc-error.mjs";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, setFunctionMenuSettingsOpener, setFunctionMenuSettingsTargets, useFunctionMenuConfig } from "../../function-menu";
 import { settingsNav } from "../helpers";
 import { hk } from "../../../lib/hk";
@@ -251,8 +252,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       /* ⛔ 不许再静默：失败要把原因写在弹窗里（"点了没反应"是最难自查的一类故障）。
          常见两种：① 主进程那条通道没有实现（invoke 到空 handler ⇒ 直接 reject）；
                    ② 盘根不可写 / 权限被拦。 */
-      const message = error instanceof Error ? error.message : String(error ?? "");
-      setBossDirError(message || "自动新建失败，请手动选择项目地址");
+      setBossDirError(ipcErrorMessageOf(error, "自动新建失败，请手动选择项目地址"));
     }
     finally { setBossDirBusy(false); }
   };
