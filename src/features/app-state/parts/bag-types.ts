@@ -588,6 +588,8 @@ export interface Bag {
   setSandbox: React.Dispatch<React.SetStateAction<string>>;
   personality: string;
   setPersonality: React.Dispatch<React.SetStateAction<string>>;
+  /* 10-27：通知可显式带语气（tone）——「未选工作区/项目地址」这类提示按场景着色，
+     不再全靠 noticeTone() 从文案里猜（普通会话=蓝 info，中枢=琥珀 warning）。 */
   notices: { id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; tone?: NoticeTone | undefined; }[];
   setNotices: React.Dispatch<React.SetStateAction<{ id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; tone?: NoticeTone | undefined; }[]>>;
   noticeCenter: { id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; at: number; read: boolean; tone?: NoticeTone | undefined; }[];
@@ -666,22 +668,31 @@ export interface Bag {
   setUpdateError: React.Dispatch<React.SetStateAction<string>>;
   updateDownloading: boolean;
   setUpdateDownloading: React.Dispatch<React.SetStateAction<boolean>>;
+  /** 更新方式：差分优先（默认）/ 强制完整包（差分出问题时兜底）。 */
+  updateMode: "differential" | "full";
+  setUpdateMode: (mode: "differential" | "full") => void;
+  /** 更新方式的状态 setter（设置页的「补丁 / 完整包」单选直接用 setState 语义）。 */
+  setUpdateModeState: React.Dispatch<React.SetStateAction<"differential" | "full">>;
   updateProgress: number;
   setUpdateProgress: React.Dispatch<React.SetStateAction<number>>;
   updateNotice: { version?: string | undefined; changelog?: string | undefined; size?: number | undefined; mandatory?: boolean | undefined; } | null;
   setUpdateNotice: React.Dispatch<React.SetStateAction<{ version?: string | undefined; changelog?: string | undefined; size?: number | undefined; mandatory?: boolean | undefined; } | null>>;
-  /** 更新状态机快照（10-11 云助手自动更新）：主进程 `updates:state` 推送 / `updates:state-read` 拉取。
-   *  ⛔ 单一真相源在主进程；渲染层只渲染相位与数字，不自己推断进度/是否已完成。 */
-  updateState: { phase: "idle" | "checking" | "available" | "downloading" | "downloaded" | "installing" | "done" | "error"; percent: number; receivedBytes: number; totalBytes: number; speedBytesPerSec: number; etaSeconds: number | null; version?: string | undefined; changelog?: string | undefined; filename?: string | undefined; error?: string | undefined; deferredVersion?: string | undefined; onBattery?: boolean | undefined; product?: string | undefined; channel?: string | undefined; };
-  setUpdateState: React.Dispatch<React.SetStateAction<{ phase: "idle" | "checking" | "available" | "downloading" | "downloaded" | "installing" | "done" | "error"; percent: number; receivedBytes: number; totalBytes: number; speedBytesPerSec: number; etaSeconds: number | null; version?: string | undefined; changelog?: string | undefined; filename?: string | undefined; error?: string | undefined; deferredVersion?: string | undefined; onBattery?: boolean | undefined; product?: string | undefined; channel?: string | undefined; }>>;
-  /** 更新面板动作（10-11）：取消下载 / 稍后安装 / 跳过此版本。实现见 part02c2（挂 bag 供
-   *  01-sidebar-shell 的「检查更新」子页调用；三个动作都只调主进程通道，UI 不自己改相位）。 */
-  runUpdateCancel: () => Promise<void>;
-  runUpdateDefer: () => Promise<void>;
-  runUpdateSkip: () => Promise<void>;
   accountMenuRef: React.RefObject<HTMLDivElement | null>;
   runUpdateCheck: () => Promise<void>;
   runUpdateDownload: () => Promise<void>;
+  /** 10-12：更新包已就绪（后台静默下载完成 / 手动检查发现已下好）⇒ 左下角弹窗。 */
+  updateReady: boolean;
+  setUpdateReady: React.Dispatch<React.SetStateAction<boolean>>;
+  updateReadyVersion: string;
+  setUpdateReadyVersion: React.Dispatch<React.SetStateAction<string>>;
+  updateRestarting: boolean;
+  setUpdateRestarting: React.Dispatch<React.SetStateAction<boolean>>;
+  /** 用户「取消」时记下压住的是**哪个版本**（换版本仍会重新弹）。 */
+  dismissedVersionRef: React.RefObject<string>;
+  armUpdateReady: (version?: string|undefined) => void;
+  dismissUpdateReady: () => void;
+  restartAndInstall: () => Promise<void>;
+  tryArmUpdateReady: () => Promise<void>;
   openFeedbackPage: () => void;
   uiLang: string;
   setUiLang: React.Dispatch<React.SetStateAction<string>>;
@@ -733,8 +744,8 @@ export interface Bag {
   capabilityError: string;
   setCapabilityError: React.Dispatch<React.SetStateAction<string>>;
   refreshCapabilities: () => void;
-  installDevRuntime: (id: string) => Promise<void>;
-  uninstallDevRuntime: (id: string) => Promise<void>;
+  installDevRuntime: (id: string) => Promise<boolean>;
+  uninstallDevRuntime: (id: string) => Promise<boolean>;
   cancelDevRuntime: (id: string) => Promise<void>;
   runtimeUninstalling: string | null;
   setRuntimeUninstalling: React.Dispatch<React.SetStateAction<string | null>>;
@@ -1213,8 +1224,6 @@ export interface Bag {
   refreshThreadRole: (threadId?: string | undefined) => Promise<void>;
   delegateRecordsRef: React.RefObject<Record<string, DelegateRecordEntry>>;
   dispatchInfoRef: React.RefObject<{ description: string; targets: DispatchTargetEntry[]; }>;
-
-  /* ★ 10-29 @ 点名（专家 / 子智能体 / CLI 智能体 / 专家团）：本轮有效，发送后清空。 */
   dispatchMentions: DispatchTargetEntry[];
   setDispatchMentions: React.Dispatch<React.SetStateAction<DispatchTargetEntry[]>>;
   addDispatchMention: (target: DispatchTargetEntry) => void;
@@ -1380,9 +1389,9 @@ export interface Bag {
   deleteThread: (id: string) => Promise<void>;
   deleteThreadsByCwd: (cwd: string) => Promise<void>;
   /* 11-01 笔名体系（会话名即笔名）：
-     · aliasState —— 主进程 session-alias:snapshot 的只读快照，store 在 src/lib/alias-store.mjs；
+     · aliasState —— 主进程 `session-alias:snapshot` 的只读快照，store 在 `src/lib/alias-store.mjs`；
      · aliasRefreshKey —— 快照代次，用来让依赖它的 memo 失效；
-     · badgeCycle —— 行内「最多露一个标签」的轮播下标；
+     · badgeCycle —— 行内「最多露一个标签」的轮播下标（thread-badge-cycle store）；
      · delegateDescendantsOf —— 删会话时先级联删它派出去的子会话（⛔ 先子后父）。 */
   aliasState: import("../../../lib/alias-store.mjs").AliasState;
   aliasRefreshKey: string;
@@ -1474,7 +1483,7 @@ export interface Bag {
   insertFavorite: (item: FavoriteItem) => void;
   sendFavorite: (item: FavoriteItem) => Promise<void>;
   favoriteToMemory: (ids: string[], scope: MemoryLayerScope) => Promise<FavoritesToMemoryResult>;
-  /* ⛔ 10-23 补登记（同步主仓 0.0.47）：part07/03-seg 的滑窗下滚辅助函数 —— 【93】从 parts 推断出它、
+  /* ⛔ 10-22 补登记（并行线在途）：part07/03-seg 的滑窗下滚辅助函数 —— 【93】从 parts 推断出它、
      而 Bag 里没有（推断有/Bag 没有 = 1 项红）。生成器不在本仓，按实测值补进声明面。 */
   slideTurnWindowDown: (id: string) => void;
 }
