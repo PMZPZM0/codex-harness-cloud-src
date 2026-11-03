@@ -26,6 +26,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT } from "./_ctx.mjs";
 
+/** ⛔ 11-03：云助手（codex-assistant）是第三条产品线 —— 不提供「静默下载」通道
+    （本地壳 + 云端界面，更新走手动下载 → restart-install）。【④】那组判据是主仓专有。 */
+const IS_CLOUD = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).name === "codex-assistant";
+
 let checks = 0;
 let fails = 0;
 const ok = (cond, label) => {
@@ -70,34 +74,54 @@ ok(/try \{ recordToolRemoved\(id\); \} catch/.test(un),
   "清账包在 try/catch 里（账本坏了不该让卸载报错）");
 
 console.log("【④ 静默下载与重启安装的安全/顺序口径】");
-const dl = ui.slice(ui.indexOf('handle("updates:download-silent"'), ui.indexOf('handle("updates:restart-install"'));
-ok(/lastVerifiedUpdatePath && fileExists\(lastVerifiedUpdatePath\)/.test(dl),
-  "静默下载幂等：已校验过就直接返回，不重复下几百 MB");
-/* ⛔ 10-26 收紧成「精确禁字段」：原来一刀切禁 `input.` 全字面 —— 10-25 差分更新加了
-   `input.mode`（只决定「差分 or 完整包」的受限枚举），一刀切会把这条安全断言顶成假红。
-   真正要防的是 **渲染层指定地址/路径/哈希**（09-13 P0：任意 exe 落盘执行）⇒ 逐个字段禁。 */
-ok(!/input\??\.(url|downloadUrl|href|path|filename|sha256|version)/.test(dl),
-  "⛔ 静默下载**不接受渲染层指定的下载地址/路径/哈希**（同 09-13 P0：任意 exe 落盘执行）");
-ok(/const url = lastUpdateInfo\?\.downloadUrl;/.test(dl),
-  "下载地址只取主进程校验过的 lastUpdateInfo（渲染层拿不到发言权）");
-ok(/silentDownloading\s*=\s*true/.test(dl) && /finally\s*\{\s*silentDownloading\s*=\s*false/.test(dl),
-  "并发闸在 finally 里复位（异常路径漏复位会让后续静默下载永久失败）");
-ok(/sendToWindow\("updates:ready"/.test(dl),
-  "下载完成主动推 updates:ready（用户可能压根没开设置页，只能靠事件弹窗）");
+if (IS_CLOUD) {
+  /* ⛔ 11-03：云助手无 updates:download-silent（不提供静默下载）—— 用负向断言确认
+     这是「确实没有」，而不是「半接了个残废通道」。 */
+  ok(!/handle\("updates:download-silent"/.test(ui),
+    "云助手产品线不提供静默下载（更新走手动下载 → restart-install）—— 确认未半接该通道");
+} else {
+  const dl = ui.slice(ui.indexOf('handle("updates:download-silent"'), ui.indexOf('handle("updates:restart-install"'));
+  ok(/lastVerifiedUpdatePath && fileExists\(lastVerifiedUpdatePath\)/.test(dl),
+    "静默下载幂等：已校验过就直接返回，不重复下几百 MB");
+  /* ⛔ 10-26 收紧成「精确禁字段」：原来一刀切禁 `input.` 全字面 —— 10-25 差分更新加了
+     `input.mode`（只决定「差分 or 完整包」的受限枚举），一刀切会把这条安全断言顶成假红。
+     真正要防的是 **渲染层指定地址/路径/哈希**（09-13 P0：任意 exe 落盘执行）⇒ 逐个字段禁。 */
+  ok(!/input\??\.(url|downloadUrl|href|path|filename|sha256|version)/.test(dl),
+    "⛔ 静默下载**不接受渲染层指定的下载地址/路径/哈希**（同 09-13 P0：任意 exe 落盘执行）");
+  ok(/const url = lastUpdateInfo\?\.downloadUrl;/.test(dl),
+    "下载地址只取主进程校验过的 lastUpdateInfo（渲染层拿不到发言权）");
+  ok(/silentDownloading\s*=\s*true/.test(dl) && /finally\s*\{\s*silentDownloading\s*=\s*false/.test(dl),
+    "并发闸在 finally 里复位（异常路径漏复位会让后续静默下载永久失败）");
+  ok(/sendToWindow\("updates:ready"/.test(dl),
+    "下载完成主动推 updates:ready（用户可能压根没开设置页，只能靠事件弹窗）");
+}
+if (IS_CLOUD) {
+  /* ⛔ 11-03：云助手没有「重启安装」通道 —— 它的更新安装是 `updates:install` →
+     `installUpdate()` 里的 `shell.openPath()`（交给系统打开 NSIS 安装包）。
+     ⛔ 必须给**正向断言**：这些判据在空串上恒真（负向断言对不存在的通道会静默判绿，
+        这正是「守卫自洽地错」的典型），所以先钉死它的真实形态。
+     待办（记在 docs）：openPath 打开时应用还在跑，NSIS 可能因文件锁要求先关闭 ——
+     主仓改成 spawn+quit 就是为了这个体验，云助手尚未跟进。 */
+  const inst = readFileSync(join(ROOT, "electron/updates.ts"), "utf8");
+  ok(/shell\.openPath\(filePath\)/.test(inst) && !/spawn\(/.test(inst),
+    "云助手更新安装走 shell.openPath（NSIS 自提示关闭应用）—— 已确认形态，未半接 spawn+quit");
+  ok(!/handle\("updates:restart-install"/.test(ui),
+    "云助手无 restart-install 通道（确认，不是半接）");
+} else {
+  const rs = ui.slice(ui.indexOf('handle("updates:restart-install"'));
+  const spawnAt = rs.indexOf("spawn(lastVerifiedUpdatePath");
+  const quitAt = rs.indexOf("app.quit()");
+  ok(spawnAt > 0 && quitAt > spawnAt,
+    "⛔ restart-install 必须**先 spawn 安装包、再 quit 自己**（反了会被 exe 文件锁挡住，覆盖安装必失败）");
+  ok(/detached: true/.test(rs) && /\.unref\(\)/.test(rs),
+    "安装包 detached + unref（不 detach 会等它结束 = 永远不退出）");
+  ok(!/^\s*(await\s+)?server\??\.stop/m.test(rs),
+    "⛔ 不在这里手写引擎收尾（before-quit 已统一做，重复执行反而出事；且 server 上无 stop 方法）");
+  ok(/path_not_verified|no_verified_update/.test(ui.slice(0, ui.indexOf('handle("updates:restart-install"'))) ||
+     /lastVerifiedUpdatePath/.test(rs),
+    "restart-install 只认主进程已校验过的那个包（不接受渲染层传路径）");
 
-const rs = ui.slice(ui.indexOf('handle("updates:restart-install"'));
-const spawnAt = rs.indexOf("spawn(lastVerifiedUpdatePath");
-const quitAt = rs.indexOf("app.quit()");
-ok(spawnAt > 0 && quitAt > spawnAt,
-  "⛔ restart-install 必须**先 spawn 安装包、再 quit 自己**（反了会被 exe 文件锁挡住，覆盖安装必失败）");
-ok(/detached: true/.test(rs) && /\.unref\(\)/.test(rs),
-  "安装包 detached + unref（不 detach 会等它结束 = 永远不退出）");
-ok(!/^\s*(await\s+)?server\??\.stop/m.test(rs),
-  "⛔ 不在这里手写引擎收尾（before-quit 已统一做，重复执行反而出事；且 server 上无 stop 方法）");
-ok(/path_not_verified|no_verified_update/.test(ui.slice(0, ui.indexOf('handle("updates:restart-install"'))) ||
-   /lastVerifiedUpdatePath/.test(rs),
-  "restart-install 只认主进程已校验过的那个包（不接受渲染层传路径）");
-
+}
 console.log("【⑤ 按需下载落点：userData/tools（覆盖安装不丢）】");
 const tc = readFileSync(join(ROOT, "electron/toolchain.ts"), "utf8");
 ok(/export function userToolsRoot/.test(tc) && /export function writeToolsRoot/.test(tc) && /export function existingToolPath/.test(tc),

@@ -313,7 +313,15 @@ if (!mainSrc || !preloadSrc) {
         const themeEffect = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "02-seg", "02-chat-search-history.tsx"), "utf8");
         (/documentElement\.dataset\.themeMode = isDarkTheme\(bag\.theme\)/.test(themeEffect) ? ok : fail)("【2】主题 effect 同时落 data-theme-mode（首帧 / 切主题都跟随）");
         const mainTheme = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
-        (/DARK_THEME_IDS = new Set\(\["dark", "obsidian"\]\)/.test(mainTheme) && /broadcastToAll\("theme:changed", nextTheme\)/.test(mainTheme) ? ok : fail)("【2】主进程按注册表判深色 + 广播主题 id（副窗不退回旧黑夜）");
+        /* ⛔ 11-03：云助手只有 dark/light 两态（没有多暗色皮肤注册表 —— 那是主仓 10-30 的控件皮肤
+           套装制）。判据按产品线分岔：主仓验注册表机制，云助手验它自己的落点，⛔ 不放空。 */
+        const isCloudTheme = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).name === "codex-assistant";
+        const themeOk = isCloudTheme
+          ? (/nativeTheme\.themeSource = dark \? "dark" : "light"/.test(mainTheme)
+             && /broadcastToAll\("theme:changed"/.test(mainTheme))
+          : (/DARK_THEME_IDS = new Set\(\["dark", "obsidian"\]\)/.test(mainTheme)
+             && /broadcastToAll\("theme:changed", nextTheme\)/.test(mainTheme));
+        (themeOk ? ok : fail)("【2】主进程按注册表判深色 + 广播主题 id（副窗不退回旧黑夜）");
       }
       /* ── 任务栏图标 / AUMID（09-25 实测改判，旧判据已证伪）──
          ⛔ dev **不许**设 AUMID。Windows 仅在能把 AUMID 解析到"注册了同一 AUMID 的快捷方式"时才用
