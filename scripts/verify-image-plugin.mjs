@@ -62,6 +62,7 @@ assert.ok(
 const imageFunctions = persistFn + "\n" + generateFn;
 let payload;
 const imageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'generate-image-'));
+const fakeFetch = async () => new Response(JSON.stringify(payload));
 const generate = vm.runInNewContext(ts.transpile(imageFunctions) + '\ngenerateImageWith', {
   AbortSignal,
   Buffer,
@@ -70,7 +71,8 @@ const generate = vm.runInNewContext(ts.transpile(imageFunctions) + '\ngenerateIm
   existsSync,
   app: { getPath: () => imageDir },
   console: { warn: () => {} },
-  fetch: async () => new Response(JSON.stringify(payload)),
+  /* 11-03 同主仓：插件代码已改用 outboundFetch 发请求，vm 沙箱必须注入同名函数。 */
+  outboundFetch: (input, init) => fakeFetch(input, init),
   describeNetworkError: error => error,
 });
 const input = { baseUrl: 'https://example.com/v1', apiKey: 'test-only', model: 'gpt-image-2', prompt: 'test' };
