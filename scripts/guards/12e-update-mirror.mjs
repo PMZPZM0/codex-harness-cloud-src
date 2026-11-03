@@ -17,6 +17,10 @@ const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
 
 /** 两仓同一份守卫：断言差异按 package name 分岔（主仓无令牌概念，PPcode 私有仓有 token 门）。 */
 const IS_PPCODE = JSON.parse(read("package.json")).name === "ppcode";
+/** ⛔ 11-03：云助手（codex-assistant）是**第三条产品线** —— 更新源用自己的常量名
+    （ASSISTANT_RELEASES_LIST_API / cloud-v* / CodexHarnessAssistant-*），且**不发 NSIS 差分包**。
+    此前判据只分了「PPcode / 其它」，云助手被当主仓判 ⇒ 5 条恒红（该仓 check 链从未跑到这里）。 */
+const IS_CLOUD = JSON.parse(read("package.json")).name === "codex-assistant";
 
 let checks = 0;
 let fails = 0;
@@ -63,14 +67,20 @@ if (IS_PPCODE) {
     "下载安装包走镜像序（匿名）；⛔ 带令牌恒直连");
 } else {
   // ⛔ 10-12 对账修正：更新链改走 releases **LIST** API（取全部资产匹配 digest），镜像序判定跟着换锚点
-  ok(updates.includes("mirrorCandidates(GITHUB_RELEASES_LIST_API)") && /for \(const candidate of mirrorCandidates\(GITHUB_RELEASES_LIST_API\)\)/.test(updates),
+  /* 云助手用 ASSISTANT_RELEASES_LIST_API（自己的 Release），主仓用 GITHUB_RELEASES_LIST_API —— 按仓取锚点 */
+  const listApi = IS_CLOUD ? "ASSISTANT_RELEASES_LIST_API" : "GITHUB_RELEASES_LIST_API";
+  ok(updates.includes(`mirrorCandidates(${listApi})`) && new RegExp(`for \\(const candidate of mirrorCandidates\\(${listApi}\\)\\)`).test(updates),
     "检查更新走镜像序逐条尝试（第一个 2xx 生效）");
   ok(updates.includes("const candidates = mirrorCandidates(releaseUrl)") && /for \(const candidate of candidates\)/.test(updates),
     "下载安装包走镜像序（失败/校验不过换下一档）");
 }
 ok(/fs\.rm\(destPath, \{ force: true \}\)/.test(updates) && /fs\.rm\(result\.path, \{ force: true \}\)/.test(updates),
   "每条候选开跑前删半截文件、校验失败删坏文件（半截包绝不进下一轮/不被执行）");
-ok(/sha256Of\(match\??\.digest\)/.test(updates) && /function sha256Of\(/.test(updates),
+/* ⛔ 云助手的实现形态不同：资产类型带 `digest?: string`、用 /^sha256:<64hex>$/ 解析后作为
+   expectedSha256 传给下载（不是主仓那个 sha256Of(match.digest) 命名）。语义同样钉死：必须接上 digest。 */
+ok(IS_CLOUD
+  ? /digest\?: string/.test(updates) && /\^sha256:\(\[0-9a-f\]\{64\}\)/.test(updates)
+  : /sha256Of\(match\??\.digest\)/.test(updates) && /function sha256Of\(/.test(updates),
   "asset.digest（GitHub 自带 sha256）接入候选 —— 走镜像后包体完整性的唯一证据");
 if (!IS_PPCODE) {
   ok(!/Authorization/i.test(updates),
@@ -86,8 +96,14 @@ if (IS_PPCODE) {
 }
 
 /* ── 主仓专属：NSIS 差分更新接线（10-25）──
-   electron-updater + blockmap/latest.yml；差分失败必须回退完整包（不能只剩差分一条路）。 */
-if (!IS_PPCODE) {
+   electron-updater + blockmap/latest.yml；差分失败必须回退完整包（不能只剩差分一条路）。
+   ⛔ 云助手**不发差分包**（产品线决策：它走完整包），不套这套；但给负向断言防"半接"。 */
+if (IS_CLOUD) {
+  const pkgC = read("package.json");
+  ok(!/"electron-updater"/.test(pkgC) && !/downloadUpdateDifferential/.test(updates),
+    "云助手产品线走完整包 —— 确认未半接 electron-updater（半接 = 差分半残，用户反而更慢）");
+}
+if (!IS_PPCODE && !IS_CLOUD) {
   const pkg = read("package.json");
   const ipc = codeOnly(read("electron/features/updates-ipc.ts"));
   const buildWin = read(".github/workflows/build-win.yml");

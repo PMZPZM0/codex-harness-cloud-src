@@ -250,8 +250,8 @@ export async function checkAssistantUpdate(
   if (compareVersions(version, currentVersion) <= 0) {
     return { hasUpdate: false, reason: "up_to_date", channel: ASSISTANT_CHANNEL, version };
   }
-  const assets: { name: string; browser_download_url: string; size?: number }[] = Array.isArray(hit.assets) ? hit.assets : [];
-  let match: { name: string; browser_download_url: string; size?: number } | undefined;
+  const assets: { name: string; browser_download_url: string; size?: number; digest?: string }[] = Array.isArray(hit.assets) ? hit.assets : [];
+  let match: { name: string; browser_download_url: string; size?: number; digest?: string } | undefined;
   if (platform === "darwin") {
     match = assets.find(
       (a) => a.name.startsWith(ASSISTANT_ASSET_PREFIX) && a.name.endsWith(".zip") && a.name.includes(arch),
@@ -269,6 +269,13 @@ export async function checkAssistantUpdate(
     version,
     filename: match.name,
     size: match.size,
+    /* ⛔ 11-03 同主仓：接上 GitHub 自带的 asset.digest（形如 "sha256:abc…"）——
+       走镜像之后「包体没被第三方反代换过」的唯一证据就是它。取不到就是 undefined（不假装有）。 */
+    sha256: (() => {
+      const raw = String(match.digest ?? "");
+      const hit2 = /^sha256:([0-9a-f]{64})$/i.exec(raw);
+      return hit2 ? hit2[1].toLowerCase() : undefined;
+    })(),
     changelog: hit.body?.slice(0, 2000) || "",
     downloadUrl: match.browser_download_url,
   };
@@ -402,19 +409,35 @@ export async function downloadUpdate(
     });
   };
   await fs.mkdir(path.dirname(destPath), { recursive: true });
-  const result = await hop(releaseUrl, 0);
-
-  // ⛔ 完整性校验（09-13 审计 P0）：`sha256` 字段以前从下发到使用**全链路没人比对** ——
-  // 下载 → `shell.openPath()` 直接执行，等于"发布站被换掉就静默装上攻击者的包"。
-  // 现在：有期望哈希就必须匹配，不匹配**删文件并报错**；没有期望哈希则只接受 https（上面已强制）。
-  if (expectedSha256) {
-    const actual = await sha256OfFile(result.path);
-    if (actual.toLowerCase() !== expectedSha256.toLowerCase()) {
-      await fs.rm(result.path, { force: true }).catch(() => undefined);
-      throw new Error(`更新包校验失败（期望 ${expectedSha256.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…），已删除下载文件`);
+  /* ⛔⛔ 11-03 同主仓：**下载也走镜像候选序**。此前这里直接 `hop(releaseUrl)` 只跟随重定向，
+     国内镜像完全没发挥作用（检查更新走了镜像、下载没走 —— 大包照样慢/失败）。
+     规则与主仓一致：逐候选尝试；每档开跑前先删半截文件（否则续传会拼出坏包）；
+     sha256 不符删坏文件并换下一档；全失败给合并错误（带最后一次原因）。 */
+  const candidates = mirrorCandidates(releaseUrl);
+  let lastError: unknown = new Error("no_candidate");
+  for (const candidate of candidates) {
+    await fs.rm(destPath, { force: true }).catch(() => undefined);
+    try {
+      const result = await hop(candidate, 0);
+      /* ⛔ 完整性校验（09-13 审计 P0 保留）：有期望哈希就必须匹配，不匹配**删文件并换下一档**。 */
+      if (expectedSha256) {
+        const actual = await sha256OfFile(result.path);
+        if (actual.toLowerCase() !== expectedSha256.toLowerCase()) {
+          await fs.rm(result.path, { force: true }).catch(() => undefined);
+          lastError = new Error(`更新包校验失败（期望 ${expectedSha256.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…），已删除下载文件`);
+          continue;
+        }
+      }
+      return result;
+    } catch (error) {
+      lastError = error;
     }
   }
-  return result;
+  {
+    const detail = lastError instanceof Error ? lastError.message : String(lastError);
+    await fs.rm(destPath, { force: true }).catch(() => undefined);
+    throw new Error(`全部下载通道（gh-proxy / ghfast / 直连）都失败了；最后一次：${detail}`);
+  }
 }
 
 /** 流式计算文件 sha256（大安装包不整份读进内存）。 */
