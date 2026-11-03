@@ -1013,7 +1013,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
       ["features/delegation.ts", deleg],
       ["features/teams-ipc.ts", teams],
       ["team-invoke.ts", teams],
-    ].filter(([, src]) => /buildDelegateMemory\([\s\S]{0,400}?threadId:/.test(src)).map(([n]) => n);
+    ].filter(([, src]) => /buildDelegateMemory\([\s\S]{0,400}?threadId[,:]/.test(src)   /* 11-03 同主仓：兼容简写 threadId, */).map(([n]) => n);
     (threadIdAtCallSites.length === 3 ? ok : fail)(
       `【125】三条派活路径都传了真实 threadId（实得 ${threadIdAtCallSites.length}/3：${threadIdAtCallSites.join(" / ")}）`
     );

@@ -380,7 +380,7 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   /* 中枢派活的壳里要带「上级：」（模型侧知道谁派的）+ 成员线程登记上级（气泡头部的名字来源，
      中枢改名后子会话跟着变）。⛔ 两处缺一处：气泡只能退回通用「主会话」。 */
   const bossRunner = read("electron/boss-groups/runner.ts");
-  ok(/上级：\$\{supervisor\}/.test(bossRunner) && /memberPrompt\(group, member, task, attempt\.n, bossSupervisor\)/.test(bossRunner),
+  ok(/上级：\$\{supervisor\}/.test(bossRunner) && /memberPrompt\(group, member, task, attempt\.n, bossSupervisor[,)]/   /* 11-03 同主仓：userNorms 形参追加后兼容两种调用 */.test(bossRunner),
     "中枢派活的壳里写「上级：<中枢会话名>」（⛔ 不写 = 子会话不知道上级是谁）");
   ok(/ensureSessionAlias\(threadId, String\(group\.bossThreadId/.test(bossRunner)
     && /ensureSessionAlias\(member\.threadId, String\(group\.bossThreadId/.test(bossRunner),
