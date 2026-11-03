@@ -36,6 +36,8 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-11-03 | 专家团成员收进「子会话」+ 派发任务统一上级身份 | 修复 | `part05/01-seg.tsx`、`02-thread-attention-rows.tsx`、`user-refs.ts`、`UserMessageView.tsx`、`19-misc-hints.css`、守卫 11f/11q、`verify-injection-strip` | 用户两张截图：① 专家团五个成员会话各自是一个主会话（成员由 team-invoke 新建时只登记 member 集合、没登记 teamId 索引 ⇒ 聚簇跳过它们）⇒ run started 补索引 + 回读 `team-threads.json`，成员统一收进「↳ 子会话 · N」折叠块；② 成员会话里的派发任务显示成用户气泡 ⇒ 成员/团队壳按内层标记（上级行 / 主理人分配的子任务 / 发起方交给你的任务）标记 `dispatched`，与调度会话同一套左对齐「上级派发」样式；用户自己打字的仍走用户气泡。（同步主线 812797a27） | 本轮 |
+
 | 2026-11-03 | 排队面板按发送顺序展示 | 修复 | `src/features/session-queue/SessionQueue.tsx`、守卫 12as | 用户截图：「顺序不对，我发新消息在已排队的上面」。排队卡原按显示倒序渲染（最新条目在最顶），与引擎 FIFO 发送顺序相反 ⇒ 改为原样渲染数组序：先排的在上、新发的在最下面；折叠时露末尾 2 条；拖拽显示序按 offset 映射回原数组序；序号徽标改读真实队列位置。（同步主线 4e14da078） | 本轮 |
 
 | 2026-11-01 | 温柔女声 · 晓晨也改为内置音色 | 改动 | `resources/voice-presets/presets.json`、守卫 11z | presets.json 给 cosyvoice-female-zh 标 builtIn（与自带音色同口径：自动落档/内置徽标/不可删/不进一键启用）；阿远 Nature 保持可启用样本。（同步主线 341f9c31c） | 本轮 |
