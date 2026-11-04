@@ -589,3 +589,5 @@
 | 2026-11-04 | 勘误：云管理应用发现按产品隔离 | 修复 | `cloud/web/account.html`（已部署 ppz123.asia + ppcode.pptoken.cc） | 上一版把 PPcode / Codex Harness 混在一句提示里，且都会探 8917 ⇒ 可能把上传/下载发到别的应用（用户点名「跟云助手区分开」）。现在按域名/品牌判定本页产品：`ppcode.pptoken.cc` 只认 product=ppcode，`ppz123.asia` 只认 codex-harness，云助手页才探 8917；提示只写本产品名，不跨产品。验证：mock 双站 + 假桥（PPcode 页识别 PPcode；Codex Harness 页对同一个 PPcode 桥显示未检测到），两站已部署且哈希一致。 | 本轮 |
 
 | 2026-11-04 | 云管理连接条视觉统一 | 改动 | `cloud/web/account.html`（已部署 ppz123.asia + ppcode.pptoken.cc） | 「本机应用：PPcode（已连接）」原来是一行裸提示 + 小按钮，与卡片观感脱节。改成状态点 + 胶囊 + 幽灵「↻ 重新检测」：已连接绿色、未登录/未检测到琥珀色；两站同步部署。验证：无头 Edge 明暗两套截图 + 两站哈希一致。 | 本轮 |
+
+| 2026-11-04 | 审查修正：云管理产品判定先看域名 | 修复 | `cloud/web/account.html`（ppz123.asia + ppcode.pptoken.cc 已部署） | 页面 HTML 默认品牌是 PPcode，`/api/brand` 回来前会把 ppz123 主站误判成 PPcode（可能连错应用）。改为先按域名判：ppz123 → Codex Harness（品牌明确是助手才走助手），pptoken → PPcode；自定义域名才看品牌。验证：mock 双站 + 两站线上哈希一致。 | 本轮 |

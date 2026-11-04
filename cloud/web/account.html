@@ -3075,12 +3075,15 @@
   /** 本页属于哪个产品：先看域名（PPcode 独立站点），再看品牌名（主站按部署区分）。 */
   function expectedProduct() {
     var host = String(location.hostname || "").toLowerCase();
-    if (host.indexOf("pptoken") >= 0) return "ppcode";
     var brand = String(($("brandName") || {}).textContent || "").toLowerCase();
+    if (host.indexOf("pptoken") >= 0) return "ppcode";
+    /* ⛔ ppz123 是 Codex Harness 账号站：**先看域名再看品牌** —— 页面 HTML 的默认品牌是
+       PPcode，/api/brand 回来前拿它当判据会把主站误判成 PPcode（实测坑）。 */
+    if (host.indexOf("ppz123") >= 0) return brand.indexOf("assistant") >= 0 ? "codex-assistant" : "codex-harness";
     if (brand.indexOf("ppcode") >= 0) return "ppcode";
     if (brand.indexOf("assistant") >= 0) return "codex-assistant";
     if (brand.indexOf("codex harness") >= 0) return "codex-harness";
-    return host.indexOf("ppz123") >= 0 ? "codex-harness" : "";
+    return "";
   }
   function expectedAppName() {
     var product = expectedProduct();
