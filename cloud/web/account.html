@@ -6557,7 +6557,7 @@
       var projBox = $("projDel"); projBox.innerHTML = "";
       if (!all.length) {
         box.innerHTML = "";
-        box.appendChild(el("div", "empty", "还没有上传过会话。桌面应用启动后会自动同步（每 5 分钟一次），也可点上面的「立即同步」。"));
+        box.appendChild(el("div", "empty", "还没有上传过会话。点「立即上传」先挑要传的会话；勾选过一次后，后台会保持这些会话每 5 分钟自动同步。"));
         return;
       }
       /* 项目分类下拉（保留当前选择） */
@@ -6758,7 +6758,7 @@
       (groups[kind] = groups[kind] || []).push(row);
       if (DEFAULT_UPLOAD_KINDS[kind]) picked[row.id] = 1;
     });
-    var html = '<div class="hint" style="margin:0 0 10px">默认勾选 <b>主会话 / 指挥中枢 / 专家团主理人 / 专家团调度</b>；调度与成员子会话请按需勾选。</div>'
+    var html = '<div class="hint" style="margin:0 0 10px">默认勾选 <b>主会话 / 指挥中枢 / 专家团主理人 / 专家团调度</b>；调度与成员子会话请按需勾选。确认上传后，后台会自动保持这些会话的增量同步（新会话需再次选择；没选过不会自动上传）。</div>'
       + '<input class="field" id="upSearch" placeholder="搜索会话 / 项目" style="width:100%;margin-bottom:10px" />'
       + '<div id="upList" style="max-height:46vh;overflow:auto;border-top:1px solid var(--line)">';
     UPLOAD_KIND_ORDER.forEach(function (kind) {
