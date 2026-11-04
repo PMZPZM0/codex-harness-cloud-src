@@ -2990,18 +2990,37 @@
   "use strict";
   var API = "/cloud-api";
   /* ── 本机应用发现（11-04）─────────────────────────────────────────────
-     网页云管理的上传/下载由本机应用执行。历史只有云助手监听 8917；PPcode /
-     Codex Harness 各自从 8927 起监听。这里并行探测，按页面品牌优先选一个；
-     多个同时运行时其余进下拉框。⛔ 只探回环地址，失败静默（页面照常可用）。 */
-  var AGENT_PORTS = [8917, 8927, 8928, 8929];
-  var AGENT = "http://127.0.0.1:8917";
+     ⛔ 每个产品只认**自己**的应用：PPcode 页只认 product=ppcode，Codex Harness
+        页只认 product=codex-harness，云助手页只认 codex-assistant。
+        同一台机器同时开着别的产品（或云助手）时，绝不把上传/下载发错应用。
+     ⛔ 桌面应用的桥从 8927 起；8917 只属于云助手，桌面产品页不去探它。 */
+  var AGENT_PORTS = [8927, 8928, 8929];
+  var AGENT = "http://127.0.0.1:8927";
   var AGENT_APPS = [];
   var AGENT_PICKED = null;
   var AGENT_STATE = null;
   function agentBase(app) { return "http://127.0.0.1:" + app.port; }
   function selectedAppName() { return AGENT_PICKED ? AGENT_PICKED.appName : ""; }
+  /** 本页属于哪个产品：先看域名（PPcode 独立站点），再看品牌名（主站按部署区分）。 */
+  function expectedProduct() {
+    var host = String(location.hostname || "").toLowerCase();
+    if (host.indexOf("pptoken") >= 0) return "ppcode";
+    var brand = String(($("brandName") || {}).textContent || "").toLowerCase();
+    if (brand.indexOf("ppcode") >= 0) return "ppcode";
+    if (brand.indexOf("assistant") >= 0) return "codex-assistant";
+    if (brand.indexOf("codex harness") >= 0) return "codex-harness";
+    return host.indexOf("ppz123") >= 0 ? "codex-harness" : "";
+  }
+  function expectedAppName() {
+    var product = expectedProduct();
+    return product === "ppcode" ? "PPcode"
+      : product === "codex-harness" ? "Codex Harness"
+        : product === "codex-assistant" ? "云助手" : "桌面应用";
+  }
   function probeAgentApps() {
-    return Promise.all(AGENT_PORTS.map(function (port) {
+    var expected = expectedProduct();
+    var ports = expected === "codex-assistant" ? [8917] : AGENT_PORTS;
+    return Promise.all(ports.map(function (port) {
       var ctl = new AbortController();
       var timer = setTimeout(function () { ctl.abort(); }, 1500);
       return fetch("http://127.0.0.1:" + port + "/api/health", { cache: "no-store", signal: ctl.signal })
@@ -3009,20 +3028,22 @@
         .then(function (j) {
           if (!j || !j.ok) return null;
           var product = j.product || "unknown";
+          /* ⛔ 产品必须对得上：别的产品 / 云助手一律不认。 */
+          if (expected && product !== expected) return null;
           return {
             port: port,
             product: product,
-            appName: j.appName || (product === "codex-assistant" ? "云助手" : "本机应用"),
+            appName: j.appName || (product === "codex-assistant" ? "云助手" : "桌面应用"),
             kind: j.kind || "",
           };
         })
         .catch(function () { clearTimeout(timer); return null; });
     })).then(function (list) {
       AGENT_APPS = list.filter(Boolean);
-      var brand = String(($("brandName") || {}).textContent || "").toLowerCase();
-      var prefer = brand.indexOf("ppcode") >= 0 ? "ppcode" : "codex-harness";
-      AGENT_PICKED = AGENT_APPS.find(function (a) { return a.product === prefer; }) || AGENT_APPS[0] || null;
-      AGENT = AGENT_PICKED ? agentBase(AGENT_PICKED) : "http://127.0.0.1:8917";
+      AGENT_PICKED = AGENT_APPS[0] || null;
+      AGENT = AGENT_PICKED
+        ? agentBase(AGENT_PICKED)
+        : (expected === "codex-assistant" ? "http://127.0.0.1:8917" : "http://127.0.0.1:8927");
       return AGENT_APPS;
     });
   }
@@ -6294,7 +6315,7 @@
         pill.style.background = "var(--bad-soft)"; pill.style.color = "var(--bad)";
         kv($("agentInfo"), [
           ["状态", "没有检测到本机应用"],
-          ["怎么办", "启动 Codex Harness / PPcode 桌面应用（这台电脑上），再点下面的「重新检测」"],
+          ["怎么办", "启动 " + expectedAppName() + " 桌面应用（这台电脑上），再点下面的「重新检测」"],
         ]);
         if (pairCard) pairCard.hidden = false;
         return;
@@ -6603,7 +6624,7 @@
     return refreshAgentApps().then(function () { return AGENT_PICKED; });
   }
   function agentMissing(st) {
-    st.textContent = "未检测到本机应用 —— 请先启动 Codex Harness / PPcode";
+    st.textContent = "未检测到本机应用 —— 请先启动 " + expectedAppName();
     st.className = "status warn";
   }
   $("syncPull").onclick = function () {
@@ -6639,7 +6660,7 @@
     if (!link) return;
     var pick = $("agentPick");
     if (!AGENT_PICKED) {
-      link.textContent = "未检测到本机应用 —— 启动 Codex Harness / PPcode 后点「重新检测」";
+      link.textContent = "未检测到本机应用 —— 启动 " + expectedAppName() + " 后点「重新检测」";
       if (pick) pick.style.display = "none";
       return;
     }
