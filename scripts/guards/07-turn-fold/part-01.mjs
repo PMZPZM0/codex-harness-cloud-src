@@ -846,7 +846,11 @@ export async function run() {
         ` head: f("## 行动向"), bold: f("**GPT-5.6** 的自我隐瞒"), link: f("[OpenAI](https://x.com/a) 公告"), bullet: f("- Figure 发 Helix"), hr: f("上文\\n---\\n下文"),` +
         // 11-04 用户截图「QQ 好乱」补两条：播报稿不能当正文；半截粗体必须清干净
         ` voice: f("结论：带伞。\\n\\n\`\`\`voice\\n今晚这雨加九十八的湿度，老老实实写代码。\\n\`\`\`"),` +
-        ` stray: f("**今晚\\n**明晚** 有雨") }));`,
+        ` stray: f("**今晚\\n**明晚** 有雨"),` +
+        // 11-04 跨渠道审查补三条：代码块内容**一个字符都不许动**（发给手机的样本被静默改坏，用户照抄跑不通）
+        ` fence: f("示例：\\n\\n\`\`\`python\\nprint(1)  # 注释\\n| a | b |\\n\`\`\`\\n\\n结尾"),` +
+        ` mul: f("x = 1 * 2 * 3，注意 * 是乘号"),` +
+        ` code: f("用 \`a * b | c\` 与 \`**k**\` 两个字面量") }));`,
       ], { encoding: "utf8" });
       wt = JSON.parse(wtProbe.stdout.trim().split("\n").at(-1));
     } catch { /* 下面统一判红 */ }
@@ -870,6 +874,19 @@ export async function run() {
       (wt.stray === "今晚\n明晚 有雨")
         ? ok("【38】残留的半截 `**` 也被清掉（配对外则漏网 ⇒ QQ 出现独立一条「**今晚」）")
         : fail(`【38】半截粗体没清干净：${JSON.stringify(wt.stray)}`);
+      // ⛔ 代码围栏内**原样**：旧写法不认识围栏，把 ```python 里的 `| a | b |` 转成【a】b、
+      //    `# 注释` 转成【注释】——发给手机的代码样本被静默改坏（11-04 审查实测）。
+      (wt.fence.includes("```python") && wt.fence.includes("print(1)  # 注释") && wt.fence.includes("| a | b |") && wt.fence.includes("结尾"))
+        ? ok("【38】代码块内一个字符都不动（围栏保留、表格竖线与 # 注释原样，用户照抄能跑通）")
+        : fail(`【38】代码块被排版转换改坏：${JSON.stringify(wt.fence)}`);
+      // 斜体只认「紧贴词的 *…*」：乘号 `1 * 2 * 3` 不能当定界符吃掉（实测发往手机变成「1  2  3」）
+      (wt.mul === "x = 1 * 2 * 3，注意 * 是乘号")
+        ? ok("【38】乘号不被斜体规则吃掉（数字还在、运算符也在）")
+        : fail(`【38】乘号被当成斜体定界符：${JSON.stringify(wt.mul)}`);
+      // 行内代码要先摘出来保护再排版：顺序放反时里面的 * 已被斜体规则处理过 ⇒ 字面量变形
+      (wt.code === "用 a * b | c 与 **k** 两个字面量")
+        ? ok("【38】行内代码内容原样放回（去掉反引号，但里面的 * 与 | 不参与任何排版）")
+        : fail(`【38】行内代码内容被改坏：${JSON.stringify(wt.code)}`);
       // ⛔ 三个发送点（流式追加 / 收尾补发 / 一次性）各自必须带 plainTextForChannel——
       //    只查 import 或单个锚点会被「摘掉一处用法」的死代码骗绿（反证实测）。
       (/sendChunk = \(text: string, opts: \{ clientId\?: string; state\?: number \}\) =>\s*weixinGateway!\.sendText\(from, plainTextForChannel\(text\), opts\)/.test(mainSrc)
@@ -893,18 +910,23 @@ export async function run() {
         : fail("【38】飞书/钉钉/QQ 回复没走排版转换 —— 表格在这些渠道同样是竖线堆");
       // 三渠道流式（09-18 用户：「接上流式（按各渠道限制做）」）：不能编辑消息 ⇒ 追加语义 + 按频控设预算
       // 11-04 更正两处：① 官方「被动消息每条用户消息最多回复 4 次」（旧注释写 ≤5 次记错了）；
-      // ② QQ 因此**关掉中间进度**（sink 只留一次性发送、预算 maxFlushes 0）——进度按时间切必然把
-      //    Markdown 从中间切断，实测用户截图：独立一条「**今晚」、独立一条「···」、思考稿混进正文。
+      // ② QQ/飞书/钉钉 一律**关掉中间进度**（maxFlushes 0 + sink 不给 append）：它们的 append 发的是
+      //    未攒行的 delta（微信 sink 有 carry 整行缓冲），表格行与代码围栏一定被切在半行 —— 实测用户
+      //    截图：独立一条「**今晚」、独立一条「···」、思考稿混进正文。微信保留追加（整行缓冲 + typing）。
       (/function feishuStreamSink\(/.test(mainSrc) && /function dingtalkStreamSink\(/.test(mainSrc) && /function qqStreamSink\(/.test(mainSrc)
-        && /FEISHU_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 4/.test(mainSrc)
-        && /DINGTALK_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 3/.test(mainSrc)
+        && /FEISHU_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 0/.test(mainSrc)
+        && /DINGTALK_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 0/.test(mainSrc)
         && /QQ_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 0/.test(mainSrc))
-        ? ok("【38】飞书/钉钉有追加式流式 sink + 按频控设的预算；QQ 关掉进度（官方每条消息最多回复 4 次 ⇒ 一条正文到位）")
-        : fail("【38】三渠道流式 sink/预算缺失 —— 这几家仍只发最终汇总");
-      const qqSinkBody = mainSrc.slice(mainSrc.indexOf("function qqStreamSink("), mainSrc.indexOf("function qqStreamSink(") + 1400);
-      (!/append:/.test(qqSinkBody) && !/finalizeAppend:/.test(qqSinkBody) && /return \{ send: \(full\) => send\(full\) \};/.test(qqSinkBody))
-        ? ok("【38】QQ 的 sink 不提供 append/finalizeAppend（有就会被 bot-stream 当流式渠道切多条，排版必乱）")
-        : fail("【38】QQ 的 sink 又长出 append 了 —— 进度会把 Markdown 切成半截粗体多条气泡");
+        ? ok("【38】飞书/钉钉/QQ 都关掉中间进度（一条正文到位；钉钉 webhook 20 条/分、QQ 每条消息上限回复 4 次）")
+        : fail("【38】三渠道流式预算没按官方频控收敛 —— 进度气泡仍会把排版切坏、把配额吃光");
+      for (const sinkFn of ["feishuStreamSink", "dingtalkStreamSink", "qqStreamSink"]) {
+        const at = mainSrc.indexOf(`function ${sinkFn}(`);
+        const body = mainSrc.slice(at, at + 1400);
+        const end = body.indexOf("\n}");
+        const scoped = end > 0 ? body.slice(0, end) : body;
+        (!/append:/.test(scoped) && !/finalizeAppend:/.test(scoped) && /send: \(full\) =>/.test(scoped)
+          ? ok : fail)(`【38】${sinkFn} 只暴露 send（长出 append 就会被 bot-stream 当流式渠道切多条，半截 Markdown 直接上手机）`);
+      }
       (/channelBotBindings\[channel\]\?\.threadId !== threadId/.test(mainSrc)
         && /const chatId = channelThreadChat\.get\(threadId\)/.test(mainSrc)
         && /\^\(tg\|fs\|dd\|qq\|wecom\):/.test(mainSrc))
