@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（115 个能力域 / 624 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（115 个能力域 / 627 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -401,9 +401,9 @@ SkillHub **专家市场包**（skillhub.cn/skillspackage，55 包）：list 浏�
 「更新到新版本后首次启动」的**新功能介绍弹窗**（10-06）：state 取该版本的要点与「该不该弹」（判定含：这个版本有没有要点、用户看过没有、是升级还是全新安装——全新安装不弹，避免新用户看到莫名其妙的「更新内容」）；ack 记下当前版本已看过 ⇒ 同版本不再弹。要点数据在主进程 electron/whats-new-notes.ts，每次发版要加一条（守卫【11r】钉）。⛔ 模型侧用不到它
 通道：whatsnew:ack, whatsnew:history, whatsnew:state
 
-### cloud（15 通道）
+### cloud（18 通道）
 **云端会话同步**（10-18 自云助手移植）：把本机会话**按行增量**推到云端、按需从云端拉回、以及冲突解决（\`cloud:sync/status|push|pull|conflict/resolve\`）。⛔ 与 cloud-auth（登录）/ cloud-models（模型目录）是并列的独立板块。用户说「上传会话 / 同步会话到云端 / 从云端恢复会话」时用它。⛔ 服务端可能由管理员关闭同步，此时会返回 \`session-sync-disabled\`（人话「管理员已关闭云端会话同步」），不要当成网络故障重试
-通道：cloud:sync/conflict/resolve, cloud:sync/list, cloud:sync/pull, cloud:sync/push, cloud:sync/status, cloud:device/list, cloud:device/unbind, cloud:notify/list, cloud:notify/mark-read, cloud:update/apply, cloud:update/check, cloud:update/download, cloud:tools/download, cloud:tools/progress, cloud:tools/status
+通道：cloud:sync/conflict/resolve, cloud:sync/list, cloud:sync/pull, cloud:sync/push, cloud:sync/status, cloud:sync/usage, cloud:sync/index, cloud:sync/delete, cloud:device/list, cloud:device/unbind, cloud:notify/list, cloud:notify/mark-read, cloud:update/apply, cloud:update/check, cloud:update/download, cloud:tools/download, cloud:tools/progress, cloud:tools/status
 
 ### cloud-auth（5 通道）
 **云账号**的登录 / 登出 / 切换（10-16）：用账号密码换云端会话令牌（⛔ 不是配对流程）；令牌在 safeStorage 里，⛔ 渲染层与模型侧都拿不到明文。用户说「登录云端 / 退出云账号 / 换个云账号」时用它。⛔ 与本机「中转站账号」是两条独立的登录线，别混

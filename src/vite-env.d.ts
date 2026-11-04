@@ -660,6 +660,12 @@ interface Window {
     cloudSyncPush(input?: { paths: string[] }): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
     /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
     cloudSyncStatus(): Promise<{ enabled: boolean; reserved: boolean; quotaBytes: number; usedBytes: number; lastSyncAt: number }>;
+    /* 11-03 云管理（应用内）：云端用量（已用/配额/会话数/设备数）。与网页云管理同一套 /sync/usage */
+    cloudSyncUsage(): Promise<{ ok: boolean; code?: string; error?: string; usedBytes?: number; limitBytes?: number; sessions?: number; devices?: number; deviceLimit?: number }>;
+    /* 11-03 云管理（应用内）：云端已上传会话列表（标题/项目/机器/时间/大小），供下载/删除 */
+    cloudSyncIndex(): Promise<{ ok: boolean; code?: string; error?: string; sessions?: Array<{ id: string; title: string; project: string; machineName: string; machineId: string; lines: number; sizeBytes: number; uploadedAt: number; updatedAt: number }>; usedBytes?: number; limitBytes?: number }>;
+    /* 11-03 云管理（应用内）：删除云端会话（只删云端，本机文件不动） */
+    cloudSyncDelete(input?: { ids?: string[] }): Promise<{ ok: boolean; code?: string; error?: string; deleted?: number; usedBytes?: number; limitBytes?: number }>;
     /* 云版预留（桩）：按需下载指定工具（服务器 /cloud/tools/ 分发目录就绪后即通） */
     cloudToolsDownload(name: string): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
     /* 云版预留（真实现）：工具下载进度 */

@@ -279,6 +279,12 @@ contextBridge.exposeInMainWorld("codex", {
   cloudSyncPush: (input?: { paths: string[] }) => __ipc("cloud:sync/push", 0, [input]),
   /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
   cloudSyncStatus: () => __ipc("cloud:sync/status", 0, []),
+  /* 11-03 云管理（应用内）：云端用量（已用/配额/会话数/设备数）。与网页云管理同一套 /sync/usage */
+  cloudSyncUsage: () => __ipc("cloud:sync/usage", 0, []),
+  /* 11-03 云管理（应用内）：云端已上传会话列表（标题/项目/机器/时间/大小），供下载/删除 */
+  cloudSyncIndex: () => __ipc("cloud:sync/index", 0, []),
+  /* 11-03 云管理（应用内）：删除云端会话（只删云端，本机文件不动） */
+  cloudSyncDelete: (input?: { ids?: string[] }) => __ipc("cloud:sync/delete", 0, [input]),
   /* 云版预留（桩）：按需下载指定工具（服务器 /cloud/tools/ 分发目录就绪后即通） */
   cloudToolsDownload: (name: string) => __ipc("cloud:tools/download", 1, [name]),
   /* 云版预留（真实现）：工具下载进度 */
