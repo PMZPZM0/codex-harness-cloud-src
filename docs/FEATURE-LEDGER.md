@@ -587,3 +587,5 @@
 | 2026-11-04 | 账号页云管理 ↔ 本机应用联动（Codex Harness / PPcode） | 改动 | `cloud/web/account.html`（已部署 /account.html） | 网页云管理的「立即上传 / 从云端下载」原来只认云助手 8917，PPcode / Codex Harness 不跑它 ⇒ 永远显示未运行。现在并行探测 8917/8927/8928/8929，按页面品牌优先选应用并显示「本机应用：Codex Harness（已连接）」，多应用可下拉切换；配对中心对桌面应用隐藏配对码；上传/下载走所选应用并显示会话名。验证：mock 账号页 + 真应用探针（发现 Codex Harness、上传 9 会话 / 下载 6 会话、会话名渲染），已 scp 部署并 curl 校验。 | 本轮（同步主线 59ba2048e） |
 
 | 2026-11-04 | 勘误：云管理应用发现按产品隔离 | 修复 | `cloud/web/account.html`（已部署 ppz123.asia + ppcode.pptoken.cc） | 上一版把 PPcode / Codex Harness 混在一句提示里，且都会探 8917 ⇒ 可能把上传/下载发到别的应用（用户点名「跟云助手区分开」）。现在按域名/品牌判定本页产品：`ppcode.pptoken.cc` 只认 product=ppcode，`ppz123.asia` 只认 codex-harness，云助手页才探 8917；提示只写本产品名，不跨产品。验证：mock 双站 + 假桥（PPcode 页识别 PPcode；Codex Harness 页对同一个 PPcode 桥显示未检测到），两站已部署且哈希一致。 | 本轮 |
+
+| 2026-11-04 | 云管理连接条视觉统一 | 改动 | `cloud/web/account.html`（已部署 ppz123.asia + ppcode.pptoken.cc） | 「本机应用：PPcode（已连接）」原来是一行裸提示 + 小按钮，与卡片观感脱节。改成状态点 + 胶囊 + 幽灵「↻ 重新检测」：已连接绿色、未登录/未检测到琥珀色；两站同步部署。验证：无头 Edge 明暗两套截图 + 两站哈希一致。 | 本轮 |

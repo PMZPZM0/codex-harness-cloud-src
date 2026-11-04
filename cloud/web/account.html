@@ -238,6 +238,77 @@
   .check input { width: 16px; height: 16px; accent-color: var(--brand); }
   .check .hint { margin-left: auto; }
 
+  /* ── 本机应用连接条（11-04）：状态点 + 应用名 + 重新检测，跟卡片同一套皮肤 ── */
+  .agent-link-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .agent-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 28px;
+    padding: 4px 11px 4px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--field);
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .agent-link::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--faint);
+    flex: none;
+  }
+  .agent-link.on {
+    border-color: color-mix(in srgb, var(--ok) 34%, var(--line));
+    background: color-mix(in srgb, var(--ok) 7%, var(--field));
+    color: var(--text);
+  }
+  .agent-link.on::before {
+    background: var(--ok);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 16%, transparent);
+  }
+  .agent-link.off {
+    border-color: color-mix(in srgb, var(--warn) 34%, var(--line));
+    background: color-mix(in srgb, var(--warn) 7%, var(--field));
+  }
+  .agent-link.off::before { background: var(--warn); }
+  .agent-retry {
+    height: 28px;
+    padding: 0 11px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color var(--dur), color var(--dur), background var(--dur);
+  }
+  .agent-retry:hover { border-color: var(--brand); color: var(--brand-ink); background: var(--brand-soft); }
+  .agent-pick {
+    height: 28px;
+    max-width: 220px;
+    padding: 0 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--field);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
   @media (max-width: 760px) {
     .shell { grid-template-columns: 1fr; }
     .side { position: static; height: auto; flex-direction: row; align-items: center; gap: 8px; overflow-x: hidden; padding: 12px 12px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -1812,10 +1883,10 @@
           <button class="btn" id="syncPull">从云端下载到本机</button>
           <span class="status" id="syncStatus"></span>
         </div>
-        <div class="btn-row" style="margin-top:8px">
-          <span class="hint" id="agentLink" style="margin:0">正在检测本机应用…</span>
-          <button class="btn sm" id="agentLinkRetry" type="button">重新检测</button>
-          <select class="field" id="agentPick" style="display:none;max-width:220px" aria-label="选择本机应用"></select>
+        <div class="agent-link-row">
+          <span class="agent-link" id="agentLink">正在检测本机应用…</span>
+          <button class="agent-retry" id="agentLinkRetry" type="button">↻ 重新检测</button>
+          <select class="agent-pick" id="agentPick" style="display:none" aria-label="选择本机应用"></select>
         </div>
       </div>
 
@@ -6660,6 +6731,7 @@
     if (!link) return;
     var pick = $("agentPick");
     if (!AGENT_PICKED) {
+      link.className = "agent-link off";
       link.textContent = "未检测到本机应用 —— 启动 " + expectedAppName() + " 后点「重新检测」";
       if (pick) pick.style.display = "none";
       return;
@@ -6667,6 +6739,7 @@
     var account = AGENT_STATE && AGENT_STATE.account && AGENT_STATE.account.name;
     var mismatch = account && me && account !== me.username;
     var state = AGENT_STATE && AGENT_STATE.paired === false ? "未登录云账号" : "已连接";
+    link.className = "agent-link " + (state === "未登录云账号" ? "off" : "on");
     link.textContent = "本机应用：" + selectedAppName() + "（" + state + "）"
       + (mismatch ? " · 应用登录的是 " + account + "，与网页账号不同" : "");
     if (pick && AGENT_APPS.length > 1) {
@@ -6694,7 +6767,8 @@
     });
   }
   if ($("agentLinkRetry")) $("agentLinkRetry").onclick = function () {
-    var link = $("agentLink"); if (link) link.textContent = "正在检测本机应用…";
+    var link = $("agentLink");
+    if (link) { link.className = "agent-link"; link.textContent = "正在检测本机应用…"; }
     refreshAgentApps();
   };
   if ($("agentPick")) $("agentPick").onchange = function () {
