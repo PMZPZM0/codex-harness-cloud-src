@@ -6732,8 +6732,9 @@
   var UPLOAD_KIND_LABELS = {
     main: "主会话", boss: "指挥中枢", lead: "专家团主理人", team: "专家团调度",
     member: "团队成员", expert: "专家调度", subagent: "子智能体调度", cli: "CLI 智能体调度", "group-member": "群成员",
+    internal: "内部会话（内省/蒸馏）",
   };
-  var UPLOAD_KIND_ORDER = ["main", "boss", "lead", "team", "member", "expert", "subagent", "cli", "group-member"];
+  var UPLOAD_KIND_ORDER = ["main", "boss", "lead", "team", "member", "expert", "subagent", "cli", "group-member", "internal"];
   var DEFAULT_UPLOAD_KINDS = { main: 1, boss: 1, lead: 1, team: 1 };
 
   function openUploadPicker() {
@@ -6772,7 +6773,7 @@
       (groups[kind] = groups[kind] || []).push(row);
       if (DEFAULT_UPLOAD_KINDS[kind]) picked[row.id] = 1;
     });
-    var html = '<div class="hint" style="margin:0 0 10px">默认勾选 <b>主会话 / 指挥中枢 / 专家团主理人 / 专家团调度</b>；调度与成员子会话请按需勾选。确认上传后，后台会自动保持这些会话的增量同步（新会话需再次选择；没选过不会自动上传）。</div>'
+    var html = '<div class="hint" style="margin:0 0 10px">默认勾选 <b>主会话 / 指挥中枢 / 专家团主理人 / 专家团调度</b>；调度、成员子会话与<b>内部会话（内省/蒸馏）</b>默认不传，请按需勾选。确认上传后，后台会自动保持这些会话的增量同步（新会话需再次选择；没选过不会自动上传）。</div>'
       + '<input class="field" id="upSearch" placeholder="搜索会话 / 项目" style="width:100%;margin-bottom:10px" />'
       + '<div id="upList" style="max-height:46vh;overflow:auto;border-top:1px solid var(--line)">';
     var kindOrder = UPLOAD_KIND_ORDER.concat(Object.keys(groups).filter(function (kind) { return UPLOAD_KIND_ORDER.indexOf(kind) < 0; }));
