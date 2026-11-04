@@ -296,6 +296,15 @@
     transition: border-color var(--dur), color var(--dur), background var(--dur);
   }
   .agent-retry:hover { border-color: var(--brand); color: var(--brand-ink); background: var(--brand-soft); }
+  /* ── 上传会话选择弹窗（11-04）────────────────────────────────────────── */
+  .up-group { border-bottom: 1px solid var(--line-soft); padding: 2px 0 6px; }
+  .up-group-head { display: flex; align-items: center; gap: 8px; padding: 6px 4px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; }
+  .up-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 4px 6px 18px; border-radius: 8px; cursor: pointer; }
+  .up-row:hover { background: var(--field); }
+  .up-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .up-body b { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .up-body small { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .up-kind { flex: none; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
   .agent-pick {
     height: 28px;
     max-width: 220px;
@@ -3784,6 +3793,17 @@
      ⛔ 规则判定全在服务端（/admin/entitlements）；这里只发起请求并刷新。 */
   function auEntSay(t, cls) { var st = $("auEntStatus"); if (!st) return; st.textContent = t || ""; st.className = "status" + (cls ? " " + cls : ""); }
   function closeModal() { var m = $("mbModal"); if (m && m.parentNode) m.parentNode.removeChild(m); }
+  /* 阻断式确认（替换 window.confirm）：云端删除等不可逆操作统一走这里。 */
+  function confirmDialog(title, message, confirmLabel, onConfirm) {
+    showModal(title,
+      '<p style="margin:0 0 16px;line-height:1.7">' + esc(message) + '</p>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+      '<button class="btn" id="mbCancel" type="button">取消</button>' +
+      '<button class="btn danger" id="mbConfirm" type="button">' + esc(confirmLabel || "确定") + '</button></div>');
+    var cancel = $("mbCancel"), confirm = $("mbConfirm");
+    if (cancel) cancel.onclick = function () { closeModal(); };
+    if (confirm) confirm.onclick = function () { closeModal(); onConfirm(); };
+  }
   document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") closeModal(); });
 
   function entCellHtml(st, feature) {
@@ -6600,9 +6620,10 @@
           d.appendChild(body);
           var del = el("button", "btn sm danger", "删除");
           del.onclick = function () {
-            if (!window.confirm("删除云端这条会话？（本机文件不受影响）")) return;
-            del.disabled = true;
-            api("/sync/delete", { method: "POST", body: { ids: [row.id] } }).then(function () { refreshSync(); }).catch(function () { del.disabled = false; });
+            confirmDialog("删除云端会话", "删除这条云端会话？本机文件不受影响。", "删除", function () {
+              del.disabled = true;
+              api("/sync/delete", { method: "POST", body: { ids: [row.id] } }).then(function () { refreshSync(); }).catch(function () { del.disabled = false; });
+            });
           };
           d.appendChild(del);
           box.appendChild(d);
@@ -6665,11 +6686,12 @@
         $("sessDelSel").onclick = function () {
           var ids = Object.keys(window.__sessSel || {});
           if (!ids.length) return;
-          if (!window.confirm("删除选中的 " + ids.length + " 条云端会话？（本机文件不受影响）")) return;
-          $("sessDelSel").disabled = true;
-          api("/sync/delete", { method: "POST", body: { ids: ids } }).then(function () {
-            window.__sessSel = {}; refreshSync();
-          }).catch(function () { $("sessDelSel").disabled = false; });
+          confirmDialog("删除云端会话", "删除选中的 " + ids.length + " 条云端会话？本机文件不受影响。", "删除", function () {
+            $("sessDelSel").disabled = true;
+            api("/sync/delete", { method: "POST", body: { ids: ids } }).then(function () {
+              window.__sessSel = {}; refreshSync();
+            }).catch(function () { $("sessDelSel").disabled = false; });
+          });
         };
       }
       renderSessPage();
@@ -6681,9 +6703,10 @@
         var b = el("button", "btn sm danger", name + "（" + projCounts[name] + "）");
         b.style.marginRight = "8px";
         b.onclick = function () {
-          if (!window.confirm("删除项目「" + name + "」在云端的全部会话？")) return;
-          b.disabled = true;
-          api("/sync/delete", { method: "POST", body: { project: name } }).then(function () { refreshSync(); }).catch(function () { b.disabled = false; });
+          confirmDialog("删除项目云端会话", "删除项目「" + name + "」在云端的全部会话？本机文件不受影响。", "删除", function () {
+            b.disabled = true;
+            api("/sync/delete", { method: "POST", body: { project: name } }).then(function () { refreshSync(); }).catch(function () { b.disabled = false; });
+          });
         };
         projBox.appendChild(b);
       });
@@ -6701,6 +6724,127 @@
     st.textContent = "未检测到本机应用 —— 请先启动 " + expectedAppName();
     st.className = "status warn";
   }
+
+  /* ── 上传前先列会话（11-04 用户令：「先检测出来会话，弹窗显示，再确定要上传哪些」）────
+     ⛔ 分类与侧栏同源（应用主进程按 team/delegate/boss 账本算好），网页只负责展示与勾选。 */
+  var UPLOAD_KIND_LABELS = {
+    main: "主会话", boss: "指挥中枢", lead: "专家团主理人", team: "专家团调度",
+    member: "团队成员", expert: "专家调度", subagent: "子智能体调度", cli: "CLI 智能体调度", "group-member": "群成员",
+  };
+  var UPLOAD_KIND_ORDER = ["main", "boss", "lead", "team", "member", "expert", "subagent", "cli", "group-member"];
+  var DEFAULT_UPLOAD_KINDS = { main: 1, boss: 1, lead: 1, team: 1 };
+
+  function openUploadPicker() {
+    var st = $("syncStatus"); st.className = "status"; st.textContent = "正在读取本地会话…";
+    ensureAgent().then(function (app) {
+      if (!app) { agentMissing(st); return; }
+      fetch(agentBase(app) + "/api/sync-sessions", { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var rows = (j && j.sessions) || [];
+          if (!rows.length) { st.textContent = "本地没有可上传的会话"; st.className = "status warn"; return; }
+          st.textContent = "";
+          showUploadPicker(app, rows);
+        })
+        .catch(function () { st.textContent = app.appName + " 未响应 —— 请确认应用正在运行"; st.className = "status warn"; });
+    });
+  }
+
+  function showUploadPicker(app, rows) {
+    var picked = {};
+    var groups = {};
+    rows.forEach(function (row) {
+      var kind = String(row.kind || "main");
+      (groups[kind] = groups[kind] || []).push(row);
+      if (DEFAULT_UPLOAD_KINDS[kind]) picked[row.id] = 1;
+    });
+    var html = '<div class="hint" style="margin:0 0 10px">默认勾选 <b>主会话 / 指挥中枢 / 专家团主理人 / 专家团调度</b>；调度与成员子会话请按需勾选。</div>'
+      + '<input class="field" id="upSearch" placeholder="搜索会话 / 项目" style="width:100%;margin-bottom:10px" />'
+      + '<div id="upList" style="max-height:46vh;overflow:auto;border-top:1px solid var(--line)">';
+    UPLOAD_KIND_ORDER.forEach(function (kind) {
+      var list = groups[kind] || [];
+      if (!list.length) return;
+      html += '<div class="up-group" data-group="' + kind + '">'
+        + '<label class="up-group-head"><input type="checkbox" data-groupcheck="' + kind + '" /> ' + esc(UPLOAD_KIND_LABELS[kind] || kind) + '（' + list.length + '）</label>';
+      list.forEach(function (row) {
+        var sub = [row.project || "", (row.lines || 0) + " 行", row.syncedLines > 0 ? ("已传 " + row.syncedLines + " 行") : "未上传"];
+        if (row.newLines > 0) sub.push("新增 " + row.newLines + " 行");
+        html += '<label class="up-row" data-up-row="' + esc(row.id) + '" data-text="' + esc((row.title || "") + " " + (row.project || "")) + '">'
+          + '<input type="checkbox" data-up="' + esc(row.id) + '"' + (picked[row.id] ? " checked" : "") + ' />'
+          + '<span class="up-body"><b>' + esc(row.title || row.id) + '</b><small>' + esc(sub.join(" · ")) + '</small></span>'
+          + '<span class="up-kind">' + esc(UPLOAD_KIND_LABELS[kind] || kind) + '</span></label>';
+      });
+      html += '</div>';
+    });
+    html += '</div><div style="display:flex;align-items:center;gap:10px;margin-top:14px">'
+      + '<span class="hint" id="upCount" style="margin:0"></span><span style="flex:1"></span>'
+      + '<button class="btn" id="upCancel" type="button">取消</button>'
+      + '<button class="btn primary" id="upConfirm" type="button">上传选中</button></div>';
+    showModal("选择要上传的会话", html);
+
+    function syncCount() {
+      var n = Object.keys(picked).filter(function (id) { return picked[id]; }).length;
+      var el = $("upCount"); if (el) el.textContent = "已选 " + n + " 个";
+      var boxes = document.querySelectorAll("[data-groupcheck]");
+      Array.prototype.forEach.call(boxes, function (box) {
+        var kind = box.getAttribute("data-groupcheck");
+        var items = (groups[kind] || []).map(function (row) { return !!picked[row.id]; });
+        box.checked = items.length > 0 && items.every(Boolean);
+      });
+      return n;
+    }
+    Array.prototype.forEach.call(document.querySelectorAll("[data-up]"), function (box) {
+      box.onchange = function () {
+        var id = box.getAttribute("data-up");
+        if (box.checked) picked[id] = 1; else delete picked[id];
+        syncCount();
+      };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-groupcheck]"), function (box) {
+      box.onchange = function () {
+        var kind = box.getAttribute("data-groupcheck");
+        (groups[kind] || []).forEach(function (row) {
+          if (box.checked) picked[row.id] = 1; else delete picked[row.id];
+        });
+        Array.prototype.forEach.call(document.querySelectorAll("[data-up]"), function (item) {
+          var id = item.getAttribute("data-up");
+          var owner = (groups[kind] || []).some(function (row) { return row.id === id; });
+          if (owner) item.checked = !!picked[id];
+        });
+        syncCount();
+      };
+    });
+    if ($("upSearch")) $("upSearch").oninput = function () {
+      var q = String(this.value || "").trim().toLowerCase();
+      Array.prototype.forEach.call(document.querySelectorAll("[data-up-row]"), function (row) {
+        row.style.display = !q || String(row.getAttribute("data-text") || "").toLowerCase().indexOf(q) >= 0 ? "" : "none";
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".up-group"), function (group) {
+        var visible = Array.prototype.some.call(group.querySelectorAll("[data-up-row]"), function (row) { return row.style.display !== "none"; });
+        group.style.display = visible ? "" : "none";
+      });
+    };
+    if ($("upCancel")) $("upCancel").onclick = function () { closeModal(); };
+    if ($("upConfirm")) $("upConfirm").onclick = function () {
+      var ids = Object.keys(picked).filter(function (id) { return picked[id]; });
+      if (!ids.length) { var el = $("upCount"); if (el) el.textContent = "请先勾选至少一个会话"; return; }
+      var btn = $("upConfirm"); btn.disabled = true; btn.textContent = "上传中…";
+      fetch(agentBase(app) + "/api/sync-now", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: ids }),
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        var res = j && j.result || {};
+        closeModal();
+        var st = $("syncStatus");
+        st.textContent = res.ok ? ("完成：上传 " + (res.pushedSessions || 0) + " 个会话 / " + (res.pushedLines || 0) + " 行" + (res.quotaExceeded ? "（已达存储上限，剩余未传）" : "")) : ("未完成：" + (res.reason || "同步失败"));
+        st.className = "status " + (res.ok ? "ok" : "warn");
+        refreshSync();
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = "上传选中";
+        var el = $("upCount"); if (el) el.textContent = app.appName + " 未响应，请确认应用在运行";
+      });
+    };
+    syncCount();
+  }
   $("syncPull").onclick = function () {
     var st = $("syncStatus"); st.className = "status"; st.textContent = "正在通知本机应用下载…";
     ensureAgent().then(function (app) {
@@ -6716,18 +6860,7 @@
     });
   };
 
-  $("syncNow").onclick = function () {
-    var st = $("syncStatus"); st.className = "status"; st.textContent = "正在通知本机应用同步…";
-    ensureAgent().then(function (app) {
-      if (!app) { agentMissing(st); return; }
-      return fetch(agentBase(app) + "/api/sync-now", { method: "POST" }).then(function (r) { return r.json(); }).then(function (j) {
-        var res = j && j.result || {};
-        st.textContent = res.ok ? ("完成：上传 " + (res.pushedSessions || 0) + " 个会话 / " + (res.pushedLines || 0) + " 行" + (res.quotaExceeded ? "（已达存储上限，剩余未传）" : "")) : ("未完成：" + (res.reason || "同步失败"));
-        st.className = "status " + (res.ok ? "ok" : "warn");
-        refreshSync();
-      }).catch(function () { st.textContent = app.appName + " 未响应 —— 请确认应用正在运行"; st.className = "status warn"; });
-    });
-  };
+  $("syncNow").onclick = function () { openUploadPicker(); };
 
   function renderAgentLink() {
     var link = $("agentLink");
