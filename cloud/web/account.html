@@ -1020,16 +1020,16 @@
       </div>
 
       <div class="card" id="agentCard" hidden>
-        <h2>本机助手（云助手） <span class="tag" id="agentPill">未检测</span></h2>
-        <div class="kv" id="agentInfo"><div class="k">状态</div><div>正在探测本机助手…</div></div>
+        <h2>本机应用 <span class="tag" id="agentPill">未检测</span></h2>
+        <div class="kv" id="agentInfo"><div class="k">状态</div><div>正在探测本机应用…</div></div>
         <div class="btn-row">
           <button class="btn" id="agentRetry">重新检测</button>
-          <button class="btn" id="agentOpen">打开助手授权页</button>
+          <button class="btn" id="agentOpen">打开应用</button>
         </div>
-        <div class="hint" style="margin-top:8px">助手只监听本机 127.0.0.1，必须在<b>这台电脑</b>上运行；浏览器若拦截本地请求请放行。</div>
+        <div class="hint" style="margin-top:8px">应用只监听本机 127.0.0.1，必须在<b>这台电脑</b>上运行；浏览器若拦截本地请求请放行。</div>
       </div>
 
-      <div class="card">
+      <div class="card" id="pairCodeCard">
         <h2>用配对码绑定</h2>
         <div class="field-row">
           <input class="field code-input" id="pairCode" maxlength="8" placeholder="8 位十六进制" autocomplete="off" spellcheck="false" />
@@ -1811,6 +1811,11 @@
           <button class="btn primary" id="syncNow">立即上传（本机 → 云端）</button>
           <button class="btn" id="syncPull">从云端下载到本机</button>
           <span class="status" id="syncStatus"></span>
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <span class="hint" id="agentLink" style="margin:0">正在检测本机应用…</span>
+          <button class="btn sm" id="agentLinkRetry" type="button">重新检测</button>
+          <select class="field" id="agentPick" style="display:none;max-width:220px" aria-label="选择本机应用"></select>
         </div>
       </div>
 
@@ -2984,7 +2989,43 @@
 <script>(function () {
   "use strict";
   var API = "/cloud-api";
+  /* ── 本机应用发现（11-04）─────────────────────────────────────────────
+     网页云管理的上传/下载由本机应用执行。历史只有云助手监听 8917；PPcode /
+     Codex Harness 各自从 8927 起监听。这里并行探测，按页面品牌优先选一个；
+     多个同时运行时其余进下拉框。⛔ 只探回环地址，失败静默（页面照常可用）。 */
+  var AGENT_PORTS = [8917, 8927, 8928, 8929];
   var AGENT = "http://127.0.0.1:8917";
+  var AGENT_APPS = [];
+  var AGENT_PICKED = null;
+  var AGENT_STATE = null;
+  function agentBase(app) { return "http://127.0.0.1:" + app.port; }
+  function selectedAppName() { return AGENT_PICKED ? AGENT_PICKED.appName : ""; }
+  function probeAgentApps() {
+    return Promise.all(AGENT_PORTS.map(function (port) {
+      var ctl = new AbortController();
+      var timer = setTimeout(function () { ctl.abort(); }, 1500);
+      return fetch("http://127.0.0.1:" + port + "/api/health", { cache: "no-store", signal: ctl.signal })
+        .then(function (r) { clearTimeout(timer); return r.json(); })
+        .then(function (j) {
+          if (!j || !j.ok) return null;
+          var product = j.product || "unknown";
+          return {
+            port: port,
+            product: product,
+            appName: j.appName || (product === "codex-assistant" ? "云助手" : "本机应用"),
+            kind: j.kind || "",
+          };
+        })
+        .catch(function () { clearTimeout(timer); return null; });
+    })).then(function (list) {
+      AGENT_APPS = list.filter(Boolean);
+      var brand = String(($("brandName") || {}).textContent || "").toLowerCase();
+      var prefer = brand.indexOf("ppcode") >= 0 ? "ppcode" : "codex-harness";
+      AGENT_PICKED = AGENT_APPS.find(function (a) { return a.product === prefer; }) || AGENT_APPS[0] || null;
+      AGENT = AGENT_PICKED ? agentBase(AGENT_PICKED) : "http://127.0.0.1:8917";
+      return AGENT_APPS;
+    });
+  }
   var session = "";
   try { session = localStorage.getItem("chc-session") || ""; } catch (e) { /* 忽略 */ }
   var $ = function (id) { return document.getElementById(id); };
@@ -4179,6 +4220,8 @@
       ["上次登录", fmt(me.lastLogin)],
     ]);
     $("whoami").innerHTML = "当前账号：<b>" + me.username + "</b>";
+    /* 账号已知后补一次「本机应用登录账号是否一致」的提示（首屏 #cloud 时 /me 晚于探测）。 */
+    if (typeof renderAgentLink === "function") renderAgentLink();
     loadPoints();
     loadEntitlements();
     loadFeatureTabs();
@@ -6239,36 +6282,49 @@
     }).catch(function () { btn.disabled = false; st.textContent = "网络错误"; st.className = "status bad"; });
   };
 
-  /* ── 配对中心：本机助手探测 ───────────────────────────────────── */
+  /* ── 配对中心：本机应用探测（11-04：同时认 PPcode / Codex Harness）──────── */
   var agentState = null;
   function probeAgent() {
     var pill = $("agentPill"); pill.className = "tag"; pill.textContent = "探测中…";
-    var ctl = new AbortController(); var t = setTimeout(function () { ctl.abort(); }, 4000);
-    return fetch(AGENT + "/api/cloud-state", { cache: "no-store", signal: ctl.signal })
-      .then(function (r) { clearTimeout(t); return r.json(); })
-      .then(function (s) {
-        agentState = s;
-        var paired = s && s.machinePaired === true;
-        pill.className = "tag"; pill.textContent = paired ? "已在运行 · 已配对" : "已在运行 · 未配对";
-        pill.style.background = paired ? "var(--ok-soft)" : "var(--warn-soft)";
-        pill.style.color = paired ? "var(--ok)" : "var(--warn)";
-        kv($("agentInfo"), [
-          ["状态", "本机助手已启动"],
-          ["配对闸", s.gated ? "开（需网页账号）" : "关"],
-          ["绑定账号", (s.machineAccounts || []).join("、") || "未绑定"],
-          ["设备凭据", s.hasDeviceToken ? "已就绪" : "无"],
-          ["服务器", s.serverReachable ? "可达" : "不可达"],
-        ]);
-      })
-      .catch(function () {
+    return refreshAgentApps().then(function () {
+      var pairCard = $("pairCodeCard");
+      if (!AGENT_PICKED) {
         agentState = null;
         pill.className = "tag"; pill.textContent = "未检测到";
         pill.style.background = "var(--bad-soft)"; pill.style.color = "var(--bad)";
         kv($("agentInfo"), [
-          ["状态", "没有检测到本机助手"],
-          ["怎么办", "双击桌面上的「Codex Assistant」图标启动它，再点下面的「重新检测」"],
+          ["状态", "没有检测到本机应用"],
+          ["怎么办", "启动 Codex Harness / PPcode 桌面应用（这台电脑上），再点下面的「重新检测」"],
         ]);
-      });
+        if (pairCard) pairCard.hidden = false;
+        return;
+      }
+      var s = AGENT_STATE;
+      if (!s) {
+        agentState = null;
+        pill.className = "tag"; pill.textContent = "未响应";
+        pill.style.background = "var(--bad-soft)"; pill.style.color = "var(--bad)";
+        kv($("agentInfo"), [["状态", "本机应用没有响应"], ["怎么办", "确认应用正在运行后点「重新检测」"]]);
+        return;
+      }
+      agentState = s;
+      var desktop = s.kind === "desktop-app";
+      var paired = desktop ? (s.paired === true) : (s.machinePaired === true);
+      var appName = s.appName || selectedAppName() || "本机应用";
+      pill.className = "tag";
+      pill.textContent = appName + " · " + (paired ? (desktop ? "已登录" : "已配对") : (desktop ? "未登录云账号" : "未配对"));
+      pill.style.background = paired ? "var(--ok-soft)" : "var(--warn-soft)";
+      pill.style.color = paired ? "var(--ok)" : "var(--warn)";
+      kv($("agentInfo"), [
+        ["状态", appName + " 已启动"],
+        ["登录账号", (s.machineAccounts || []).join("、") || "未登录"],
+        ["配对闸", desktop ? "不需要（用云账号登录）" : (s.gated ? "开（需网页账号）" : "关")],
+        ["设备凭据", desktop ? "不需要" : (s.hasDeviceToken ? "已就绪" : "无")],
+        ["服务器", s.serverReachable ? "可达" : "不可达"],
+      ]);
+      /* 桌面应用用云账号登录，不需要配对码 —— 隐藏配对码卡（云助手保持原样）。 */
+      if (pairCard) pairCard.hidden = desktop;
+    });
   }
   $("agentRetry").onclick = function () { probeAgent(); };
   $("agentOpen").onclick = function () {
@@ -6386,7 +6442,7 @@
       var projBox = $("projDel"); projBox.innerHTML = "";
       if (!all.length) {
         box.innerHTML = "";
-        box.appendChild(el("div", "empty", "还没有上传过会话。本机助手启动后会自动同步（每 5 分钟一次），也可点上面的「立即同步」。"));
+        box.appendChild(el("div", "empty", "还没有上传过会话。桌面应用启动后会自动同步（每 5 分钟一次），也可点上面的「立即同步」。"));
         return;
       }
       /* 项目分类下拉（保留当前选择） */
@@ -6541,26 +6597,90 @@
     });
   }
 
+  /* 上传/下载前确保已选中一个本机应用（首次进页面可能还在探测）。 */
+  function ensureAgent() {
+    if (AGENT_PICKED) return Promise.resolve(AGENT_PICKED);
+    return refreshAgentApps().then(function () { return AGENT_PICKED; });
+  }
+  function agentMissing(st) {
+    st.textContent = "未检测到本机应用 —— 请先启动 Codex Harness / PPcode";
+    st.className = "status warn";
+  }
   $("syncPull").onclick = function () {
-    var st = $("syncStatus"); st.className = "status"; st.textContent = "正在通知本机助手下载…";
-    fetch(AGENT + "/api/sync-pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        var res = j && j.result || {};
-        st.textContent = res.ok ? ("已下载 " + (res.pulled || 0) + " 个会话（本机已有 " + (res.skipped || 0) + " 个）—— 到本机应用的会话列表里看") : ("未完成：" + (res.reason || "本机助手未运行"));
-        st.className = "status " + (res.ok ? "ok" : "warn");
-      })
-      .catch(function () { st.textContent = "本机助手未运行 —— 下载由本机执行，需要助手开着"; st.className = "status warn"; });
+    var st = $("syncStatus"); st.className = "status"; st.textContent = "正在通知本机应用下载…";
+    ensureAgent().then(function (app) {
+      if (!app) { agentMissing(st); return; }
+      return fetch(agentBase(app) + "/api/sync-pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var res = j && j.result || {};
+          st.textContent = res.ok ? ("已下载 " + (res.pulled || 0) + " 个会话（本机已有 " + (res.skipped || 0) + " 个）—— 到 " + app.appName + " 的会话列表里看") : ("未完成：" + (res.reason || "同步失败"));
+          st.className = "status " + (res.ok ? "ok" : "warn");
+        })
+        .catch(function () { st.textContent = app.appName + " 未响应 —— 请确认应用正在运行"; st.className = "status warn"; });
+    });
   };
 
   $("syncNow").onclick = function () {
-    var st = $("syncStatus"); st.className = "status"; st.textContent = "正在通知本机助手同步…";
-    fetch(AGENT + "/api/sync-now", { method: "POST" }).then(function (r) { return r.json(); }).then(function (j) {
-      var res = j && j.result || {};
-      st.textContent = res.ok ? ("完成：上传 " + (res.pushedSessions || 0) + " 个会话 / " + (res.pushedLines || 0) + " 行" + (res.quotaExceeded ? "（已达存储上限，剩余未传）" : "")) : ("未完成：" + (res.reason || "本机助手未运行或未配对"));
-      st.className = "status " + (res.ok ? "ok" : "warn");
-      refreshSync();
-    }).catch(function () { st.textContent = "本机助手未运行 —— 请先启动它"; st.className = "status warn"; });
+    var st = $("syncStatus"); st.className = "status"; st.textContent = "正在通知本机应用同步…";
+    ensureAgent().then(function (app) {
+      if (!app) { agentMissing(st); return; }
+      return fetch(agentBase(app) + "/api/sync-now", { method: "POST" }).then(function (r) { return r.json(); }).then(function (j) {
+        var res = j && j.result || {};
+        st.textContent = res.ok ? ("完成：上传 " + (res.pushedSessions || 0) + " 个会话 / " + (res.pushedLines || 0) + " 行" + (res.quotaExceeded ? "（已达存储上限，剩余未传）" : "")) : ("未完成：" + (res.reason || "同步失败"));
+        st.className = "status " + (res.ok ? "ok" : "warn");
+        refreshSync();
+      }).catch(function () { st.textContent = app.appName + " 未响应 —— 请确认应用正在运行"; st.className = "status warn"; });
+    });
+  };
+
+  function renderAgentLink() {
+    var link = $("agentLink");
+    if (!link) return;
+    var pick = $("agentPick");
+    if (!AGENT_PICKED) {
+      link.textContent = "未检测到本机应用 —— 启动 Codex Harness / PPcode 后点「重新检测」";
+      if (pick) pick.style.display = "none";
+      return;
+    }
+    var account = AGENT_STATE && AGENT_STATE.account && AGENT_STATE.account.name;
+    var mismatch = account && me && account !== me.username;
+    var state = AGENT_STATE && AGENT_STATE.paired === false ? "未登录云账号" : "已连接";
+    link.textContent = "本机应用：" + selectedAppName() + "（" + state + "）"
+      + (mismatch ? " · 应用登录的是 " + account + "，与网页账号不同" : "");
+    if (pick && AGENT_APPS.length > 1) {
+      pick.style.display = "";
+      pick.innerHTML = "";
+      AGENT_APPS.forEach(function (app) {
+        var opt = document.createElement("option");
+        opt.value = String(app.port);
+        opt.textContent = app.appName;
+        opt.selected = AGENT_PICKED && AGENT_PICKED.port === app.port;
+        pick.appendChild(opt);
+      });
+    } else if (pick) {
+      pick.style.display = "none";
+    }
+  }
+  function refreshAgentApps() {
+    return probeAgentApps().then(function () {
+      if (!AGENT_PICKED) { AGENT_STATE = null; renderAgentLink(); return AGENT_APPS; }
+      return fetch(AGENT + "/api/cloud-state", { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (s) { AGENT_STATE = s && s.ok ? s : null; })
+        .catch(function () { AGENT_STATE = null; })
+        .then(function () { renderAgentLink(); return AGENT_APPS; });
+    });
+  }
+  if ($("agentLinkRetry")) $("agentLinkRetry").onclick = function () {
+    var link = $("agentLink"); if (link) link.textContent = "正在检测本机应用…";
+    refreshAgentApps();
+  };
+  if ($("agentPick")) $("agentPick").onchange = function () {
+    var port = Number(this.value);
+    AGENT_PICKED = AGENT_APPS.find(function (a) { return a.port === port; }) || AGENT_PICKED;
+    AGENT = AGENT_PICKED ? agentBase(AGENT_PICKED) : AGENT;
+    refreshAgentApps();
   };
 
   /* ── 我的积分（用户中心）─────────────────────────────────────────────── */
@@ -6766,7 +6886,7 @@
   $("lbSearch").oninput = lbRender;
   $("lbAll").onclick = function () { ((lbData || {}).models || []).forEach(function (m) { m.enabled = true; }); lbRender(); lbSave(); };
   $("lbNone").onclick = function () { ((lbData || {}).models || []).forEach(function (m) { m.enabled = false; }); lbRender(); lbSave(); };
-  function refreshCloud() { refreshSync(); lbLoad(false); }
+  function refreshCloud() { refreshSync(); lbLoad(false); refreshAgentApps(); }
 
   function legacyRefreshCloud() {
     $("cloudData").innerHTML = ""; $("cloudData").appendChild(el("div", "empty", "读取中…"));
