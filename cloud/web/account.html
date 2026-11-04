@@ -3570,6 +3570,8 @@
     if ($("syncGo")) $("syncGo").onclick = function () { this.disabled = true; this.textContent = "同步中…"; closeModal(); onSync(); };
   }
   function esc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  /* 属性值专用（会话标题可能带引号，直接拼进 data-* 会把属性截断）。 */
+  function escAttr(t) { return esc(t).replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 
   /* 文档预览：图片直接显示图；文本类显示分块正文（后端已校验"是你的库里的"）。 */
   function isImageName(name) { return /\.(png|jpe?g|gif|bmp|webp|heic|heif|tiff?|svg)$/i.test(String(name || "")); }
@@ -6738,6 +6740,18 @@
     var st = $("syncStatus"); st.className = "status"; st.textContent = "正在读取本地会话…";
     ensureAgent().then(function (app) {
       if (!app) { agentMissing(st); return; }
+      /* 云助手没有 /api/sync-sessions（它的 headless 只有 sync-now/pull）⇒ 退回原来的直接同步，
+         不让老产品的按钮变成“未响应”。 */
+      if (app.kind !== "desktop-app") {
+        st.textContent = "正在通知本机应用同步…";
+        fetch(agentBase(app) + "/api/sync-now", { method: "POST" }).then(function (r) { return r.json(); }).then(function (j) {
+          var res = j && j.result || {};
+          st.textContent = res.ok ? ("完成：上传 " + (res.pushedSessions || 0) + " 个会话 / " + (res.pushedLines || 0) + " 行") : ("未完成：" + (res.reason || "同步失败"));
+          st.className = "status " + (res.ok ? "ok" : "warn");
+          refreshSync();
+        }).catch(function () { st.textContent = app.appName + " 未响应 —— 请确认应用正在运行"; st.className = "status warn"; });
+        return;
+      }
       fetch(agentBase(app) + "/api/sync-sessions", { cache: "no-store" })
         .then(function (r) { return r.json(); })
         .then(function (j) {
@@ -6761,7 +6775,8 @@
     var html = '<div class="hint" style="margin:0 0 10px">默认勾选 <b>主会话 / 指挥中枢 / 专家团主理人 / 专家团调度</b>；调度与成员子会话请按需勾选。确认上传后，后台会自动保持这些会话的增量同步（新会话需再次选择；没选过不会自动上传）。</div>'
       + '<input class="field" id="upSearch" placeholder="搜索会话 / 项目" style="width:100%;margin-bottom:10px" />'
       + '<div id="upList" style="max-height:46vh;overflow:auto;border-top:1px solid var(--line)">';
-    UPLOAD_KIND_ORDER.forEach(function (kind) {
+    var kindOrder = UPLOAD_KIND_ORDER.concat(Object.keys(groups).filter(function (kind) { return UPLOAD_KIND_ORDER.indexOf(kind) < 0; }));
+    kindOrder.forEach(function (kind) {
       var list = groups[kind] || [];
       if (!list.length) return;
       html += '<div class="up-group" data-group="' + kind + '">'
@@ -6769,8 +6784,8 @@
       list.forEach(function (row) {
         var sub = [row.project || "", (row.lines || 0) + " 行", row.syncedLines > 0 ? ("已传 " + row.syncedLines + " 行") : "未上传"];
         if (row.newLines > 0) sub.push("新增 " + row.newLines + " 行");
-        html += '<label class="up-row" data-up-row="' + esc(row.id) + '" data-text="' + esc((row.title || "") + " " + (row.project || "")) + '">'
-          + '<input type="checkbox" data-up="' + esc(row.id) + '"' + (picked[row.id] ? " checked" : "") + ' />'
+        html += '<label class="up-row" data-up-row="' + escAttr(row.id) + '" data-text="' + escAttr((row.title || "") + " " + (row.project || "")) + '">'
+          + '<input type="checkbox" data-up="' + escAttr(row.id) + '"' + (picked[row.id] ? " checked" : "") + ' />'
           + '<span class="up-body"><b>' + esc(row.title || row.id) + '</b><small>' + esc(sub.join(" · ")) + '</small></span>'
           + '<span class="up-kind">' + esc(UPLOAD_KIND_LABELS[kind] || kind) + '</span></label>';
       });
@@ -7336,6 +7351,8 @@
   try { subSession = localStorage.getItem("chc-session") || ""; } catch (e) { subSession = ""; }
   function $(id) { return document.getElementById(id); }
   function esc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  /* 属性值专用（会话标题可能带引号，直接拼进 data-* 会把属性截断）。 */
+  function escAttr(t) { return esc(t).replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
   /* 属性位专用（上面的 esc 不转义引号）：套餐 id 虽由服务端白名单约束，仍按规矩走 escAttr */
   function escAttr(t) { return esc(t).replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
   function api(path, opts) {
@@ -7973,6 +7990,8 @@
 
   function $(id) { return document.getElementById(id); }
   function esc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  /* 属性值专用（会话标题可能带引号，直接拼进 data-* 会把属性截断）。 */
+  function escAttr(t) { return esc(t).replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
   function api(path, opts) {
     opts = opts || {};
     var headers = { "Content-Type": "application/json" };
