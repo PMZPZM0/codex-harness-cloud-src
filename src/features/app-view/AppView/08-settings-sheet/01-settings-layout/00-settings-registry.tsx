@@ -32,6 +32,7 @@ import { ToolCard, builtinCommandCatalog, categoryLabel, cronTemplates, describe
 // 10-04 阶段 5 渲染层插槽机制（见 src/runtime/registry.ts）：插件往设置页挂内容的唯一入口。
 // ⛔ 未注册时 Slot 渲染 null ⇒ 既有 DOM/class 逐字不变（accept.mjs 的 CDP 选择器依赖它）。
 import { Slot } from "../../../../../runtime/registry";
+import { TeamModePanel } from "../../../../harness-team";
 
 const ModelSettingsSection = lazy(() => import("../../../../settings-model/ModelSettingsSection").then((m) => ({ default: m.ModelSettingsSection })));
 const BossGroupsSection = lazy(() => import("../../../../settings-boss-groups/BossGroupsSection").then((m) => ({ default: m.BossGroupsSection })));
@@ -461,6 +462,8 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
   } = app;
 
   return {
+    /* 团队模式（10-05）：独立板块，registry 只放一行渲染 */
+    team: { render: () => <TeamModePanel /> },
     cloud: { render: () => <CloudAccountPage /> },
     automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} setNotice={setNotice} /> },
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
