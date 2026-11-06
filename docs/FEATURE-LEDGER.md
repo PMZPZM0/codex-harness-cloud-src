@@ -657,3 +657,5 @@
 | 2026-11-05 | 子会话细条默认隐藏、hover 才显示 | 改动 | `02-sidebar-threads.css`、守卫 02 | 默认 opacity:0 + pointer-events:none；行 hover / focus-within 淡入并可点。验证：探针默认 0/none、hover 后 1/auto 且点击正常；02 守卫 exit=0。 | 701ab22f8 |
 
 | 2026-11-05 | 撤回药丸结构性贴近气泡左缘 | 修复 | `UserMessageView.tsx`、`ItemView.tsx`、`PendingSteerBubbles.tsx`、`15-queued-messages.css`、守卫 12ay | 药丸改走 leadingAction 与气泡同排（8px）；长消息行内折行。验证：短/长消息 gap 均 8px；12ay 52 项。 | 3477c58a1 |
+
+| 2026-11-05 | 供应商编辑弹窗保存条常驻可见 | 修复 | `42-provider-setup.css`、守卫 12ac | 弹窗高度改按遮罩 100%；保存条 absolute 钉底部、表单留 72px。验证：已配置供应商弹窗顶/底保存条都在且可点；12ac 70/70。 | 09d032264 |
