@@ -1473,6 +1473,21 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (/\.dispatch-children \{[^}]*margin:\s*2px 0 4px 0;/.test(readStyles()) && /\.dispatch-children \{[^}]*padding-left:\s*10px/.test(readStyles()) ? ok : fail)(
         "【156】子会话块与父行名称同列（行内左内距 10px）"
       );
+      /* ⛔ 11-06 用户令（截图）：「把这个子会话展开折叠放到这个会话选项里面，居中小长条展示」
+         +「中间空白没那么多，紧凑一点」—— 单会话行的折叠键走 extras.footer **进到行内**，
+         收起时只在行内多一行 14px 药丸，不再在行外多占一整行。 */
+      (dispatchedRendererSrc.includes("thread-row-footer") && /footer:\s*block\?\.bar/.test(dispatchedRendererSrc) ? ok : fail)(
+        "【156】单会话行的子会话折叠键走行内 footer（收起时不再多占一整行）"
+      );
+      (/\.thread-row\.has-footer\s*\{[^}]*flex-wrap:\s*wrap/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*width:\s*68%/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*height:\s*12px/.test(readStyles()) ? ok : fail)(
+        "【156】子会话折叠键是行内居中细长条（68% × 12px，11-06 用户令）"
+      );
+      (!/\.thread-row\.has-footer > button/.test(readStyles()) ? ok : fail)(
+        "【156】有子会话长条的行**不压缩名称行**（用户令：上面不要变动）"
+      );
+      (!/<button[^>]*className="thread-child-bar"[\s\S]{0,420}?子会话/.test(dispatchedRendererSrc) ? ok : fail)(
+        "【156】行内长条只留展开/折叠箭头，不带「子会话」文字（11-06 用户令）"
+      );
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
     }
