@@ -659,3 +659,5 @@
 | 2026-11-05 | 撤回药丸结构性贴近气泡左缘 | 修复 | `UserMessageView.tsx`、`ItemView.tsx`、`PendingSteerBubbles.tsx`、`15-queued-messages.css`、守卫 12ay | 药丸改走 leadingAction 与气泡同排（8px）；长消息行内折行。验证：短/长消息 gap 均 8px；12ay 52 项。 | 3477c58a1 |
 
 | 2026-11-05 | 供应商编辑弹窗保存条常驻可见 | 修复 | `42-provider-setup.css`、守卫 12ac | 弹窗高度改按遮罩 100%；保存条 absolute 钉底部、表单留 72px。验证：已配置供应商弹窗顶/底保存条都在且可点；12ac 70/70。 | 09d032264 |
+
+| 2026-11-05 | 重启链路补守卫：ELECTRON_RUN_AS_NODE 必须剔除 | 流程 | `scripts/guards/06-app-behavior/part-03.mjs` | 云助手本身已是 detached spawn + 释放单实例锁 + 剔除 ELECTRON_RUN_AS_NODE（10-14 修过）；本轮把「剔除该变量」补成守卫判据，三仓同口径，防止后续改动误删。 | 70bf28107 |
