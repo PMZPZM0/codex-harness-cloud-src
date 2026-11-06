@@ -635,3 +635,5 @@
 | 2026-11-05 | 标签列左对齐 + 子会话细条骑下边框 | 改动 | `02-thread-attention-rows.tsx`、`02-sidebar-threads.css`、`01-sidebar-shell.tsx`、守卫 02 | 有标签行改 64px 定宽标签列 + 左对齐（左缘差 0.0px）；折叠条绝对定位 bottom:-4px、9px 高，骑在行下边框（中心差 0.5px），不占布局、行高保持 34px。验证：真 profile 探针 + 02 守卫 exit=0。 | 84ea67cf2 |
 
 | 2026-11-05 | 子会话细条箭头改为上下方向 | 修复 | `02-sidebar-threads.css`、守卫 02 | 收起朝下、展开朝上（覆盖通用 chevron 的朝右）。验证：探针 transform 矩阵 + 02 守卫 exit=0。 | 87eb5a035 |
+
+| 2026-11-05 | 标签列改为右边锚定：父行/缩进子行也对齐 | 修复 | `02-sidebar-threads.css`、守卫 02 | 标签列 `minmax(0,1fr) 64px 54px`：父行与被调度子行标签左缘同线。验证：探针四行左缘均 108px + 02 守卫 exit=0。 | cf1de24a1 |
