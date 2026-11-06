@@ -1068,6 +1068,12 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamSetSchedule: (groupId: string, list: unknown) => __ipc("harness-team:set-schedule", 2, [groupId, list]),
   /* 团队模式：立刻运行一条定时任务 */
   harnessTeamRunSchedule: (groupId: string, scheduleId: string) => __ipc("harness-team:run-schedule", 2, [groupId, scheduleId]),
+  /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
+  harnessTeamClearMessages: (groupId: string) => __ipc("harness-team:clear-messages", 1, [groupId]),
+  /* 团队模式：群项目地址（派活时作为子会话 cwd） */
+  harnessTeamSetWorkspace: (groupId: string, workspace: string) => __ipc("harness-team:set-workspace", 2, [groupId, workspace]),
+  /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
+  harnessTeamRunning: (groupId: string) => __ipc("harness-team:running", 1, [groupId]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */
   harnessTeamLogUsage: (entry: Record<string, unknown>) => __ipc("harness-team:log-usage", 1, [entry]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */

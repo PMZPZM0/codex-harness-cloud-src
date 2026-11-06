@@ -1449,6 +1449,12 @@ interface Window {
     harnessTeamSetSchedule(groupId: string, list: unknown): Promise<{ ok: boolean; group?: any; error?: string }>;
     /* 团队模式：立刻运行一条定时任务 */
     harnessTeamRunSchedule(groupId: string, scheduleId: string): Promise<{ ok: boolean; sent?: number; error?: string; runKind?: string }>;
+    /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
+    harnessTeamClearMessages(groupId: string): Promise<{ ok: boolean; cleared: number; error?: string }>;
+    /* 团队模式：群项目地址（派活时作为子会话 cwd） */
+    harnessTeamSetWorkspace(groupId: string, workspace: string): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
+    harnessTeamRunning(groupId: string): Promise<{ ok: boolean; runs: any[]; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
     harnessTeamLogUsage(entry: Record<string, unknown>): Promise<{ ok: boolean; count?: number; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
