@@ -360,8 +360,8 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["teams:invoke-member", "teams:list", "teams:member-session", "teams:remove", "teams:reset-defaults", "teams:save", "teams:session-config", "teams:start-session", "teams:tools"],
     note: "09-21 拆出：跨域符号经 main 导出的活绑定取用",
   },
-  { prefix: "cliagents", count: 6, status: "in-features", file: "features/cli-agents-ipc.ts",
-    channels: ["cliagents:detect", "cliagents:install", "cliagents:list", "cliagents:remove", "cliagents:save", "cliagents:uninstall"],
+  { prefix: "cliagents", count: 9, status: "in-features", file: "features/cli-agents-ipc.ts",
+    channels: ["cliagents:cancel", "cliagents:check-updates", "cliagents:detect", "cliagents:install", "cliagents:list", "cliagents:remove", "cliagents:save", "cliagents:uninstall", "cliagents:update"],
     note: "10-29 新域：CLI 智能体管理面（列表 / 检测 / 增改 / 删除 / 一键装卸 10-30）；派活走 agent_invoke(kind=cli)"
   },
   { prefix: "clipboard", count: 4, status: "in-features", file: "features/clipboard-ipc.ts",
