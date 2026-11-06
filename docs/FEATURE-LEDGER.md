@@ -655,3 +655,5 @@
 | 2026-11-06 | 勘误 · 撤回键「中间还是空白」——改成按实测贴到气泡左缘 | 修复 | `src/features/session-queue/PendingSteerBubbles.tsx`、守卫 12ay | 上一条只解决了「整行留白」，用户又截图指出**药丸与气泡之间**仍有一段空白（红框标出）。根因：短消息时「消息栈」比气泡宽（栈里有名字行/底部信息，或气泡在栈内右对齐），药丸贴的是**栈左缘**而不是**气泡左缘**。改法：每条待并入气泡用 `useLayoutEffect` + `ResizeObserver` 量「气泡左缘 − 栈左缘」，给药丸加 `marginRight: -差值`（自适应，不写死像素）。实测（CDP，人为把栈撑到 260px、气泡 60px 右对齐）：药丸右缘到气泡左缘 **4px**，相对栈左缘被拉进 196px；正常短消息仍是 4px。守卫 12ay 53 条（新增「按实测差值贴气泡左缘」）。 | 本轮 |
 
 | 2026-11-05 | 子会话细条默认隐藏、hover 才显示 | 改动 | `02-sidebar-threads.css`、守卫 02 | 默认 opacity:0 + pointer-events:none；行 hover / focus-within 淡入并可点。验证：探针默认 0/none、hover 后 1/auto 且点击正常；02 守卫 exit=0。 | 701ab22f8 |
+
+| 2026-11-05 | 撤回药丸结构性贴近气泡左缘 | 修复 | `UserMessageView.tsx`、`ItemView.tsx`、`PendingSteerBubbles.tsx`、`15-queued-messages.css`、守卫 12ay | 药丸改走 leadingAction 与气泡同排（8px）；长消息行内折行。验证：短/长消息 gap 均 8px；12ay 52 项。 | 3477c58a1 |
