@@ -1431,6 +1431,10 @@ interface Window {
     harnessTeamAppendMessage(groupId: string, entry: Record<string, unknown>): Promise<{ ok: boolean; entry?: any; rows: any[]; error?: string }>;
     /* 团队模式：解散群（只删群与群日志） */
     harnessTeamDelete(groupId: string): Promise<{ ok: boolean; id?: string; error?: string }>;
+    /* 团队模式：群记忆 / 群文件 */
+    harnessTeamSetMemory(groupId: string, text: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：群记忆 / 群文件 */
+    harnessTeamSetFiles(groupId: string, files: unknown): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
