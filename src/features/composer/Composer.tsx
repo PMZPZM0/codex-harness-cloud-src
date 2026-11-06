@@ -156,7 +156,7 @@ export function ComposerEditor({ value, placeholder, editorRef, domValueRef, mak
 
 export type ComposerMenuOption = { value: string; title: string; desc?: string; badges?: { text: string; kind?: "vision" | "video" }[] };
 
-export function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf }: { icon: any; label: string; options: ComposerMenuOption[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: ComposerMenuOption) => string | undefined }) {
+export function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf, onOpen }: { icon: any; label: string; options: ComposerMenuOption[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: ComposerMenuOption) => string | undefined; onOpen?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -190,7 +190,7 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
   const Icon = icon;
   return (
     <div className={`composer-menu ${open ? "open" : ""}`} ref={wrapRef}>
-      <button ref={triggerRef} type="button" className={`composer-setting ${tone === "danger" ? "danger" : ""}`} disabled={disabled} title={title ?? label} onClick={() => setOpen((currentOpen) => !currentOpen)}>
+      <button ref={triggerRef} type="button" className={`composer-setting ${tone === "danger" ? "danger" : ""}`} disabled={disabled} title={title ?? label} onClick={() => setOpen((currentOpen) => { const next = !currentOpen; if (next) onOpen?.(); return next; })}>
         <Icon size={14} />
         <span title={current?.title ?? label}>{current?.title ?? label}</span>
         <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
