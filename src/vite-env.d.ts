@@ -1447,6 +1447,8 @@ interface Window {
     harnessTeamLogUsage(entry: Record<string, unknown>): Promise<{ ok: boolean; count?: number; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
     harnessTeamLedger(groupId: string, days: number): Promise<{ ok: boolean; window: any; total: any; byPartner: any[]; bySource: any[] }>;
+    /* 团队模式：停止某个伙伴当前这一回合 */
+    harnessTeamStop(input: Record<string, unknown>): Promise<{ ok: boolean; threadId?: string; turnId?: string; error?: string; reason?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
