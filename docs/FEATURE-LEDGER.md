@@ -631,3 +631,5 @@
 | 2026-11-05 | 指挥中枢群切换修复：选中群真正生效并联动成员 | 修复 | `boss-group-view/resolve-group.mjs`（新）、`BossGroupPanel.tsx`、`BossGroupMembersButton.tsx`、守卫 22 | 用户实测「切换好像没用、没有联动变化」：群解析把绑定的 boss 群排在手动选群前面，选择立刻被盖回；refresh 同序取快照。抽出唯一解析 `resolveSelectedGroup`（显式优先 → 绑定群 → 面板回落），三处共用。验证：合成两群探针（A→B 后标签与成员均切换）+ 守卫 22 257/257。 | 44399b11b |
 
 | 2026-11-05 | 子会话折叠键搬进会话行内（细长条） | 改动 | `01-sidebar-shell.tsx`、`02-thread-attention-rows.tsx`、`02-sidebar-threads.css`、守卫 02【156】 | 用户令：「子会话展开折叠放到会话选项里面，居中小长条」「上面不要变动」「子会话文字不要，就一个展开折叠图标」。会话行新增 extras.footer 第二行插槽；单会话行底部一条 68% × 12px 细长条，名称行保持 34px 不动；长条里只有展开/折叠箭头。验证：真实 profile 探针（嵌套正确、行高 49px、长条居中 0.0px、展开正常）+ 02 守卫 exit=0。 | 05e1a1e2d / 9b71f5756 / 60c88a6ae |
+
+| 2026-11-05 | 标签列左对齐 + 子会话细条骑下边框 | 改动 | `02-thread-attention-rows.tsx`、`02-sidebar-threads.css`、`01-sidebar-shell.tsx`、守卫 02 | 有标签行改 64px 定宽标签列 + 左对齐（左缘差 0.0px）；折叠条绝对定位 bottom:-4px、9px 高，骑在行下边框（中心差 0.5px），不占布局、行高保持 34px。验证：真 profile 探针 + 02 守卫 exit=0。 | 84ea67cf2 |
