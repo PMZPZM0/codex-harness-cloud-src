@@ -749,12 +749,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
                 <button
                   className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-violet"
-                  title="群聊：团队成员 + 伙伴，@ 一下就派活"
+                  title="工作伙伴：团队成员 + 伙伴，@ 一下就派活"
                   onClick={() => teamChatOpen.set(true)}
                 >
-                  <MessagesSquare size={15} /><span>群聊</span>
+                  <MessagesSquare size={15} /><span>工作伙伴</span>
                 </button>
-                {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
+                {/* 11-07 用户令：群组入口改名「工作伙伴」；会话上的标签保持不变。
+                    10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
                     搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}
                 <button className="sidebar-tab sidebar-quick-btn sidebar-quick-search ic-pink" title="技能 · 插件 · MCP：查看教程与入口" onClick={() => setGuideKey("extensions")}>
                   <Zap size={15} className="ic-pink" /><span>功能入口</span>

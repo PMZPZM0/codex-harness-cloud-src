@@ -69,6 +69,8 @@ export interface TeamGroupLite {
   name: string;
   leadId: string;
   members: TeamMemberLite[];
+  /** 派生成员（团成员，合成 id）的头像覆盖表 */
+  avatars?: Record<string, string>;
   guard: TeamGuard;
   /** 群简介（注入每次派活），上限 MAX_GROUP_MEMORY_CHARS */
   memory: string;
@@ -136,6 +138,9 @@ export function removeMemoryNote(
   group: TeamGroupLite,
   noteId: string,
 ): { ok: boolean; group: TeamGroupLite; changed?: boolean };
+/** 协作协议行（lead / member / single 三档口径） */
+export function collaborationProtocolLines(role: "lead" | "member" | "single"): string[];
+
 export function groupContextBlock(
   group: TeamGroupLite | unknown,
   options?: { forMemberId?: string; forTeam?: boolean; catalog?: unknown[] },
