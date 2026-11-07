@@ -465,7 +465,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     /* 团队模式（10-05）：独立板块，registry 只放一行渲染 */
     team: { render: () => <TeamModePanel /> },
     cloud: { render: () => <CloudAccountPage /> },
-    automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} setNotice={setNotice} /> },
+    automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} setNotice={setNotice} rpaRecipeCount={(rpaRecipes ?? []).length} /> },
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
     "boss-groups": { render: () => <BossGroupsSection openAppConfirm={openAppConfirm} onNotice={setNotice} /> },
     "expert-center": { render: () => expertMarketOpen ? <ExpertMarketSection localSkills={localSkills} onBack={() => setExpertMarketOpen(false)} onInstalled={() => void refreshExpertCenterData()} onNotice={(m) => setNotice(m)} /> : <><ExpertCenterSection expertTeams={expertTeams} EXPERT_CATEGORY_DEFS={EXPERT_CATEGORY_DEFS} expertTeamMemberDirect={expertTeamMemberDirect} startMemberDirectSession={startMemberDirectSession} onOpenMarket={() => setExpertMarketOpen(true)} onBack={() => setSettingsPage("agentteam")} /></> },
@@ -558,6 +558,6 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
                   {/* 改动备份（10-13 自桌面版同步）：独立板块挂在数据管理页尾部 */}
                   <ChangeBackupSection onNotice={setNotice} openAppConfirm={openAppConfirm} />
                 </> },
-    computer: { back: { to: "automation", label: "返回自动化" }, render: () => <ComputerSettingsSection toolsStatus={toolsStatus} ToolCard={ToolCard} setNotice={setNotice} /> },
+    computer: { back: { to: "automation", label: "返回自动化" }, render: () => <ComputerSettingsSection toolsStatus={toolsStatus} ToolCard={ToolCard} setNotice={setNotice} onOpenDevtools={() => setSettingsPage("devtools")} /> },
   };
 }

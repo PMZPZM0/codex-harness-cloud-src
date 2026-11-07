@@ -699,3 +699,5 @@
 | 2026-11-07 | 设置左栏联动：二级页保持父项高亮 + 直达页滚动定位 | 修复 | `helpers/catalogs.ts`、`helpers.tsx`、`01-settings-layout/01-settings-nav.tsx`、守卫 12ad | 用户实测：进二级界面左栏选中消失；功能入口直达某页左边不跳转/不高亮。真因：左栏按 `settingsPage === key` 精确比较，二级页 id 不在 settingsNav；直达时选中项常在视口外。修：`settingsRootPage` 折算父项 + 选中项 `scrollIntoView(nearest)`。验证：12ad 168/168；界面已部署。 | 本轮 |
 
 | 2026-11-07 | 浏览器自动化卡片改「当前链路 + 三张能力卡」 | 改动 | `settings-browser/BrowserSettingsSection.tsx`、`00-settings-registry.tsx`、`45-settings-experience.css`、`07-settings-mcp-connectors.css`、守卫 07 | 用户截图：卡片文字注释杂乱，要把联动展示做出来。改为：顶部链路条读 `egoStatus` 真实状态（Ego Lite 使用中 / 未装回落 browse-skills）+ 三张能力卡（看页面 / 自动化优先 / 没装时回落）+ 状态胶囊 + 去开发工具入口，200px 自动三列。验证：07/12ad 守卫、tsc、界面已部署。 | 本轮 |
+
+| 2026-11-07 | 自动化页联动展示：入口卡真实状态 + 桌面后端卡化 | 改动 | `settings-automation/AutomationSettingsSection.tsx`、`settings-computer/ComputerSettingsSection.tsx`、`00-settings-registry.tsx`、`45-settings-experience.css`、守卫 07 | 用户令：「联动展示，都做好来」。① 三张入口卡显示真实状态：Ego Lite 版本、Nuphus/CU 版本与启停、RPA 配方数；210px 三列。② 桌面自动化页两个后端改成后端卡（安装态胶囊 + 卡上开关 + 去开发工具），链路随开关联动。验证：07/12ad、tsc、界面已部署。 | 本轮 |
