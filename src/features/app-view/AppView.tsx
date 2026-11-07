@@ -720,7 +720,11 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       )}
       <AppViewSettingsSheet app={app} />
       {/* 群聊（10-05）：独立板块的全屏壳 */}
-      <TeamChatOverlay onOpenModelSettings={() => {
+      <TeamChatOverlay
+        /* ⛔ 11-07 用户令「正反向联动做好一点」：群消息的「来源」要真能打开那条会话
+           （以前只能复制 id）⇒ 宿主把 openThread 传下去（浮层自己负责关闭）。 */
+        onOpenThread={(id) => void openThread(id)}
+        onOpenModelSettings={() => {
         /* 与主对话模型下拉末尾的「更多设置…」同款：打开 设置 → 模型，并直接编辑当前模型。 */
         setSettingsPage("model");
         setSettingsOpen(true);
