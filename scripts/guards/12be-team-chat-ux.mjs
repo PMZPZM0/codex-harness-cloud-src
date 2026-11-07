@@ -312,6 +312,18 @@ const catalog = [
   ok(/thread\/name\/set/.test(chanSrc) && /伙伴·/.test(chanSrc),
     "群聊会话命名「伙伴·成员@群」——⛔ 不再是一堆随机笔名让人看不懂");
 }
+/* ── ⑭ 艾特不吃掉已输入的正文（11-07 真机：「输入了很多内容，再艾特，内容没了」）──── */
+{
+  const mentionLib = read("src/lib/team-mention.mjs");
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const mentionTest = read("tests/team-mention-panel.test.mjs");
+  ok(/hasCaret/.test(mentionLib) && /end = clamp\(rawCaret\)/.test(mentionLib),
+    "⛔ applyMention 只替换触发时 caret 之前的查询词，不再吃光 @ 后的连续中文");
+  ok(/caret: trigger\.caret/.test(view) && /caret: mention\.caret/.test(view),
+    "触发位置与光标位置一起存进面板状态，选候选时原样传给纯函数");
+  ok(/长中文里艾特不再吃掉整段正文/.test(mentionTest) && /没有 caret 的老调用仍按扫描兜底/.test(mentionTest),
+    "回归真值表：长中文保全文 + 老调用兜底");
+}
 /* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
