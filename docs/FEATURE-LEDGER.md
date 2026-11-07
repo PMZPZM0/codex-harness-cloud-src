@@ -705,3 +705,5 @@
 | 2026-11-07 | CLI 智能体已安装卡片绿色反馈 + 专家系二级页左栏联动 | 改动 | `components/AgentBadge.tsx`、`cli-agents/CliAgentsPanel.tsx`、`13-subagents-page.css`、`helpers/catalogs.ts`、守卫 12ad | 用户截图：QwenPaw 已显示已安装但卡片没有视觉反馈。AgentBadge 新增 `state="ok"`（绿边/淡绿底/状态行绿字），CLI 面板按真实安装态传入；补齐专家系二级页 → 专家/专家团 的左栏映射。验证：12ad、tsc、界面已部署。 | 本轮 |
 
 | 2026-11-07 | 已安装插件卡重排（内置卡三列网格 + 去掉 0 勾选噪声） | 改动 | `07-settings-mcp-connectors.css`、`settings-plugins/PluginsMarketSection.tsx` | 用户截图：内置插件卡大块空白、图标文字不协调。卡改 32px 图标｜标题+说明｜状态 三列网格，说明两行截断、动作缩到右下；只有内置卡时隐藏「共 0 个插件可勾选」批量条与空态（搜索时保留）。验证：16 守卫、tsc、界面已部署。 | 本轮 |
+
+| 2026-11-07 | MCP 页整改：模板卡紧凑化 + 已接入绿色反馈 + 隐藏空批量条 | 改动 | `settings-mcp/McpSettingsSection.tsx`、`06-market-icons.css`、`05-composer-input.css` | 用户截图：MCP 页模板卡/列表杂乱，要求按插件/技能页整改并给安装成功卡绿色边框。① 模板卡收紧（两行说明/动作右下/等高，已配置绿边淡绿底）；② 市场恢复显示已接入项，installed 卡绿边淡绿底；③ 0~1 项时隐藏空批量条、空态提示收成一句。验证：16 守卫、tsc、界面已部署。 | 本轮 |
