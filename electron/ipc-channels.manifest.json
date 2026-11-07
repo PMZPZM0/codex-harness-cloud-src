@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 659,
+  "count": 660,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6343,6 +6343,16 @@
       "note": "团队模式 P0"
     },
     {
+      "name": "harnessTeamSetAvatar",
+      "channel": "harness-team:set-avatar",
+      "paramsImpl": "groupId: string, memberId: string, avatar: string",
+      "paramsDecl": "groupId: string, memberId: string, avatar: string",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
+      "invokeArgs": "groupId, memberId, avatar",
+      "cast": null,
+      "note": "团队模式：群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」；空串 = 恢复默认，不影响专家中心/用户中心）"
+    },
+    {
       "name": "harnessTeamSetGuard",
       "channel": "harness-team:set-guard",
       "paramsImpl": "groupId: string, guard: Record<string, unknown>",
@@ -6387,10 +6397,10 @@
       "channel": "harness-team:dispatch",
       "paramsImpl": "groupId: string, input: Record<string, unknown>",
       "paramsDecl": "groupId: string, input: { text: string; memberIds: string[]; params?: { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string } }",
-      "returns": "Promise<{ ok: boolean; queued?: number; error?: string }>",
+      "returns": "Promise<{ ok: boolean; queued?: number; error?: string; rows?: any[] }>",
       "invokeArgs": "groupId, input",
       "cast": null,
-      "note": "团队模式：手动派活（11-07 起整条链在主进程跑：落群日志 / 派活 / 产出回写 / 互 @ 接力 / 账本，关面板不中断）"
+      "note": "团队模式：手动派活（11-07 起整条链在主进程跑；落盘完成才返回，rows = 权威群日志行）"
     },
     {
       "name": "harnessTeamDelete",

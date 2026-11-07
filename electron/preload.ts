@@ -1048,6 +1048,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamRemovePartner: (groupId: string, partnerId: string, byId: string) => __ipc("harness-team:remove-partner", 3, [groupId, partnerId, byId]),
   /* 团队模式 P0 */
   harnessTeamMute: (groupId: string, partnerId: string, muted: boolean) => __ipc("harness-team:mute", 3, [groupId, partnerId, muted]),
+  /* 团队模式：群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」；空串 = 恢复默认，不影响专家中心/用户中心） */
+  harnessTeamSetAvatar: (groupId: string, memberId: string, avatar: string) => __ipc("harness-team:set-avatar", 3, [groupId, memberId, avatar]),
   /* 团队模式 P0 */
   harnessTeamSetGuard: (groupId: string, guard: Record<string, unknown>) => __ipc("harness-team:set-guard", 2, [groupId, guard]),
   /* 团队模式 P0 */
@@ -1056,7 +1058,7 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamMessages: (groupId: string) => __ipc("harness-team:messages", 1, [groupId]),
   /* 团队模式 P0b（群消息日志） */
   harnessTeamAppendMessage: (groupId: string, entry: Record<string, unknown>) => __ipc("harness-team:append-message", 2, [groupId, entry]),
-  /* 团队模式：手动派活（11-07 起整条链在主进程跑：落群日志 / 派活 / 产出回写 / 互 @ 接力 / 账本，关面板不中断） */
+  /* 团队模式：手动派活（11-07 起整条链在主进程跑；落盘完成才返回，rows = 权威群日志行） */
   harnessTeamDispatch: (groupId: string, input: Record<string, unknown>) => __ipc("harness-team:dispatch", 2, [groupId, input]),
   /* 团队模式：解散群（11-07 起连带删除本群派出去的会话：removedThreads/totalThreads/failed） */
   harnessTeamDelete: (groupId: string) => __ipc("harness-team:delete", 1, [groupId]),

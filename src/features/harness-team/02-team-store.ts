@@ -486,13 +486,20 @@ export function useTeamGroups() {
             },
           }
           : {}),
-      })) as { ok: boolean; queued?: number; error?: string };
+      })) as { ok: boolean; queued?: number; error?: string; rows?: GroupMessageRow[] };
       if (!res?.ok) {
         setDispatchError(res?.error || "派活失败");
         return { ok: false, error: res?.error };
       }
-      /* 主进程已经把「人说的那句」落盘 ⇒ 读一次权威行：消息上屏与输入框清空同帧。 */
-      void loadMessages(group.id);
+      /* ⛔⛔ 11-07 真机：发完消息群里显示「这个群还没有说过话」——
+         以前这里 `void loadMessages(...)` 立刻重读，而主进程那时还没落盘（它把落盘也排在后台了）。
+         ⇒ 主进程现在**落盘后才返回**，并把权威 rows 一起带回来：直接用，不再赌时序。
+         （rows 缺失的老主进程才回落到重读一次。） */
+      if (Array.isArray(res.rows)) {
+        setRowsByGroup((prev) => ({ ...prev, [group.id]: res.rows as GroupMessageRow[] }));
+      } else {
+        void loadMessages(group.id);
+      }
       return { ok: true, summary: { sent: Number(res.queued ?? 0), failed: [] } };
     },
     [loadMessages],
@@ -574,6 +581,14 @@ export function useTeamGroups() {
   const mute = useCallback(
     async (groupId: string, partnerId: string, muted: boolean) =>
       apply((await window.codex.harnessTeamMute(groupId, partnerId, muted)) as MutationResult),
+    [apply],
+  );
+
+  /** 群内成员头像（11-07 用户令）：只改这个群里的这张脸；空串 = 恢复默认。
+   *  ⛔ 走主进程落盘（群 JSON 是真相源），渲染层不做本地覆盖 —— 否则重开面板会跳回旧脸。 */
+  const setAvatar = useCallback(
+    async (groupId: string, memberId: string, avatar: string) =>
+      apply((await window.codex.harnessTeamSetAvatar(groupId, memberId, avatar)) as MutationResult),
     [apply],
   );
 
@@ -694,7 +709,7 @@ export function useTeamGroups() {
   return {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
-    refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
+    refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
     setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveSchedules, runSchedule,
     setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, clearMessages,
   };
