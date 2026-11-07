@@ -51,6 +51,24 @@ node scripts/deploy-cloud-ui.mjs --skip-build    # 已 build 过，只上传
 ⚠️ 已知遗留：助手窗标题显示的是共用界面里的 `Codex Harness Desktop`（不是 `Codex Assistant`），
 因为窗口标题来自云端那份 index.html 的 `<title>`；要改请在 headless 注入壳时替换（未修，待用户定夺）。
 
+## 🔒 敏感信息红线（2026-11-07 用户令，硬性，无例外）
+
+⛔⛔ **禁止把下列内容写进任何仓库、提交、推送或 GitHub 可见内容**（含源码/文档/注释/脚本/截图/commit message/Release Notes/Issue/PR 正文）：
+
+1. 服务器公网 IP、内网 IP、主机名与云厂商实例标识；
+2. SSH 端口、SSH 登录别名与「别名 → 真实地址:端口」的映射；
+3. 开发机（本机）出口 IP；
+4. IPv6 前缀 / IPv6 地址；
+5. 私钥内容、口令、令牌、Cookie。
+
+写运维/交接说明时**一律用占位符**：`<服务器地址>`、`<SSH 端口>`、`<出口 IP>`、`<IPv6 前缀>`；真实值只放在本机私密文件（如 `~/.ssh/config`、密码管理器）或服务器侧配置里，⛔ 不进 git、不进文档、不进截图。
+
+提交前必查（命中任何一条就先删再提交）：
+```bash
+git diff --cached | grep -nE "([0-9]{1,3}\.){3}[0-9]{1,3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,}|ssh -p |端口[:：]?[0-9]{2,5}|BEGIN .*PRIVATE KEY"
+```
+⛔ **误提交 = 已泄露**：删文件/改文档**不算修好**（历史与 GitHub 缓存仍可查），必须同轮①改掉当前文件、②**轮换凭据**（SSH 密钥、面板口令、防火墙白名单），③再评估历史清理（`git filter-repo` + 强推是破坏性操作，需用户点头）。
+
 ## 🔁 多仓协作与发版（**AI 协作者必读**：跨仓改动的同步、推送、PPcode 发版全流程）
 
 完整步骤见 **`docs/REPO-WORKFLOW.md`** —— 要点：三个源码仓（桌面版 `D://Codex Harness Desktop` = 开发主线；PPcode `D://PPcode` = 远端 `PMZPZM0/PPcode`，源码与发布页合一、旧私有仓 ppcode-src 已删；云助手本仓 `D://Codex Assistant` = 远端 `PMZPZM0/codex-harness-cloud-src`）之间走「主仓 diff → 逐文件 apply 预检 → 副本验证」；PPcode 发版 = 版本对齐 4 处 → mac 审计 → check → tag → CI 三端构建发布到本仓 Release；三仓 `AGENTS.md` 的通用段逐字镜像，改一边必须同步另一边。
