@@ -707,3 +707,5 @@
 | 2026-11-07 | 已安装插件卡重排（内置卡三列网格 + 去掉 0 勾选噪声） | 改动 | `07-settings-mcp-connectors.css`、`settings-plugins/PluginsMarketSection.tsx` | 用户截图：内置插件卡大块空白、图标文字不协调。卡改 32px 图标｜标题+说明｜状态 三列网格，说明两行截断、动作缩到右下；只有内置卡时隐藏「共 0 个插件可勾选」批量条与空态（搜索时保留）。验证：16 守卫、tsc、界面已部署。 | 本轮 |
 
 | 2026-11-07 | MCP 页整改：模板卡紧凑化 + 已接入绿色反馈 + 隐藏空批量条 | 改动 | `settings-mcp/McpSettingsSection.tsx`、`06-market-icons.css`、`05-composer-input.css` | 用户截图：MCP 页模板卡/列表杂乱，要求按插件/技能页整改并给安装成功卡绿色边框。① 模板卡收紧（两行说明/动作右下/等高，已配置绿边淡绿底）；② 市场恢复显示已接入项，installed 卡绿边淡绿底；③ 0~1 项时隐藏空批量条、空态提示收成一句。验证：16 守卫、tsc、界面已部署。 | 本轮 |
+
+| 2026-11-07 | REA 连接器「启动失败」治本：就绪双查 + 更新链自愈（同步桌面版 ce04e0070） | 修复 | `electron/toolchain.ts`（reaServerScript）、`electron/features/runtime-ipc.ts`（installedVersionOf）、守卫 12h | 同桌面版：更新中断掏空 rea-agents 的 dist 只留 package.json + rea.mjs ⇒ ① reaServerScript() 加查 dist/mcp/main.js，装坏返回空不注册（computerUseLauncher 同款双查）；② installedVersionOf 对 rea 以就绪口径回报，装坏当作未装触发重装自愈。验证：本仓 build:electron 绿、守卫 12h 27/27。 | 本轮 |
