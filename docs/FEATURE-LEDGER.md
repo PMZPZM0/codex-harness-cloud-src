@@ -701,3 +701,5 @@
 | 2026-11-07 | 浏览器自动化卡片改「当前链路 + 三张能力卡」 | 改动 | `settings-browser/BrowserSettingsSection.tsx`、`00-settings-registry.tsx`、`45-settings-experience.css`、`07-settings-mcp-connectors.css`、守卫 07 | 用户截图：卡片文字注释杂乱，要把联动展示做出来。改为：顶部链路条读 `egoStatus` 真实状态（Ego Lite 使用中 / 未装回落 browse-skills）+ 三张能力卡（看页面 / 自动化优先 / 没装时回落）+ 状态胶囊 + 去开发工具入口，200px 自动三列。验证：07/12ad 守卫、tsc、界面已部署。 | 本轮 |
 
 | 2026-11-07 | 自动化页联动展示：入口卡真实状态 + 桌面后端卡化 | 改动 | `settings-automation/AutomationSettingsSection.tsx`、`settings-computer/ComputerSettingsSection.tsx`、`00-settings-registry.tsx`、`45-settings-experience.css`、守卫 07 | 用户令：「联动展示，都做好来」。① 三张入口卡显示真实状态：Ego Lite 版本、Nuphus/CU 版本与启停、RPA 配方数；210px 三列。② 桌面自动化页两个后端改成后端卡（安装态胶囊 + 卡上开关 + 去开发工具），链路随开关联动。验证：07/12ad、tsc、界面已部署。 | 本轮 |
+
+| 2026-11-07 | CLI 智能体已安装卡片绿色反馈 + 专家系二级页左栏联动 | 改动 | `components/AgentBadge.tsx`、`cli-agents/CliAgentsPanel.tsx`、`13-subagents-page.css`、`helpers/catalogs.ts`、守卫 12ad | 用户截图：QwenPaw 已显示已安装但卡片没有视觉反馈。AgentBadge 新增 `state="ok"`（绿边/淡绿底/状态行绿字），CLI 面板按真实安装态传入；补齐专家系二级页 → 专家/专家团 的左栏映射。验证：12ad、tsc、界面已部署。 | 本轮 |
