@@ -37,6 +37,7 @@
 |---|---|---|---|---|---|
 | 2026-11-07 | 工作规范：敏感信息红线（禁止推送服务器信息） | 流程 | 三仓 `AGENTS.md` | 用户令：服务器 IP / SSH 端口 / 本机出口 IP / IPv6 前缀 / 凭据一律不许进仓库或推 GitHub；运维文档只用占位符；提交前扫 diff；误提交视为泄露，须轮换凭据（历史清理需用户确认）。 | 本轮 |
 
+| 2026-11-07 | 解散群改为确认弹窗 | 改动 | `src/features/harness-team/index.tsx`、`61-team-mode.css`、守卫 12be | 群菜单删除从「再点一次」内联确认改成 420px 弹窗（说明会连删群内会话 + 取消 / 红色解散按钮；X / Esc / 点背景可退），确认后才 removeGroup。验证：主仓真机探针 + 12be 77/77；本仓 TSC + build + 守卫通过、云端界面已部署（哈希一致）。 | 本轮（同步主线 565ae961e） |
 | 2026-11-07 | 插队消息点「立即」立即交付（不再等回合结束） | 修复 | `02-browser-queue-settings.tsx`、`pending-steer.mjs/.d.mts`、`PendingSteerBubbles.tsx`、守卫 12ay | 立即 = 登记后马上 `turn/steer`；撤回药丸只在交付前一瞬存在；2s 轮询 + 20s 硬兜底防残留 inProgress 挂住。验证：主仓 check 全绿 + 运行时 PASS；本仓 TSC + build + 守卫通过、云端界面已部署（哈希一致）。 | 本轮（同步主线 bdb5e57a7） |
 | 2026-11-07 | MCP 读取失败（thread not found）修复 + 市场预览底部折行 | 修复 | `02-browser-queue-settings.tsx`、`05-composer-input.css`、守卫 12ad | ① 刷新设置资源时用当前会话 threadId 查 `mcpServerStatus/list`，会话被删/归档后引擎报 thread not found ⇒ 自动去掉 threadId 重查；② 失败横幅剥掉 codexrequest IPC 包装前缀；③ 预览底部说明独占一行、按钮不折行。验证：主仓真机探针 + check 全绿 + 运行时 PASS；本仓 TSC + vite build + 守卫通过、云端界面已部署（哈希一致）。 | 本轮（同步主线 346188e9b） |
 | 2026-11-07 | 审查修正：MCP 重复接入防护 + 追问落点 + 版本兜底 | 修复 | `McpSettingsSection.tsx`、`07-settings-mcp-connectors.css`、`AutomationSettingsSection.tsx`、`04-team-group-view.tsx`、守卫 12ad/12be | ① MCP 已接入卡预览不再给安装动作（防覆盖连接器/密钥）；② 团成员消息「追问」改 @ 回成员本人；③ 入口卡版本为空不再显示「v已装」；④ MCP 工具条窄窗换行兜底。验证：主仓真机探针 + check 全绿 + 运行时 PASS；本仓 TSC + vite build + 守卫通过、云端界面已部署（哈希一致）。 | 本轮（同步主线 df3ea1c80） |
