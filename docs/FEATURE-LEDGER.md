@@ -36,6 +36,7 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-11-07 | 勘误：MCP 分页的添加/刷新放回搜索行 | 改动 | `src/features/settings-mcp/McpSettingsSection.tsx`、`07-settings-mcp-connectors.css` | 用户看截图后令：「放外面干嘛，跟搜索框一排，搜索框可以短一点」。分页条只留四个 tab，「添加 MCP / 刷新」回到市场页搜索行右侧，搜索框上限 240→190px，分类紧跟搜索框。验证：主仓真机探针 + check 全绿 + 运行时探针 PASS；本仓 TSC + vite build 通过、云端界面已重新部署（哈希一致）。 | 本轮（同步主线 7b3b518d5） |
 | 2026-11-07 | MCP 页拆成四个分页（对齐插件 / 技能页） | 改动 | `src/features/settings-mcp/McpSettingsSection.tsx`、守卫 07【274】/12k | 用户令：「MCP 界面按技能和插件界面对齐，界面布局和选项按键布局，一个选项对应一个界面」。顶部改分段 tab：MCP 市场 / 一键接入 N / 已配置 N / 运行状态 N，各带数量；「添加 MCP / 刷新」固定在 tab 右侧；每页只渲染自己那一段（市场卡片、模板卡、连接器卡、app-server 服务器卡不再一屏叠四块），切页时收起模板弹窗；单条连接器/服务器时不再显示批量条。验证：TSC + vite build 通过、三条受影响守卫绿、云端界面已部署（哈希一致）。 | 本轮（同步主线 c4a826a3c） |
 | 2026-11-04 | 应用内云管理 + 会话自动同步 | 新增 | `electron/features/cloud-reserve-ipc.ts`、`src/features/settings-cloud/CloudManageSection.tsx`（新）、`CloudAccountSection.tsx`、`46-cloud-account.css`、manifest/registry（cloud +3）、守卫 12q | 设置 → 云账号新增「云管理」板块：云端存储用量条（已用/配额/会话数/设备数）、已上传会话列表（标题/项目/机器/时间/大小，可搜索）、立即同步、勾选下载回本机、删除云端（只删云端不动本机）；「网页云管理」直达账号页。主进程新增 `cloud:sync/usage|index|delete` 三通道（服务端同一套 `/sync/*`，账号 token 鉴权，关闸/未开通/配额错误翻人话）；后台自动同步 = 启动 30s 后一次 + 每 5 分钟一次，未登录零请求、与手动同步共用 in-flight。类名统一用 `cloud-sync-manage-*` 前缀，避开本仓既有 `cloud-manage-*`（云端管理弹窗）。验证：构建通过、已部署云端界面、12q 新增断言通过（7 条首启登录页/供应商循环断言为本仓既有分歧，与本轮无关）。 | 本轮（同步主线 5c991e7b2） |
 
