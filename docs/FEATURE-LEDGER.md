@@ -37,6 +37,7 @@
 |---|---|---|---|---|---|
 | 2026-11-07 | 工作规范：敏感信息红线（禁止推送服务器信息） | 流程 | 三仓 `AGENTS.md` | 用户令：服务器 IP / SSH 端口 / 本机出口 IP / IPv6 前缀 / 凭据一律不许进仓库或推 GitHub；运维文档只用占位符；提交前扫 diff；误提交视为泄露，须轮换凭据（历史清理需用户确认）。 | 本轮 |
 
+| 2026-11-07 | 群聊界面向主对话同步（消息 / 输入框 / 把手 / 侧边粗条） | 改动 | `04-team-group-view.tsx`、`10-team-composer.tsx`、`index.tsx`、`AppView.tsx`、`61-team-mode.css`、守卫 12be | 智能体消息去卡片壳（标题行+正文、Markdown 同组件）；用户发言靠右气泡；输入框加主对话同款拖动把手；左侧复用 ComposerRail（app 逐层传入）。验证：主仓真机探针 + 12be + 运行时 PASS；本仓 TSC + build + 守卫通过、云端界面已部署（哈希一致）。 | 本轮（同步主线 75c680e48） |
 | 2026-11-07 | 成员栏加「点击头像可以修改」提示 | 改动 | `04-team-group-view.tsx`、`61-team-mode.css`、守卫 12be | 「成员 N」右侧同一行加小字「点击头像可以修改」（不换行），说明头像可点改。验证：主仓 12be/check/运行时全绿；本仓 TSC + build + 守卫通过、云端界面已部署（哈希一致）。 | 本轮（同步主线 e47162d17） |
 | 2026-11-07 | 群成员头像：智能体面孔与用户头像分开 + 团成员可改 | 改动 | `avatar-presets.ts`、`agent-avatars.mjs`、`team-models.mjs`、`13-team-avatar.tsx`、`19-team-avatar-picker.tsx`、`04-team-group-view.tsx`、`61-team-mode.css`、守卫 12be/09 | ① 智能体成员选择器只给「子智能体 / CLI 智能体 / Codex」14 张 + 上传；② 人类成员只给用户中心 8 张、不提供上传，两套不串；③ 团成员头像走群级 avatars 覆盖表，成员栏/消息/@ 面板统一。验证：主仓真机探针 + 12be 85/85 + check 全绿 + 运行时 PASS；本仓 TSC + build + 守卫通过、云端界面已部署（哈希一致）。 | 本轮（同步主线 b79d4d0dc） |
 | 2026-11-07 | 解散群改为确认弹窗 | 改动 | `src/features/harness-team/index.tsx`、`61-team-mode.css`、守卫 12be | 群菜单删除从「再点一次」内联确认改成 420px 弹窗（说明会连删群内会话 + 取消 / 红色解散按钮；X / Esc / 点背景可退），确认后才 removeGroup。验证：主仓真机探针 + 12be 77/77；本仓 TSC + build + 守卫通过、云端界面已部署（哈希一致）。 | 本轮（同步主线 565ae961e） |
