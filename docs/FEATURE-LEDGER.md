@@ -36,6 +36,7 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-11-07 | 审查修正：MCP 重复接入防护 + 追问落点 + 版本兜底 | 修复 | `McpSettingsSection.tsx`、`07-settings-mcp-connectors.css`、`AutomationSettingsSection.tsx`、`04-team-group-view.tsx`、守卫 12ad/12be | ① MCP 已接入卡预览不再给安装动作（防覆盖连接器/密钥）；② 团成员消息「追问」改 @ 回成员本人；③ 入口卡版本为空不再显示「v已装」；④ MCP 工具条窄窗换行兜底。验证：主仓真机探针 + check 全绿 + 运行时 PASS；本仓 TSC + vite build + 守卫通过、云端界面已部署（哈希一致）。 | 本轮（同步主线 df3ea1c80） |
 | 2026-11-07 | 勘误：MCP 四个分页并进搜索工具条 | 改动 | `src/features/settings-mcp/McpSettingsSection.tsx`、`07-settings-mcp-connectors.css`、守卫 12ad | 用户对着截图再令：「放外面干嘛，跟搜索框一排，搜索框可以短一点」。分页条整行取消，四个分页作为来源 tabs 并进工具条（插件页同款）：`[搜索][分类▾][MCP 市场｜一键接入｜已配置｜运行状态][添加 MCP][刷新]` 单行 nowrap，搜索框自适应收缩；各分页工具条搜索框绑定各自数据，分类文字标签取消。验证：主仓四视图真机探针单行不溢出 + check 全绿 + 运行时探针 PASS；本仓 TSC + vite build 通过、云端界面已部署（哈希一致）。 | 本轮（同步主线 ba4bdf123） |
 | 2026-11-07 | 勘误：MCP 分页的添加/刷新放回搜索行 | 改动 | `src/features/settings-mcp/McpSettingsSection.tsx`、`07-settings-mcp-connectors.css` | 用户看截图后令：「放外面干嘛，跟搜索框一排，搜索框可以短一点」。分页条只留四个 tab，「添加 MCP / 刷新」回到市场页搜索行右侧，搜索框上限 240→190px，分类紧跟搜索框。验证：主仓真机探针 + check 全绿 + 运行时探针 PASS；本仓 TSC + vite build 通过、云端界面已重新部署（哈希一致）。 | 本轮（同步主线 7b3b518d5） |
 | 2026-11-07 | MCP 页拆成四个分页（对齐插件 / 技能页） | 改动 | `src/features/settings-mcp/McpSettingsSection.tsx`、守卫 07【274】/12k | 用户令：「MCP 界面按技能和插件界面对齐，界面布局和选项按键布局，一个选项对应一个界面」。顶部改分段 tab：MCP 市场 / 一键接入 N / 已配置 N / 运行状态 N，各带数量；「添加 MCP / 刷新」固定在 tab 右侧；每页只渲染自己那一段（市场卡片、模板卡、连接器卡、app-server 服务器卡不再一屏叠四块），切页时收起模板弹窗；单条连接器/服务器时不再显示批量条。验证：TSC + vite build 通过、三条受影响守卫绿、云端界面已部署（哈希一致）。 | 本轮（同步主线 c4a826a3c） |
