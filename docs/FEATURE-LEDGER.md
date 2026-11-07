@@ -703,3 +703,5 @@
 | 2026-11-07 | 自动化页联动展示：入口卡真实状态 + 桌面后端卡化 | 改动 | `settings-automation/AutomationSettingsSection.tsx`、`settings-computer/ComputerSettingsSection.tsx`、`00-settings-registry.tsx`、`45-settings-experience.css`、守卫 07 | 用户令：「联动展示，都做好来」。① 三张入口卡显示真实状态：Ego Lite 版本、Nuphus/CU 版本与启停、RPA 配方数；210px 三列。② 桌面自动化页两个后端改成后端卡（安装态胶囊 + 卡上开关 + 去开发工具），链路随开关联动。验证：07/12ad、tsc、界面已部署。 | 本轮 |
 
 | 2026-11-07 | CLI 智能体已安装卡片绿色反馈 + 专家系二级页左栏联动 | 改动 | `components/AgentBadge.tsx`、`cli-agents/CliAgentsPanel.tsx`、`13-subagents-page.css`、`helpers/catalogs.ts`、守卫 12ad | 用户截图：QwenPaw 已显示已安装但卡片没有视觉反馈。AgentBadge 新增 `state="ok"`（绿边/淡绿底/状态行绿字），CLI 面板按真实安装态传入；补齐专家系二级页 → 专家/专家团 的左栏映射。验证：12ad、tsc、界面已部署。 | 本轮 |
+
+| 2026-11-07 | 已安装插件卡重排（内置卡三列网格 + 去掉 0 勾选噪声） | 改动 | `07-settings-mcp-connectors.css`、`settings-plugins/PluginsMarketSection.tsx` | 用户截图：内置插件卡大块空白、图标文字不协调。卡改 32px 图标｜标题+说明｜状态 三列网格，说明两行截断、动作缩到右下；只有内置卡时隐藏「共 0 个插件可勾选」批量条与空态（搜索时保留）。验证：16 守卫、tsc、界面已部署。 | 本轮 |
