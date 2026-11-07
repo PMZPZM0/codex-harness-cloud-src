@@ -12,7 +12,7 @@
  *
  * 用法：node scripts/deploy-cloud-ui.mjs [--skip-build]
  *   --skip-build  只上传（已 build 过时用）
- * 依赖：ssh/scp 走 ~/.ssh/config 的 `tx` 别名（<server-ip>，ubuntu，~/.ssh/123.pem）。
+ * 依赖：ssh/scp 走 ~/.ssh/config 的 `tx` 别名（地址/端口见本机配置，ubuntu，~/.ssh/123.pem）。
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";

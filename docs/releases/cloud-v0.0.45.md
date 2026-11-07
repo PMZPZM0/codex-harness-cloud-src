@@ -19,7 +19,7 @@
 
 `jvszzp.ltd` 走 **Cloudflare Tunnel**（实测首字节 3.15s / 总计 5.25s），且源站用 **Cloudflare Origin Certificate** —— 改成灰云直连会被浏览器判「证书不受信任」，这就是它「关掉就访问不了」的根因。
 
-`dl.ppz123.asia` 是 A 记录直连 `<server-ip>` + Let's Encrypt 证书，实测 **0.21~0.49s**。
+`dl.ppz123.asia` 是 A 记录直连源站 + Let's Encrypt 证书，实测 **0.21~0.49s**。
 
 ## mac 首次打开
 

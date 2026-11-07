@@ -33,7 +33,7 @@
 node scripts/deploy-cloud-ui.mjs                 # 完整流程
 node scripts/deploy-cloud-ui.mjs --skip-build    # 已 build 过，只上传
 ```
-- 服务器：`ssh tx`（`~/.ssh/config`：<server-ip> / ubuntu / `~/.ssh/123.pem`）
+- 服务器：`ssh tx`（`~/.ssh/config` 的别名；地址与端口只在本机配置里，⛔ 不写进仓库；ubuntu / `~/.ssh/123.pem`）
 - 目标目录：`/var/www/codex-harness-cloud/app`（旧版自动备份为 `app.bak.<时间戳>`，可回滚）
 - ⛔ `app/version.json` 的 `protocolVersion` **必须恒为 1** —— 与 `headless.ts` 里
   `Number(meta.protocolVersion) === 1` 判定同源。写错 ⇒ 所有客户端判协议不匹配
