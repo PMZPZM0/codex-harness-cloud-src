@@ -520,7 +520,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
       onNotice={setNotice}
       onToast={showToast}
     /> },
-    browser: { back: { to: "automation", label: "返回自动化" }, render: () => <BrowserSettingsSection browserHome={browserHome} setBrowserHome={setBrowserHome} setBrowserDraft={setBrowserDraft} setNotice={setNotice} toolsStatus={toolsStatus} ToolCard={ToolCard} /> },
+    browser: { back: { to: "automation", label: "返回自动化" }, render: () => <BrowserSettingsSection browserHome={browserHome} setBrowserHome={setBrowserHome} setBrowserDraft={setBrowserDraft} setNotice={setNotice} toolsStatus={toolsStatus} ToolCard={ToolCard} onOpenDevtools={() => setSettingsPage("devtools")} /> },
     appearance: { render: () => <AppearanceSettingsSection theme={theme} setTheme={setTheme} uiFont={uiFont} setUiFont={setUiFont} onNotice={setNotice} /> },
     personalization: { render: () => <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} onOpenComponentLibrary={() => setSettingsPage("component-library")} /> },
     voice: { render: () => <VoiceSettingsSection onNotice={setNotice} /> },
