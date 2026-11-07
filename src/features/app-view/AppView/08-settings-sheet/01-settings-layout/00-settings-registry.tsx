@@ -558,6 +558,6 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
                   {/* 改动备份（10-13 自桌面版同步）：独立板块挂在数据管理页尾部 */}
                   <ChangeBackupSection onNotice={setNotice} openAppConfirm={openAppConfirm} />
                 </> },
-    computer: { back: { to: "automation", label: "返回自动化" }, render: () => <ComputerSettingsSection approvalPolicy={approvalPolicy} sandbox={sandbox} changeApproval={changeApproval} changeSandbox={changeSandbox} personality={personality} changePersonality={changePersonality} toolsStatus={toolsStatus} ToolCard={ToolCard} /> },
+    computer: { back: { to: "automation", label: "返回自动化" }, render: () => <ComputerSettingsSection toolsStatus={toolsStatus} ToolCard={ToolCard} setNotice={setNotice} /> },
   };
 }
