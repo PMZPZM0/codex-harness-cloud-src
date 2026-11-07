@@ -66,8 +66,10 @@ const catalog = [
   ok(team && team.items.length === 1 && team.items[0].selectId === "p2",
     "专家团占一行，点它 = 叫整团（selectId 是团那一行的成员 id）");
   const kid = sections.find((s) => s.key === "kid");
-  ok(kid && kid.items.length === 2 && kid.items.every((i) => i.selectId === "p2"),
-    "⛔ 团成员也落到**团那一行**（团内分派由主理人决定，不给团成员单独派活）");
+  ok(kid && kid.items.length === 2 && kid.items.every((i) => i.selectId === `team:t1:${i.id.replace(/^kid:/, "")}`),
+    "⛔ 团成员 @ 的是**成员本人**（合成 id team:<teamId>:<memberId>；用户：「每个成员都可以艾特」）");
+  ok(kid && !kid.items.some((i) => i.selectId === "p2"),
+    "⛔ 团成员的 selectId 不再指向团那一行（那会退化成主理人代答，用户实测就是这个问题）");
   ok(kid.items[0].avatar.targetKind === "member" && kid.items[0].avatar.targetKey === "m1",
     "团成员的头像按自己的身份画（不是团徽章）");
   ok(team.items[0].avatar.targetKind === "expert" && team.items[0].avatar.targetKey === "chengshu",
@@ -155,8 +157,8 @@ const catalog = [
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   const css = read("src/styles/61-team-mode.css");
-  ok(/team-group__members-stop/.test(view) && /team-group__members-foot/.test(view),
-    "停止键落在成员栏底部（用户：「停止放到群成员列表卡片后面」）");
+  /* 停止键的**位置与存在性**全交给 `12bg-team-stop-placement`（那条线是它的 owner，
+     用户在三个位置之间改过三次）。这里⛔ 不再断言它 —— 两处断言会互相打架（11-07 实践）。 */
   ok(/\.team-group__members-stop\.is-busy \{/.test(css),
     "有人在跑才染红（常红会变成装饰，分不清谁在干活）");
   const running = view.slice(view.indexOf("team-group__running"), view.indexOf("team-group__running") + 1400);
@@ -192,14 +194,23 @@ const catalog = [
   const models = read("src/lib/team-models.mjs");
   ok(/export function teamAuthorIdOf/.test(models) && /export function parseTeamAuthorId/.test(models),
     "合成作者 id 的编解码只有一处（⛔ 别在视图里手拼字符串）");
-  ok(/本群会把被你调度的成员产出\*\*直接显示在群里\*\*/.test(models) && /不要复述成员原文/.test(models),
-    "提示词里明说：⛔ 不要复述成员原文、不要写「以下是原话」");
+  ok(/成员做完会自己把结果发进群/.test(models) && /别替他们复述/.test(models),
+    "提示词里明说：成员产出自己进群，主理人别复述（11-07 改成口语，语义不变）");
   const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
   ok(/forTeam: partner\.targetKind === "team"/.test(ipc),
     "主进程那条派活路径（定时任务 / 团成员调用）同口径");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/parseTeamAuthorId\(id\)/.test(view) && /const nameOf = \(id: string\)/.test(view),
     "视图按合成 id 反查名字（目录没回来就退回 memberId，⛔ 不编名字）");
+  /* ⛔⛔ 光让面板"能 @ 到成员"不够 —— 派活必须真的按成员下发，否则又落回整团让主理人代答。 */
+  const kidStore = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+  ok(/parseTeamAuthorId\(id\)/.test(kidStore) && /targetKind: "member"/.test(kidStore)
+    && /targetKey: `\$\{parsed\.teamId\}:\$\{parsed\.memberId\}`/.test(kidStore),
+    "派活把团成员的合成 id 翻成 kind:member + key <teamId>:<memberId>（⛔ 不翻 = 又派给整团）");
+  ok(/const targets = \[\.\.\.picked\.filter\(\(m\) => !m\.muted\), \.\.\.virtuals\]/.test(kidStore),
+    "团成员与普通伙伴一起进 targets（静音规则同样适用）");
+  ok(/<li key=\{kid\.key\} className=\{`team-group__member is-kid/.test(view) && /onClick=\{\(\) => toggleAt\(kidId\)\}/.test(view),
+    "成员栏的团成员行有自己的 @ 按钮（用户：「团成员拆出来，每个成员都可以艾特」）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
