@@ -25,7 +25,10 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { augmentedPath, applyNoProxyFix } from "./toolchain";
-import { cliPromptCommand } from "../src/lib/cli-command.mjs";
+import { cliPermissionTierOf, cliPromptCommandFor } from "../src/lib/cli-command.mjs";
+
+/** 派活权限档（11-07）：safe=只读 / standard=可改文件（默认） / full=连命令一起放行。 */
+export type CliPermissionTier = ReturnType<typeof cliPermissionTierOf>;
 
 /**
  * 子进程用的 PATH。
@@ -79,6 +82,12 @@ export type CliAgentDef = {
   promptHint: string;
   /** 是否允许调度（默认 true —— 与专家 / 子智能体一致：默认可用，可单独关掉） */
   enabled: boolean;
+  /**
+   * 派活权限档（11-07）：safe / standard / full，缺省 standard。
+   * ⛔ 无头模式下「需要确认」的动作会被各 CLI 直接拒绝 —— 档位决定模板里追加哪组参数。
+   * ⛔ 只有官方文档核实过参数的 CLI 才受它影响（见 cli-command.mjs 的 CLI_PERMISSION_FLAGS）。
+   */
+  permissionTier?: CliPermissionTier;
   /** 内置预置（不可删除，可关停 / 改名 / 改命令） */
   builtin: boolean;
   createdAt: number;
@@ -333,6 +342,9 @@ export function normalizeCliAgent(input: unknown, opts?: { builtin?: boolean; cr
     promptHint: String(src.promptHint ?? "").trim().slice(0, 400),
     // ⛔ 缺省 true（默认可用）；只有显式 false 才算关掉 —— 与子智能体的 `!== false` 口径一致
     enabled: src.enabled !== false,
+    /* ⛔ 只在用户显式设过时才落值（缺省 undefined = standard）：
+       否则「只改过启停」的条目也会把 standard 写进用户态，默认值将来改了也盖不回去。 */
+    permissionTier: src.permissionTier === undefined ? undefined : cliPermissionTierOf(src.permissionTier),
     builtin: opts?.builtin === true || src.builtin === true,
     createdAt: Number(src.createdAt ?? opts?.createdAt ?? Date.now()) || Date.now(),
   };
@@ -343,8 +355,13 @@ export function normalizeCliAgent(input: unknown, opts?: { builtin?: boolean; cr
  * ⛔ 顺序 = 内置表顺序 + 用户自定义（按 createdAt）；面板再按分类分组，不依赖这里的分组。
  */
 export function mergeCliAgents(builtin: CliAgentDef[], saved: unknown): CliAgentDef[] {
-  const stored = (Array.isArray(saved) ? saved : []).map((entry) => normalizeCliAgent(entry));
-  const byId = new Map(stored.map((entry) => [entry.id, entry]));
+  /* ⛔⛔ 11-07：必须**先合并原始差异、再归一**。存档对内置条目只存用户改过的字段
+     （`{ id, permissionTier }` / `{ id, enabled }`），若先把每条差异 normalize，
+     缺省的 name/bin 会被填成「未命名 CLI」并盖掉预置 —— 实测症状：
+     改一次档位/启停后，卡片变成「未命名 CLI」、权限档区块消失、@ 候选里也认不出它。 */
+  const rawStored = (Array.isArray(saved) ? saved : [])
+    .filter((entry) => entry && typeof entry === "object") as Record<string, unknown>[];
+  const byId = new Map(rawStored.map((entry) => [String(entry.id ?? ""), entry]));
   const out: CliAgentDef[] = [];
   for (const preset of builtin) {
     const override = byId.get(preset.id);
@@ -352,9 +369,12 @@ export function mergeCliAgents(builtin: CliAgentDef[], saved: unknown): CliAgent
     /* ⛔ 先把预置按平台换成「本机该跑的那条命令」，再盖上用户改动 ——
        顺序反过来会让用户在面板里改过的安装命令被 mac 变体盖回去。 */
     const base = withPlatformCmd(preset);
-    out.push(override ? { ...base, ...override, builtin: true, id: preset.id } : { ...base });
+    out.push(normalizeCliAgent(override ? { ...base, ...override, id: preset.id } : { ...base }, {
+      builtin: true,
+      createdAt: preset.createdAt,
+    }));
   }
-  for (const extra of byId.values()) out.push({ ...extra, builtin: false });
+  for (const extra of byId.values()) out.push(normalizeCliAgent(extra));
   return out;
 }
 
@@ -386,7 +406,7 @@ async function writeDoc(items: CliAgentDef[]): Promise<void> {
       const preset = presets.get(entry.id);
       if (!preset) return entry;
       const diff: Record<string, unknown> = { id: entry.id };
-      for (const key of ["name", "category", "bin", "installCmd", "installCmdMac", "docs", "description", "promptHint", "enabled"] as const) {
+      for (const key of ["name", "category", "bin", "installCmd", "installCmdMac", "docs", "description", "promptHint", "enabled", "permissionTier"] as const) {
         if (entry[key] !== preset[key]) diff[key] = entry[key];
       }
       return diff;
@@ -422,6 +442,16 @@ export async function readUsableCliAgents(): Promise<CliAgentDef[]> {
   return list.filter((entry) => entry.enabled && entry.bin);
 }
 
+/** 按可执行名查派活权限档（群成员只存 cliCommand，档位在 CLI 目录里）。
+ *  ⛔ 查不到一律 standard —— 不能因为缺一条记录就全放行。 */
+export async function cliPermissionTierFor(bin: string): Promise<CliPermissionTier> {
+  const key = normalizeCliBin(bin);
+  if (!key) return "standard";
+  const list = await readCliAgents();
+  const hit = list.find((entry) => normalizeCliBin(entry.bin) === key || normalizeCliBin(entry.name) === key);
+  return cliPermissionTierOf(hit?.permissionTier);
+}
+
 /** 保存入参（⛔ category 收 string 而非联合类型：IPC 边界上先收再校验，
  *  让 handler 的签名与渲染层 d.ts 用同一份内联结构；非法值由 normalizeCliAgent 回落 custom）。 */
 export type CliAgentInput = {
@@ -434,6 +464,7 @@ export type CliAgentInput = {
   description?: string;
   promptHint?: string;
   enabled?: boolean;
+  permissionTier?: string;
 };
 
 /** 新增或更新（有 id 且存在 ⇒ 更新；否则新增）。⛔ 内置条目不可被改名成空、不可删除。 */
@@ -584,13 +615,14 @@ export { BUILTIN_CLI_AGENTS };
  *   ② 安装命令只**转述**，不自己执行（它可能在用户机器上乱装东西）；
  *   ③ 产出必须带"实际跑了什么命令 + 关键输出"，让发起方看得出它不是编的。
  */
-export function buildCliRolePrompt(cli: Pick<CliAgentDef, "name" | "bin" | "description" | "promptHint" | "installCmd">): string {
+export function buildCliRolePrompt(cli: Pick<CliAgentDef, "name" | "bin" | "description" | "promptHint" | "installCmd" | "permissionTier">): string {
   const name = String(cli?.name ?? "").trim() || "CLI";
   const bin = normalizeCliBin(cli?.bin) || name;
   const hint = String(cli?.promptHint ?? "").trim();
   const desc = String(cli?.description ?? "").trim();
   const install = String(cli?.installCmd ?? "").trim();
-  const oneShot = cliPromptCommand(bin).replace("{prompt}", "<任务全文>");
+  const tier = cliPermissionTierOf(cli?.permissionTier);
+  const oneShot = cliPromptCommandFor(bin, tier).replace("{prompt}", "<任务全文>");
   return [
     `你被当作「CLI 智能体 ${name}」派活：用本机命令行工具 \`${bin}\` 完成下面的任务。`,
     desc ? `这个工具是什么：${desc}` : "",
