@@ -309,8 +309,10 @@ export async function run() {
       "【127】step-note.mjs 三件套齐（注入 / 剥离 / 读取 —— 单一真相源，⛔ 不许各工具 schema 各写一份）"
     );
     const codexIpcSrc = readFileSync(join(ROOT, "electron", "features", "codex-ipc.ts"), "utf8").replace(/\r/g, "");
-    /* ⛔ 11-02 判据更新：resume 那处工具面现在是合并去重后的 surface，不再直接是 withStepParam(resumeTools)。
-       语义没变（两处都带 step），改盯「surface 由 withStepParam 产生 + 同步的就是 surface」。 */
+    /* ⛔ 11-02 判据更新（不是放松）：resume 那处的工具面现在是「宿主面 + 主进程三批（MCP/OpenFilm/影视）」
+       合并去重后的 `surface`，不再直接是 withStepParam(resumeTools)。要求的语义没变——
+       **两处注入都必须带 step**；所以盯「surface 由 withStepParam 产生」+「同步的就是 surface」，
+       不再绑实参字面（绑了的话，以后改合并逻辑就会假红，而真语义其实没动）。 */
     (/withStepParam\(\(params as any\)\.dynamicTools\)/.test(codexIpcSrc)
       && /const surface = withStepParam\(/.test(codexIpcSrc)
       && /syncToolSurfaceAsync\(codexHome, resumeThreadId, surface\)/.test(codexIpcSrc) ? ok : fail)(
@@ -328,7 +330,7 @@ export async function run() {
     );
     const delegateSrc = readFileSync(join(ROOT, "electron", "features", "delegation.ts"), "utf8").replace(/\r/g, "");
     const teamsSrc = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8").replace(/\r/g, "");
-    (/withStepParam\(\[\.\.\.teamTools/.test(delegateSrc) && /withStepParam\(\[teamTool, teamPhaseTool/.test(teamsSrc) ? ok : fail)(
+    (/const desiredTools = withStepParam\(\[[\s\S]{0,120}?\.\.\.teamTools/.test(delegateSrc) && /withStepParam\(\[teamTool, teamPhaseTool/.test(teamsSrc) ? ok : fail)(
       "【127】委派 / 团队会话的工具面也包了（主进程自己发的 thread/start **不经过** codex-ipc 拦截）"
     );
     /* 运行时真跑（⛔ 只断言源码文本会「自洽地错」：正则绿着、函数是坏的也照样过） */

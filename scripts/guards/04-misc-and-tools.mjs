@@ -852,6 +852,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       ? ok("目标不存在时返回可读错误（含当前可用清单）")
       : fail("目标解析对不存在的名字不报错");
     // L1 提示词层（软防护，但必须覆盖三类对象且措辞不能误伤本职能力）
+    // ⛔ 11-07 改口语（用户：「说人话」）：判据锚语义片段，不锚旧公文原句。
     const teamBlock = dp.delegateScopeBlock({ kind: "team", name: "研发交付团" });
     /本团队的成员/.test(teamBlock) && /别的专家团/.test(teamBlock)
       ? ok("★ L1 文案：专家团主理人只许调度本团成员、不许跨团/跨类型")
@@ -974,8 +975,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
        —— 所以这里不再有"绝不给 harness_tools"的负向断言；"给了网关 = 越权"是个**假命题**
        （工具可见 ≠ 操作被允许）。 */
     /* 10-21 step 标题落地后，工具面统一过 withStepParam（同一份数组，顺序与成员不变）。 */
-    /dynamicTools: (?:withStepParam\()?\[\.\.\.teamTools, buildDelegateHarnessTool\(\), \.\.\.\(roleRef \? \[buildRoleMemoryTool\(roleRef\)\]/.test(mainSrc9)
-      ? ok("dynamicTools = 调度工具 + 能力网关（+ 角色记忆写入）；⛔ 权限边界在执行端而非工具面")
+    /* ⛔⛔ 11-07：工具面提到 `desiredTools` 单一真相源（新建 + 复用会话 resume 前同步共用）。
+       判据盯组装内容与「新建分支真的用它」，不再盯 `dynamicTools:` 那一行字面量。 */
+    /const desiredTools = withStepParam\(\[[\s\S]{0,200}?\.\.\.teamTools, buildDelegateHarnessTool\(\),[\s\S]{0,160}?buildRoleMemoryTool\(roleRef\)/.test(mainSrc9)
+      && /dynamicTools: desiredTools/.test(mainSrc9)
+      ? ok("desiredTools = 调度工具 + 能力网关（+ 角色记忆写入）；⛔ 权限边界在执行端而非工具面")
       : fail("dynamicTools 的组装变了 —— 确认被委派会话拿得到网关、且调度工具仍只给主理人");
     // ⛔ 回归防线：这些工具必须**合并成一个数组**（写两个 dynamicTools 键会互相覆盖）
     (mainSrc9.match(/dynamicTools:/g) ?? []).length >= 1
@@ -1809,8 +1813,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes('apiUrl("/apk")') && !tunnelPage.includes('baseUrl + "/apk"') ? ok : fail)(
       "【139e】安装包入口用 apiUrl（旧实现引用了未定义的 baseUrl ⇒ 点了必抛错）"
     );
-    ((!hasAndroid ? true : (androidSrc.includes("baseOf(normalize(raw))") && androidSrc.includes("baseOf(stored)") && androidSrc.includes('indexOf("/r/")'))) ? ok : fail)(
-      hasAndroid ? "【139e】APK 存扫码链接时必须保留 /t/<id> 前缀（只存 origin 会 404）" : "【139e】本仓无 android 工程（只存在于主仓）⇒ 跳过"
+    (androidSrc.includes("baseOf(normalize(raw))") && androidSrc.includes("baseOf(stored)") && androidSrc.includes('indexOf("/r/")') ? ok : fail)(
+      "【139e】APK 存扫码链接时必须保留 /t/<id> 前缀（只存 origin 会 404）"
     );
     (relaySrc.includes("let submitting = false") && relaySrc.includes("if (submitting) return") && !relaySrc.includes('location.href = API_BASE') ? ok : fail)(
       "【139e】配对防重复：自动提交与手点只发一次；审批后用 location.replace（⛔ href 会让返回键回到配对页）"
@@ -1863,17 +1867,17 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       } catch (error) { console.log("      剥离模块导入失败：", error.message); }
       (stripOk ? ok : fail)("【139e】手机读历史必须剥掉 <!--boss-role--> 角色块（用户截图：整块注入显示在气泡里）");
     }
-    ((!hasAndroid ? true : (androidSrc.includes("R.id.code") && androidSrc.includes("R.id.connect") && androidSrc.includes("R.id.scan"))) ? ok : fail)(
-      hasAndroid ? "【139e】安卓首屏保留手输连接码 + 扫码（两个入口，同一个界面）" : "【139e】本仓无 android 工程（只存在于主仓）⇒ 跳过"
+    (androidSrc.includes("R.id.code") && androidSrc.includes("R.id.connect") && androidSrc.includes("R.id.scan") ? ok : fail)(
+      "【139e】安卓首屏保留手输连接码 + 扫码（两个入口，同一个界面）"
     );
-    ((!hasAndroid ? true : ((androidSrc.includes("setOrientationLocked(true)") && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes('android:screenOrientation="portrait"') && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes("tools:replace=\"android:screenOrientation\"")))) ? ok : fail)(
-      hasAndroid ? "【139e】扫码页必须竖屏（zxing 默认 sensorLandscape，必须 tools:replace 覆盖）" : "【139e】本仓无 android 工程（只存在于主仓）⇒ 跳过"
+    ((androidSrc.includes("setOrientationLocked(true)") && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes('android:screenOrientation="portrait"') && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes("tools:replace=\"android:screenOrientation\"")) ? ok : fail)(
+      "【139e】扫码页必须竖屏（zxing 默认 sensorLandscape，必须 tools:replace 覆盖）"
     );
-    ((!hasAndroid ? true : (androidSrc.includes("startConnect(code == null") && androidSrc.includes('"/api/pair"') && androidSrc.includes("pollApproval") && !androidSrc.includes("openChat("))) ? ok : fail)(
-      hasAndroid ? "【139e】配对在 App 内一次完成：手输码保留 + 直接 POST /api/pair 并轮询批准（⛔ 不再打开网页配对页）" : "【139e】本仓无 android 工程（只存在于主仓）⇒ 跳过"
+    (androidSrc.includes("startConnect(code == null") && androidSrc.includes('"/api/pair"') && androidSrc.includes("pollApproval") && !androidSrc.includes("openChat(") ? ok : fail)(
+      "【139e】配对在 App 内一次完成：手输码保留 + 直接 POST /api/pair 并轮询批准（⛔ 不再打开网页配对页）"
     );
-    ((!hasAndroid ? true : (androidSrc.includes("for (int attempt = 0; attempt < 3") && androidSrc.includes("removeIf") && androidSrc.includes("postDelayed(() -> web.loadUrl"))) ? ok : fail)(
-      hasAndroid ? "【139e】冷启动自动登录要重试（中转未就绪不许让人白输码）+ Cookie 去重 + 进页前等一拍" : "【139e】本仓无 android 工程（只存在于主仓）⇒ 跳过"
+    (androidSrc.includes("for (int attempt = 0; attempt < 3") && androidSrc.includes("removeIf") && androidSrc.includes("postDelayed(() -> web.loadUrl") ? ok : fail)(
+      "【139e】冷启动自动登录要重试（中转未就绪不许让人白输码）+ Cookie 去重 + 进页前等一拍"
     );
     ((function(){ try { const ui=readFileSync(join(ROOT, "src/features/app-view/AppView/04-remote-approval.tsx"), "utf8"); return ui.includes("pullCode") && ui.includes("remotePairState") && ui.includes("setRemoteQr"); } catch(e) { return false; } })() ? ok : fail)(
       "【139e】弹窗里的配对码 / 二维码要跟着后台轮换自动换新（否则用户照旧码输，永远过期）"
