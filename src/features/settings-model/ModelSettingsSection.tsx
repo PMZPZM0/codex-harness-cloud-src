@@ -19,6 +19,7 @@ import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export type ModelSettingsSectionProps = { refreshActive?: () => void; autoCompactRatio: any; setAutoCompactRatio: any; setNotice: any; providersList: any; pptokenCardOff: any; editingProvider: any; setCustomDraft: any; setEditingProvider: any; uniqueModelCount: any; customModel: any; setPptokenCardOff: any; setProviderEnabled: any; currentProvider: any; probingProvider: any; probeActiveProvider: any; providerAutoOpenRef: any; customDraft: any; savingSettings: any; openAppConfirm: any; removeProvider: any; LOCAL_MODEL_PRESETS: any; showApiKey: any; setShowApiKey: any; probeProvider: any; saveCustomDraft: any; switchingModel: any; probeOneModel: any; openModelEditor: any; providerStatus: any; showToast: any; saveCustomModel: any; modelEditor: any; setModelEditor: any; targetProviderHint: any; applyModelIdInput: any; modelSuggestions: any; saveModelEditor: any };
 
+/** 模型设置：供应商列表、编辑草稿、自动压缩比例与官方登录入口。 */
 export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   /* 10-15 用户令：云端模型模式开启时，本地供应商开关必须锁定（模型配置里也打不开）。 */
   const [cloudLocked, setCloudLocked] = useState(false);

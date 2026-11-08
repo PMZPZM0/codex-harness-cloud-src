@@ -180,6 +180,7 @@ export function destroyAppTray() {
   tray = null;
 }
 
+/** 取托盘实例（还没建时为 null）。 */
 export function appTray() {
   return tray;
 }

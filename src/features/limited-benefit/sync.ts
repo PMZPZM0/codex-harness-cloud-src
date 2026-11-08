@@ -43,6 +43,7 @@ const api = (): LimitedApi => window.codex as unknown as LimitedApi;
  */
 export type SyncResult = { ok: boolean; models: number; promoted: boolean; changed?: boolean; error?: string };
 
+/** 同步限时福利：调主进程把云端目录与本地供应商对齐，返回是否提升为生效供应商。 */
 export async function syncLimitedBenefit(_catalog?: CatalogLike | null): Promise<SyncResult> {
   try {
     const r = await api().limitedBenefitApply?.();

@@ -91,6 +91,7 @@ export interface SettingsPageEntry {
   render: () => ReactNode;
 }
 
+/** 设置页注册表：把各分组的页拼成一张 `页面 id → 页定义` 表（一行一页，守卫【101】）。 */
 export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   /* ↓↓↓ 与搬迁前 02-settings-content 的同名解构逐字一致 ↓↓↓ */
   const {

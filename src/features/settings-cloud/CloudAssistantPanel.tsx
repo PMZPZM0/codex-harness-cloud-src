@@ -104,6 +104,7 @@ async function fetchCloudState(): Promise<CloudState | null> {
   }
 }
 
+/** 云助手面板：连接状态、设备列表与更新入口。 */
 export function CloudAssistantPanel({ onClose, onOpenSettings }: { onClose: () => void; onOpenSettings?: (page: string) => void }) {
   const [state, setState] = useState<CloudState | null>(null);
   const [devices, setDevices] = useState<DeviceRow[] | null>(null);

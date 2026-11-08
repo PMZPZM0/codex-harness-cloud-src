@@ -536,6 +536,7 @@ function saveDeviceToken(token: string): void {
     catch { /* 不存在/已删：忽略 */ }
   }
 }
+/** 读本机设备令牌（headless 配对用）；没有返回空串。 */
 export function readDeviceToken(): string {
   try { return readFileSync(deviceTokenFile, "utf8").trim(); } catch { return ""; }
 }

@@ -11,6 +11,7 @@ import { isImagePath } from "../../lib/is-image-path";
 import { isMacPlatform } from "../../lib/is-mac-platform";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
+/** 引用会话文件的选择器：按关键词过滤候选（按路径去重）。 */
 export function ThreadFilePicker({ query, onQuery, candidates, onPick, onClose }: { query: string; onQuery: (value: string) => void; candidates: { path: string; source: string }[]; onPick: (path: string) => void; onClose: () => void }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -38,6 +39,7 @@ export function ThreadFilePicker({ query, onQuery, candidates, onPick, onClose }
   );
 }
 
+/** 输入框编辑器（contenteditable）：值/IPC 桥由外部持有，这里只负责渲染与事件。 */
 export function ComposerEditor({ value, placeholder, editorRef, domValueRef, makeChip, onValueInput, onKeyDown, onBlur, onPasteImage, onPasteFiles, onPasteLongText }: {
   value: string;
   placeholder: string;
@@ -156,6 +158,7 @@ export function ComposerEditor({ value, placeholder, editorRef, domValueRef, mak
 
 export type ComposerMenuOption = { value: string; title: string; desc?: string; badges?: { text: string; kind?: "vision" | "video" }[] };
 
+/** 输入区的下拉菜单按钮：点开在按钮下方弹层选择（宽度与对齐可配）。 */
 export function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf, onOpen }: { icon: any; label: string; options: ComposerMenuOption[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: ComposerMenuOption) => string | undefined; onOpen?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);

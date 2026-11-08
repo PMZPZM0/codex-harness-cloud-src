@@ -18,6 +18,7 @@ import { buildModelCatalog, probeCustomModel } from "../features/custom-model-pr
 import { codexHome, customModelFile, customModelsFile, modelCatalogFile, modelSourceFile } from "../runtime-paths";
 import { syncUpstreamProtocols } from "../upstream-protocols";
 import type { McpOverrides } from "./06-mcp-overrides";
+/** 读当前生效的供应商档案；文件不存在返回 null。⛔ 绝不抛错 —— 它在启动链上被裸 await，抛了会把启动打断。 */
 export async function readCustomModel(): Promise<CustomModelFile | null> {
   try {
     return JSON.parse(await fs.readFile(customModelFile, "utf8"));
@@ -59,6 +60,7 @@ export async function originSessionModel(
   return ok ? raw : String(active?.model ?? "");
 }
 
+/** 读全部供应商档案并归一化，顺带同步「上游协议」映射（读到即真相，不额外挂启动钩子）。 */
 export async function readCustomModels(): Promise<CustomModelFile[]> {
   try {
     const list: CustomModelFile[] = JSON.parse(await fs.readFile(customModelsFile, "utf8"));
@@ -75,10 +77,12 @@ export async function readModelSource(): Promise<ModelSource> {
   try { return { cloudModels: Boolean(JSON.parse(await fs.readFile(modelSourceFile, "utf8")).cloudModels) }; }
   catch { return { cloudModels: false }; }
 }
+/** 写「云端模型模式」开关到 model-source.json（只落 cloudModels 一个字段）。 */
 export async function writeModelSource(next: ModelSource) {
   await fs.writeFile(modelSourceFile, JSON.stringify({ cloudModels: Boolean(next && next.cloudModels) }, null, 2), "utf8");
 }
 
+/** 写全部供应商档案；写前把上一版非空内容备份一份（曾出现过整份被清空、只能靠备份回滚）。 */
 export async function writeCustomModels(list: CustomModelFile[]) {
   // 写前备份（09-16）：档案清单出现过整份清空（custom-models.json → []）且无法从代码路径定责，
   // 留一份上一版内容随时可手工回滚——备份本身幂等，只在上一版非空时覆盖。
@@ -178,6 +182,7 @@ export async function readUserConfigSplit(ownedMcpServers: Set<string>, override
   return { preserved, mcpExtra: Object.values(found) };
 }
 
+/** 把供应商与模型写成引擎能读的 model catalog TOML（当前供应商排最前、按 provider 去重）。 */
 export async function writeModelCatalogToml(entry: CustomModelFile): Promise<string> {
   const savedProviders = await readCustomModels();
   const providers = [entry, ...savedProviders.filter((candidate) => candidate.provider !== entry.provider)];

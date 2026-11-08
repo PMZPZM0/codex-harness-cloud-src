@@ -12,6 +12,7 @@ import { useState } from "react";
 import { Cloud, ShieldCheck } from "lucide-react";
 import { CloudAssistantPanel } from "./CloudAssistantPanel";
 
+/** 云助手扩展项（折叠块）：与侧栏旧入口同一道闸 —— 独立模式下不显示。 */
 export function CloudAssistantExtras() {
   const [open, setOpen] = useState(false);
   /* ⛔ 与侧栏旧入口同一道闸：独立模式（无账号服务）下不显示这块 —— 那时没有配对/座位概念。 */

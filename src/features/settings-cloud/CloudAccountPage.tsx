@@ -18,6 +18,7 @@ function hasCloudAccountApi(): boolean {
   return typeof api?.cloudAuthStatus === "function";
 }
 
+/** 云账号页入口：有账号服务时渲染完整板块，独立模式（无账号服务）给替代说明。 */
 export function CloudAccountPage() {
   const supported = hasCloudAccountApi();
   return (

@@ -7,6 +7,7 @@ import { OFFICIAL_MODELS } from "../../../lib/official-models";
 import { Spinner } from "../../../components/CardShell";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { parseOpenaiUsagePanel, openaiResetText } from "./01-usage-parsers";
+/** OpenAI 余额/额度徽标：点开拉取并展示用量面板。 */
 export function OpenaiBalanceBadge({ accountKey }: { accountKey?: string | null }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<ReturnType<typeof parseOpenaiUsagePanel> | null>(null);
