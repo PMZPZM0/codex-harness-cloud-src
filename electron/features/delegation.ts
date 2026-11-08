@@ -43,6 +43,7 @@ import { buildDelegateHarnessTool } from "../delegate-harness-tool";
  *  ⇒ 同一线程两次 resume + turn/start，第二条撞引擎 busy。拿不到锁的那条直接新建
  *  （宁可多一条会话，也不并发写同一个子会话）。 */
 const reuseInFlight = new Set<string>();
+/** 派活：以子智能体 / 专家 / 团成员身份跑一个真实回合，回传产出与用量；`sender` 缺省按来源会话推导。 */
 export async function runDelegatedTask(input: {
   kind: DispatchKind; name: string; query: string; originThreadId: string;
   cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
@@ -361,7 +362,7 @@ export async function runDelegatedTask(input: {
   threadCwd.set(threadId, String(input.cwd || process.cwd()));
   broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
   // 右侧「调度头像轨」：开始即点亮头像（弹窗打开后能看到实时产出流）
-  broadcastHarnessEvent({ type: "delegate-run", phase: "started", threadId, record, at: Date.now() } as any);
+  broadcastHarnessEvent({ type: "delegate-run", phase: "started", threadId, record, runId: String(record?.startedAt ?? ""), at: Date.now() } as any);
 
   /* 被委派会话也要有记忆（09-23 用户：「子智能体跟专家团都有没有记忆板块跟功能，没有就完善好」）。
      ⛔ 主会话的记忆是在**渲染层发送路径**拼的（send.tsx），而委派回合由主进程直接 turn/start
@@ -446,7 +447,7 @@ export async function runDelegatedTask(input: {
     await delegateRegistry.markStatus(threadId, "done");
     broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
     // 头像轨收场：跑完即从右侧消失（用户 09-16：「调用完就不展示头像了」）；广播终态供弹窗收起与兜底渲染
-    broadcastHarnessEvent({ type: "delegate-run", phase: "finished", threadId, status: "done", output: text, at: Date.now() } as any);
+    broadcastHarnessEvent({ type: "delegate-run", phase: "finished", threadId, status: "done", output: text, runId: String(record?.startedAt ?? ""), at: Date.now() } as any);
     return { ok: true, threadId, name: displayName, output: text, reused };
   } catch (error: any) {
     const message = error?.message ?? String(error);
@@ -466,7 +467,7 @@ export async function runDelegatedTask(input: {
     await delegateRegistry.setOutput(threadId, "").catch(() => undefined);
     await delegateRegistry.markStatus(threadId, "failed", { error: message }).catch(() => undefined);
     broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
-    broadcastHarnessEvent({ type: "delegate-run", phase: "finished", threadId, status: "failed", error: message, at: Date.now() } as any);
+    broadcastHarnessEvent({ type: "delegate-run", phase: "finished", threadId, status: "failed", error: message, runId: String(record?.startedAt ?? ""), at: Date.now() } as any);
     return { ok: false, threadId, name: displayName, output: "", error: message };
   }
 }

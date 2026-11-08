@@ -928,12 +928,22 @@ const catalog = [
       && /longLen > shortLen \* 1\.3 \+ 12/.test(modelsLive)
       && /长文最终回复 ⇒ 不判重/.test(dupTest),
       "⛔ 去重不能吞掉更详细的最终回复：长度差过大不判重（短句 + 长方案 ≈1.0 重合率，旧实现会丢正文）");
-    /* ⛔⛔ 11-08 审查（Required）：finished 后延迟摘卡（300/500ms）里，同一人可能被接力/排队
+    /* ⛔⛔ 11-08 审查（Required）+ 优化：finished 后延迟摘卡（300/500ms）里，同一人可能被接力/排队
        又开了一轮 —— 旧实现无条件 delete，会把**新一轮**的卡删掉，后续 delta 无卡可写 ⇒ 消息整张消失。
-       判据：两条 finished 路径都按 startedAt 认代次。 */
+       判据：主进程给每一轮显式 `runId`（成员 + 起跑时刻），两条 finished 路径都先比 runId、
+       老事件（无 runId）才退回 startedAt；delta 也不许把上一轮的增量糊进新一轮。 */
     const raceGuard = storeLive.match(/cur\.startedAt > finishedAt/g) ?? [];
-    ok(raceGuard.length >= 2 && /const finishedAt = Date\.now\(\);/g.test(storeLive),
-      "⛔ 延迟摘流式卡按 startedAt 认代次（group-talk-live / delegate-run 两条路径）—— 否则接力新卡被上一轮的 finished 删掉");
+    ok(/const runId = `\$\{partner\?\.id \?\? ""\}:\$\{startedAt\}`/.test(ipcLive)
+      && /phase: "finished", groupId: group\.id[^}]*runId/.test(ipcLive)
+      && /const runId = String\(event\.runId \?\? record\.startedAt/.test(storeLive)
+      && /cur\.runId !== runId/.test(storeLive)
+      && /runId && cur\.runId && runId !== cur\.runId/.test(storeLive)
+      && raceGuard.length >= 2 && /const finishedAt = Date\.now\(\);/g.test(storeLive),
+      "⛔ 流式卡按显式 runId 认代次（主进程发 / 渲染层比；老事件回退 startedAt）—— 否则接力新卡被上一轮 finished 删掉、迟到 delta 糊进新一轮");
+    const chanLive = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+    ok(/const threadId = options\.threadId\s*\|\| \(await ensureTalkThread/.test(chanLive)
+      && /\.\.\.\(liveThreadId \? \{ threadId: liveThreadId \}/.test(ipcLive),
+      "已 ensure 的会话 id 直接交给 runTalkTurn（每回合不再多一次 thread/resume）");
   }
 }
 
