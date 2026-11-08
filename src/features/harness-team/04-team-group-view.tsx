@@ -31,6 +31,9 @@ import { TeamRuler } from "./07-team-ruler";
 import { TeamProcess } from "./09-team-process";
 import { LiveFileRows } from "../status";
 import { getThreadLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { usageInputTokens } from "../../lib/usage-input-tokens";
+import { usageNumber } from "../../lib/usage-number";
+import { usageCachedTokens } from "../../lib/usage-cached-tokens";
 import { TeamCards } from "./11-team-cards";
 import { MemberAvatar } from "./13-team-avatar";
 /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主这一行必须和主对话同一个身份源
@@ -146,6 +149,21 @@ const PAGE = 30;
 
 /** 流式卡里的实时编辑行（11-08 用户令「补实时编辑行，跟主对话一致」）：
  *  与主对话同款 LiveFileRows，按**线程**取（群视图不知道回合 id）。 */
+/** 群消息页脚的 token 用量（11-08 用户令「跟主对话完全一致」）：
+ *  与 MessageFooter 同一套取值与文案（入 / 出 / 缓存 + 命中率）。 */
+function TeamUsage({ usage }: { usage: { inputTokens: number; outputTokens: number; cachedTokens: number; totalTokens: number } }) {
+  const input = usageInputTokens(usage);
+  const output = usageNumber(usage, "outputTokens", "output_tokens");
+  const cached = Math.min(input, usageCachedTokens(usage));
+  if (!input && !output) return null;
+  const rate = input > 0 ? Math.round((cached / input) * 100) : null;
+  return (
+    <span className="team-msg__usage" title="本回合 token 用量（与主对话页脚同口径）">
+      {input.toLocaleString()} 入 / {output.toLocaleString()} 出 / 缓存 {cached.toLocaleString()}{rate != null ? " · 命中 " + rate + "%" : ""}
+    </span>
+  );
+}
+
 function TeamLiveFiles({ threadId }: { threadId: string }) {
   const files = useSyncExternalStore(subscribeTurnFileChanges, () => getThreadLiveFileChanges(threadId));
   return files.length ? (
@@ -1265,6 +1283,8 @@ export function TeamGroupView({
                                 · 正向 —— 点「来源」直接**打开那条会话**（以前只是复制 id，等于给了个没法用的坐标）；
                                 · 反向 —— 那条会话被删掉时由 `goneThreads` 标成不可点的「已删除」
                                   （见 store 的 `team-thread-gone` 广播），⛔ 不让按钮点了没反应。 */}
+                            {/* ⛔ 11-08 用户令「用量页脚也要一致」：与主对话 MessageFooter 同一口径。 */}
+                            {row.usage && <TeamUsage usage={row.usage} />}
                             {goneThreads?.has(row.threadId) ? (
                               <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">来源 {shortId(row.threadId)} · 已删除</span>
                             ) : (

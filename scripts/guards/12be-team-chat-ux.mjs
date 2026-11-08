@@ -806,6 +806,31 @@ const catalog = [
       && /<TeamLiveFiles threadId=\{run\.threadId\} \/>/.test(viewProc),
       "群聊过程与主对话一致：事件驱动重拉（group-talk-tick，⛔ 不再 2.5s 轮询）+ 流式卡实时编辑行（按线程）");
   }
+  /* ⛔ 11-08 用户令「三样都补上，跟主对话完全一致」：用量页脚 / 推理浮窗 / 网页来源条。 */
+  {
+    const viewEq = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+    const cardsEq = codeOnly(read("src/features/harness-team/11-team-cards.tsx"));
+    const procEq = codeOnly(read("src/features/harness-team/09-team-process.tsx"));
+    const ipcEq = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    const modelsEq = codeOnly(read("src/lib/team-models.mjs"));
+    const rcEq = codeOnly(read("src/features/shared/ReasoningCard.tsx"));
+    const overlayEq = codeOnly(read("src/features/harness-team/index.tsx"));
+    ok(/team-msg__usage/.test(viewEq) && /usageInputTokens/.test(viewEq) && /row\.usage/.test(viewEq)
+      && /\.\.\.\(liveUsage \? \{ usage: liveUsage \}/.test(ipcEq)
+      && /usage: msg\?\.usage \?\? null/.test(modelsEq),
+      "群消息页脚展示 token 用量（与主对话同口径；主进程落消息时带 usage，老日志为空）");
+    ok(/turnActive=\{running\}/.test(procEq) && /reasoningFloatHost=/.test(procEq)
+      && /floatHostSelector/.test(rcEq)
+      /* ⛔ 推理两种展示（自适应浮窗 / 长条 strip）都在 ReasoningCard 里分叉 —— 群聊直接复用，
+         ⛔ 不许在群板块里另写一套（出现 ReasoningStrip / reasoning-card 就是分叉）。 */
+      && /ReasoningStrip/.test(rcEq) && /displayMode === "strip"/.test(rcEq)
+      && !/ReasoningStrip/.test(procEq) && !/reasoning-card/.test(procEq)
+      && /team-reasoning-float-host/.test(overlayEq),
+      "推理两种展示（浮窗 / 长条）都复用主对话 ReasoningCard（运行中 turnActive + 群内 portal 宿主，⛔ 不自造渲染）");
+    ok(/<TurnWebSources sources=\{collectTurnWebSources\(turn as never\)\} inline \/>/.test(cardsEq),
+      "网页来源条与主对话同组件（TeamCards 里渲染）");
+  }
+
   ok(/team-run-feedback__chip/.test(codeOnly(read("src/features/harness-team/26-team-run-feedback.tsx")))
     && /team-run-feedback__chip/.test(read("src/styles/61-team-mode.css")),
     "占位模式画飞书式「头像 + 名字 + 处理中」小图标（挂在用户气泡下面）");
