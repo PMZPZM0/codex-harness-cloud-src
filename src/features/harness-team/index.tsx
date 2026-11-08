@@ -39,7 +39,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     create, rename, addPartner, removePartner, mute, setAvatar, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
-    addNote, removeNote, saveMenu, saveMenuPlacement, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule, saveMessageForm,
+    addNote, removeNote, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule, saveMessageForm,
     stopPartner, stopAll, threadsOf,
     loadMessages, loadRunning, dispatch, clearMessages,
   } = useTeamGroups();
@@ -281,8 +281,6 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
             onSetFiles={(files) => saveFiles(active.id, files)}
             onAddNote={(note) => addNote(active.id, note)}
             onRemoveNote={(noteId) => removeNote(active.id, noteId)}
-            onSaveMenu={(items) => saveMenu(active.id, items as never)}
-            onSaveMenuPlacement={(placement) => saveMenuPlacement(active.id, placement)}
             onSetMessageLayout={(next) => void saveMessageLayout(active.id, next)}
             /* 回复模式（11-08 用户令：群设置里加选项）
                ⛔⛔ 必须同时传**读值**：只传写入回调时视图永远用默认 process
