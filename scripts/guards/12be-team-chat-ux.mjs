@@ -368,10 +368,14 @@ const catalog = [
   const ipcMain = codeOnly(read("electron/features/harness-team-ipc.ts"));
   const talkSrc = codeOnly(read("electron/features/group-talk/03-talk.ts"));
   const chanSrc = codeOnly(read("electron/features/group-talk/01-channel.ts"));
-  ok(/export function withMentionPrefix/.test(models) && /text: withMentionPrefix\(text, targets\.map/.test(ipcMain),
-    "⛔ 艾特补回落盘正文（@ 只走 memberIds 会导致消息里一个艾特都看不见）");
-  ok(/missing = list\.filter/.test(models),
-    "正文里已经写过的名字不再补（防「同一条消息两个 @承枢」回归）");
+  /* ⛔⛔ 11-08 用户令：「前面怎么还自动多一个 @」+「我消息气泡里面以透出来这种效果」
+     ⇒ 正文**不再注入 `@名字`**（群日志 = 用户原话），"@ 了谁"改由气泡里的提及 chip 表达。
+     判据两条：① 派活落盘不再调 withMentionPrefix；② 用户消息渲染出 `team-msg__mentioned` chip。 */
+  ok(!/withMentionPrefix\(text/.test(ipcMain) && /^\s*text,$/m.test(ipcMain),
+    "⛔ 派活落盘正文不再注入 @ 名字（用户原话原样入库；补一次就多一个 @，还看不出是系统加的）");
+  ok(/team-msg__mentioned/.test(read("src/features/harness-team/04-team-group-view.tsx"))
+    && /team-msg__mentioned-chip/.test(read("src/styles/61-team-mode.css")),
+    "用户消息气泡里以「头像 + 名字」chip 透出这条 @ 了谁（截图 2 的效果）");
   ok(/\[SYSTEM TASK · 工作伙伴消息\]/.test(talkSrc) && /=== 用户需求 ===/.test(talkSrc) && /=== END ===/.test(talkSrc),
     "群聊输入包 SYSTEM TASK 壳：user-refs 只留需求体，⛔ 提示词不裸露在气泡");
   ok(/发件人：member · /.test(talkSrc) && /你手上有三个群聊工具/.test(talkSrc),
@@ -470,7 +474,7 @@ const catalog = [
   /* ⛔ 11-07 独立群聊通道后，`forTeam`（派活身份块）整个退场：不再有"主理人代转成员产出"。
      口径改成：群聊输入里直接写明「别人的回复会以他的署名进群」，由独立通道投递。 */
   const talkSrc = codeOnly(read("electron/features/group-talk/03-talk.ts"));
-  ok(/buildTalkInput\(talkOptions/.test(ipc) && /他的回复会以他的署名进群/.test(talkSrc)
+  ok(/buildTalkInput\(\s*talkOptions/.test(ipc) && /他的回复会以他的署名进群/.test(talkSrc)
     && !/forTeam: partner\.targetKind === "team"/.test(ipc) && !/forTeam: partner\.targetKind === "team"/.test(store),
     "群聊通道里每个人自己发进群（⛔ 不再有主理人代转 / 派活身份块）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
@@ -741,6 +745,67 @@ const catalog = [
   ok(/<TeamOfficeEntry group=\{group\} live=\{live\} busy=\{busy\} onOpenThread=\{onOpenThread\} \/>/.test(view)
     && /\.team-group__office \{[\s\S]{0,160}?margin-top: auto;/.test(read("src/styles/61-team-mode.css")),
     "入口钉在成员栏**末位**（与中枢群成员轨同一位置语义；⛔ 不跟着成员列表往下挤）");
+}
+
+/* ── ⑬ 两种回复模式（11-08 用户令：「做出来两种回复模式」+「在群设置里加上这个选项」）────
+   过程模式：运行中展示运行过程（默认折叠、可展开，与主对话同一套折叠块），跑完过程消失只留汇报；
+   占位模式：不展示过程/流式正文，只挂「图标 + 名字 + 处理中」，产出后再上屏。 */
+{
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const proc = codeOnly(read("src/features/harness-team/09-team-process.tsx"));
+  const settings = codeOnly(read("src/features/harness-team/03-team-settings.tsx"));
+  ok(/replyMode[^\n]*<TeamProcess/.test(view) === false && /replyMode === "process" && run\.status === "running"/.test(view),
+    "过程块**只在运行中**渲（跑完随流式卡一起消失，⛔ 成品消息不再挂 TeamProcess）");
+  ok(!/isBot && row\.kind !== "card" && \(\s*<TeamProcess/.test(view),
+    "⛔ 成品消息里不许再出现过程块（用户：「运行结束后，运行过程隐藏掉，只留最后汇报」）");
+  ok(/live?: boolean/.test(proc) || /live = false/.test(proc),
+    "过程块支持运行中实时（回合还没落盘 ⇒ 取最新回合 + 2.5s 重拉，⛔ 缓存会把新步骤挡在外面）");
+  ok(/replyMode === "placeholder" \?/.test(view) && /team-msg__placeholder/.test(view),
+    "占位模式只画「图标 + 名字 + 处理中」，不显示过程与流式正文");
+  ok(/replyMode: "process" \| "placeholder";/.test(settings) && /回复模式/.test(settings)
+    && /onReplyMode\(opt\.value\)/.test(settings),
+    "群设置里有「回复模式」两张卡（过程 / 占位），点卡片立即生效");
+  ok(/normalizeReplyMode/.test(read("src/lib/team-models.mjs"))
+    && /harness-team:set-reply-mode/.test(read("electron/features/harness-team-ipc.ts"))
+    && /harnessTeamSetReplyMode/.test(read("electron/preload.ts")),
+    "回复模式落群 JSON（通道 + 归一化齐；⛔ 不存 localStorage）");
+}
+
+/* ── ⑭ 群成员共享群会话内容（11-08 用户问：「群成员，都能看到群会话内容吗」）────────
+   改之前：每位成员只拿到「当前这一句 + 名册 + 群简介」，历史**不注入**，
+   只有模型主动调 group_read 才能读 12 条 ⇒ 别人之间没 @ 它的对话它一概看不见，接不上话。
+   改之后：最近 20 条默认注入**每一轮**（每一跳重读），所有成员拿到同一份共享上下文。
+   ⛔ 两条硬约束：历史必须在 SYSTEM TASK 壳的 `=== END ===` **之后**（否则会糊进气泡），
+      且必须用 `【群聊上下文 · …】…【群聊上下文结束】` 信封（四处剥离器按它剥）。 */
+{
+  const talk = codeOnly(read("electron/features/group-talk/03-talk.ts"));
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const outlet = codeOnly(read("electron/features/group-talk/index.ts"));
+  ok(/export const TALK_HISTORY_LIMIT = 20;/.test(talk) && /export function groupHistoryBlock/.test(talk)
+    && /TALK_HISTORY_CHAR_MAX = 400/.test(talk) && /TALK_HISTORY_TOTAL_MAX = 8000/.test(talk),
+    "共享上下文是**有界**的：最近 20 条 / 每条 400 字 / 总量 8000 字（⛔ 不裁剪会把整本群日志每轮重复喂进去）");
+  ok(/【群聊上下文 · 群里最近的消息】/.test(talk) && /【群聊上下文结束】/.test(talk),
+    "用项目统一的 `【群聊上下文 · …】` 信封：harness-block-strip / cloud-sync / memory-lessons / thread-backup 四处按它剥离");
+  ok(/groupHistoryBlock\(history, text\)/.test(talk)
+    && talk.indexOf('"=== END ==="') < talk.indexOf("groupHistoryBlock(history, text)"),
+    "历史放在 `=== END ===` **之后**（壳后）：user-refs 只保留需求体 ⇒ 气泡仍只有那一句人话");
+  ok(/text === String\(currentLine/.test(talk),
+    "本轮这句已在需求体里，历史里不再重复贴一遍（⛔ 否则模型以为要回两次）");
+  ok(/buildTalkInput\(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string, history: TalkHistoryRow\[\] = \[\]\)/.test(talk),
+    "注入是 buildTalkInput 的第 5 个参数（两条投递链共用同一份口径）");
+  ok(/const history = await options\.readMessages\(TALK_HISTORY_LIMIT\)/.test(talk)
+    && /buildTalkInput\(options, target, from, text, history\)/.test(talk),
+    "runGroupTalk 每一跳都重读群日志（接力到第 2 个人时前一位的话已落群）");
+  ok(/readGroupHistory\(TALK_HISTORY_LIMIT\)/.test(ipc)
+    && /readMessages: \(limit: number\) => Promise\.resolve\(readGroupHistory\(limit\)\)/.test(ipc),
+    "派活主链每轮也注入；默认注入与 group_read 工具**同一份** readGroupHistory（⛔ 两处口径分叉会读到不同历史）");
+  ok(/TALK_HISTORY_LIMIT/.test(outlet) && /groupHistoryBlock/.test(outlet),
+    "板块出口显式暴露共享上下文（守卫可钉唯一真相源）");
+  /* ⛔ 负向：不许把历史塞进需求体、不许删掉 group_read */
+  const needBody = (talk.match(/=== 用户需求 ===[\s\S]*?"=== END ==="/) ?? [])[0] ?? "";
+  ok(!/groupHistoryBlock/.test(needBody), "⛔ 历史不许进需求体（会直接糊到气泡上）");
+  ok(/group_read/.test(codeOnly(read("electron/features/group-talk/02-tools.ts"))),
+    "group_read 保留：默认给最近 20 条，更早的由模型自己调工具取");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

@@ -36,7 +36,7 @@ import {
   setPartnerMuted,
   setMemberAvatar,
   setMessageLayout,
-  withMentionPrefix,
+  setReplyMode,
   GROUP_MAX_PARTNERS,
   MAX_GROUP_FILES,
   MAX_GROUP_MEMORY_CHARS,
@@ -63,7 +63,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, type TalkMember } from "./group-talk";
+import { runTalkTurn, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -350,9 +350,12 @@ async function prepareGroupDispatch(
     authorKind: "human",
     /* ⛔⛔ 11-07 用户令：定时任务不是「用户发的」⇒ 结构化发送者，群视图据此出徽标。 */
     senderKind: source === "automation" ? "automation" : "user",
-    /* ⛔⛔ 11-07 真机「艾特@看不见」：@ 是结构化 memberIds，正文里没有 @名字 ⇒
-       消息里一个提及都渲染不出来。把目标名字补进正文开头（同源、只一份）。 */
-    text: withMentionPrefix(text, targets.map((m) => m.name)),
+    /* ⛔⛔ 11-08 用户令：「前面怎么还自动多一个 @」+「我消息气泡里面以透出来这种效果」——
+       正文**不再注入 `@名字`**：群日志里就是用户自己敲的那句话（⛔ 不替他改字），
+       "这条 @ 了谁"改由气泡里的**提及 chip**（头像 + 名字）表达，与飞书一致。
+       ⛔ 别再补回来：补一次就多一个 @，而且用户完全看不出那是系统加的。
+       （结构化目标仍在 `mentions` 里 —— 派活、渲染 chip、运行态都靠它。） */
+    text,
     mentions: targets.map((m) => m.id),
   });
   if (!saved.ok) return { error: saved.error || "群消息没存上" };
@@ -395,6 +398,20 @@ async function runDispatchRounds(
     group: group as unknown as Record<string, unknown>,
     catalog,
   };
+  /* ⛔ 11-08 用户问「群成员，都能看到群会话内容吗」：群里最近的消息由**这一份**读出，
+     既给每轮注入的共享上下文、也给 group_read 工具 —— 两处口径必须同一份，否则模型
+     主动读到的与默认看到的会对不上。纯读盘、不写、不联网。 */
+  const readGroupHistory = (limit: number): { speaker: string; text: string }[] => {
+    const rows = readStore().messages?.[group.id] ?? [];
+    return rows.filter(Boolean).slice(-Math.max(1, Math.min(50, limit))).map((raw) => {
+      const m = raw as unknown as Record<string, unknown>;
+      const authorId = String(m.authorId ?? "");
+      return {
+        speaker: roster.find((x) => x.id === authorId)?.name ?? (authorId === "local-user" ? "我" : authorId),
+        text: String(m.text ?? ""),
+      };
+    });
+  };
   /* 工具 hooks：模型在会话里主动调 group_say(to=名字) ⇒ 这里把话投递进对方会话。 */
   setGroupTalkHooks(group.id, {
     append: (gid: string, entry: Record<string, unknown>) => appendMessageTo(gid, entry),
@@ -407,17 +424,7 @@ async function runDispatchRounds(
       void runOne(to as unknown as GroupTarget, 0, { id: from.id, name: from.name }, msg).catch(() => undefined);
       return Promise.resolve({ ok: true });
     },
-    readMessages: (limit: number) => {
-      const rows = readStore().messages?.[group.id] ?? [];
-      return Promise.resolve(rows.filter(Boolean).slice(-Math.max(1, Math.min(50, limit))).map((raw) => {
-        const m = raw as unknown as Record<string, unknown>;
-        const authorId = String(m.authorId ?? "");
-        return {
-          speaker: roster.find((x) => x.id === authorId)?.name ?? (authorId === "local-user" ? "我" : authorId),
-          text: String(m.text ?? ""),
-        };
-      }));
-    },
+    readMessages: (limit: number) => Promise.resolve(readGroupHistory(limit)),
     members: () => Promise.resolve(roster.map((m) => ({ id: m.id, name: m.name, profession: m.targetProfession }))),
   });
   const runOne = async (
@@ -441,7 +448,15 @@ async function runDispatchRounds(
       const fromTalk: TalkMember = caller
         ? { id: caller.id, name: caller.name }
         : (source === "automation" ? { id: AUTOMATION_ACTOR_ID, name: "定时任务" } : { id: "local-user", name: "我" });
-      const query = buildTalkInput(talkOptions as Parameters<typeof buildTalkInput>[0], partner as TalkMember, fromTalk, bodyText);
+      /* ⛔ 每轮都重读群日志：接力到第 2 跳时，前面那位刚说的话已经在群里了，
+         不重读就等于「后来的人看不到前面人说了什么」——正是成员之间接不上话的根因。 */
+      const query = buildTalkInput(
+        talkOptions as Parameters<typeof buildTalkInput>[0],
+        partner as TalkMember,
+        fromTalk,
+        bodyText,
+        readGroupHistory(TALK_HISTORY_LIMIT),
+      );
       /* ⛔ 保留团 → 群的绑定（团成员若仍由 team_member_invoke 起，产出照样落群）。 */
       if (partner.targetKind === "team") bindTeamGroup(partner.targetKey, group.id);
       options.onPhase?.("started", partner, {});
@@ -489,7 +504,17 @@ async function runDispatchRounds(
              ⇒ 主理人（team）@ 的**团成员**交给它自己的工具去编排；宿主只接力"非团成员"目标
                （别的专家 / 子智能体 / 另一个团）。团成员之间的互 @ 仍由成员那条回合触发（下面照走）。
              ⛔ 不要把这一条删掉换成"靠主理人自觉"：重复一次就是双倍 token + 群里两条一样的消息。 */
-          if (partner.targetKind === "team" && String(next.targetKind) === "member") continue;
+          /* ⛔⛔ 11-08 真机「成员之间艾特不回复」的**第二个根因**：这里原本直接跳过
+             「团队 @ 团成员」，理由是"主理人回合内已用 team_member_invoke 派过一遍"。
+             但群聊这条链走的是 `runTalkTurn` —— 那个会话的工具面里**没有** team_member_invoke
+             （只有 group_say / group_read 那套）⇒ 主理人在群里 `@构梁：…` 永远没人接。
+             ⇒ 改成**按事实判重**：这一轮里如果那位成员已经自己发过话（60s 内），才跳过；
+               否则照常把他的这半句投递过去（这才是"成员之间互相沟通"）。 */
+          const spokeRecently = (readStore().messages?.[group.id] ?? []).some(
+            (row) => String((row as { authorId?: unknown })?.authorId ?? "") === next.id
+              && Number((row as { at?: unknown })?.at ?? 0) > startedAt - 60_000,
+          );
+          if (spokeRecently) continue;
           chainBudget -= 1;
           /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链）。
              ⛔ 以前把整条原消息又发一遍，被叫的人不知道自己要做什么。 */
@@ -775,6 +800,15 @@ export const harnessTeamFeature = defineFeature<null>({
       const g = findGroup(store.groups, String(groupId ?? ""));
       if (!g) return { ok: false, error: "群不存在" };
       return saveOne(store, setMessageLayout(g, layout) as GroupShape);
+    });
+
+    /* 群回复模式（11-08 用户令：群设置里加选项）—— 落群 JSON，与消息排版同一条写法。
+       `process` = 运行时展示过程（默认折叠，可展开）；`placeholder` = 只显示「图标+名字」占位。 */
+    ipcHost.handle("harness-team:set-reply-mode", (_event, groupId: string, mode: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      return saveOne(store, setReplyMode(g, mode) as GroupShape);
     });
 
     ipcHost.handle("harness-team:set-guard", (_event, groupId: string, guard: Record<string, unknown>) => {
