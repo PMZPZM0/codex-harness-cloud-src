@@ -252,7 +252,9 @@ export async function run() {
      ⛔ 不是要求写长：一句「干什么 / 边界在哪 / 什么情况下别用」就够；⛔ 也不许写和代码不符的废话。
      棘轮：BASELINE 是 11-08 实测缺口，**只许往下减**；补了一批就把数字改小（改大 = 回退，直接红）。 */
   {
-    const EXPORT_FN = /^\s*export\s+(?:async\s+)?(?:function|const)\s+([A-Za-z_$][\w$]*)\s*(?:=|\()/;
+    /* ⛔ 末尾 `[=(<]` 三个都要：`export function f<T>(` 的泛型声明在 `(` 之前是 `<`，
+       只写 `=|\\(` 会把这一整类漏掉（11-08 收尾复核：实测总数 2079 → 2096）。 */
+    const EXPORT_FN = /^\s*export\s+(?:async\s+)?(?:function|const)\s+([A-Za-z_$][\w$]*)\s*(?:[=(<])/;
     const CJK = /[\u4e00-\u9fa5]/;
     let total = 0;
     const gaps = [];
