@@ -123,6 +123,26 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
   (bridgeSrc.includes("BRIDGE_PROBE_IDLE_MS") && bridgeSrc.includes("BRIDGE_CONNECT_MS") && bridgeSrc.includes("无响应头") && bridgeSrc.includes("改用 chat 转换") && bridgeSrc.includes("watchForwardIdle") ? ok : fail)(
     "auto 探活：连响应头都没有 / 200 无数据 / 非 SSE 都会超时改走 chat；显式 responses 也有空闲看门狗（不再永远「生成中」）"
   );
+  /* ⛔⛔ 11-08 用户实测（bridge.log 毫秒级对账）：1.8MB 长会话请求上游 54~69 秒才回响应头，
+     旧 30s 连接超时把**还在正常处理**的请求掐掉 ⇒ 引擎判流断开 ⇒ 自动重连 1/5。
+     ⇒ 应用侧永不做第一个掐流的人：连接 180s / 空闲 300s（与引擎 5 分钟对齐）；
+       大请求（>64KB）探活跟连接超时同档（不再 18/30s 误判成「不支持 responses」而降级 chat）；
+       非 2xx 透传必须落日志（客户报 402 时 bridge.log 过去一行证据都没有）。 */
+  (/const BRIDGE_CONNECT_MS = Math\.max\(15_000, Number\(process\.env\.HARNESS_BRIDGE_CONNECT_MS\) \|\| 180_000\)/.test(bridgeSrc)
+    && /const BRIDGE_IDLE_MS = Math\.max\(30_000, Number\(process\.env\.HARNESS_BRIDGE_IDLE_MS\) \|\| 300_000\)/.test(bridgeSrc)
+    && /raw\.byteLength < 64_000 \? BRIDGE_PROBE_IDLE_MS : Math\.max\(BRIDGE_PROBE_IDLE_MS, BRIDGE_CONNECT_MS\)/.test(bridgeSrc)
+    && /上游 \$\{status\} · 透传 \$\{rest\}/.test(bridgeSrc)
+    && /export const BRIDGE_TIMEOUTS/.test(bridgeSrc) ? ok : fail)(
+    "协议桥超时：连接 180s / 空闲 300s（应用侧不先掐流）；大请求探活跟连接超时；非 2xx 透传落日志（11-08 用户实测）"
+  );
+  {
+    const stopSrc = readFileSync(join(ROOT, "src/lib/turn-stop-reason.mjs"), "utf8");
+    const errSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part05/event-router/08-error.tsx"), "utf8");
+    (stopSrc.includes("MESSAGE_RULES") && stopSrc.includes("供应商余额不足") && stopSrc.includes("重试不会成功")
+      && errSrc.includes("供应商账户余额不足") && errSrc.includes("Insufficient Balance") ? ok : fail)(
+      "402 余额不足：回合结束卡与错误提示都翻成中文并给出处置（充值 / 换模型），不再把英文原文甩给用户"
+    );
+  }
   {
     const probeSrc = readFileSync(join(ROOT, "electron/features/custom-model-probe.ts"), "utf8");
     (probeSrc.includes("if (models && !model)") && probeSrc.includes("实际推理失败") && probeSrc.includes("35_000") ? ok : fail)(
