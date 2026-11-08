@@ -15,7 +15,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } 
 import { ArrowDown, MessagesSquare, Search, Settings2, X, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
-import { TeamSettings } from "./03-team-settings";
+import { TeamSettings, TeamViewModeSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Markdown } from "../markdown";
 /* 11-07 用户令：正文里的 @ 必须渲染成**真艾特**（带头像 + 用户名），多个按出现顺序逐个出。
@@ -554,7 +554,13 @@ export function TeamGroupView({
      ⇒ **@ 的唯一真相源 = 正文**：选人只往正文插 `@名字 `，发消息时从正文反查目标，
        框外的「本轮 @」chip 行整块删除（⛔ 不再维护第二份 atTargets 状态）。 */
   const mentionCandidatesFlat = useMemo(
-    () => mentionSections.flatMap((section) => section.items.map((item) => ({ selectId: item.selectId, name: item.name }))),
+    /* ⛔ 11-08 审查（Required）：专家库条目（`library: true`，还没加入本群）**不能**进候选目标表 ——
+       否则手打 `@呈象` 会把它当成已入群目标（`atTargets` 非空、发送键亮起），
+       但主进程按群成员解析时找不到它 ⇒ 消息发不出去，还看不出原因。
+       库条目只负责「点选时先入群」，入群后自然出现在 bot 分组里。 */
+    () => mentionSections.flatMap((section) => section.items
+      .filter((item) => !(item as { library?: boolean }).library)
+      .map((item) => ({ selectId: item.selectId, name: item.name }))),
     [mentionSections],
   );
   const mentionNames = useMemo(() => mentionCandidatesFlat.map((c) => c.name), [mentionCandidatesFlat]);
@@ -584,6 +590,12 @@ export function TeamGroupView({
        专家库里没加过群的专家：点选时**先加入本群**（与设置页「添加伙伴」同一份载荷），
        成功后再把 `@名字 ` 写进正文。⛔ 加入失败（例如已满员）就说清原因，不静默。 */
     if (item.library) {
+      /* ⛔ 先按**点击时**的正文算出替换结果并关面板，再 await 入群 ——
+         否则 IPC 往返期间用户继续打字 / 连点，会拿旧正文覆盖新输入、或重复加同一个人。 */
+      const applied = mention.typed
+        ? applyMention(text, { start: mention.start, caret: mention.caret }, item.name)
+        : null;
+      closeMention();
       const added = await onAddPartner({
         id: `tgt:expert:${item.selectId}`,
         kind: "bot",
@@ -597,13 +609,8 @@ export function TeamGroupView({
         return;
       }
       flashMenuMsg(`已把 ${item.name} 加入本群`);
-      if (mention.typed) {
-        const applied = applyMention(text, { start: mention.start, caret: mention.caret }, item.name);
-        closeMention();
-        editorApiRef.current?.setTextAndCaret(applied.text, applied.caret);
-      } else {
-        insertMentionText(item.name);
-      }
+      if (applied) editorApiRef.current?.setTextAndCaret(applied.text, applied.caret);
+      else insertMentionText(item.name);
       return;
     }
     if (mention.typed) {
@@ -863,7 +870,7 @@ export function TeamGroupView({
 
   /* ⛔ 同一作者、短间隔的连续消息并成一条（用户：「别框框刷屏」）。
      只影响渲染分组，`continued` 里仍是独立消息（各自 itemId 可溯源）。 */
-  const displayRows = mergeConsecutive(shownRows);
+  const displayRows = useMemo(() => mergeConsecutive(shownRows), [shownRows]);
   /* ⛔⛔ 11-08 真机「过程模式和占位模式完全一样没有区别」：两种模式的 JSX 原先都挂在
      `live` 流式卡里，而独立窗口里 live 常年为空 ⇒ 发完消息什么都不出现。
      ⇒ 反馈改挂到**最后一条用户消息气泡下面**（用户要的位置），由 busy 名单驱动。
@@ -1070,30 +1077,36 @@ export function TeamGroupView({
       </header>
 
       {showSettings ? (
-        <TeamSettings
-          group={group}
-          issues={issues}
-          limit={limit}
-          onAddPartner={onAddPartner}
-          onRemovePartner={onRemovePartner}
-          onMute={onMute}
-          onSetManager={onSetManager}
-          onSetMemory={onSetMemory}
-          onSetWorkspace={onSetWorkspace}
-          onSetFiles={onSetFiles}
-          onClearMessages={onClearMessages}
-          onDeleteGroup={onDeleteGroup}
-          onAddNote={onAddNote}
-          onRemoveNote={onRemoveNote}
-          messageLayout={messageLayout}
-          onMessageLayout={(next) => onSetMessageLayout?.(next)}
-          replyMode={effectiveReplyMode}
-          onReplyMode={(next) => onSetReplyMode?.(next)}
-          messageForm={effectiveMessageForm}
-          onMessageForm={(next) => onSetMessageForm?.(next)}
-          onSaveSchedules={onSaveSchedules}
-          onRunSchedule={onRunSchedule}
-        />
+        /* ⛔ 11-08 用户实测「群设置几个切换切起来很卡」：三个视图开关放在**外层**（点一次只
+           重渲染这一小块），其余 6 个区块走 memo（属性没变就不重排）。滚动容器仍在这一层。 */
+        <div className="team-settings">
+          <TeamViewModeSettings
+            messageLayout={messageLayout}
+            onMessageLayout={(next) => onSetMessageLayout?.(next)}
+            replyMode={effectiveReplyMode}
+            onReplyMode={(next) => onSetReplyMode?.(next)}
+            messageForm={effectiveMessageForm}
+            onMessageForm={(next) => onSetMessageForm?.(next)}
+          />
+          <TeamSettings
+            group={group}
+            issues={issues}
+            limit={limit}
+            onAddPartner={onAddPartner}
+            onRemovePartner={onRemovePartner}
+            onMute={onMute}
+            onSetManager={onSetManager}
+            onSetMemory={onSetMemory}
+            onSetWorkspace={onSetWorkspace}
+            onSetFiles={onSetFiles}
+            onClearMessages={onClearMessages}
+            onDeleteGroup={onDeleteGroup}
+            onAddNote={onAddNote}
+            onRemoveNote={onRemoveNote}
+            onSaveSchedules={onSaveSchedules}
+            onRunSchedule={onRunSchedule}
+          />
+        </div>
       ) : (
         <div className={`team-group__body${membersOpen ? "" : " is-members-hidden"}`}>
           <div className="team-group__main">

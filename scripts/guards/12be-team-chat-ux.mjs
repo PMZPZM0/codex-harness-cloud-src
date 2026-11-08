@@ -1283,5 +1283,20 @@ const catalog = [
     "单条群消息进会话前 8000 字封顶（成员互相投递的是长输出，不封顶单条就能撑爆）");
 }
 
+/* ── ㉓ 11-08 用户实测「群设置几个切换切起来很卡」────────────────────────── */
+{
+  const settings = codeOnly(read("src/features/harness-team/03-team-settings.tsx"));
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const css = read("src/styles/61-team-mode.css");
+  ok(/export function TeamViewModeSettings/.test(settings)
+    && /export const TeamSettings = memo\(TeamSettingsImpl/.test(settings)
+    && /<TeamViewModeSettings/.test(view) && /<div className="team-settings">/.test(view),
+    "三个视图开关拆成独立小组件（同滚动容器外层），其余区块走 memo：切开关不再整页重渲染");
+  ok(/\.team-settings__block\s*\{[^}]*content-visibility:\s*auto/.test(css),
+    "设置区块的屏外内容跳过 layout/paint（打开面板不再一次性排完 8 个区块）");
+  ok(/const displayRows = useMemo\(/.test(view),
+    "消息投影按依赖记忆（切设置等无关重渲染不再重算）");
+}
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
