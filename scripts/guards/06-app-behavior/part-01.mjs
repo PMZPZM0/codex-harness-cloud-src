@@ -301,11 +301,12 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   // ---- 09-18 内置规格表更新 + 模型 ID 补全：真跑 model-specs.ts（node type-stripping） ----
   {
     const specsUrl = pathToFileURL(join(ROOT, "src", "lib", "model-specs.ts")).href;
+    const effortUrl = pathToFileURL(join(ROOT, "src", "lib", "effort.ts")).href;
     let sp = null;
     try {
       const probe = spawnSync(process.execPath, [
         "--experimental-strip-types", "--no-warnings", "--input-type=module", "-e",
-        `import * as m from ${JSON.stringify(specsUrl)}; const V = (id) => { const s = m.matchModelSpec(id); return s ? (s.inputTypes || []).includes("image") : null; }; console.log(JSON.stringify({` +
+        `import * as m from ${JSON.stringify(specsUrl)}; import * as e from ${JSON.stringify(effortUrl)}; const V = (id) => { const s = m.matchModelSpec(id); return s ? (s.inputTypes || []).includes("image") : null; }; console.log(JSON.stringify({` +
         ` gpt6: m.matchModelSpec("gpt-6-astra").contextWindow, gpt6Vis: V("gpt-6-astra"), gpt6Out: m.matchModelSpec("gpt-6-astra").maxOutputTokens,` +
         ` gpt56: m.matchModelSpec("gpt-5.6-terra").contextWindow, gpt55: m.matchModelSpec("gpt-5.5").contextWindow,` +
         ` fable: m.matchModelSpec("claude-fable-5").contextWindow, fableVis: V("claude-fable-5"),` +
@@ -329,6 +330,12 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
         ` mm31Eff: m.matchModelSpec("minimax-m3.1-flash").efforts.join("/"), mm31Out: m.matchModelSpec("minimax-m3.1-flash").maxOutputTokens,` +
         ` db21: m.matchModelSpec("doubao-seed-2-1-pro-260915").contextWindow, db21Out: m.matchModelSpec("doubao-seed-2-1-pro-260915").maxOutputTokens, db21Vis: V("doubao-seed-2.1-pro"),` +
         ` sugGpt61: m.suggestModelIds("gpt-6.1").slice(0, 2).map((e) => e.id),` +
+        ` eLevelsGpt61: m.effortLevelsForModel("gpt-6.1-sol").join("/"), eLevelsDs: m.effortLevelsForModel("deepseek-flash").join("/"),` +
+        ` eLevelsGemini4: m.effortLevelsForModel("gemini-4-argon").join("/"), eLevelsClaude: m.effortLevelsForModel("claude-opus-5-5").length,` +
+        ` eLevelsUnknown: m.effortLevelsForModel("totally-unknown-xyz").join("/"), eLevelsEmpty: m.effortLevelsForModel("").join("/"),` +
+        ` eClampX: m.clampEffortToLevels("xhigh", ["low", "high", "max"]), eClampMin: m.clampEffortToLevels("minimal", ["low", "high", "max"]),` +
+        ` eClampBogus: m.clampEffortToLevels("bogus", ["low", "high", "max"]),` +
+        ` eOrderMatch: m.EFFORT_ORDER.join("/") === e.ALL_EFFORTS.join("/") && m.DEFAULT_EFFORT_LEVELS.join("/") === e.CUSTOM_MODEL_EFFORTS.join("/"),` +
         ` glm53: m.matchModelSpec("glm-5.3").contextWindow, glm53Vis: V("glm-5.3"), glm53fVis: V("glm-5.3-flash"),` +
         ` qwen38: m.matchModelSpec("qwen3.8-max").contextWindow, qwen38Video: (m.matchModelSpec("qwen3.8-max").inputTypes || []).includes("video"),` +
         ` nova: m.matchModelSpec("sensenova-v6.5-pro").contextWindow, novaVis: V("sensenova-v6.5-pro"),` +
@@ -372,6 +379,21 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
         "豆包 Seed 2.1 Pro：1,048,576 / 256K / 视觉（官方 id 是短横线 doubao-seed-2-1-pro-260915，⛔ 不能只匹配点号）");
       (Array.isArray(sp.sugGpt61) && sp.sugGpt61[0] === "gpt-6.1-sol" && sp.sugGpt61[1] === "gpt-6.1-terra" ? ok : fail)(
         "补全：打 gpt-6.1 先出 6.1 家族（Sol / Terra），不混进 GPT-6 Astra");
+      /* ⛔⛔ 11-08 用户令：「选那个模型，有几个档位，就显示那几个档位」「保证选到的档位都是有用的」。 */
+      (sp.eLevelsGpt61 === "low/medium/high/xhigh/max" && sp.eLevelsDs === "low/high/max" && sp.eLevelsGemini4 === "low/medium/high"
+        && sp.eLevelsClaude === 0 && sp.eLevelsUnknown === "low/medium/high/xhigh" && sp.eLevelsEmpty === "low/medium/high/xhigh" ? ok : fail)(
+        "思考档位按官方规格联动：GPT-6.1 五档 / DeepSeek 三档 / Gemini 4 三档 / Claude 无离散档（隐藏）/ 未收录回落四档");
+      (sp.eClampX === "high" && sp.eClampMin === "low" && sp.eClampBogus === "low" ? ok : fail)(
+        "切模型后旧档位夹到最近可用档（xhigh→high、minimal→low、未知→最低档）");
+      (sp.eOrderMatch ? ok : fail)("EFFORT_ORDER / DEFAULT_EFFORT_LEVELS 与 effort.ts 的 ALL_EFFORTS / CUSTOM_MODEL_EFFORTS 逐字同序同值");
+      const composerFormSrc = codeOnly(readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx"), "utf8"));
+      const teamComposerSrc = codeOnly(readFileSync(join(ROOT, "src/features/harness-team/10-team-composer.tsx"), "utf8"));
+      (/levels=\{effortLevels\}/.test(composerFormSrc) && /effortLevelsForModel\(currentModelId\)/.test(composerFormSrc)
+        && /clampEffortToLevels\(effort, effortLevels\)/.test(composerFormSrc) && !/levels=\{\["low", "medium", "high", "xhigh"\]\}/.test(composerFormSrc) ? ok : fail)(
+        "主对话思考菜单用规格表档位（⛔ 不再写死四档、不再按 model 声明过滤的反面）");
+      (/levels=\{effortLevels\}/.test(teamComposerSrc) && /effortLevelsForModel\(opts\.model \|\| active\.name \|\| ""\)/.test(teamComposerSrc)
+        && !/levels=\{\["low", "medium", "high", "xhigh"\]\}/.test(teamComposerSrc) ? ok : fail)(
+        "群输入框思考菜单同一套联动（跟随全局时按当前生效模型的档位）");
       (sp.glm53Vis === false && sp.glm53fVis === true ? ok : fail)("GLM-5.3 纯文本、只有 GLM-5.3-Flash 是原生多模态（别把整个家族标成视觉）");
       (sp.qwen38 === 1000000 && sp.qwen38Video === true ? ok : fail)("Qwen3.8-Max：约 1M / 文本+图像+视频");
       (sp.nova === 131072 && sp.novaVis === true ? ok : fail)("日日新 SenseNova 6.5：128K / 图文视频输入（用户自己的供应商也在表里）");
