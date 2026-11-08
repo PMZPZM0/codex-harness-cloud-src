@@ -142,14 +142,20 @@ export function listTalkThreads(): Array<{ threadId: string; groupId: string; me
     .sort((a, b) => b.at - a.at);
 }
 
-/** 清掉某个群的会话台账（解散群时调用；⛔ 不删引擎里的 rollout，那是用户自己的记录）。 */
-export function forgetGroupThreads(groupId: string): number {
+/** 清掉指定的会话台账（解散群 / 自愈时调用；⛔ 只清**删成功**的那些 —— 删失败的留着下次重试）。
+ *  ⛔ 不删引擎里的 rollout，那是用户自己的记录（删会话走 thread/delete，另一条链）。 */
+export function forgetTalkThreads(threadIds: string[]): number {
+  const drop = new Set((Array.isArray(threadIds) ? threadIds : []).map((id) => String(id ?? "")).filter(Boolean));
+  if (!drop.size) return 0;
   const all = readLedger();
-  const before = Object.keys(all).length;
   const next: Ledger = {};
-  for (const [key, entry] of Object.entries(all)) if (!key.startsWith(`${groupId}::`)) next[key] = entry;
-  if (Object.keys(next).length !== before) writeLedger(next);
-  return before - Object.keys(next).length;
+  let removed = 0;
+  for (const [key, entry] of Object.entries(all)) {
+    if (drop.has(String(entry?.threadId ?? ""))) { removed += 1; continue; }
+    next[key] = entry;
+  }
+  if (removed) writeLedger(next);
+  return removed;
 }
 
 /**

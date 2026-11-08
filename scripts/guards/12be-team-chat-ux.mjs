@@ -1201,9 +1201,9 @@ const catalog = [
 {
   const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
   ok(/listTalkThreads\(\)\.filter\(\(row\) => row\.groupId === gid\)/.test(ipc)
-    && /forgetGroupThreads\(gid\)/.test(ipc)
-    && /await deleteEngineThreads\(threads\)/.test(ipc),
-    "删群：会话清单 = 群消息里的 threadId ∪ 台账里本群的会话；删完清台账（⛔ 只按消息删会留下孤儿会话）");
+    && /const \{ removed, failed \} = await deleteEngineThreads\(threads\)/.test(ipc)
+    && /forgetTalkThreads\(threads\.filter\(\(tid\) => !failedSet\.has\(tid\)\)\)/.test(ipc),
+    "删群：会话清单 = 群消息里的 threadId ∪ 台账里本群的会话；只清**删成功**的台账（删失败的留着下次自愈重试）");
   ok(/async function healOrphanTalkThreads/.test(ipc)
     && /if \(!existsSync\(file\)\) return;/.test(ipc)
     && /catch \{ return; \}/.test(ipc)

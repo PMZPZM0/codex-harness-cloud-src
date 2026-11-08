@@ -66,7 +66,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetGroupThreads, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
+import { runTalkTurn, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -1287,8 +1287,10 @@ async function healOrphanTalkThreads(): Promise<void> {
   const orphans = listTalkThreads().filter((row) => row.groupId && !live.has(row.groupId));
   orphanTalkHealed = true;
   if (!orphans.length) return;
-  await deleteEngineThreads(orphans.map((row) => row.threadId));
-  for (const gid of new Set(orphans.map((row) => row.groupId))) forgetGroupThreads(gid);
+  const { failed } = await deleteEngineThreads(orphans.map((row) => row.threadId));
+  /* 只清删成功的；失败的留台账，下次启动再试（删成功但台账没清 = 标签永远摘不掉）。 */
+  const failedSet = new Set(failed);
+  forgetTalkThreads(orphans.map((row) => row.threadId).filter((tid) => !failedSet.has(tid)));
   broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
 }
 
@@ -1320,10 +1322,12 @@ async function healOrphanTalkThreads(): Promise<void> {
       const messages = { ...store.messages };
       delete messages[gid];
       writeStore({ groups: store.groups.filter((x) => x.id !== gid), messages, version: 2 });
-      /* 台账先清：渲染层的「伙伴」标签靠它，留着就永远摘不掉（另广播一次即时刷新）。 */
-      forgetGroupThreads(gid);
-      broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
       const { removed, failed } = await deleteEngineThreads(threads);
+      /* 只清**删成功**的台账：删失败的留着，渲染层的「伙伴」标签会一直挂着 —— 这正是提醒
+         （下次启动自愈会再试），⛔ 不能一把清光让它们变成永远没人管的孤儿会话。 */
+      const failedSet = new Set(failed);
+      forgetTalkThreads(threads.filter((tid) => !failedSet.has(tid)));
+      broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
       return { ok: true, id: gid, removedThreads: removed, totalThreads: threads.length, failed };
     });
 
