@@ -759,14 +759,20 @@ async function runDispatchRounds(
       if (talkDelta) { server.off("event", talkDelta); talkDelta = null; }
       if (liveThreadId) {
         broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
-        finishedTalkRuns.set(liveThreadId, { groupId: group.id, at: Date.now() });
+      }
+      /* ⛔ 11-08 审查：收尾标记按**真实会话 id**记（`liveThreadId || threadId`）——
+         会话在开跑时正忙 / 走排队分支时 liveThreadId 是空的，只记 liveThreadId 会让这一轮
+         的迟到用量永远补不上（页脚缺失）；开跑前已 `finishedTalkRuns.delete` 过，不会串轮。 */
+      const finishedThreadId = liveThreadId || threadId;
+      if (finishedThreadId) {
+        finishedTalkRuns.set(finishedThreadId, { groupId: group.id, at: Date.now() });
         if (finishedTalkRuns.size > 200) {
           const oldest = [...finishedTalkRuns.entries()].sort((a, b) => a[1].at - b[1].at)[0];
           if (oldest) finishedTalkRuns.delete(oldest[0]);
         }
         /* 卡在 append 与 finally 之间的用量：消息已落盘但从没带上 ⇒ 补到最后那条上。 */
         if (wroteMessage && usageWritten === false && liveUsage) {
-          void patchLatestTalkMessageUsage(group.id, liveThreadId, liveUsage).catch(() => undefined);
+          void patchLatestTalkMessageUsage(group.id, finishedThreadId, liveUsage).catch(() => undefined);
         }
       }
       const tokens = delegateRegistry?.tokensOf(threadId) ?? null;

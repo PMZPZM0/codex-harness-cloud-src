@@ -973,7 +973,7 @@ const catalog = [
     ok(/usageFromTokenEvent/.test(ipcLive)
       && /installTalkUsageWatcher\(\);/.test(ipcLive)
       && /const usageForMessage = liveUsage \?\? talkUsageFor\(threadId, startedAt\)/.test(ipcLive)
-      && /finishedTalkRuns\.set\(liveThreadId/.test(ipcLive)
+      && /finishedTalkRuns\.set\(finishedThreadId/.test(ipcLive)
       && /async function patchLatestTalkMessageUsage\(groupId: string, threadId: string, usage: GroupUsage\)/.test(ipcLive)
       && /pickUsagePatchIndex\(list, threadId, now, TALK_USAGE_TTL\)/.test(ipcLive)
       && /patchLatestTalkMessageUsage\(run\.groupId, hit\.threadId, hit\.usage\)/.test(ipcLive)
@@ -1049,6 +1049,8 @@ const catalog = [
     && /if \(item\.library\)/.test(view) && /targetKind: "expert"[\s\S]{0,80}?targetKey: item\.selectId/.test(view)
     && /onAddPartner\(/.test(view),
     "群 @ 面板列出专家库（没入群的专家），点选先加入本群再点名（⛔ 不再只能 @ 已加过的几个人）");
+  ok(/filter\(\(item\) => !\(item as \{ library\?: boolean \}\)\.library\)/.test(view),
+    "⛔ 专家库条目不进候选目标表（否则手打库里的名字会让发送键亮起、主进程却找不到这个群成员）");
   ok(/expert: new Set\(\["expert", "member"\]\)/.test(settings),
     "「添加伙伴 → 专家模式」也能单独加团成员（⛔ 不必为一个人把整团拉进群）");
   ok(/专家库：/.test(pickTest),
