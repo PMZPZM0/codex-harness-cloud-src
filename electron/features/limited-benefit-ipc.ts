@@ -29,11 +29,12 @@
  * ⛔ 存储仍是同一份 custom-models.json（单一真相源），本域不自建存储。
  * ⛔ 代理令牌**绝不打日志**（前缀 wap_）：只在 token 通道返回一次给渲染层填 apiKey。
  */
-import { app, net, safeStorage } from "electron";
+import { app, net } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps, SecureHost } from "../runtime/seams";
 import { readCustomModel, readCustomModels, writeCustomModels } from "../main/01-model-catalog";
 import { applyCustomModel } from "./custom-model-apply";
 import { customModelFile } from "../runtime-paths";
@@ -42,6 +43,15 @@ import type { CustomModelFile, ProviderModel } from "./custom-model-types";
 
 /** 域内 IPC 通道（三前缀同源：域 id = ipc-registry prefix）。 */
 const CHANNELS = ["limited-benefit:catalog", "limited-benefit:token", "limited-benefit:status", "limited-benefit:apply"];
+
+/* ⛔⛔ 11-08（守卫【266】零容忍）：本域此前直接 `import { safeStorage } from "electron"` ——
+   safeStorage 触碰系统密钥库，域直取等于"插件可自选加解密策略"，属三类必须锁进容器的能力。
+   ⇒ 一律经 `host` 接缝的 `secure` 取用，由容器在 setup 注入。
+   ⛔ 为什么用模块级变量而不是每次 ctx.get：读令牌的 helper 是模块级函数（`readLimitedBenefitTokenForBoot`
+      还要给 boot 的兜底链用），拿不到 ctx。接缝未就绪时按**「加密不可用」**降级 —— 与原来
+      `safeStorage.isEncryptionAvailable()` 为 false 的分支逐字同义（宁可不写凭据，也不放宽）。 */
+let secureHost: SecureHost | null = null;
+function secure(): SecureHost | null { return secureHost; }
 
 /** 供应商 id：只含字母数字下划线短横线（custom-model:save 的校验口径）。 */
 export const LIMITED_BENEFIT_PROVIDER = "limited-benefit";
@@ -93,7 +103,8 @@ function readProxyToken(): string {
   try {
     const raw = fs.readFileSync(proxyTokenFile(), "utf8");
     if (raw.startsWith("enc:")) {
-      return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(raw.slice(4), "base64")) : "";
+      const sec = secure();
+      return sec?.isEncryptionAvailable() ? sec.decryptString(Buffer.from(raw.slice(4), "base64")) : "";
     }
     return raw.trim();
   } catch { return ""; }
@@ -102,7 +113,8 @@ function readProxyToken(): string {
 function writeProxyToken(token: string) {
   const dir = cloudHome();
   fs.mkdirSync(dir, { recursive: true });
-  const payload = safeStorage.isEncryptionAvailable() ? "enc:" + safeStorage.encryptString(token).toString("base64") : token;
+  const sec = secure();
+  const payload = sec?.isEncryptionAvailable() ? "enc:" + sec.encryptString(token).toString("base64") : token;
   fs.writeFileSync(proxyTokenFile(), payload, { mode: 0o600 });
   /* ⛔ 20:1x 用户实测「Key 又掉了」根因：令牌只落在这里（cloudHome），而 boot 给引擎注入
      CODEX_HARNESS_API_KEY 时只读 `userData/api-key.txt` ⇒ 两个文件互不相通 ⇒ 每次重启
@@ -338,25 +350,29 @@ async function promoteIfVacant(row: CustomModelFile): Promise<boolean> {
   return true;
 }
 
-/** safeStorage 加密令牌；加密不可用时返回空串（宁可不写，也不写明文凭据）。 */
+/** 加密令牌（经 host 接缝的 secure）；加密不可用时返回空串（宁可不写，也不写明文凭据）。 */
 function encryptToken(token: string): string {
-  if (!safeStorage.isEncryptionAvailable()) return "";
-  return safeStorage.encryptString(token).toString("base64");
+  const sec = secure();
+  if (!sec?.isEncryptionAvailable()) return "";
+  return sec.encryptString(token).toString("base64");
 }
 
 /** 读回供应商行里的明文令牌（仅用于与本机最新令牌比对，不落盘）。
     读不出（未加密 / 格式坏 / 密钥换了）一律返回空串 ⇒ 上层判为「已失效」而重写。 */
 function decryptRowKey(encrypted: string | undefined): string {
-  if (!encrypted || !safeStorage.isEncryptionAvailable()) return "";
-  try { return safeStorage.decryptString(Buffer.from(encrypted, "base64")); } catch { return ""; }
+  const sec = secure();
+  if (!encrypted || !sec?.isEncryptionAvailable()) return "";
+  try { return sec.decryptString(Buffer.from(encrypted, "base64")); } catch { return ""; }
 }
 
 export const limitedBenefitFeature = defineFeature<null>({
   id: "limited-benefit",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("limited-benefit: 缺少 ipc 服务（宿主未提供？）");
+    /* 密钥库能力经接缝取（【266】）：域不许直取 safeStorage（见文件头 secure() 的注释）。 */
+    secureHost = ctx.get<HostCaps>("host")?.secure ?? null;
     void CHANNELS;   // 通道清单在 manifest 登记；保留常量便于守卫比对（同其它域做法）
 
     /* 目录（含勾选状态 + 倍率）：面板与自动注册都用它。 */

@@ -177,6 +177,7 @@ const BROWSER_INSTRUCTIONS =
  * 走命令行而非 dynamicTools 的原因：dynamicTools 仅在 thread/start 注入，
  * 老会话拿不到 schema；命令行对所有会话生效（模型扫能力清单时能真实看见）。
  * mediaCommand 由 main.ts 组装（内置 node 绝对路径 + helper 脚本绝对路径）。
+ * ⛔ 10-30：视觉辅助插件整体移除，原第 5 条识图命令行用法随之撤销。
  */
 const IMAGE_INSTRUCTIONS = (mediaCommand: string) =>
   `\n4) IMAGE TOOLS — two SEPARATE families (10-09 用户要求：工具区分开、生成与编辑的 IPC 也分开)。Pick by what the user actually wants:\n`
@@ -196,7 +197,8 @@ const LAYA_INSTRUCTIONS = `\n\nLOCAL LAYA JUDGE (only if \`laya_judge\` is in yo
 
 /** Filee 文件转换（10-30，KnifeLemon/Filee，MIT）。只在 tools/filee/filee-cli.exe 存在时注入。
  *  ⛔ 条件式（同 BROWSER / REVIEW 纪律）：没装的机器上工具不在表里，指令说了也白说。
- *  ⛔ 编号占回第 5 条（原 describe_image 识图段 10-30 已随视觉辅助插件移除）。 */
+ *  ⛔ 编号占回第 5 条（原「识图」那一段 10-30 已随视觉辅助插件移除）。
+ *  ⛔ 别在这里写回那个工具名 —— 守卫【76】按文本判「不许回到本文件」，注释里的拼写会误伤（实测假红）。 */
 const FILEE_INSTRUCTIONS =
   "\n5) FILE CONVERT — filee_convert converts files fully offline (244 formats: images, PDF, Office docs, spreadsheets, slides, e-books, audio/video, subtitles, archives, CAD, fonts, data formats, 3D models). " +
   "Pass LOCAL file paths in `inputs` and the target extension in `to` (e.g. to=\"jpg\", to=\"pdf\"). The result lists per-file output paths — reference those local paths afterward (or show images with image_view). " +
@@ -208,12 +210,15 @@ const FILEE_INSTRUCTIONS =
  *  ⛔ 保留这条的原因：模型仍然会"写完就交"，交付前过一遍是唯一不依赖额外对象的质量兜底。
  *  ⛔ 必须写成条件式（与 BROWSER_INSTRUCTIONS 同一纪律）：这里是全局指令，别命令"必须复审"。 */
 const REVIEW_INSTRUCTIONS =
-  "\n6) self-review before handing over — for a non-trivial result (a code change, a plan, a document), re-read what you are about to deliver before calling it done: does it actually do what was asked, are the paths/commands/APIs real (not remembered), did you leave half-finished edits or debug leftovers. Fix what you find, and say plainly what you checked. Do not dispatch a reviewer subagent for this — there is no built-in one; if the user created their own subagent you may use it right away (subagents are always available, no switch to turn on). Expert teams are the one exception: they are off by default and need the user to enable 「专家团」 in the top-bar 调度 panel — so never tell the user to go enable subagents or experts. Skip this for trivial edits, or when the user asked for speed.";
+  "\n6) self-review before handing over — for a non-trivial result (a code change, a plan, a document), re-read what you are about to deliver before calling it done: does it actually do what was asked, are the paths/commands/APIs real (not remembered), did you leave half-finished edits or debug leftovers. Fix what you find, and say plainly what you checked. Do not dispatch a reviewer subagent for this — there is no built-in one; if the user created their own subagent you may use it right away (subagents are always available, no switch to turn on). Expert teams are the one exception: they are off by default and need the user to enable 「专家团」 in the top-bar 调度 panel — so never tell the user to go enable subagents or experts.";
 
 /**
  * 10-31 用户令：「看看有没有配套工具，codex 可以新建智体、专家、专家团，安装 cli 智体工具」。
- * 专家 / 专家团 / 子智能体的建通道早就有（expert_save / subagent_save），CLI 这轮补四件套；
- * ⛔ 装软件必须先问用户（confirm:true），被委派会话无权装卸。
+ *
+ * 专家 / 专家团 / 子智能体的**建**通道早就有（expert_save / subagent_save，走能力网关），
+ * 但 CLI 智能体此前只有界面 IPC —— 模型看不到「装没装 / 怎么装」。这里把两类能力一起说清，
+ * 且把「装软件必须先问用户」写成硬规则（与 UIA / 桌面自动化的 confirm 口径一致）。
+ * ⛔ 条件式表述（先看工具在不在）—— 老会话工具面可能还是旧的。
  */
 const AGENT_MANAGEMENT_INSTRUCTIONS =
   "\n### 创建专家 / 专家团 / 子智能体 · 安装 CLI 智能体\n"
@@ -244,7 +249,7 @@ const IDENTITY_NOT_PROFILE_ZH =
 const MEMORY_INSTRUCTIONS =
   "\n7) memory & pitfall log — this app keeps a layered memory for the workspace you are working in, and the standing context is injected automatically each turn. Write into it like this:\n" +
   "   a) PITFALLS YOU HIT OR WERE CORRECTED ON — you MUST leave a trace. Append ONE line to the right file under `<workspace>/.codex-harness/memory/lessons/` (one file per category, see f), format: `- YYYY-MM-DD ⚠️ 纠错：<现象（一句）> → <根因> → <以后怎么做>` (or `⚠️ 坑：` for a pitfall you hit yourself). Read the target file first; if the same 现象 is already there, do NOT duplicate it (and if your new insight corrects an old line, EDIT that line instead of adding another).\n" +
-  "   b) `.codex-harness/memory/project/MEMORY.md` (L1) is the distillation output — do not hand-write it; let distill fill it. `USER.md` (L0, cross-project) you MUST co-maintain: when you learn a STABLE fact about the user (role, stack preference, taste, taboo, working style), append ONE line `- YYYY-MM-DD 画像：<fact>` via the app's profile API or the file itself — dedupe first (if a similar line exists, skip), NEVER rewrite or delete existing lines. Daily turns are captured automatically into `logs/YYYY-MM-DD.md`; do not duplicate them.\n" + IDENTITY_NOT_PROFILE + "\n" +
+  "   b) `.codex-harness/memory/project/MEMORY.md` (L1) is the distillation output — do not hand-write it; let distill fill it. `USER.md` (L0, cross-project) you MUST co-maintain: when you learn a STABLE fact about the user (role, stack preference, taste, taboo, working style), append ONE line `- YYYY-MM-DD 画像：<fact>` via the app's profile API or the file itself — dedupe first (if a similar line exists, skip), NEVER rewrite or delete existing lines. Daily turns are captured automatically into `logs/YYYY-MM-DD.md`; do not duplicate them." + IDENTITY_NOT_PROFILE + "\n" +
   "   c) When the user says you got something wrong: first restate 现象/根因 in one line so the user can confirm, then fix it, then write that line into `lessons/corrections.md` BEFORE you report back.\n" +
   "   d) The `lessons/` files are injected at the TOP of the standing context every turn — treat them as binding rules for this workspace (the user calls them 「纪律」). Keep each line short; they are not a narrative log.\n" +
   "   e) PROMOTION: when the same 现象 shows up a SECOND time, upgrade it into a skill (see 8) and mark that line 「已升级为技能 …」 — a pitfall with no executable steps gets stepped in again.\n" +
@@ -258,7 +263,7 @@ const MEMORY_INSTRUCTIONS =
 const MCP_MEMORY_INSTRUCTIONS =
   "\n7) memory & pitfall log — this app keeps a layered memory for the workspace, and the standing context (L0 `USER.md` · L1 `project/MEMORY.md` · L2 `lessons/`) is injected automatically each turn. The current memory backend is the **MCP memory service** (see rule 10c / skill `memory-mcp-backend`).\n" +
   "   a) EXPLICIT MEMORY GOES THROUGH MCP — call the MCP tool `local_memory__memory_write` (`type` = code_fact / decision / mistake / pattern / task_archive; `importance` = number 1–5). ⛔ Do NOT append to `lessons/*.md`, `MEMORY.md` or the daily log: the built-in lesson write is disabled while MCP is active (the write would be a no-op), and duplicating the same fact in two stores is forbidden. ⛔ The exposed name is literally `<connector>__<tool>`: `local_memory__memory_write` — NOT `memory-write`, NOT `memory_write`, NOT `mcp__local-memory__memory-write`. If it is missing from your tool list, the MCP backend is not live — say so instead of hand-writing files.\n" +
-  "   b) `.codex-harness/memory/project/MEMORY.md` (L1) is the distillation output — never hand-write it. `USER.md` (L0, cross-project) you MUST co-maintain: when you learn a STABLE fact about the user (role, stack preference, taste, taboo, working style), append ONE line `- YYYY-MM-DD 画像：<fact>` via the app's profile API or the file itself — dedupe first, NEVER rewrite or delete existing lines. Daily turns are captured automatically into `logs/YYYY-MM-DD.md`; do not duplicate them.\n" + IDENTITY_NOT_PROFILE + "\n" +
+  "   b) `.codex-harness/memory/project/MEMORY.md` (L1) is the distillation output — never hand-write it. `USER.md` (L0, cross-project) you MUST co-maintain: when you learn a STABLE fact about the user (role, stack preference, taste, taboo, working style), append ONE line `- YYYY-MM-DD 画像：<fact>` via the app's profile API or the file itself — dedupe first, NEVER rewrite or delete existing lines. Daily turns are captured automatically into `logs/YYYY-MM-DD.md`; do not duplicate them." + IDENTITY_NOT_PROFILE + "\n" +
   "   c) When the user says you got something wrong: first restate 现象/根因 in one line so the user can confirm, then fix it, then store a `mistake` in MCP BEFORE you report back.\n" +
   "   d) The standing block is READ-ONLY injected context and binding for this workspace. The ONE exception is the `## 待入 MCP（自动捕获，落库后删除）` section: drain it — write each line to MCP with the mapped type (usually `mistake`), then delete that line. ⛔ Do not keep the rest of the block in sync with MCP: the local pyramid remains responsible for standing injection, L0/L4 auto-capture and 90% distillation (rule 9); MCP only replaces the explicit memory store.\n" +
   "   e) PROMOTION: when the same 现象 shows up a SECOND time, upgrade it into a skill (see 8) and mark the MCP entry or pending queue line 「已升级为技能 …」 — a pitfall with no executable steps gets stepped in again.\n" +
@@ -561,6 +566,7 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += UI_COMPONENT_INSTRUCTIONS;
   // 前端开发画布（10-05 夜：做手机/电脑/网页界面时把拼装搬进应用内画布，Codex 直接读写）
   text += FRONTEND_CANVAS_INSTRUCTIONS;
+  // 前端设计方法（11-03：写/改任何界面前先读内置 skill frontend-design；正文源 = DESIGN.md 标记区）
   text += FRONTEND_DESIGN_INSTRUCTIONS;
   // 任务清单（10-06 夜三轮：输入框上方「步骤 N/M」胶囊的唯一数据源，完成一步更新一步）
   text += TASK_LIST_INSTRUCTIONS;

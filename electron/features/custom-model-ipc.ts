@@ -2,6 +2,8 @@
  * custom-model-ipc（10-03 从 `features/model-custom-ipc/` 按前缀拆出，同时改为**插件形态**）
  *
  * 域：custom-model(12)
+ * ⛔ 11-08：`model-source:get/set`（云端模型模式开关）已按「一个文件恒等于一个域前缀」
+ *    拆到 `features/model-source-ipc.ts`（此前是同文件独立前缀的历史欠账）。
  * 通道：custom-model:read / probe / save / list / select / set-model / set-effort / apply /
  *      upsert-model / remove-model / set-enabled / remove
  *
@@ -20,7 +22,7 @@
  */
 import fs from "node:fs/promises";
 import { LIMITED_BENEFIT_PROVIDER } from "./limited-benefit-ipc";
-import { readModelSource, writeModelSource } from "../main/01-model-catalog";
+import { readModelSource } from "../main/01-model-catalog";
 import { app } from "electron";
 import { probeCustomModel } from "./custom-model-probe";
 import { healCloudAccess } from "../cloud-heal";
@@ -56,7 +58,6 @@ const CUSTOM_MODEL_CHANNELS = [
   "custom-model:read", "custom-model:probe", "custom-model:save", "custom-model:list", "custom-model:select",
   "custom-model:set-model", "custom-model:set-effort", "custom-model:apply",
   "custom-model:upsert-model", "custom-model:remove-model", "custom-model:set-enabled", "custom-model:remove",
-  "model-source:get", "model-source:set",
 ];
 
 export const customModelFeature = defineFeature<null>({
@@ -270,26 +271,6 @@ export const customModelFeature = defineFeature<null>({
         await applyCustomModel(next);
       }
       return publicCustomModel(next);
-    });
-
-    ipcHost.handle("model-source:get", async () => readModelSource());
-    ipcHost.handle("model-source:set", async (_event, input: { cloudModels: boolean }) => {
-      const next = { cloudModels: Boolean(input && input.cloudModels) };
-      await writeModelSource(next);
-      if (next.cloudModels) {
-        /* 开启云端模型模式：把**所有本地供应商**停用（限时福利那行不受影响，
-           它的可用性由云端勾选决定，不占用"当前生效供应商"位）。 */
-        const list = await readCustomModels();
-        for (const entry of list) {
-          if (entry.provider !== LIMITED_BENEFIT_PROVIDER && entry.enabled !== false) {
-            await upsertCustomModel({ ...entry, enabled: false });
-          }
-        }
-        console.log(`[model-source] 已开启云端模型模式：停用 ${list.filter((e) => e.provider !== LIMITED_BENEFIT_PROVIDER).length} 个本地供应商`);
-      } else {
-        console.log("[model-source] 已关闭云端模型模式（本地供应商开关解锁，可手动重新启用）");
-      }
-      return readModelSource();
     });
 
     ipcHost.handle("custom-model:set-enabled", async (_event, input: { provider: string; enabled: boolean }) => {

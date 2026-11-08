@@ -1126,6 +1126,11 @@ contextBridge.exposeInMainWorld("codex", {
   platform: process.platform,
 onRuntimeProgress: (listener: (event: unknown) => void) =>
     __on("runtime:progress", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload)),
+  /* 记忆后端 / 云端开通状态变化推送（10-20）：**推送类手写桥**（不在 gen 段）。
+     主进程在三个变化点广播（切后端 / 确认开通 / 登录登出换账号），界面订阅后**重新读**状态
+     —— ⛔ 别在界面自己推断「应该已开通」，那是第二份判定。 */
+  onMemoryBackendChanged: (listener: (status: unknown) => void) =>
+    __on("memory:backend-changed", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload)),
   /* 播报归属推送（voice 域，10-21）：逐窗口定制发送 —— `owner` 已是「本窗口是不是播报窗口」。 */
   onAnnounceOwnerChanged: (listener: (state: { owner: boolean; reason: string }) => void) =>
     __on("voice:announce-owner-changed", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { owner: boolean; reason: string })),

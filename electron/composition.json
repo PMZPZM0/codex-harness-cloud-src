@@ -233,6 +233,13 @@
       "config": null
     },
     {
+      "id": "model-source",
+      "enabled": true,
+      "file": "features/model-source-ipc.ts",
+      "export": "modelSourceFeature",
+      "config": null
+    },
+    {
       "id": "dataDir",
       "enabled": true,
       "file": "features/data-dir-ipc.ts",
@@ -305,7 +312,7 @@
     {
       "id": "favorites",
       "enabled": true,
-      "file": "features/favorites-ipc.ts",
+      "file": "features/favorites/ipc.ts",
       "export": "favoritesFeature",
       "config": null
     },

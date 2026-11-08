@@ -24,9 +24,9 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { app } from "electron";
-import { saveAppSettings } from "../app-settings";
+import { readAppSettingsSync, saveAppSettings } from "../app-settings";
 import { ensureBuiltinSkills } from "../builtin-skills";
-import { bundledNodePath, CLOUD_MEMORY_IMPLEMENTED, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
+import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
 import { lookupRoleSession, listRoleSessions } from "../role-memory";
 import { agentOfRoleRef, handleFabricWrite } from "../memory-fabric-tool";
 import { buildContext, getMemoryHandles, listNamespaces, readNamespace } from "../memory-fabric";
@@ -42,8 +42,29 @@ import { userSkillsDir } from "../main";
 import type { MemoryMode, StoredMemoryGateway } from "../main";
 import { defineFeature } from "../context";
 import { sendToWindow } from "./window-bus";
+import { notifyMemoryBackendChanged } from "./memory-backend-events";
+import { readCloudMemoryActivation } from "../cloud-memory-activation";
+import { refreshEngineInstructions } from "../backend-routing";
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
+
+/**
+ * 让云端记忆**真正接通**（拉 `/integrations` → 写加密凭据 → 切对话上游）。
+ * 与云账号页「获取 / 刷新记忆凭据」调用同一个函数 —— ⛔ 不在这里重写一套取凭据逻辑。
+ * ⛔ 用 `require` 能力探测：`cloud-provider` 会带起 applyCustomModel 与整条云链路，
+ *    静态 import 进来容易把本域卷进环里；失败降级为「这次没接通」（已开通但未接通的结论照实回执）。
+ */
+async function applyCloudMemoryUpstream(): Promise<void> {
+  try {
+        const req: any = typeof require === "function" ? require : null;
+    const mod: any = req ? req("../cloud-provider") : null;
+    if (typeof mod?.refreshMemoryUpstreamFromIntegrations === "function") {
+      await mod.refreshMemoryUpstreamFromIntegrations();
+    }
+  } catch (error: any) {
+    console.warn("[memory] 切换云端记忆时接通上游失败：", error?.message ?? error);
+  }
+}
 
 async function setWorkspaceMemoryEnabled(workspace: string, enabled: boolean): Promise<boolean> {
   const key = path.resolve(workspace);
@@ -230,6 +251,16 @@ async function auditMemoryInjection(input: {
   }
 }
 
+/** 10-29 审查：「无归属碎片」是否也召回。默认 false（保持既有行为，历史条目里这类很多）。
+    打开后严格按工作区隔离：跨工作区排除 + workspace 为空的也排除。 */
+function blockOrphanRecall(): boolean {
+  try {
+    return readAppSettingsSync(app.getPath("userData")).memoryBlockOrphanRecall === true;
+  } catch {
+    return false;
+  }
+}
+
 export const memoryFeature = defineFeature<null>({
   id: "memory",
   inject: ["ipc", "host"],
@@ -271,11 +302,11 @@ export const memoryFeature = defineFeature<null>({
        ⇒ 检索根本不做工作区过滤，永远返回全库匹配（跨项目串扰的第二个入口）。
        现在显式接受 workspace 并走 strictWorkspace。 */
     ipcHost.handle("memory:search", (_event, query: string, workspace?: string) =>
-      memoryStore.search(query, 8, { workspace, strictWorkspace: true }));
+      memoryStore.search(query, 8, { workspace, strictWorkspace: true, blockOrphan: blockOrphanRecall() }));
     /* ⛔ 10-29：strictWorkspace 让碎片池**只返回本工作区**的条目（原实现跨工作区 0.5 降权仍返回
        ⇒ 别的项目的记忆混进本会话）。threadId 只用于审计，不参与检索（检索仍按工作区）。 */
     ipcHost.handle("memory:recall", async (_event, query: string, workspace?: string, threadId?: string) => {
-      const result = await memoryStore.recall(query, { workspace, strictWorkspace: true, threadId: String(threadId ?? "") || undefined });
+      const result = await memoryStore.recall(query, { workspace, strictWorkspace: true, threadId: String(threadId ?? "") || undefined, blockOrphan: blockOrphanRecall() });
       void auditMemoryInjection({
         kind: "recall",
         threadId: String(threadId ?? ""),
@@ -300,11 +331,18 @@ export const memoryFeature = defineFeature<null>({
     ipcHost.handle("memory:backend:read", () => memoryBackendStatus());
     ipcHost.handle("memory:backend:set", async (_event, backend: unknown) => {
       const next: MemoryBackend = backend === "cloud" ? "cloud" : backend === "mcp" ? "mcp" : "builtin";
-      /* ⛔⛔ 第二道闸（10-20）：本仓未内置云端记忆实现（CLOUD_MEMORY_IMPLEMENTED=false）⇒ 云端
-         请求**不落盘**（落了盘内置金字塔就永久让位 = 记忆一处都不写），回执 refused 让界面给出
-         原因。界面层已置灰（cloudSupported=false），这里兜住旧构建 / 直调 IPC 的路径。 */
-      if (next === "cloud" && !CLOUD_MEMORY_IMPLEMENTED) {
-        return { ...memoryBackendStatus(), refused: "cloud-not-implemented" };
+      /* ⛔⛔ 云端记忆**未开通就不许切**（10-20 用户令：不能"可点击却无法使用"）。
+         界面已经把卡片置灰，这里是第二道闸 —— 绕过界面直接调 IPC（旧版渲染层 / 脚本）也不能切进去。
+         · 已登录且已开通、只是还没接通 ⇒ 先当场接通一次（等同云账号页的「获取凭据」）；
+         · 仍然不可用 ⇒ **不落盘**，原样回执现状 + refused 原因，界面照实提示。 */
+      if (next === "cloud") {
+        let act = readCloudMemoryActivation();
+        if (act.entitled && !act.applied) await applyCloudMemoryUpstream();
+        act = readCloudMemoryActivation();
+        if (!(act.entitled && act.applied)) {
+          notifyMemoryBackendChanged();
+          return { ...memoryBackendStatus(), refused: (act.reason || "not-confirmed") as string };
+        }
       }
       await saveAppSettings(app.getPath("userData"), { memoryBackend: next });
       /* ⛔ 时序防御：userSkillsDir 由启动链注入，理论上窗口创建早于它的赋值不可能，但这里显式判一下
@@ -321,6 +359,11 @@ export const memoryFeature = defineFeature<null>({
       } catch (error: any) {
         console.warn("[memory] 切后端时同步本地 MCP 连接器失败（重启应用会补上）：", error?.message ?? error);
       }
+      /* ⛔ 生效后端变了 ⇒ 提示层必须当场重建（config.toml 里的 developer_instructions 是
+         backendRoutingBlock() 的落盘形态；不重建就等下次启动，模型下一轮还在按旧口径写）。
+         ⛔ 广播给渲染层：记忆页 / 首页统计 / 记忆中心卡片共用同一份状态。 */
+      await refreshEngineInstructions();
+      notifyMemoryBackendChanged();
       return memoryBackendStatus();
     });
     ipcHost.handle("memory:mcp:install", async (_event, options?: { force?: boolean }) => {
@@ -363,7 +406,12 @@ export const memoryFeature = defineFeature<null>({
     });
     ipcHost.handle("memory:save", (_event, input: unknown) => memoryStore.upsert(input as { content: string; category: MemoryCategory; sourceThreadId?: string; sourceTurnId?: string; confidence?: number }));
     ipcHost.handle("memory:delete", (_event, id: string) => memoryStore.remove(id));
-    ipcHost.handle("memory:reset", () => memoryStore.reset());
+    /* ⛔ 10-29 审查：清空全部记忆不可恢复 ⇒ 必须显式 confirm。
+       与 hygiene 的危险动作同口径（守卫【107】钉「confirm !== true 直接拒」）。 */
+    ipcHost.handle("memory:reset", async (_event, confirm?: boolean) => {
+      if (confirm !== true) throw new Error("清空全部记忆不可恢复：需要显式确认（confirm=true）");
+      return memoryStore.reset();
+    });
     ipcHost.handle("memory:gateway:read", async () => { const value = await readMemoryGateway(); return { ...memoryStore.remoteStatus(), sessionKey: value?.sessionKey ?? "", userId: value?.userId ?? "codex-harness", hasApiKey: Boolean(value?.apiKey) }; });
     ipcHost.handle("memory:gateway:save", (_event, input: unknown) => saveMemoryGateway(input));
     ipcHost.handle("memory:layers:read", async (_event, workspace?: string) => ({ ...(await memoryLayers.snapshot(workspace)), entries: await memoryStore.stats() }));

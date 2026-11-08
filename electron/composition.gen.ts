@@ -40,6 +40,7 @@ import { codexOfficialMarketFeature as feat_codex_official_market } from "./feat
 import { commandsFeature as feat_commands } from "./features/commands-ipc";
 import { connectorsFeature as feat_connectors } from "./features/connectors-ipc";
 import { customModelFeature as feat_custom_model } from "./features/custom-model-ipc";
+import { modelSourceFeature as feat_model_source } from "./features/model-source-ipc";
 import { dataDirFeature as feat_dataDir } from "./features/data-dir-ipc";
 import { declaredPluginsFeature as feat_declared_plugins } from "./features/declared-plugins-ipc";
 import { dialogFeature as feat_dialog } from "./features/dialog-ipc";
@@ -50,7 +51,7 @@ import { engineFeature as feat_engine } from "./features/engine-ipc";
 import { expertMarketFeature as feat_expert_market } from "./features/expert-market-ipc";
 import { extensionsFeature as feat_extensions } from "./features/extensions-ipc";
 import { externalFeature as feat_external } from "./features/external-ipc";
-import { favoritesFeature as feat_favorites } from "./features/favorites-ipc";
+import { favoritesFeature as feat_favorites } from "./features/favorites/ipc";
 import { feishuFeature as feat_feishu } from "./features/feishu-ipc";
 import { fsFeature as feat_fs } from "./features/fs-ipc";
 import { gitFeature as feat_git } from "./features/git-ipc";
@@ -167,6 +168,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "commands", plugin: feat_commands as Plugin<unknown>, config: null },
   { id: "connectors", plugin: feat_connectors as Plugin<unknown>, config: null },
   { id: "custom-model", plugin: feat_custom_model as Plugin<unknown>, config: null },
+  { id: "model-source", plugin: feat_model_source as Plugin<unknown>, config: null },
   { id: "dataDir", plugin: feat_dataDir as Plugin<unknown>, config: null },
   { id: "declared-plugins", plugin: feat_declared_plugins as Plugin<unknown>, config: null },
   { id: "dialog", plugin: feat_dialog as Plugin<unknown>, config: null },

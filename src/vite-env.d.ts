@@ -1557,6 +1557,10 @@ interface Window {
 
 
     onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; speed?: string; done?: boolean; failed?: boolean; auto?: boolean; /** 已取消（10-07）：主进程杀完子进程清完临时文件后推来的收尾事件，≠ failed */ cancelled?: boolean }) => void): () => void;
+    /** 记忆后端 / 云端开通状态变化推送（10-20）：手写桥（非 gen 段）。主进程在变化点广播，
+     *  界面订阅后重新读一次状态：切后端、确认开通、登录 / 登出 / 换账号。 */
+    onMemoryBackendChanged(listener: (status: { backend: "builtin" | "mcp" | "cloud"; effective: "builtin" | "mcp" | "cloud"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudActivation: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }) => void): () => void;
+
     /** 播报归属推送（voice 域，10-21）：多窗口时逐窗口定制发送 —— `owner` 已是「本窗口是不是播报窗口」。 */
     onAnnounceOwnerChanged(listener: (state: { owner: boolean; reason: string }) => void): () => void;
     /** 全局静音闩锁推送（10-21）：任一窗口按停 ⇒ 全窗口静默（一个扬声器一个用户）。 */

@@ -129,6 +129,10 @@ return (
                           workspace={effectiveSharedProject}
                           workspaceEnabled={workspaceMemoryEnabled}
                           onNotice={app.setNotice}
+                          /* ⛔ 11-08（守卫【200】）：云端记忆未开通时，引导条的出口必须**真的**接到
+                             「云账号」页 —— 记忆页不再自己实现一套开通流程（两套流程 = 两份判定）。
+                             先关掉这个弹窗再跳页，否则回来时它还开着、状态是旧的。 */
+                          onOpenCloudAccount={() => { setOpenCard(null); app.setSettingsPage("cloud"); }}
                         />
                         {/* ── 旧「记忆中心」的「存储与同步」里的**保存位置**（10-10 迁移）──
                             ⛔ 只搬这一段：工作区开关面板里已经有，不重复渲染同一个开关。

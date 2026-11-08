@@ -30,7 +30,7 @@ import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
 /* 本仓的收藏夹存储是 `electron/favorites.ts`（单文件），桌面版是 `features/favorites/store.ts` 目录版
    ⇒ 只有这条 import 路径不同，其余逻辑逐字一致。 */
-import { addFavorite, readFavorites } from "../favorites";
+import { addFavorite, readFavorites } from "./favorites/store";
 import { appendJournalEntry, readJournalDay, searchJournal } from "./journal-ipc";
 import { copyVaultSecret, findVaultItems, saveVaultItem } from "./vault-ipc";
 
