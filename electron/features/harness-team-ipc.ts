@@ -66,7 +66,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, ensureTalkThread, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetGroupThreads, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
+import { runTalkTurn, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetGroupThreads, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -563,14 +563,40 @@ async function runDispatchRounds(
       /* ⛔⛔ 11-08 用户实测（「谁在运行一点反馈都没有」「回复了就要立刻看到」）：
          群聊回合也要像主对话一样**逐字上屏**。先解析出这位成员的会话（runTalkTurn 会命中同一本台账复用），
          再订阅它的 agentMessage 增量，广播给渲染层（流式卡 + 过程块）。 */
-      const liveThread = await ensureTalkThread(group.id, partner as TalkMember, {
-        cwd: group.workspace || undefined,
-        groupName: group.name,
+      const liveThread = await peekTalkThread(group.id, partner as TalkMember, {
         sandbox: params.sandbox,
         approvalPolicy: params.approvalPolicy,
       }).catch(() => null);
-      liveThreadId = liveThread?.threadId ?? "";
+      liveThreadId = liveThread && !liveThread.busy ? liveThread.threadId : "";
       if (liveThreadId) {
+        broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
+        let lastTickAt = 0;
+        talkDelta = (event: any) => {
+          if (event?.kind !== "notification") return;
+          const p = event.params ?? {};
+          if (String(p.threadId ?? "") !== liveThreadId) return;
+          const method = String(event.method ?? "");
+          if (method === "thread/tokenUsage/updated") {
+            const hit = usageFromTokenEvent(event);
+            if (hit) liveUsage = hit.usage;
+            return;
+          }
+          if (method === "item/agentMessage/delta") {
+            const delta = String(p.delta ?? "");
+            if (delta) broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, text: delta, at: Date.now() } as never);
+            return;
+          }
+          /* ⛔ 11-08 用户令「跟主对话完全一致」：过程块不再 2.5s 轮询 ——
+             成员回合里任何 item/turn 事件都通知渲染层重拉（200ms 合并，防工具输出高频刷屏）。 */
+          if (!/^item\//.test(method) && !/^turn\//.test(method)) return;
+          const now = Date.now();
+          if (now - lastTickAt < 200) return;
+          lastTickAt = now;
+          broadcastHarnessEvent({ type: "group-talk-tick", groupId: group.id, memberId: partner.id, threadId: liveThreadId, method, at: now } as never);
+        };
+        server.on("event", talkDelta);
+      }
+            if (liveThreadId) {
         broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
         let lastTickAt = 0;
         talkDelta = (event: any) => {
@@ -601,16 +627,16 @@ async function runDispatchRounds(
       /* ⛔ 11-08 审查：模型 / 沙箱 / 审批档原来在这里被丢掉（只传了 effort）⇒ 群输入框三个控件全是死的。
          群聊会话与主对话同口径：模型逐回合下发、沙箱与审批档建/复会话时落、审批档再逐回合兜一次。 */
       const clearedMark = groupClearedAt.get(group.id) ?? 0;
-      const res = await withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
+      const res = await queueTalkDelivery(group.id, partner.id, () => withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
         cwd: group.workspace || undefined,
         groupName: group.name,
-        /* ⛔ 上面已 ensure 过（为流式监听）⇒ 把 threadId 交下去，runTalkTurn 不再 resume 第二遍。 */
+        /* ⛔ 探测到空闲会话就交给它，runTalkTurn 不再 resume 第二遍。 */
         ...(liveThreadId ? { threadId: liveThreadId } : {}),
         ...(params.model ? { model: params.model } : {}),
         ...(params.effort ? { effort: params.effort } : {}),
         ...(params.sandbox ? { sandbox: params.sandbox } : {}),
         ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
-      }), partner.name);
+      }), partner.name));
       if (!res?.ok || !res?.threadId) {
         errMsg = "群聊会话没起来";
         failed.push(`${partner.name}：${errMsg}`);
