@@ -29,6 +29,8 @@ import { TeamMenuButton } from "./06-team-menu";
 
 import { TeamRuler } from "./07-team-ruler";
 import { TeamProcess } from "./09-team-process";
+import { LiveFileRows } from "../status";
+import { getThreadLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { TeamCards } from "./11-team-cards";
 import { MemberAvatar } from "./13-team-avatar";
 /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主这一行必须和主对话同一个身份源
@@ -141,6 +143,17 @@ const PAGE = 30;
 
 /* ⛔ 11-07：成员行三件套（运行态点 → ⏹️ → @）已拆到 `18-team-member-actions.tsx`，
    两处调用（伙伴行 / 团成员行）不变。 */
+
+/** 流式卡里的实时编辑行（11-08 用户令「补实时编辑行，跟主对话一致」）：
+ *  与主对话同款 LiveFileRows，按**线程**取（群视图不知道回合 id）。 */
+function TeamLiveFiles({ threadId }: { threadId: string }) {
+  const files = useSyncExternalStore(subscribeTurnFileChanges, () => getThreadLiveFileChanges(threadId));
+  return files.length ? (
+    <div className="team-msg__live-files">
+      <LiveFileRows files={files as never} />
+    </div>
+  ) : null;
+}
 
 export function TeamGroupView({
   app, group, rows, issues, busy, notice, limit,
@@ -1303,6 +1316,7 @@ export function TeamGroupView({
                       ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
                       : <p className="team-msg__thinking">正在思考…</p>}
                     {run.status === "running" && <span className="team-msg__caret" aria-hidden />}
+                    {run.status === "running" && <TeamLiveFiles threadId={run.threadId} />}
                     {run.error && <p className="team-group__notice is-warn">{run.error}</p>}
                   </div>
                   </div>
