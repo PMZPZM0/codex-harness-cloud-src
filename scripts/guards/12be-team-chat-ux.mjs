@@ -960,6 +960,29 @@ const catalog = [
   }
 }
 
+/* ── ⑬b 伙伴转交写真实发送者 + 侧栏「伙伴」标签（11-08 用户截图：
+   「群里会话的伙伴标签没出来，群成员 伙伴转交 明确出来谁给他发的消息」）────── */
+{
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const tools = codeOnly(read("electron/features/group-talk/02-tools.ts"));
+  const channel = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+  const store = codeOnly(read("src/lib/team-talk-threads.mjs"));
+  const rows = codeOnly(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"));
+  ok(/hooks\.relay\(groupId, who\.memberId, who\.name, to, text\)/.test(tools)
+    && /relay: \(gid: string, fromId: string, fromName: string/.test(ipc)
+    && /String\(fromName \?\? ""\)\.trim\(\) \|\| "群成员"/.test(ipc),
+    "伙伴转交必须写真实发送者：台账名字随 relay 传进来，⛔ 名册查不到也不能退化成「群成员」（截图里的那个标签）");
+  ok(/export function listTalkThreads/.test(channel) && /listTalkThreads\(\)/.test(ipc)
+    && /harness-team:talk-threads/.test(ipc),
+    "群聊伙伴会话台账经只读通道暴露（会话是普通 thread，⛔ 只能由台账认，不能按标题猜）");
+  ok(/harnessTeamTalkThreads/.test(store) && /subscribeTeamTalkThreads/.test(store)
+    && /useSyncExternalStore\(subscribeTeamTalkThreads, getTeamTalkThreads\)/.test(rows)
+    && /talkThreads\.byId\[entry\.id\]/.test(rows)
+    && /if \(talkInfo\) rowBadges\.push\(<span className="thread-source-badge tone-dispatch"/.test(rows)
+    && /群聊伙伴会话/.test(rows),
+    "侧栏给群聊伙伴会话打「伙伴」标签（单例 store 订阅；⛔ 不在 renderThreadRow 里订阅，行数一变就 hook 错位）");
+}
+
 /* ── ⑭ 群成员共享群会话内容（11-08 用户问：「群成员，都能看到群会话内容吗」）────────
    改之前：每位成员只拿到「当前这一句 + 名册 + 群简介」，历史**不注入**，
    只有模型主动调 group_read 才能读 12 条 ⇒ 别人之间没 @ 它的对话它一概看不见，接不上话。
