@@ -584,9 +584,18 @@ const catalog = [
     && !/team-composer__pane-flyout/.test(codeOnly(composer))
     && /\.team-composer__files-pop \{[^}]*width: min\(360px/.test(read("src/styles/61-team-mode.css")),
     "引用文件面板贴着 + 图标弹（自适应翻上/翻下 + 视口钳制，⛔ 不再以输入卡为锚）");
-  ok(/team-skill-dialog/.test(composer) && /createPortal\(/.test(composer) && /toggleSkill/.test(composer)
-    && /\.team-skill-dialog \{[^}]*width: min\(560px/.test(read("src/styles/61-team-mode.css")),
-    "引用技能是居中弹窗（可多选，⛔ 不再是输入框里的内嵌列表）");
+  /* ⛔⛔ 11-08 用户实测（截图）：「选中一个技能弹窗就关了、没有选中反馈」+「技能弹窗搞这么远干什么」——
+     ① 面板必须登记进「点外部才关」的豁免名单（漏登记 ⇒ 点行的 mousedown 被当成外部点击、
+        click 之前就被卸载 ⇒ 选中回调根本没跑）；
+     ② 位置贴着 + 图标弹（useAnchoredPopover），⛔ 不再是居中弹窗。 */
+  ok(/team-skill-dialog__item/.test(composer) && /createPortal\(/.test(composer) && /toggleSkill\(item\)/.test(composer)
+    && /skillsPopRef\.current\?\.contains\(target\)/.test(composer)
+    && /useAnchoredPopover\(plusView === "skills"/.test(composer)
+    && /team-composer__skill-pop/.test(composer)
+    && /\.team-composer__skill-pop \{[^}]*width: min\(420px/.test(read("src/styles/61-team-mode.css"))
+    && !/team-skill-backdrop/.test(codeOnly(composer))
+    && !/team-skill-dialog \{[^}]*width: min\(560px/.test(read("src/styles/61-team-mode.css")),
+    "引用技能贴着 + 图标弹、可多选（点行只切换不关窗；面板在点外部豁免名单里，11-08 用户实测）");
   /* ⛔⛔ 11-08 用户令：「弹窗放到 + 号和 @ 图标上面自适应展示」——
      加号菜单贴着 + 图标弹（portal + useAnchoredPopover），⛔ 不再是居中弹窗 / 输入卡上的浮层。 */
   ok(/composer-quick-pop/.test(composer) && /useAnchoredPopover\(plusOpen/.test(composer)
