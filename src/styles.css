@@ -65,6 +65,8 @@
 @import "./styles/44-function-menu" layer(components);
 @import "./styles/56-skill-usage" layer(components);
 @import "./styles/45-settings-experience" layer(pages);
+/* ⛔ 11-08 补：46-boss-groups.css 一直没被 @import（云仓独有的漏接）⇒ 群聊页样式整份没生效。 */
+@import "./styles/46-boss-groups" layer(pages);
 @import "./styles/47-boss-group-view" layer(pages);
 @import "./styles/48-app-lock" layer(pages);
 @import "./styles/49-profile-guide" layer(pages);
