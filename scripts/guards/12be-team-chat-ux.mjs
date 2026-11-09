@@ -749,7 +749,7 @@ const catalog = [
     && /onStopAll\(agentThreadIds\)/.test(view),
     "视图把「有人在跑」与「停全部」接到输入框（候选 = 群内会话 id）");
   ok(/const stopAll = useCallback\(/.test(codeOnly(read("src/features/harness-team/02-team-store.ts")))
-    && /harnessTeamStop\(\{ threadIds: candidates, stopAll: true \}\)/.test(codeOnly(read("src/features/harness-team/02-team-store.ts")))
+    && /harnessTeamStop\(\{ threadIds: candidates, stopAll: true, groupId \}\)/.test(codeOnly(read("src/features/harness-team/02-team-store.ts")))
     && /onStopAll=\{\(threadIds\) => stopAll\(active\.id, threadIds\)\}/.test(codeOnly(read("src/features/harness-team/index.tsx"))),
     "store 发 `stopAll: true` 并接线到面板（成功即清 busy/live，⛔ 不等引擎回包 —— 否则按钮一直停在停止上）");
   const stopSvc = codeOnly(read("electron/features/harness-team-stop.ts"));
@@ -1369,6 +1369,17 @@ const catalog = [
   ok(manifest.includes('"name": "harnessTeamTalkThreads"')
     && manifest.includes("avatar: string; kind: string; targetKind: string; targetKey: string; groupName: string"),
     "manifest 返回类型与实现同步（⛔ 手改生成物）");
+}
+
+/* ── ㉖ 11-09 审查确认：停止请求残留会静默吞掉下一条消息（60 秒窗口）────────────── */
+{
+  const stopSrc = codeOnly(read("electron/features/harness-team-stop.ts"));
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  ok(/export function clearTalkCancel/.test(stopSrc)
+    && /for \(const target of targets\) clearTalkCancel\(group\.id, target\.name\);/.test(ipc),
+    "新消息落盘即作废该成员的停止请求（⛔ 残留请求会把新消息在队列里静默吞掉：有气泡、没人回）");
+  ok((ipc.match(/consumeTalkCancel\(group\.id, partner\.name\)/g) || []).length >= 2,
+    "建会话后再补一次消费（ensure 那 1~3 秒里点的停止也真放弃，而不是「已停止」却照发）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
