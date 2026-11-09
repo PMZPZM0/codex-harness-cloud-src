@@ -58,7 +58,7 @@ import {
 /* ⛔ 停止运行复用引擎侧的活动回合表（threadId → turnId）：这是**唯一真相源**，
    别在这里自己记一份"我以为在跑什么"（两处必然漂）。 */
 import { delegateRegistry, engineActiveTurnIds, server } from "../runtime-refs";
-import { stopTeamRuns, type TeamStopInput } from "./harness-team-stop";
+import { stopTeamRuns, consumeTalkCancel, type TeamStopInput } from "./harness-team-stop";
 import { startTeamQueued, type TeamQueueStartInput } from "./harness-team-queue";
 /* ⛔ 定时任务的"下一次什么时候跑"**不在本文件算**：RRULE 构造 / 相位守恒 / 补跑窗口
    的唯一真相源是 electron/scheduler.ts（与「设置 → 自动化」同一个引擎）。 */
@@ -735,6 +735,11 @@ async function runDispatchRounds(
          群聊会话与主对话同口径：模型逐回合下发、沙箱与审批档建/复会话时落、审批档再逐回合兜一次。 */
       const clearedMark = groupClearedAt.get(group.id) ?? 0;
       const res = await queueTalkDelivery(group.id, partner.id, async () => {
+        /* ⛔ 11-08 用户实测（点停止报「还没有它的会话」）：排队期间用户点了停止 ⇒
+           建会话/开跑之前就放弃（别发出那条不该存在的消息）。 */
+        if (consumeTalkCancel(group.id, partner.name)) {
+          return { ok: false, cancelled: true, text: "", threadId: "" } as never;
+        }
         if (!liveThreadId) {
           const ensured = await ensureTalkThread(group.id, partner as TalkMember, {
             cwd: group.workspace || undefined,
@@ -755,6 +760,11 @@ async function runDispatchRounds(
         ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
       }), partner.name);
       });
+      if ((res as { cancelled?: boolean } | null)?.cancelled) {
+        /* 用户点了停止：整轮放弃，按正常收尾处理（不写失败、不落盘）。 */
+        options.onPhase?.("finished", partner, { ok: true });
+        return;
+      }
       if (!res?.ok || !res?.threadId) {
         errMsg = "群聊会话没起来";
         failed.push(`${partner.name}：${errMsg}`);
