@@ -364,8 +364,15 @@ export function createTeamPopoutWindow(): { ok: boolean; focused: boolean } {
     process.platform === "win32" ? "icon.ico" : "icon.png",
   );
   const win = new BrowserWindow({
-    width: 980,
-    height: 720,
+    /* ⛔ 11-09 用户：「工作伙伴的群聊弹窗默认太小了，做成跟主界面尺寸一样大」。
+       ⇒ 以**主窗口当前尺寸**为默认；主窗口不可用才退回 1280×800（主窗口默认尺寸）。
+       ⛔ 云仓这份 window-factory 有自己的 headless 改动（它也导出 isPopoutWindowPending），
+          ⛔ 不要再整文件从主仓覆盖；主窗走本文件已有的 mutableState 访问器（第 35 行同款）。 */
+    ...(() => {
+      const alive = mutableState.mainWindow;
+      const usable = alive && !alive.isDestroyed();
+      return { width: usable ? alive.getBounds().width : 1280, height: usable ? alive.getBounds().height : 800 };
+    })(),
     minWidth: 560,
     minHeight: 460,
     resizable: true,

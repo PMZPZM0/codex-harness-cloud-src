@@ -32,8 +32,12 @@ if (existsSync(join(ROOT, "src", "features", "team-office"))) {
     const viewPath = join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx");
     const viewSrc = existsSync(viewPath) ? readFileSync(viewPath, "utf8") : "";
     /* ⛔ 新判据：**组件不许自己拉数据 / 订阅引擎**（这才是域组件的规矩）。
-       11-01：允许 petHide/petShow（预览期间隐藏置顶播报浮窗）—— 先摘掉再看还剩什么。 */
-    const viewNoPet = codeOnly(viewSrc).replace(/window\.codex\.pet(?:Hide|Show)\?\.\(\)/g, "");
+       11-01：允许 petHide/petShow（预览期间隐藏置顶播报浮窗）—— 先摘掉再看还剩什么。
+       11-09：`bce379041`（关闭预览不再重开用户关着的宠物）新增 `petSettingsGet` ——
+       它是**纯读**（只为判断"原本是否开着"，读的还是 pet 家族自己的设置），
+       与上面两条同属「预览期隐藏/恢复置顶浮窗」这一件事，⇒ 一并豁免。
+       ⛔ 放宽的只有 pet 家族；业务数据（teamThreadsMap / runningThreadIds）仍然不许拉。 */
+    const viewNoPet = codeOnly(viewSrc).replace(/window\.codex\.pet(?:Hide|Show|SettingsGet)\?\.\(\)/g, "");
     (!/window\.codex|teamThreadsMap\(|runningThreadIds/.test(viewNoPet) ? ok : fail)(
       "【154】⛔⛔ 预览是**纯 props 驱动**：不自己拉 IPC（成员状态由宿主归约后传入）"
     );
@@ -561,6 +565,8 @@ if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts")
         ok("【174】app:relaunch 用 spawn(execPath, argv.slice(1)) 显式重启（无头形态：app.relaunch 起不来）");
         (detached ? ok : fail)("【174】重启子进程必须 detached:true + unref()（否则旧进程退出会带走它）");
         (releaseFirst ? ok : fail)("【174】app:relaunch 先释放单实例锁再起新实例（否则新实例抢不到锁会自杀）");
+        /* ⛔ 11-06：ELECTRON_RUN_AS_NODE 在环境里时新实例以纯 Node 跑 ⇒ require("electron") 空
+           ⇒ 秒退（10-14 云助手实证）。spawn 形态必须显式剔除后再起。 */
         (/ELECTRON_RUN_AS_NODE/.test(relaunchBlock) ? ok : fail)(
           "【174】app:relaunch 起新实例前剔除 ELECTRON_RUN_AS_NODE（否则新实例以 Node 模式秒退）"
         );
@@ -568,6 +574,18 @@ if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts")
         (/(?:\bhost\.app|app)\.relaunch\(/.test(relaunchBlock) ? ok : fail)(
           "【174】app:relaunch 走朴素 host.app.relaunch()（窗口形态；无头形态须改 spawn —— 见⑤注释）"
         );
+        /* ⛔⛔ 11-06 用户实测「保存重启，应用关闭了，就没有自动启动」：
+           桌面版也用了单实例锁（main.ts 的 requestSingleInstanceLock）。relaunch 起的新进程
+           与旧进程并行一小段，旧进程还持锁 ⇒ 新实例拿到 false 直接退出 ⇒ 只剩「关掉」。
+           朴素形态也必须**先释放锁再 relaunch**。 */
+        const mainUsesLock = /requestSingleInstanceLock/.test(readFileSync(join(ROOT, "electron", "main.ts"), "utf8"));
+        if (mainUsesLock) {
+          const releaseAt = relaunchBlock.indexOf("releaseSingleInstanceLock");
+          const relaunchAt = relaunchBlock.search(/(?:\bhost\.app|app)\.relaunch\(/);
+          ((releaseAt >= 0 && relaunchAt > releaseAt) ? ok : fail)(
+            "【174】app:relaunch 先释放单实例锁再 relaunch（否则新实例抢不到锁会自杀）"
+          );
+        }
       }
     }
   }
