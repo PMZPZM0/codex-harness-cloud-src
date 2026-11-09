@@ -69,7 +69,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
+import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, planTalkCli, runTalkCliDirect, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -422,7 +422,7 @@ function resolveGroupTargets(
 }
 
 /** 派活的运行参数（输入框上选的模型/档位/沙箱/审批）。 */
-type DispatchParams = { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string };
+type DispatchParams = { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; /** 话题内派活：话题起点的原文（只进 prompt，⛔ 不落群消息）。 */ topicRoot?: string };
 
 /** 每次派活的生命周期回调（主进程用它广播进度，面板据此显示/收起「处理中」）。 */
 type DispatchPhase = (
@@ -489,6 +489,27 @@ async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: numb
       try { await server.request("thread/archive", { threadId: tid }); removed += 1; }
       catch { failed.push(tid); }
     }
+  }
+  /* ⛔⛔ 11-09 用户令：「删群时必须跟着删群里产生的子会话，这个联动必须加强」。
+     `thread/delete` 返回成功 ≠ 真的没了（引擎侧正被占用 / 墓碑延迟 / 刚 rename 过的竞态，
+     都会出现"调用没抛错，但列表里还挂着"）。⇒ 删完**统一复核一次**：
+       仍在 `thread/list`（含归档）里出现的，一律记进 failed —— 台账因此保留，
+       下次启动的 `healOrphanTalkThreads` 会再试，而不是让它们变成找不到出处的孤儿会话说。
+     ⛔ 复核本身失败**不改变结论**（宁可留台账下次再试，也不要谎报已删干净）。 */
+  if (failed.length < threadIds.length) {
+    try {
+      const alive = new Set<string>();
+      for (const archived of [false, true]) {
+        const res = (await server.request("thread/list", { limit: 500, archived })) as { data?: Array<{ id?: unknown }> } | null;
+        for (const row of res?.data ?? []) {
+          const id = String((row as { id?: unknown } | null)?.id ?? "");
+          if (id) alive.add(id);
+        }
+      }
+      for (const tid of [...new Set(threadIds)].filter(Boolean)) {
+        if (alive.has(tid) && !failed.includes(tid)) failed.push(tid);
+      }
+    } catch { /* 复核失败：保持原结论 */ }
   }
   return { removed, failed };
 }
@@ -632,7 +653,54 @@ async function runDispatchRounds(
         fromTalk,
         bodyText,
         readGroupHistory(TALK_HISTORY_LIMIT),
+        /* ⛔ 11-09 用户令：「里面的 agent 必须知道自己在话题里面」——
+           话题内派活带 root 原文，prompt 里就会有一段「你在话题里 + 重要内容怎么汇报到群主流」。 */
+        params.topicRoot ? { rootText: String(params.topicRoot) } : null,
       );
+      /* ⛔⛔ 11-09 用户令「必须要真的 cli 智能体」：CLI 成员接真链路 ——
+         角色提示词（命令引擎去跑本机 bin / 没装就如实报没装）拼在输入最前，
+         shell 环境（PATH + 供应商/Key/模型）注入会话，子进程才真的拿得到 CLI 与配置。
+         ⛔ 非 CLI 成员 planTalkCli 返回 null，完全走旧路径。 */
+      const cliPlan = await planTalkCli(partner as TalkMember);
+      /* ⛔⛔ 11-09 用户令「直接本地 CLI 回复，不要转交/代跑」：CLI 成员**完全绕过引擎会话** ——
+         群消息直接喂本机 CLI 的单轮非交互命令，CLI 的 stdout 就是这位成员的群回复；
+         没装就如实回「本机没有安装 X + 安装入口」，绝不拿主会话模型顶替。
+         ⛔ 非 CLI 成员 cliPlan=null，走下面旧的引擎会话路径，零影响。 */
+      if (cliPlan) {
+        const liveId = `cli:${group.id}:${partner.id}`;
+        options.onPhase?.("started", partner, {});
+        broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveId, runId, at: Date.now() } as never);
+        const res = cliPlan.installed
+          ? await queueTalkDelivery(group.id, partner.id, () => runTalkCliDirect(cliPlan.cli, String(bodyText ?? "").trim() || query, {
+            cwd: group.workspace || undefined,
+            shellEnv: cliPlan.shellEnv,
+            onDelta: (text) => broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveId, runId, text, at: Date.now() } as never),
+          }))
+          : { ok: true, text: cliPlan.text };
+        chars = query.length + res.text.length;
+        const clearedDuringRun = (groupClearedAt.get(group.id) ?? 0) > clearedMark;
+        let wrote: { ok: boolean; error?: string } = { ok: true };
+        if (!clearedDuringRun) {
+          wrote = await appendMessageTo(group.id, {
+            authorId: partner.id,
+            authorKind: "bot",
+            senderKind: "member",
+            /* 合成 id：CLI 直跑没有引擎会话；用 `cli:` 前缀让渲染层知道"无来源会话/无回合"。 */
+            threadId: `cli:${group.id}:${partner.id}`,
+            text: res.text || "（CLI 没有输出）",
+            via: caller ? { memberId: caller.id, name: caller.name } : null,
+            runId,
+            runFirst: true,
+            summary: true,
+          });
+        }
+        wroteMessage = !clearedDuringRun && Boolean(wrote.ok);
+        okFlag = Boolean(wrote.ok) && res.ok;
+        if (!wrote.ok) { errMsg = wrote.error || "产出没能写进群聊记录"; failed.push(`${partner.name}：${errMsg}`); }
+        broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveId, runId, at: Date.now() } as never);
+        options.onPhase?.("finished", partner, { ok: okFlag, error: errMsg || undefined, threadId: "" });
+        return;
+      }
       /* ⛔ 保留团 → 群的绑定（团成员若仍由 team_member_invoke 起，产出照样落群）。 */
       if (partner.targetKind === "team") bindTeamGroup(partner.targetKey, group.id);
       /* ⛔ 11-08 用户实测「过程半天才出来」：成员会话建立（thread/start+改名）本身要 1~3 秒，
