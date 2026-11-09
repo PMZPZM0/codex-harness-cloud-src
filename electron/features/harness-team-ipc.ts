@@ -610,12 +610,12 @@ async function runDispatchRounds(
     /* 落盘那一刻是否已把用量写进消息（false ⇒ 收尾再补一次，防事件卡在 append 与 finally 之间）。 */
     let usageWritten: boolean | null = null;
     let wroteMessage = false;
-    /* ⛔⛔ 11-08 用户令「正文输出一次就发一次新消息」「跟主对话框实时同步」：
-       过程模式按**每条 agentMessage 完成**立即落一条群消息；该轮第一条带 runFirst（过程大折叠），
-       最后一条带 summary（文件卡/用量）。⛔ 占位模式不启用（它承诺不展示过程与流式正文）。 */
-    const streamingEnabled = String((group as unknown as { replyMode?: string }).replyMode ?? "process") === "process";
-    const streamedRows: Array<{ id: string; text: string }> = [];
-    let streamChain: Promise<unknown> = Promise.resolve();
+    /* ⛔⛔ 11-09 用户令（两条：「现在每个正文输出一个新消息有点刷屏」「图二效果一模一样，直接把主对话那一套接过来」）：
+       撤回 11-08 的「每条 agentMessage 落一条群消息」——**一个回合只落一条成品消息**（= 主对话的一轮），
+       过程/正文/文件卡由渲染层按**回合**整体渲染（群视图直接复用主对话的 TurnView）。
+       ⛔ 运行中仍然逐字上屏（走 group-talk-live delta 的流式卡），只是不再把每条正文写成独立群消息。 */
+    /* 本轮开始时的「清空代际」：中途用户清空聊天记录 ⇒ 后续落盘全部丢弃（与收尾落盘同一判据）。 */
+    const clearedMark = groupClearedAt.get(group.id) ?? 0;
     try {
       /* ⛔⛔ 11-07 用户令：群聊走**独立通道**。这里给成员的是「群里有人对你说了一句」，
          不是任务派发：不注入 groupContextBlock 的协作协议、不调 runDelegatedTask、
@@ -638,14 +638,16 @@ async function runDispatchRounds(
          这段时间界面原来什么都不显示。⇒ 「运行中」先报（busy 立刻亮），threadId 由 group-talk-live 补。 */
       options.onPhase?.("started", partner, {});
       /* ⛔⛔ 11-08 用户实测（「谁在运行一点反馈都没有」「回复了就要立刻看到」）：
-         群聊回合也要像主对话一样**逐字上屏**。先解析出这位成员的会话（runTalkTurn 会命中同一本台账复用），
-         再订阅它的 agentMessage 增量，广播给渲染层（流式卡 + 过程块）。 */
+         群聊回合也要像主对话一样**逐字上屏**。先**只读探测**这位成员的会话（⛔ 绝不在这里新建 ——
+         探测式新建正是"同一位成员两条会话"的来源），再订阅它的 agentMessage 增量。
+         会话正忙（上一轮还没跑完）时先不挂：排队后的那一轮会自己把内容发进群。 */
       const liveThread = await peekTalkThread(group.id, partner as TalkMember, {
         sandbox: params.sandbox,
         approvalPolicy: params.approvalPolicy,
       }).catch(() => null);
-      /* ⛔ 11-08 用户令「跟主对话实时同步」：新建会话（首条消息）时 peek 拿不到 threadId，
-         原来整轮都没有流式事件（只能收尾一次性落盘）⇒ 在「探测空闲」与「队列内 ensure 完」两处挂监听。 */
+      /* ⛔⛔ 11-08 用户令「跟主对话实时同步」：监听器必须在**会话已确定**时就挂上 ——
+         新建会话（首条消息）时 peek 拿不到 threadId，原来整轮都没有流式事件（只能收尾一次性落盘）。
+         ⇒ `attachLive(tid)` 在「探测到空闲」与「队列内 ensure 完」两处调用。 */
       const attachLive = (tid: string) => {
         if (!tid || liveThreadId) return;
         liveThreadId = tid;
@@ -666,33 +668,15 @@ async function runDispatchRounds(
           if (method === "item/started") {
             const item = p.item ?? null;
             if (item && String(item.type ?? "") === "agentMessage") {
+              /* 新一条正文开始：让流式卡清空（否则整回合的文字会叠在卡里和已落盘消息重复）。 */
               broadcastHarnessEvent({ type: "group-talk-live", phase: "item-start", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, itemId: String(item.id ?? ""), at: Date.now() } as never);
             }
+            /* 继续走下面 tick（过程块要跟着刷新） */
           }
           if (method === "item/completed") {
             const item = p.item ?? null;
             if (item && String(item.type ?? "") === "agentMessage") {
-              const text = String(item.text ?? "").trim();
               const itemId = String(item.id ?? "");
-              if (text && streamingEnabled) {
-                streamChain = streamChain.then(async () => {
-                  if ((groupClearedAt.get(group.id) ?? 0) > clearedMark) return;
-                  if (streamedRows.some((row) => row.text === text || textsAreNearDuplicate(row.text, text))) return;
-                  const first = streamedRows.length === 0;
-                  const res = await appendMessageTo(group.id, {
-                    authorId: partner.id,
-                    authorKind: "bot",
-                    senderKind: "member",
-                    threadId: liveThreadId,
-                    text,
-                    via: caller ? { memberId: caller.id, name: caller.name } : null,
-                    runId,
-                    ...(first ? { runFirst: true } : {}),
-                  }).catch(() => null);
-                  const rowId = String((res as { entry?: { id?: unknown } } | null)?.entry?.id ?? "");
-                  if (rowId) streamedRows.push({ id: rowId, text });
-                }).catch(() => undefined);
-              }
               broadcastHarnessEvent({ type: "group-talk-live", phase: "item-done", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, itemId, at: Date.now() } as never);
             }
           }
@@ -712,37 +696,11 @@ async function runDispatchRounds(
         server.on("event", talkDelta);
       };
       if (liveThread && !liveThread.busy) attachLive(liveThread.threadId);
-            if (liveThreadId) {
-        broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
-        let lastTickAt = 0;
-        talkDelta = (event: any) => {
-          if (event?.kind !== "notification") return;
-          const p = event.params ?? {};
-          if (String(p.threadId ?? "") !== liveThreadId) return;
-          const method = String(event.method ?? "");
-          if (method === "thread/tokenUsage/updated") {
-            const hit = usageFromTokenEvent(event);
-            if (hit) liveUsage = hit.usage;
-            return;
-          }
-          if (method === "item/agentMessage/delta") {
-            const delta = String(p.delta ?? "");
-            if (delta) broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, text: delta, at: Date.now() } as never);
-            return;
-          }
-          /* ⛔ 11-08 用户令「跟主对话完全一致」：过程块不再 2.5s 轮询 ——
-             成员回合里任何 item/turn 事件都通知渲染层重拉（200ms 合并，防工具输出高频刷屏）。 */
-          if (!/^item\//.test(method) && !/^turn\//.test(method)) return;
-          const now = Date.now();
-          if (now - lastTickAt < 200) return;
-          lastTickAt = now;
-          broadcastHarnessEvent({ type: "group-talk-tick", groupId: group.id, memberId: partner.id, threadId: liveThreadId, method, at: now } as never);
-        };
-        server.on("event", talkDelta);
-      }
       /* ⛔ 11-08 审查：模型 / 沙箱 / 审批档原来在这里被丢掉（只传了 effort）⇒ 群输入框三个控件全是死的。
          群聊会话与主对话同口径：模型逐回合下发、沙箱与审批档建/复会话时落、审批档再逐回合兜一次。 */
-      const clearedMark = groupClearedAt.get(group.id) ?? 0;
+      /* ⛔⛔ 11-08 用户令「查一下 resume 失败后重复会话的问题」：同一成员的消息**串行投递** ——
+         引擎不允许 resume/并行回合正在跑的会话，旧代码撞上就新建一条（重复会话）或直接失败。
+         排队后第二条会等第一条跑完再 ensure + turn；超时也从**真正开跑**时算（⛔ 不含排队等待）。 */
       const res = await queueTalkDelivery(group.id, partner.id, async () => {
         /* ⛔ 11-08 用户实测（点停止报「还没有它的会话」）：排队期间用户点了停止 ⇒
            建会话/开跑之前就放弃（别发出那条不该存在的消息）。 */
@@ -764,18 +722,17 @@ async function runDispatchRounds(
           }
         }
         return withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
-        cwd: group.workspace || undefined,
-        groupName: group.name,
-        /* ⛔ 探测到空闲会话就交给它，runTalkTurn 不再 resume 第二遍。 */
-        ...(liveThreadId ? { threadId: liveThreadId } : {}),
-        ...(params.model ? { model: params.model } : {}),
-        ...(params.effort ? { effort: params.effort } : {}),
-        ...(params.sandbox ? { sandbox: params.sandbox } : {}),
-        ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
-      }), partner.name);
+          cwd: group.workspace || undefined,
+          groupName: group.name,
+          /* ⛔ 探测到空闲会话就交给它，runTalkTurn 不再 resume 第二遍。 */
+          ...(liveThreadId ? { threadId: liveThreadId } : {}),
+          ...(params.model ? { model: params.model } : {}),
+          ...(params.effort ? { effort: params.effort } : {}),
+          ...(params.sandbox ? { sandbox: params.sandbox } : {}),
+          ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
+        }), partner.name);
       });
       if ((res as { cancelled?: boolean } | null)?.cancelled) {
-        /* 用户点了停止：整轮放弃，按正常收尾处理（不写失败、不落盘）。 */
         options.onPhase?.("finished", partner, { ok: true });
         return;
       }
@@ -788,29 +745,34 @@ async function runDispatchRounds(
       threadId = res.threadId;
       /* 排队后才知道真实 threadId 的那一轮：同样摘掉上一轮的收尾标记（见上面的注释）。 */
       finishedTalkRuns.delete(threadId);
-      /* 排队期间群被删 ⇒ 刚建出来的会话没人要了：删掉它并放弃落盘（别留孤儿「伙伴」会话）。 */
+      /* 排队期间群被删 ⇒ 刚建出来的会话没人要了：删掉它、清台账并放弃落盘
+         （⛔ 只删引擎会话会留下一条指向死会话的台账 ⇒ 侧栏还挂「伙伴」标签）。 */
       if (!readStore().groups.some((g) => String(g.id) === String(group.id))) {
         void deleteEngineThreads([threadId]);
+        if (forgetTalkThreads([threadId])) broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
         return;
       }
       const output = String(res.text ?? "").trim();
       chars = query.length + output.length;
-      /* ⛔ 先把本轮已完成的流式消息全部落完，再决定收尾要不要补一条汇总。 */
-      await streamChain;
       /* ⛔ 清空发生在这一回合开始之后 ⇒ 只结算、不落盘（运行照跑完、账照记，11-06 口径）。 */
       const clearedDuringRun = (groupClearedAt.get(group.id) ?? 0) > clearedMark;
-      const spokenDuringRun = (readStore().messages?.[group.id] ?? [])
+      /* ⛔ 11-08 用户实测（「成员消息为啥重复」）：成员一回合里既调了 group_say（已把回复发进群）、
+         又写了最终回复 —— 两条都落盘就是群里两份。这一回合已通过工具说过话、且最终回复与它高度重合 ⇒ 不再重复落盘。 */
+      const spokenRows = (readStore().messages?.[group.id] ?? [])
         .filter((row) => String((row as { authorId?: unknown })?.authorId ?? "") === partner.id && Number((row as { at?: unknown })?.at ?? 0) >= startedAt)
-        .map((row) => String((row as { text?: unknown })?.text ?? ""));
-      const duplicated = spokenDuringRun.some((text) => textsAreNearDuplicate(text, output));
+        .map((row) => ({ id: String((row as { id?: unknown })?.id ?? ""), text: String((row as { text?: unknown })?.text ?? "") }));
+      const duplicateRow = spokenRows.filter((row) => row.text && textsAreNearDuplicate(row.text, output)).at(-1) ?? null;
+      const duplicated = Boolean(duplicateRow);
+      /* 用量：本轮 live 捕获优先；没赶上就用常驻缓存（限本轮之后）—— 都拿不到就不写页脚。 */
       const usageForMessage = liveUsage ?? talkUsageFor(threadId, startedAt);
       let wrote: { ok: boolean; error?: string } = { ok: true };
       if (clearedDuringRun) {
         wrote = { ok: true };
-      } else if (duplicated) {
-        const last = streamedRows[streamedRows.length - 1];
-        if (last?.id) {
-          const patched = await patchTalkMessageRow(group.id, last.id, {
+      } else if (duplicateRow) {
+        /* 最终回复已经通过 group_say 落过 ⇒ 不再发第二条；把它标成 summary 并回填用量
+           （文件卡 / 页脚挂在收尾那条上 = 一轮的唯一一条）。 */
+        if (duplicateRow.id) {
+          const patched = await patchTalkMessageRow(group.id, duplicateRow.id, {
             summary: true,
             ...(usageForMessage ? { usage: usageForMessage } : {}),
           });
@@ -824,8 +786,9 @@ async function runDispatchRounds(
           threadId,
           text: output || "（没有返回文本内容）",
           via: caller ? { memberId: caller.id, name: caller.name } : null,
+          /* 一个回合只落这一条（收尾），渲染层按回合渲染过程 / 正文 / 文件卡。 */
           runId,
-          ...(streamedRows.length === 0 ? { runFirst: true } : {}),
+          runFirst: true,
           summary: true,
           ...(usageForMessage ? { usage: usageForMessage } : {}),
         });
