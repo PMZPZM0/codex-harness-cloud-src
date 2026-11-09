@@ -1414,7 +1414,9 @@ export function TeamGroupView({
                   /* ⛔ 11-09 用户令「图二效果一模一样，直接把主对话那一套接过来」：
                      一个回合只落一条群消息 ⇒ 正文 / 过程 / 文件卡 / 页脚**整体**交给主对话的 TurnView。
                      占位模式仍只给正文（该模式承诺不展示过程）。 */
-                  const useTurnView = isBot && effectiveReplyMode !== "placeholder" && row.kind !== "card";
+                  /* ⛔ 11-09：CLI 直跑消息没有引擎回合（cli: 合成 id）⇒ 不能走 TurnView（拉不到回合 → 只剩正文、页脚/追问全空）。*/
+                  const useTurnView = isBot && effectiveReplyMode !== "placeholder" && row.kind !== "card"
+                    && !String(row.threadId ?? "").startsWith("cli:");
                   /* ⛔ 正文永远正常显示（用户：「只有正文正常消息发送出来」）；
                      运行过程另起一个折叠块挂在正文下面，默认收起。 */
                   const quote = isBot ? quotes.get(row.key) : undefined;
