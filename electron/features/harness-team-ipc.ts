@@ -743,6 +743,7 @@ async function runDispatchRounds(
         broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveId, runId, at: Date.now() } as never);
         const res = cliPlan.installed
           ? await queueTalkDelivery(group.id, partner.id, () => runTalkCliDirect(cliPlan.cli, String(bodyText ?? "").trim() || query, {
+            scopeId: `${group.id}::${partner.id}`,
             cwd: group.workspace || undefined,
             shellEnv: cliPlan.shellEnv,
             onDelta: (text) => broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveId, runId, text, at: Date.now() } as never),
@@ -751,7 +752,9 @@ async function runDispatchRounds(
         chars = query.length + res.text.length;
         const clearedDuringRun = (groupClearedAt.get(group.id) ?? 0) > clearedMark;
         let wrote: { ok: boolean; error?: string } = { ok: true };
-        if (!clearedDuringRun) {
+        /* ⛔ 跑到一半群被解散：不再往已删除的群写孤儿消息。 */
+        const groupGone = !readStore().groups.some((g) => String(g.id) === String(group.id));
+        if (!clearedDuringRun && !groupGone) {
           wrote = await appendMessageTo(group.id, {
             authorId: partner.id,
             authorKind: "bot",
