@@ -21,6 +21,7 @@ import type { TeamCreateInput } from "./12-team-create";
 import { TeamGroupView } from "./04-team-group-view";
 import { teamChatOpen, useTeamChatOpen } from "./00-open-store";
 import { useTeamGroups } from "./02-team-store";
+import { TeamCloseGuard } from "./30-team-close-guard";
 import { isTeamPopoutWindow } from "../../lib/team-popout";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 import type { HarnessAppApi } from "../app-state";
@@ -361,6 +362,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
       )}
 
       {/* 新建群弹窗：覆盖整块面板（不离开群聊上下文），ESC 只关这一层 */}
+      <TeamCloseGuard busyByGroup={busyByGroup} liveByGroup={liveByGroup} />
       <TeamCreateDialog
         open={createOpen}
         count={groups.length}
