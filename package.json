@@ -1,6 +1,6 @@
 {
   "name": "codex-assistant",
-  "version": "0.0.52",
+  "version": "0.0.53",
   "private": true,
   "description": "Codex Assistant — cloud-connected local assistant (independent product; NOT Codex Harness Desktop)",
   "main": "dist-electron/main.js",
@@ -55,7 +55,7 @@
     "jimp": "^1.6.1",
     "katex": "^0.19.1",
     "koffi": "^3.3.7",
-    "lucide-react": "^1.70.0",
+    "lucide-react": "^1.71.0",
     "mermaid": "^12.3.0",
     "pixi.js": "^8.22.0",
     "qrcode": "^1.5.4",
