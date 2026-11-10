@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（117 个能力域 / 680 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（117 个能力域 / 671 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -513,9 +513,9 @@ RPA 配方（录制好的桌面自动化流程）
 收藏夹（收藏消息/片段，一键再发送）
 通道：favorites:list, favorites:add, favorites:update, favorites:delete, favorites:touch, favorites:to-memory
 
-### media-desk（10 通道）
+### media-desk（1 通道）
 自媒体工作台（设置 → 能力与内容，11-09）：灵感墙 → 一键成稿 → 本地排期 → 数据记录 → 写作风格；生图走 OpenAI 兼容接口。⛔ 排期只是本地计划、不自动发布；数据是手动记录，不接平台 API
-通道：media-desk:state, media-desk:add, media-desk:update, media-desk:delete, media-desk:undo, media-desk:settings, media-desk:harvest, media-desk:plan, media-desk:produce, media-desk:chat
+通道：media-desk:endpoint
 
 ### history（1 通道）
 跨会话历史搜索（全文检索会话与消息，命中按会话分组）
