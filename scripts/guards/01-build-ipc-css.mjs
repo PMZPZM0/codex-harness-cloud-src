@@ -318,10 +318,16 @@ if (!mainSrc || !preloadSrc) {
         const isCloudTheme = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).name === "codex-assistant";
         const themeOk = isCloudTheme
           ? (/nativeTheme\.themeSource = dark \? "dark" : "light"/.test(mainTheme)
-             && /broadcastToAll\("theme:changed"/.test(mainTheme))
-          : (/DARK_THEME_IDS = new Set\(\["dark", "obsidian"\]\)/.test(mainTheme)
+             && /broadcastToAll\("theme:changed"/.test(mainTheme)
+             && /DARK_THEME_IDS = new Set\(\["dark", "obsidian", "midnight", "forest"\]\)/.test(mainTheme))
+          : (/DARK_THEME_IDS = new Set\(\["dark", "obsidian", "midnight", "forest"\]\)/.test(mainTheme)
              && /broadcastToAll\("theme:changed", nextTheme\)/.test(mainTheme));
         (themeOk ? ok : fail)("【2】主进程按注册表判深色 + 广播主题 id（副窗不退回旧黑夜）");
+        /* 11-09 用户令「两边各 4 个」：浅色 4（白天+暖纸/青瓷/樱粉）深色 4（黑夜+曜石+午夜/墨绿）。 */
+        const newThemeIds = ["paper", "mint", "sakura", "midnight", "forest"];
+        (newThemeIds.every((id) => themesSrc.includes(`id: "${id}"`))
+          && newThemeIds.every((id) => baseCssTheme.includes(`:root[data-theme="${id}"]`))
+          && /value === "midnight" \|\| value === "forest"/.test(themesSrc) ? ok : fail)("【2】主题扩到浅4/深4：新 id 注册+CSS 变量块+深色判定齐备");
       }
       /* ── 任务栏图标 / AUMID（09-25 实测改判，旧判据已证伪）──
          ⛔ dev **不许**设 AUMID。Windows 仅在能把 AUMID 解析到"注册了同一 AUMID 的快捷方式"时才用

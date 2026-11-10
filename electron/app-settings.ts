@@ -75,7 +75,7 @@ export type AppSettings = {
    *  露出一圈白底再被纠正（独立会话弹窗最明显）。
    *  （10-31 起窗口钮自绘，标题栏符号色不再是主进程的事 —— CSS 变量直接跟着主题走。）
    *  由 theme:apply 顺带写入，启动早期（窗口创建前）同步读回并应用。 */
-  theme?: "light" | "dark" | "obsidian";
+  theme?: "light" | "paper" | "mint" | "sakura" | "dark" | "obsidian" | "midnight" | "forest";
   /**
    * 被用户停用的宿主域（10-04 阶段 6）。
    *

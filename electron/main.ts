@@ -1053,12 +1053,19 @@ ipcMain.handle("theme:apply", (event, theme: string) => {
     themeDiag("  → 忽略（无头形态下 file:// 窗口不得驱动全局窗口外观）");
     return { ok: false, ignored: true };
   }
-  const nextTheme = theme === "dark" || theme === "obsidian" || theme === "light" ? theme : "light";
-  const dark = nextTheme !== "light";
+  /* 11-09 主题扩到浅4/深4（与主仓 themes.ts 同口径）：新浅色 id 不当深色、新深色 id 要判深色。 */
+  const LIGHT_THEME_IDS = new Set(["light", "paper", "mint", "sakura"]);
+  const DARK_THEME_IDS = new Set(["dark", "obsidian", "midnight", "forest"]);
+  const THEME_WINDOW_BG: Record<string, string> = {
+    light: "#ffffff", paper: "#faf6ef", mint: "#f2f7f4", sakura: "#fbf4f6",
+    dark: "#1b1b1a", obsidian: "#0b0d10", midnight: "#0d1220", forest: "#0c1512",
+  };
+  const nextTheme = (LIGHT_THEME_IDS.has(theme) || DARK_THEME_IDS.has(theme) ? theme : "light") as "light" | "paper" | "mint" | "sakura" | "dark" | "obsidian" | "midnight" | "forest";
+  const dark = DARK_THEME_IDS.has(nextTheme);
   appThemeDark = dark;
   setAppThemeDark(dark);
   nativeTheme.themeSource = dark ? "dark" : "light";
-  applyWindowChrome(dark, nextTheme === "obsidian" ? "#0b0d10" : dark ? "#1b1b1a" : "#ffffff");
+  applyWindowChrome(dark, THEME_WINDOW_BG[nextTheme] ?? (dark ? "#1b1b1a" : "#ffffff"));
   /* 顺带落盘（10-16）：下次启动在窗口创建前就能读回，标题栏符号色不用等渲染层上报。
      ⛔ fire-and-forget：写盘失败不能影响主题切换本身（最坏结果 = 下次启动先跟随系统）。 */
   void saveAppSettings(app.getPath("userData"), { theme: nextTheme }).catch(() => undefined);
