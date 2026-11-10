@@ -296,7 +296,9 @@ w.postMessage({id:1,op:"list",root});
   // 更新说明：应用内「发现新版本」弹窗的内容来源，缺了必须直接失败
   (release.includes("docs/releases/v${VERSION}.md") && release.includes("缺少更新说明") ? ok : fail)("【29】release.yml 强制要求 docs/releases/v<版本>.md（缺则发布失败，不当静默无说明发布）");
   const currentNotes = join(ROOT, "docs", "releases", `v${pkg29.version}.md`);
-  (existsSync(currentNotes) ? ok : fail)(`【29】当前版本 ${pkg29.version} 的更新说明已在位（docs/releases/v${pkg29.version}.md）`);
+  /* 11-09：云侧发版说明按工作流要求改名为 `cloud-v<版本>.md`（f1ae7769），两种命名都认。 */
+  const currentNotesCloud = join(ROOT, "docs", "releases", `cloud-v${pkg29.version}.md`);
+  (existsSync(currentNotes) || existsSync(currentNotesCloud) ? ok : fail)(`【29】当前版本 ${pkg29.version} 的更新说明已在位（docs/releases/v${pkg29.version}.md 或 cloud-v${pkg29.version}.md）`);
 
   // tag ⇄ 版本号：错配会让 Release 的 tag 与包内容对不上（用户装了 0.0.19 却被提示 0.0.18）。
   // ⛔ 同样锚定实际条件表达式（第一版只查 GITHUB_REF_NAME 与 `!= "v${VERSION}"` 两个片段，

@@ -76,6 +76,7 @@ const ScreenshotSettingsSection = lazy(() => import("../../../../settings-screen
 const FavoritesSettingsSection = lazy(() => import("../../../../settings-favorites").then((m) => ({ default: m.FavoritesSettingsSection })));
 /* 桌面宠物页（09-30）：官方 Codex 宠物格式的开关 / 选择 / 目录管理 */
 const ComponentLibrarySection = lazy(() => import("../../../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
+const MediaDeskSection = lazy(() => import("../../../../media-desk").then((m) => ({ default: m.MediaDeskPage })));
 const PetSettingsSection = lazy(() => import("../../../../settings-pet/PetSettingsSection").then((m) => ({ default: m.PetSettingsSection })));
 const AppLockSettingsSection = lazy(() => import("../../../../settings-app-lock/AppLockSettingsSection").then((m) => ({ default: m.AppLockSettingsSection })));
 /* 人格市场页（10-01）：SkillHub 人格（skillhub.cn/soul），应用后下一个新会话生效 */
@@ -504,6 +505,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */
     pet: { render: () => <PetSettingsSection onNotice={setNotice} /> },
     "component-library": { render: () => <ComponentLibrarySection /> },
+    "media-desk": { render: () => <MediaDeskSection /> },
     "soul-market": { render: () => <SoulMarketSection onNotice={(m) => setNotice(m)} /> },
     "knowledge-base": { render: () => <KnowledgeBaseSection workspace={workspace} setNotice={(m) => setNotice(m)} /> },
     "app-lock": { render: () => <AppLockSettingsSection onNotice={setNotice} /> },
