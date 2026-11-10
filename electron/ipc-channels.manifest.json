@@ -989,9 +989,9 @@
     {
       "name": "applyCliSync",
       "channel": "cliagents:sync-apply",
-      "paramsImpl": "input?: { scope?: string }",
-      "paramsDecl": "input?: { scope?: string }",
-      "returns": "Promise<{ ok: boolean; detail?: string; results?: Array<{ name: string; ok: boolean; detail: string }> }>",
+      "paramsImpl": "input?: { scope?: string; targetId?: string }",
+      "paramsDecl": "input?: { scope?: string; targetId?: string }",
+      "returns": "Promise<{ ok: boolean; name?: string; detail?: string; results?: Array<{ name: string; ok: boolean; detail: string }> }>",
       "invokeArgs": "input",
       "cast": null,
       "note": "11-10 同步弹窗：scope=claude 只写 ~/.claude/settings.json（含 Key，用户显式点）；其它走自动同步"
