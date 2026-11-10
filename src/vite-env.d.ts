@@ -392,6 +392,30 @@ type FavoriteItem = {
 };
 type FavoriteDeleteResult = { items: FavoriteItem[]; removed: number };
 
+/* ── 自媒体工作台（11-09）类型面：与 electron/features/media-desk/store.ts 同形 ─────────── */
+type MediaDeskPlan = { title: string; angle: string; points: string[]; coverText: string; shots: Array<{ text: string }> };
+type MediaDeskSettings = {
+  assistant: { baseUrl: string; model: string; apiKey: string };
+  image: { baseUrl: string; model: string; apiKey: string; size: string; quality: string };
+  imageCount: number;
+  shotCount: number;
+  language: string;
+};
+type MediaDeskState = {
+  inspirations: Array<{ id: string; text: string; url?: string; title?: string; desc?: string; image?: string; tags: string[]; createdAt: number }>;
+  posts: Array<{ id: string; title: string; platform: string; kind: string; status: string; inspirationIds: string[]; styleId?: string; plan?: MediaDeskPlan | null; script: string; cover?: string; images: Array<{ id: string; label: string; path: string }>; createdAt: number; updatedAt: number }>;
+  schedules: Array<{ id: string; postId?: string; title: string; when: number; platform: string; status: string }>;
+  styles: Array<{ id: string; name: string; description: string; prompt: string; createdAt: number }>;
+  metrics: Array<{ id: string; postId?: string; date: string; views: number; likes: number; comments: number; shares: number; note?: string }>;
+  settings: MediaDeskSettings;
+  hasAssistantKey?: boolean;
+  hasImageKey?: boolean;
+};
+type MediaDeskSettingsPatch = Partial<MediaDeskSettings> & {
+  assistant?: Partial<MediaDeskSettings["assistant"]>;
+  image?: Partial<MediaDeskSettings["image"]>;
+};
+
 /* 输入框竖条 / 密码本 / 开发日记 / 扩展目录的类型统一定义在 src/lib/rail-ipc-types.d.ts（跨进程单一来源）。 */
 
 /** 写入记忆金字塔的层：user=L0 用户档案 · project=L1 项目记忆 · background=L3 项目背景 · lessons=L2 纪律 */
