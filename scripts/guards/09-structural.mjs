@@ -1545,7 +1545,7 @@ export async function run() {
         "scripts/guards/09-structural.mjs": 1762,   // 11-09 +1（实测净行）：【266】白名单补 04-cli.ts；   // 11-08 +1（实测）：补 headless.ts 登记 + 按实测回填,   // 11-08 +1（实测净行）：棘轮名单新增 01-sidebar-shell.tsx 一行；此前 1755 = 11-06 +2（实测净行）：棘轮名单登记 runner.ts / 22-boss-groups.mjs 两行；此前 1752 = 10-28 +14（实测净行 1736→1750）＝ 【270】真跑段收尾：留挂载句柄 + finally 里卸载所有已挂载域（真跑 mountEnabledDomains 会把每个域的 setup 都执行 —— remote 起 HTTP / scheduler 起 tick / codex 拉引擎，不收拾则守卫永不退出且每跑一次漏一个 codex.exe 握着会话 writer）；此前 1736 = 10-28 净 0（实测净行）＝ 【101】【128】【129】改读设置台渲染面（readSettingsSurface：注册表 + pages/**），拆页后按 id/返回条断言不假红；同时删掉两处只剩一次读取的路径常量；10-21 新登记 04 棘轮一行；本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；+1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据；10-07 夜 +45（1681→1690→1735，**两次实测**）＝ ① +9 = 【100】补统一记忆（fabric）剥离的三条正例 + 一条负例 + 两个样例常量 + 一行读 memory-fabric 源（用户实测「项目记忆铺进气泡 + 同一条消息渲染两遍」的判据盲区）；② +36 = 【253】③ 打包白名单/读取路径两条 + 【268-c】同一 slot id 重复消费两条（含对照组）+ 复用【268-b】那趟扫描的 slotIdsOf 收集（用户实测「功能域全是 0」+「重复展示两次」两位数级事故，两条判据都是它们唯一的结构防线）
         "scripts/guards/11z-voice-call.mjs": 1232,   /* 11-11 按实测记账（+94 净行）：11-11 同步主仓语音批次 */    // 11-02 按实测记账（播报条宽度判据改锚到基础规则 + 本轮 4 行注释/判据，+5 净行）；⛔ 原为两条重复条目，已合并
         "src/features/team-office/office-screen.ts": 1407,   // 11-02 新登记（并行线 office 已提交文件，1407 行）；⛔ 应拆，登记只为让棘轮真实反映现状
-        "scripts/guards/12be-team-chat-ux.mjs": 1711,   // 11-12 实测：启动对账被打断的派活
+        "scripts/guards/12be-team-chat-ux.mjs": 1718,   // 11-12 实测：接力不串群
 
         "scripts/guards/13-drama-gen.mjs": 1070,
         "electron/features/boot.ts": 1190,   // 11-12 实测：启动对账被打断的派活
@@ -1558,7 +1558,7 @@ export async function run() {
         "src/features/drama-canvas/DramaCanvas.tsx": 928,   // 10-06 深夜 Round J +6 = 画布右键菜单加**视口钳制**（用户令「凡事弹窗类都要加自适应，不能被裁剪」）：坐标来自 clientX/Y，贴右/下边缘右键必被裁——Math.max(8, Math.min(…)) 两处
         "src/features/app-view/AppView/01-sidebar-shell.tsx": 1045,   // 11-12 实测：计划先行 + 不刷屏 + 反馈卡任务摘要
         "src/features/harness-team/04-team-group-view.tsx": 2011,   // 11-12 实测：管理员提醒 + 建群完成屏
-        "electron/features/harness-team-ipc.ts": 2221,   // 11-12 实测：启动对账被打断的派活
+        "electron/features/harness-team-ipc.ts": 2225,   // 11-12 实测：接力不串群
         "electron/features/dispatch-rpc.ts": 1007,   /* 11-11 新登记（实测净行）：产物归档工具分派 + 记忆工具按调用者身份传 seat */   /* 11-11 按实测记账（+292 净行）：11-11 任务账本 + 群头进度 */    // 11-09 按实测回填（含 CLI 真链路接线）；   // 11-09 审查按实测记账（停止请求残留/中枢名单串行化 + 相应断言）；此前   // 11-08 按实测记账（本线未改该文件：并行线「群消息用量页脚兜底」38d7e0e4e 增行后未记账，HEAD 上本就红）   // 11-08 按实测记账（净行）：并线 92bfeda83「事件驱动重拉（group-talk-tick）」把注册宿主推到 1064；⛔ 应拆
         "src/features/harness-team/03-team-settings.tsx": 1020,   // 11-12 实测：管理员=群级身份
         "electron/remote.ts": 1147,   // 11-06 +62（实测）：手机看屏（采集循环 / 租约 / 三个接口）   // 11-06 +1（实测）：事件缓冲改 createEventBuffer（seq 游标）   // 11-06 +25（实测）：/api/rpc 类型白名单（叶子模块 remote-rpc-types）+ 四个排队分支   // 10-31 按实测记账（手机端：移除拍照 / 思考历史顺序 / APK 0.1.16）；此前 906   // 10-30 按实测记账 905→906（本线未改本文件：并行线顶栏/远控在途改动）；
