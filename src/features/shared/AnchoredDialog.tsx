@@ -30,8 +30,15 @@ export function AnchoredDialogCard({ anchor, ariaLabel, width = 280, onClose, ch
     const centerX = anchor.left + anchor.width / 2;
     const centerY = anchor.top + anchor.height / 2;
     const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), Math.max(min, max));
+    /* 11-11 用户纠正：「要跟会话/项目这一行对上」——侧栏里的锚点优先**贴右侧**（和菜单同一列，
+       箭头左侧指回「⋯」）；主内容区里的按钮才优先上下弹。 */
+    const inSidebar = anchor.right <= 360;
+    /* 贴右侧时锚到**侧栏右缘**（不是按钮右缘）：按钮在侧栏里，直接用按钮右缘会让卡片压进侧栏。 */
+    const sidebar = inSidebar ? document.querySelector(".sidebar")?.getBoundingClientRect() ?? null : null;
+    const rightBase = sidebar ? Math.max(anchor.right, sidebar.right) : anchor.right;
     let side: Side = "top";
-    if (anchor.top - gap - height >= margin) side = "top";
+    if (inSidebar && rightBase + gap + width <= window.innerWidth - margin) side = "right";
+    else if (anchor.top - gap - height >= margin) side = "top";
     else if (anchor.bottom + gap + height <= window.innerHeight - margin) side = "bottom";
     else if (anchor.right + gap + width <= window.innerWidth - margin) side = "right";
     else side = "left";
@@ -44,7 +51,7 @@ export function AnchoredDialogCard({ anchor, ariaLabel, width = 280, onClose, ch
       top = side === "top" ? anchor.top - gap - height : anchor.bottom + gap;
       arrowX = clamp(centerX - left, 16, width - 16);
     } else {
-      left = side === "right" ? anchor.right + gap : Math.max(margin, anchor.left - width - gap);
+      left = side === "right" ? rightBase + gap : Math.max(margin, anchor.left - width - gap);
       top = clamp(centerY - height / 2, margin, window.innerHeight - height - margin);
       arrowY = clamp(centerY - top, 16, height - 16);
     }
