@@ -364,19 +364,22 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
       )}
 
       {/* 新建群弹窗：覆盖整块面板（不离开群聊上下文），ESC 只关这一层 */}
-      <TeamCloseGuard busyByGroup={busyByGroup} liveByGroup={liveByGroup} />
       <TeamCreateDialog
         open={createOpen}
         count={groups.length}
         limit={limit}
         onClose={() => setCreateOpen(false)}
         onCreate={createFromDialog}
+        /* ⛔ 11-12 用户：「这里还不能直接设置管理员？」—— 建群完成屏直接设，别再跑一趟群设置。 */
+        onSetAdmin={(gid, memberId) => setAdminOf(gid, memberId)}
         onCreated={(id) => {
           if (!id) return;
           setActiveId(id);
           void loadMessages(id);
         }}
       />
+      {/* ⛔ 11-09 用户令：有群任务在跑时，关工作伙伴窗口先确认；没在跑直接放行。 */}
+      <TeamCloseGuard busyByGroup={busyByGroup} liveByGroup={liveByGroup} />
     </div>
   );
 }
