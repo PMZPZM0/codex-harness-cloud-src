@@ -15,7 +15,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
+/* ⛔ 本仓工作区是 CRLF：判据里常按 "\n}\n" 定位函数体，不归一化会恒假（假红）。 */
+const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replace(/\r\n/g, "\n");
 const require = createRequire(import.meta.url);
 
 let checks = 0;

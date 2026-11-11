@@ -395,10 +395,6 @@ contextBridge.exposeInMainWorld("codex", {
   installExpertMarketPackage: (input: { slug: string }) => __ipc("expert-market:install", 1, [input]),
   /* SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包） */
   listExpertMarketPackages: (input: { page?: number; pageSize?: number; query?: string } = {}) => __ipc("expert-market:list", 0, [input]),
-  /* 竖条 + 功能入口菜单的可扩展目录 */
-  extensionsCatalog: () => __ipc("extensions:catalog", 0, []),
-  /* 10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限） */
-  extensionsMenuSet: (input: unknown) => __ipc("extensions:menu-set", 1, [input]),
   openExternal: (url: string) => __ipc("external:open", 1, [url]),
   addFavorite: (input: unknown) => __ipc("favorites:add", 1, [input]),
   /* 批量删除只认显式 id 列表（不提供隐式删全部） */
@@ -515,6 +511,14 @@ contextBridge.exposeInMainWorld("codex", {
   /* 常驻记忆（L 层）；threadId 仅供注入审计（隔离仍按工作区） */
   readMemoryContext: (workspace?: string, includeWorkspace = true, threadId?: string) => __ipc("memory:layers:context", 0, [workspace, includeWorkspace, threadId]),
   readMemoryLayers: (workspace?: string) => __ipc("memory:layers:read", 0, [workspace]),
+  /* 记忆原子：列出条目 + 索引（新记忆界面的唯一数据源） */
+  listMemoryAtoms: (workspace?: string) => __ipc("memory:atoms:list", 0, [workspace]),
+  /* 记忆原子：预览「这句话会注入哪些记忆」—— 与真实注入用同一套打分（⛔ 不是前端假过滤） */
+  recallMemoryAtoms: (workspace: string, query: string, seat?: string) => __ipc("memory:atoms:recall", 2, [workspace, query, seat]),
+  /* 记忆原子：保存一条（手动编辑用；内容相同返回 same，算成功） */
+  saveMemoryAtoms: (workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }) => __ipc("memory:atoms:save", 2, [workspace, input]),
+  /* 11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引）；targets 带 group 精确定位同 id 跨群条目 */
+  forgetMemoryAtoms: (workspace: string, targets: Array<string | { id: string; group?: string }>) => __ipc("memory:atoms:forget", 2, [workspace, targets]),
   writeMemoryLayer: (input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }) => __ipc("memory:layers:write", 1, [input]),
   listMemory: (category?: string) => __ipc("memory:list", 0, [category]),
   /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
@@ -746,6 +750,11 @@ contextBridge.exposeInMainWorld("codex", {
   screenshotSettingsSet: (patch: unknown) => __ipc("screenshot:settings-set", 1, [patch]),
   shellOpen: (target: string) => __ipc("shell:open", 1, [target]),
   shellReveal: (target: string) => __ipc("shell:reveal", 1, [target]),
+  windowClose: () => __ipc("shell:window-close", 0, []),
+  /* 窗口控制（无边框窗自定义按钮；只作用于调用者自己的窗口） */
+  windowMinimize: () => __ipc("shell:window-minimize", 0, []),
+  windowState: () => __ipc("shell:window-state", 0, []),
+  windowToggleMaximize: () => __ipc("shell:window-toggle-maximize", 0, []),
   skillDisciplineGet: () => __ipc("skill-discipline:get", 0, []),
   /* 内置技能的独立开关（10-06）：读某内置技能**全局**是否生效（设置 → 控制台用；与 skill-pool 同一真相源） */
   getBuiltinSkillSwitch: (input: { name: string }) => __ipc("skills:builtin-switch-get", 1, [input]),
@@ -890,11 +899,11 @@ contextBridge.exposeInMainWorld("codex", {
   announceOwner: (threadId?: string) => __ipc("voice:announce-owner", 0, [threadId]),
   /* 会话级静音闩锁（同一 threadId 的窗口一起安静；别的会话不受影响） */
   announceSetMuted: (input?: { muted?: boolean; threadId?: string }) => __ipc("voice:announce-set-muted", 0, [input]),
-  voiceBarge: () => __ipc("voice:barge", 0, []) as Promise<{ ok: boolean }>,
   /* 11-11 MOSS-TTS 音色列表（查询 /v1/audio/voices；只回 id/name，不回密钥） */
   voiceMossVoices: () => __ipc("voice:moss-voices", 0, []),
   /* 11-11 MOSS-TTS 音色试听（按草稿 model/voiceId 合成，不要求先开启播报） */
   voiceMossPreview: (input?: { model?: string; voiceId?: string; text?: string }) => __ipc("voice:moss-preview", 0, [input]),
+  voiceBarge: () => __ipc("voice:barge", 0, []) as Promise<{ ok: boolean }>,
   voiceDictationFinish: () => __ipc("voice:dictation-finish", 0, []),
   voiceEndpointNow: () => __ipc("voice:endpoint-now", 0, []),
   voiceHotkeyGet: () => __ipc("voice:hotkey-get", 0, []) as Promise<{ registered: string }>,
@@ -975,6 +984,10 @@ contextBridge.exposeInMainWorld("codex", {
   workLogsRead: (input: { path: string }) => __ipc("work-logs:read", 1, [input]),
   /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
   workLogsScan: () => __ipc("work-logs:scan", 0, []),
+  /* 竖条 + 功能入口菜单的可扩展目录 */
+  extensionsCatalog: () => __ipc("extensions:catalog", 0, []),
+  /* 10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限） */
+  extensionsMenuSet: (input: unknown) => __ipc("extensions:menu-set", 1, [input]),
   /* 聚合读取：应用内键 + 截图/语音键 */
   shortcutsRead: () => __ipc("shortcuts:read", 0, []),
   /* 只写应用内键；截图/语音由各自通道写 */
@@ -1034,11 +1047,6 @@ contextBridge.exposeInMainWorld("codex", {
   feishuCliRun: (input: unknown) => __ipc("feishu-cli:run", 1, [input]),
   /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物（⛔ 只认传入的 threadId） */
   readTaskMonitor: (threadId: unknown) => __ipc("monitor:read", 1, [threadId]),
-  windowClose: () => __ipc("shell:window-close", 0, []),
-  /* 窗口控制（无边框窗自定义按钮；只作用于调用者自己的窗口） */
-  windowMinimize: () => __ipc("shell:window-minimize", 0, []),
-  windowState: () => __ipc("shell:window-state", 0, []),
-  windowToggleMaximize: () => __ipc("shell:window-toggle-maximize", 0, []),
   /* 10-31：会话笔名全量快照（threadId → alias/上级/寓意） */
   sessionAliasSnapshot: () => __ipc("session-alias:snapshot", 0, []),
   /* 11-01：会话改名（= 改笔名，唯一入口）—— 校验后落盘 + 写穿引擎会话名 + 广播快照；allowDuplicate 供系统自动命名用 */
@@ -1065,6 +1073,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamSetAvatar: (groupId: string, memberId: string, avatar: string) => __ipc("harness-team:set-avatar", 3, [groupId, memberId, avatar]),
   /* 团队模式 P0 */
   harnessTeamSetGuard: (groupId: string, guard: Record<string, unknown>) => __ipc("harness-team:set-guard", 2, [groupId, guard]),
+  /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
+  harnessTeamClearMessages: (groupId: string) => __ipc("harness-team:clear-messages", 1, [groupId]),
   /* 团队模式 P0 */
   harnessTeamProject: (sources: unknown) => __ipc("harness-team:project", 1, [sources]),
   /* 团队模式 P0b（群消息日志） */
@@ -1077,12 +1087,18 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamDelete: (groupId: string) => __ipc("harness-team:delete", 1, [groupId]),
   /* 团队模式：群记忆 / 群文件 */
   harnessTeamSetMemory: (groupId: string, text: string) => __ipc("harness-team:set-memory", 2, [groupId, text]),
+  /* 团队模式：群项目地址（派活时作为子会话 cwd） */
+  harnessTeamSetWorkspace: (groupId: string, workspace: string) => __ipc("harness-team:set-workspace", 2, [groupId, workspace]),
+  /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
+  harnessTeamRunning: (groupId: string) => __ipc("harness-team:running", 1, [groupId]),
   /* 团队模式：群记忆 / 群文件 */
   harnessTeamSetFiles: (groupId: string, files: unknown) => __ipc("harness-team:set-files", 2, [groupId, files]),
   /* 团队模式：上下级（委派白名单） */
   harnessTeamSetManager: (groupId: string, memberId: string, managerId: string) => __ipc("harness-team:set-manager", 3, [groupId, memberId, managerId]),
   /* 团队模式：管理员（普通群「用户没 @ 时由谁接话推进进度」；专家团群不启用，由团主理人兜底） */
   harnessTeamSetAdmin: (groupId: string, memberId: string) => __ipc("harness-team:set-admin", 2, [groupId, memberId]),
+  /* 团队模式：群内任务进度（总数/未完成/已完成/在等回话）—— 群头部进度条用它，⛔ 别再让用户靠读消息猜进度 */
+  harnessTeamGroupProgress: (groupId: string) => __ipc("harness-team:group-progress", 1, [groupId]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */
   harnessTeamAddNote: (groupId: string, note: Record<string, unknown>) => __ipc("harness-team:add-note", 2, [groupId, note]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */
@@ -1103,12 +1119,6 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamSetSchedule: (groupId: string, list: unknown) => __ipc("harness-team:set-schedule", 2, [groupId, list]),
   /* 团队模式：立刻运行一条定时任务 */
   harnessTeamRunSchedule: (groupId: string, scheduleId: string) => __ipc("harness-team:run-schedule", 2, [groupId, scheduleId]),
-  /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
-  harnessTeamClearMessages: (groupId: string) => __ipc("harness-team:clear-messages", 1, [groupId]),
-  /* 团队模式：群项目地址（派活时作为子会话 cwd） */
-  harnessTeamSetWorkspace: (groupId: string, workspace: string) => __ipc("harness-team:set-workspace", 2, [groupId, workspace]),
-  /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
-  harnessTeamRunning: (groupId: string) => __ipc("harness-team:running", 1, [groupId]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */
   harnessTeamLogUsage: (entry: Record<string, unknown>) => __ipc("harness-team:log-usage", 1, [entry]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */
@@ -1121,6 +1131,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamThreadUsage: (threadId: string) => __ipc("harness-team:thread-usage", 1, [threadId]),
   /* 11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开 */
   mediaDeskEndpoint: () => __ipc("media-desk:endpoint", 0, []),
+  /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
+  listArtifactArchives: (workspace?: string) => __ipc("artifact:list", 0, [workspace]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

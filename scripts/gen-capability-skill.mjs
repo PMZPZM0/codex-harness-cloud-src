@@ -25,6 +25,7 @@ const OUT = path.join(ROOT, "electron", "builtin-skills", "14-skill-harness-api.
 /* ── 每域的「用户可感知能力」描述（人工维护；新域必须补，缺了生成器报错）──
    口径：写给引擎看 —— 用户提什么需求时该想到这个域、能力边界在哪。一句话。 */
 const DOMAIN_DESCRIPTIONS = {
+  "artifact": "产物归档（11-11）：设置 → 数据 →「产物归档」按 artifacts/YYYYMMDD-任务短名/ 列出每次任务的成品，可一键在资源管理器打开目录。只读清单；归档动作由模型经 harness_tools 的 artifact_archive 完成（只复制不删原文件、同名自动 -r2 迭代、写 manifest 与总台账），历史散落文件用 scripts/artifacts-migrate.mjs 归位（默认 dry-run）",
   /* 11-01 补齐本仓专属域（主仓没有这两个域，缺描述时 gen:ipc 会直接退出 1） */
   "limited-benefit": "限时福利（10-14）：把云端账号侧的服务内置供应商接进本机模型体系 —— 拉当前可用的模型目录（逐模型带积分倍率）、兑换/查看福利状态、把福利令牌写进本机配置。⛔ 目录与倍率都以云端为准，本机不自己编",
   "model-source": "模型来源模式（10-15）：切换「只用云端开放目录里的模型」与「本机自定义模型」。开云端模式时模型列表只显示服务端勾选过的那些；关掉则回到本机配置的模型",

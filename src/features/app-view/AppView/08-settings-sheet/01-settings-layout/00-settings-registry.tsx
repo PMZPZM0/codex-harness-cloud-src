@@ -14,7 +14,6 @@
  *    改这里 = 改用户看到的设置页 ⇒ 按红线（可见交互）先问用户。
  */
 import { lazy } from "react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { ReactNode } from "react";
 import type { SettingsPage } from "../../../../app-view/types";
 import type { HarnessAppApi } from "../../../../app-state/useHarnessApp";
@@ -33,6 +32,7 @@ import { ToolCard, builtinCommandCatalog, categoryLabel, cronTemplates, describe
 // ⛔ 未注册时 Slot 渲染 null ⇒ 既有 DOM/class 逐字不变（accept.mjs 的 CDP 选择器依赖它）。
 import { Slot } from "../../../../../runtime/registry";
 import { TeamModePanel } from "../../../../harness-team";
+import { ArtifactPanel } from "../../../../artifact-archive";
 
 const ModelSettingsSection = lazy(() => import("../../../../settings-model/ModelSettingsSection").then((m) => ({ default: m.ModelSettingsSection })));
 const BossGroupsSection = lazy(() => import("../../../../settings-boss-groups/BossGroupsSection").then((m) => ({ default: m.BossGroupsSection })));
@@ -551,6 +551,8 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
                         /> },
     backup: { render: () => <BackupSettingsSection thread={thread} backupBusy={backupBusy} exportThreadsMarkdown={exportThreadsMarkdown} exportThreadsBackup={exportThreadsBackup} threads={threads} importThreadsBackup={importThreadsBackup} importConversationMarkdown={importConversationMarkdown} /> },
     archive: { render: () => <ArchiveSettingsSection ArchivePage={ArchivePage} setNotice={setNotice} setSettingsOpen={setSettingsOpen} openThread={openThread} openAppConfirm={openAppConfirm} refreshThreads={refreshThreads} /> },
+    /* 11-11 产物归档：本仓不做设置页拆分，直接挂这一页（数据组已满 6 项，放人格与记忆组）*/
+    artifacts: { render: () => <ArtifactPanel workspace={workspace} /> },
     storage: { render: () => <>
                   <StorageSection
                           onNotice={setNotice}

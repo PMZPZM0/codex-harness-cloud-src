@@ -168,7 +168,6 @@ import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal"
 import { NewProjectDialog } from "./NewProjectDialog";
 import { UpdateReadyToast } from "./UpdateReadyToast";
 import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
-import { teamChatOpen } from "../../harness-team/00-open-store";
 
 /** 侧栏壳：项目/会话树、团队条、指挥中枢入口。⛔ 中枢就是**一个普通会话**（点按钮 = openThread(bossThreadId)），不是覆盖层。 */
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {

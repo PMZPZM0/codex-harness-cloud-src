@@ -804,10 +804,6 @@ interface Window {
     installExpertMarketPackage(input: { slug: string }): Promise<{ slug: string; teamId: string; displayName: string; installedChildren: string[]; childFailures: string[]; expertCreated: boolean; expertUpdated: boolean }>;
     /* SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包） */
     listExpertMarketPackages(input?: { page?: number; pageSize?: number; query?: string }): Promise<{ items: { slug: string; displayName: string; summary: string; scene: string; subScene: string; children: string[] }[]; total: number; page: number; pageSize: number }>;
-    /* 竖条 + 功能入口菜单的可扩展目录 */
-    extensionsCatalog(): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>;
-    /* 10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限） */
-    extensionsMenuSet(input: { entries: MenuEntrySpec[] }): Promise<{ ok: boolean; menu: MenuEntrySpec[] }>;
     openExternal(url: string): Promise<void>;
     addFavorite(input: Partial<FavoriteItem>): Promise<{ items: FavoriteItem[]; item: FavoriteItem }>;
     /* 批量删除只认显式 id 列表（不提供隐式删全部） */
@@ -924,6 +920,14 @@ interface Window {
     /* 常驻记忆（L 层）；threadId 仅供注入审计（隔离仍按工作区） */
     readMemoryContext(workspace?: string, includeWorkspace?: boolean, threadId?: string): Promise<{ text: string; stats: { chars: number; over: boolean } }>;
     readMemoryLayers(workspace?: string): Promise<MemoryLayersSnapshot>;
+    /* 记忆原子：列出条目 + 索引（新记忆界面的唯一数据源） */
+    listMemoryAtoms(workspace?: string): Promise<{ ok: boolean; index?: string; stats?: { total: number; active: number; broken: number }; entries?: Array<{ id: string; summary: string; type: string; scope: string; status: string; confidence: string; updated: string; tags: string[]; group?: string; body: string }>; history?: Array<{ at: string; op: string; id: string; by: string; summary: string }>; broken?: string[]; policies?: Array<{ label: string; writable: string[]; supersede: string; render: string; recallLimit: number; inject: string[] }>; error?: string }>;
+    /* 记忆原子：预览「这句话会注入哪些记忆」—— 与真实注入用同一套打分（⛔ 不是前端假过滤） */
+    recallMemoryAtoms(workspace: string, query: string, seat?: string): Promise<{ ok: boolean; text?: string; recalled?: string[]; conflicts?: Array<[string, string]>; error?: string }>;
+    /* 记忆原子：保存一条（手动编辑用；内容相同返回 same，算成功） */
+    saveMemoryAtoms(workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }): Promise<{ ok: boolean; outcome?: string; error?: string }>;
+    /* 11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引）；targets 带 group 精确定位同 id 跨群条目 */
+    forgetMemoryAtoms(workspace: string, targets: Array<string | { id: string; group?: string }>): Promise<{ ok: boolean; done: number; failed: number; error?: string }>;
     writeMemoryLayer(input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }): Promise<MemoryLayersSnapshot>;
     listMemory(category?: string): Promise<any[]>;
     /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
@@ -1155,6 +1159,11 @@ interface Window {
     screenshotSettingsSet(patch: Partial<ScreenshotSettings>): Promise<ScreenshotSettingsSnapshot>;
     shellOpen(target: string): Promise<void>;
     shellReveal(target: string): Promise<void>;
+    windowClose(): Promise<{ ok: boolean }>;
+    /* 窗口控制（无边框窗自定义按钮；只作用于调用者自己的窗口） */
+    windowMinimize(): Promise<{ ok: boolean }>;
+    windowState(): Promise<{ maximized: boolean }>;
+    windowToggleMaximize(): Promise<{ maximized: boolean }>;
     skillDisciplineGet(): Promise<{ present: boolean; section: string }>;
     /* 内置技能的独立开关（10-06）：读某内置技能**全局**是否生效（设置 → 控制台用；与 skill-pool 同一真相源） */
     getBuiltinSkillSwitch(input: { name: string }): Promise<{ name: string; enabled: boolean; available: boolean; error?: string }>;
@@ -1299,11 +1308,11 @@ interface Window {
     announceOwner(threadId?: string): Promise<{ owner: boolean; ownerWebContentsId: number | null; reason: string; muted: boolean; callActive: boolean }>;
     /* 会话级静音闩锁（同一 threadId 的窗口一起安静；别的会话不受影响） */
     announceSetMuted(input?: { muted?: boolean; threadId?: string }): Promise<{ muted: boolean; threadId: string }>;
-    voiceBarge(): Promise<{ ok: boolean }>;
     /* 11-11 MOSS-TTS 音色列表（查询 /v1/audio/voices；只回 id/name，不回密钥） */
     voiceMossVoices(): Promise<{ ok: boolean; voices?: { id: string; name: string }[]; error?: string }>;
     /* 11-11 MOSS-TTS 音色试听（按草稿 model/voiceId 合成，不要求先开启播报） */
     voiceMossPreview(input?: { model?: string; voiceId?: string; text?: string }): Promise<{ ok: true; sampleRate: number; audioBase64: string } | { ok: false; error: string }>;
+    voiceBarge(): Promise<{ ok: boolean }>;
     voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
     voiceEndpointNow(): Promise<{ ok: boolean; text?: string }>;
     voiceHotkeyGet(): Promise<{ registered: string }>;
@@ -1384,6 +1393,10 @@ interface Window {
     workLogsRead(input: { path: string }): Promise<{ path: string; text: string; bytes: number; mtime: number }>;
     /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
     workLogsScan(): Promise<{ projects: Array<{ cwd: string; name: string; memoryDir: string; exists: boolean; bytes: number; files: Array<{ path: string; rel: string; kind: string; bytes: number; mtime: number }> }> }>;
+    /* 竖条 + 功能入口菜单的可扩展目录 */
+    extensionsCatalog(): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>;
+    /* 10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限） */
+    extensionsMenuSet(input: { entries: MenuEntrySpec[] }): Promise<{ ok: boolean; menu: MenuEntrySpec[] }>;
     /* 聚合读取：应用内键 + 截图/语音键 */
     shortcutsRead(): Promise<{ bindings: Record<string, string[]>; overrides: Record<string, string[]>; defaults: Record<string, string[]>; conflicts: string[][] }>;
     /* 只写应用内键；截图/语音由各自通道写 */
@@ -1443,11 +1456,6 @@ interface Window {
     feishuCliRun(input: { args: string[]; cwd?: string }): Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>;
     /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物（⛔ 只认传入的 threadId） */
     readTaskMonitor(threadId?: string): Promise<{ threadId: string; turns: any[]; ongoingTurnId: string }>;
-    windowClose(): Promise<{ ok: boolean }>;
-    /* 窗口控制（无边框窗自定义按钮；只作用于调用者自己的窗口） */
-    windowMinimize(): Promise<{ ok: boolean }>;
-    windowState(): Promise<{ maximized: boolean }>;
-    windowToggleMaximize(): Promise<{ maximized: boolean }>;
     /* 10-31：会话笔名全量快照（threadId → alias/上级/寓意） */
     sessionAliasSnapshot(): Promise<Record<string, any>>;
     /* 11-01：会话改名（= 改笔名，唯一入口）—— 校验后落盘 + 写穿引擎会话名 + 广播快照；allowDuplicate 供系统自动命名用 */
@@ -1474,6 +1482,8 @@ interface Window {
     harnessTeamSetAvatar(groupId: string, memberId: string, avatar: string): Promise<{ ok: boolean; group?: any; error?: string }>;
     /* 团队模式 P0 */
     harnessTeamSetGuard(groupId: string, guard: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
+    /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
+    harnessTeamClearMessages(groupId: string): Promise<{ ok: boolean; cleared: number; error?: string }>;
     /* 团队模式 P0 */
     harnessTeamProject(sources: unknown): Promise<{ rows: any[] }>;
     /* 团队模式 P0b（群消息日志） */
@@ -1486,12 +1496,18 @@ interface Window {
     harnessTeamDelete(groupId: string): Promise<{ ok: boolean; id?: string; error?: string; removedThreads?: number; totalThreads?: number; failed?: string[] }>;
     /* 团队模式：群记忆 / 群文件 */
     harnessTeamSetMemory(groupId: string, text: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：群项目地址（派活时作为子会话 cwd） */
+    harnessTeamSetWorkspace(groupId: string, workspace: string): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
+    harnessTeamRunning(groupId: string): Promise<{ ok: boolean; runs: any[]; error?: string }>;
     /* 团队模式：群记忆 / 群文件 */
     harnessTeamSetFiles(groupId: string, files: unknown): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
     /* 团队模式：上下级（委派白名单） */
     harnessTeamSetManager(groupId: string, memberId: string, managerId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string; reason?: string }>;
     /* 团队模式：管理员（普通群「用户没 @ 时由谁接话推进进度」；专家团群不启用，由团主理人兜底） */
     harnessTeamSetAdmin(groupId: string, memberId: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：群内任务进度（总数/未完成/已完成/在等回话）—— 群头部进度条用它，⛔ 别再让用户靠读消息猜进度 */
+    harnessTeamGroupProgress(groupId: string): Promise<{ ok: boolean; total?: number; open?: number; done?: number; waiting?: number; items?: Array<{ id: string; title: string; toName: string; fromName: string; at: number }>; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
     harnessTeamAddNote(groupId: string, note: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; dropped?: string[]; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
@@ -1512,12 +1528,6 @@ interface Window {
     harnessTeamSetSchedule(groupId: string, list: unknown): Promise<{ ok: boolean; group?: any; error?: string }>;
     /* 团队模式：立刻运行一条定时任务 */
     harnessTeamRunSchedule(groupId: string, scheduleId: string): Promise<{ ok: boolean; sent?: number; error?: string; runKind?: string }>;
-    /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
-    harnessTeamClearMessages(groupId: string): Promise<{ ok: boolean; cleared: number; error?: string }>;
-    /* 团队模式：群项目地址（派活时作为子会话 cwd） */
-    harnessTeamSetWorkspace(groupId: string, workspace: string): Promise<{ ok: boolean; group?: any; error?: string }>;
-    /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
-    harnessTeamRunning(groupId: string): Promise<{ ok: boolean; runs: any[]; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
     harnessTeamLogUsage(entry: Record<string, unknown>): Promise<{ ok: boolean; count?: number; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
@@ -1530,6 +1540,8 @@ interface Window {
     harnessTeamThreadUsage(threadId: string): Promise<{ ok: boolean; tokens?: { input: number; cached: number; output: number; total: number } | null; error?: string }>;
     /* 11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开 */
     mediaDeskEndpoint(): Promise<string>;
+    /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
+    listArtifactArchives(workspace?: string): Promise<{ ok: boolean; rows?: Array<{ dir: string; task: string; at: number; source?: string; note?: string; path?: string; files: Array<{ name: string; from: string; bytes: number }> }>; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

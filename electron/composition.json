@@ -812,6 +812,13 @@
       "file": "features/harness-team-ipc.ts",
       "export": "harnessTeamFeature",
       "config": null
+    },
+    {
+      "id": "artifact",
+      "enabled": true,
+      "file": "features/artifact-archive-ipc.ts",
+      "export": "artifactArchiveFeature",
+      "config": null
     }
   ]
 }
