@@ -11,8 +11,9 @@ import { defineFeature } from "../../context";
 import type { IpcHost } from "../../ipc-host";
 import type { HostCaps } from "../../runtime/seams";
 import { ensureMediaDeskServer, setMediaDeskSecure } from "./embed";
+import { createMediaDeskPopoutWindow } from "../window-factory";
 
-const CHANNELS = ["media-desk:endpoint"] as const;
+const CHANNELS = ["media-desk:endpoint", "media-desk:popout"] as const;
 
 export const mediaDeskFeature = defineFeature<null>({
   id: "media-desk",
@@ -22,6 +23,7 @@ export const mediaDeskFeature = defineFeature<null>({
     if (!ipcHost) throw new Error("media-desk: 缺少 ipc 服务（宿主未提供）");
     setMediaDeskSecure(ctx.get<HostCaps>("host")?.secure ?? null);
     ipcHost.handle("media-desk:endpoint", () => ensureMediaDeskServer());
+    ipcHost.handle("media-desk:popout", () => createMediaDeskPopoutWindow());
     ctx.effect(() => {
       for (const channel of CHANNELS) ipcHost.removeHandler(channel);
       setMediaDeskSecure(null);
