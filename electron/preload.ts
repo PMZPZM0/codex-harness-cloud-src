@@ -902,7 +902,7 @@ contextBridge.exposeInMainWorld("codex", {
   /* 11-11 MOSS-TTS 音色列表（查询 /v1/audio/voices；只回 id/name，不回密钥） */
   voiceMossVoices: () => __ipc("voice:moss-voices", 0, []),
   /* 11-11 MOSS-TTS 音色试听（按草稿 model/voiceId 合成，不要求先开启播报） */
-  voiceMossPreview: (input?: { model?: string; voiceId?: string; text?: string }) => __ipc("voice:moss-preview", 0, [input]),
+  voiceMossPreview: (input?: { model?: string; voiceId?: string; text?: string; speed?: number }) => __ipc("voice:moss-preview", 0, [input]),
   voiceBarge: () => __ipc("voice:barge", 0, []) as Promise<{ ok: boolean }>,
   voiceDictationFinish: () => __ipc("voice:dictation-finish", 0, []),
   voiceEndpointNow: () => __ipc("voice:endpoint-now", 0, []),
