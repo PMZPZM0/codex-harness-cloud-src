@@ -90,4 +90,6 @@
 /* ⛔ 11-11 四个记忆板块共用：搜索 / 筛选 / 批量管理工具条 */
 @import "./styles/65-memory-list-tools" layer(components);
 @import "./styles/63-media-desk" layer(components);
+/* 11-11 异步执行反馈板块（群聊 + 外面会话共用，零 IPC；⛔ 必须在 59-motion 之前） */
+@import "./styles/66-async-run-feedback" layer(components);
 @import "./styles/59-motion" layer(components);
