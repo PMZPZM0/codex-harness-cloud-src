@@ -182,6 +182,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
      ⇒ 「选中效果」是**派生量**（当前会话 id 命中某个群的 boss 线程），⛔ 不再用 store 的
         stage 布尔值 —— 那个布尔值和真实会话状态会对不上（用户实测：切走了按钮还亮着）。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
+  /* ⛔⛔ 11-12 用户令（多次）：「工作伙伴的会话不该透到主侧栏来」「标签也不对（不该是调度）」。
+     工作伙伴/中枢群的**成员会话**只该在工作伙伴窗口里出现 ⇒ 主侧栏所有视图（项目 / 任务 / 分类）
+     都不列它们。⛔ 这里只做**显示层过滤**：不动数据、不动别的消费方；真正的会话类型隔离
+     （workPartner 类型 / 正确标签）由正在推进的 session-kind 那条统一收口，落地后这层可并入。
+     ⛔ 只藏成员会话（memberIds）；中枢本体会话（bossIds）保持可见（指挥中枢仍要在侧栏用）。 */
+  const hiddenSidebarThreadIds = new Set((bossThreads.memberIds ?? []).map(String));
+  const visibleEntries = <T extends { id?: unknown }>(entries: T[]): T[] =>
+    hiddenSidebarThreadIds.size ? entries.filter((e) => !hiddenSidebarThreadIds.has(String(e?.id ?? ""))) : entries;
   const entityTags = useSyncExternalStore(subscribeEntityTags, getEntityTagState, getEntityTagState);
   /* 10-31 用户令：会话行底色自选 —— 订阅让选色立刻重渲染本列表（行组件读 store 取色）。 */
   useSyncExternalStore(subscribeThreadRowColors, getThreadRowColors, getThreadRowColors);
@@ -683,9 +691,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         各自把本团那一簇再渲染一遍（成员都在 memberIds 里 ⇒ singles 为空、clusters 命中本团），
         于是 1 个团 4 个成员 = 4 行重复的主会话行。整批切分一次才对。
      ⛔ 默认**收起**（用户：「默认被调度和专家团会话都折叠状态」）：只显示「↳ 调度会话 · N」头，点开才展开。 */
-  const renderDispatchedList = (entries: typeof listThreads) => {
+  const renderDispatchedList = (rawEntries: typeof listThreads) => {
+    /* ⛔ 11-12：工作伙伴/中枢的成员会话不进主侧栏（项目 / 任务 / 分类 三个视图共用这一处 ⇒ 一起藏）。 */
+    const entries = visibleEntries(rawEntries);
     const { clusters, singles } = clusterSplit(entries);
-    const childRowsOf = (children: Array<{ threadId: string }>) => children.map((child) => {
+    const childRowsOf = (children: Array<{ threadId: string }>) => children.filter((c) => !hiddenSidebarThreadIds.has(String(c.threadId))).map((child) => {
       const childThread = listThreads.find((t) => t.id === child.threadId);
       // ⛔ 子会话用聚类渲染：它本身可能就是某个**专家团的主会话**（成员已被顶层剔除，
       //    走 renderThreadRow 会把那一批成员会话整块漏掉）。
@@ -694,7 +704,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     /** 11-06 用户令（截图）：「子会话展开折叠放到会话选项里面，居中小长条」——
         单会话行的折叠键搬进行内（extras.footer），收起时不再多占一整行；展开体仍在行下面。 */
     const dispatchInfoOf = (threadId: string) => {
-      const children = threadId ? (sourcedChildrenOf[threadId] ?? []) : [];
+      const children = (threadId ? (sourcedChildrenOf[threadId] ?? []) : []).filter((c) => !hiddenSidebarThreadIds.has(String(c.threadId)));
       if (!children.length) return null;
       const dispatchKey = `dispatch:${threadId}`;
       const collapsed = !expandedDispatchBlocks.has(dispatchKey);
