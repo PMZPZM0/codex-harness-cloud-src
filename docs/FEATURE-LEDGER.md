@@ -891,3 +891,4 @@
 | 2026-11-12 | 启动不再默认打开工作伙伴会话 | 修复 | 三仓：src/features/app-state/parts/part05/01-seg.tsx | 用户「每次进去都是工作伙伴会话…进去不要展示工作伙伴会话，展示别的也行」：启动恢复 last-thread 若命中工作伙伴/中枢群成员会话，回落最近一条非成员会话；没有就停首页。 | 本轮 |
 | 2026-11-12 | 修复：启动仍会打开工作伙伴伙伴会话（补伙伴会话/伙伴名判据） | 修复 | 三仓：src/features/app-state/parts/part05/01-seg.tsx | 上一版启动跳过只查 boss-groups 成员，漏了工作伙伴「伙伴会话」（group-talk 台账）与已脱离台账的旧伙伴会话。补：跳过集合 = boss 成员 + group-talk 伙伴会话 + 引擎原始标题「伙伴·」兜底；回落非工作伙伴会话，没有就停首页。 | 本轮 |
 | 2026-11-13 | 桌面自动化新增 Agent Desktop（默认主，随包内置；Nuphus / Computer Use 可选兜底） | 新增 | 同主仓；云助手镜像同步 | agent-desktop 默认开，另两个默认关；能力表/指令/技能统一优先级；核心 12 工具。 | 本轮 |
+| 2026-11-13 | 审查修复：Agent Desktop 指令语法 / 默认值 / 能力链路 / mac 随包产物 | 修复 | 同主仓 3af802380；云助手镜像同步 | 修正 press/scroll CLI 语法（focus @ref + press 组合键、scroll --direction）；指令默认值改为 === true；能力探针接入三个后端开关；config 段顺序 Agent→Computer Use→Nuphus；mac 只留本架构主程序+helper 并补执行位、Windows 只留 win32；产物层校验 helper/执行位/无外平台二进制。预检全绿。 | 本轮 |
