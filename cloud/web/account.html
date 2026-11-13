@@ -2195,6 +2195,19 @@
           <span class="hint">关掉后新账号<b>没有云端存储配额</b>，上传会话会被明确拒绝。</span>
         </div>
       </div>
+      <!-- 11-13 用户令：管理员后台加「禁用模型调用」开关，让用户开放注册下载 APP 后不被白嫖算力。
+           ⛔ 注册开关是**运维级**（服务目录 cloud-lock.json，面板 reset 动不到），这里只显示状态，
+              ⛔ 不做成开关 —— 两个入口控制同一件事必然对不上（项目纪律：单一真相源）。 -->
+      <div class="pol-grid" style="margin-top:12px">
+        <div class="pol-field">
+          <span class="hint" id="polRegState" style="margin-top:6px">注册状态：读取中…</span>
+          <span class="hint">开放注册由服务端锁文件控制（改完立即生效、不用重启）；这里只读，避免面板「恢复环境默认」把它清掉。</span>
+        </div>
+        <div class="pol-field">
+          <label class="pol-switch"><input type="checkbox" class="switch" id="polModelOff" /><span>禁用模型调用</span></label>
+          <span class="hint">开启后非管理员账号不能走云端模型代理；登录、下载 APP、知识库等只读能力不受影响，管理员仍可自测。</span>
+        </div>
+      </div>
       <div class="pol-actions">
         <button class="btn primary" id="polSave">保存</button>
         <button class="btn ghost" id="polReset">恢复环境默认</button>
@@ -4613,6 +4626,9 @@
     var onPts = j.signupPointsEnabled !== false, onSt = j.storageEnabled !== false;
     if ($("polSignupOn")) $("polSignupOn").checked = onPts;
     if ($("polStorageOn")) $("polStorageOn").checked = onSt;
+    /* 11-13：模型调用开关读服务端生效值（独立文件）；注册状态只读展示，⛔ 不在面板切换 */
+    if ($("polModelOff")) $("polModelOff").checked = j.modelCallDisabled !== false;
+    if ($("polRegState")) $("polRegState").textContent = "注册状态：" + (j.registrationOpen === false ? "邀请码制（未开放）" : "开放注册（无需邀请码）");
     /* ⛔ 用 configured*（上次配置值），不是生效值 —— 关闭时生效值是 0，会把输入框写坏 */
     var showPts = (j.configuredSignupPoints !== undefined) ? j.configuredSignupPoints : j.signupPoints;
     var showGb = (j.configuredStorageGb !== undefined) ? j.configuredStorageGb : j.storageGb;
@@ -4649,13 +4665,16 @@
       var j = (r && r.j) || {};
       if (!r.ok || !j.ok) { polSay("保存失败：" + (j.error || ("HTTP " + r.status)), true); return; }
       polPaint(j);
-      polSay("已保存：注册赠分 " + j.signupPoints + " · 默认云存储 " + j.storageGb + " GB（新注册立即按这个来）");
+      polSay("已保存：注册赠分 " + j.signupPoints + " · 默认云存储 " + j.storageGb + " GB"
+        + " · 注册 " + (j.registrationOpen === false ? "邀请码制" : "开放")
+        + " · 模型调用 " + (j.modelCallDisabled === false ? "允许" : "已禁用"));
     })["catch"](function () { btn.disabled = false; polSay("保存失败：网络错误", true); });
   }
   function polBody() {
     var onPts = $("polSignupOn").checked, onSt = $("polStorageOn").checked;
     var pts = Number($("polSignup").value), gb = Number($("polStorage").value);
-    var body = { signupPointsEnabled: onPts, storageEnabled: onSt };
+    var body = { signupPointsEnabled: onPts, storageEnabled: onSt,
+      modelCallDisabled: $("polModelOff") ? $("polModelOff").checked : undefined };
     /* ⛔ 开关打开而输入框是空/0（典型：刚从关闭切回来）时**不要报错**：
        不提交该字段，服务端会沿用上次配置（没有就回落到环境默认）。 */
     var ptsRaw = String($("polSignup").value || "").trim();
@@ -4676,7 +4695,7 @@
     polSave(r.body, this);
   };
   /* 开关：改完立刻写服务端（不用再点保存），失败就弹回原位 */
-  ["polSignupOn", "polStorageOn"].forEach(function (id) {
+  ["polSignupOn", "polStorageOn", "polModelOff"].forEach(function (id) {
     var el = $(id);
     if (!el) return;
     el.addEventListener("change", function () {

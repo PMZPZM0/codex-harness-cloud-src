@@ -356,6 +356,15 @@ async function memhubAdminUser() {
 
 /** 幂等备好该账号的记忆中枢 user_key（每人一支）。 */
 async function ensureMemoryForUnlocked(username) {
+  /* ⛔⛔ 11-01 紧急开关（MEMHUB_ENABLED=0）：NAS 上这台 MemHub 当前**不提供** /claude-code/<实例>
+     网关 —— 实测它对自己的 /claude-code/default/v1/chat/completions 返回
+     {"error":{"code":404,"message":"Not Found - /claude-code/default/v1/chat/completions"}}，
+     经 NPM 落到静态兜底时则是 405。把它下发给桌面端，结果是「云端模型」整条不可用
+     （模型和记忆一起挂），而客户端本身没问题。
+     ⇒ 置 MEMHUB_ENABLED=0 时按「记忆不可用」下发，桌面端按既有逻辑自动回落纯模型上游
+       （cloud-api/proxy，实测可用）。**MemHub 修好后删掉这个环境变量并重启即恢复**，
+       不需要回滚代码。 */
+  if (String(process.env.MEMHUB_ENABLED || "1") === "0") return { ok: false, error: "memory-disabled" };
   if (!MEMHUB_ADMIN_KEY) return { ok: false, error: "memory-not-configured" };
   /* 同 ensureKnowledgeFor：没有有效权益就不建记忆账号 */
   if (!featureState(username, "memory").enabled) {
@@ -1091,6 +1100,41 @@ function issueSession(username) {
   persist();
   return token;
 }
+/* ⛔⛔ 11-06 云管理临时锁：读**独立文件**，不读 `db.policy`。
+   原因（实测）：面板的 `/admin/policy` 只要带 `reset`（或被任何客户端点一下），
+   就会把 `db.policy` 整体写回并 persist ⇒ 刚加的开关键被无声清掉，注册立刻复活。
+   锁文件服务**只读不写**，面板/备份/恢复都动不到它；改完立即生效、不用重启。 */
+const CLOUD_LOCK_FILE = __dirname + "/cloud-lock.json";
+function cloudLock() {
+  try { return JSON.parse(fs.readFileSync(CLOUD_LOCK_FILE, "utf8")) || {}; } catch { return {}; }
+}
+
+/* ⛔⛔ 11-13 用户令：「管理员后台加一个禁用模型调用开关就行了」
+   —— 目的是开放注册让用户下载 APP，同时不给新注册用户白嫖上游算力的口子。
+   ⛔ 与 cloudLock 同一套纪律：开关存**独立文件**，不进 db.policy。
+     原因：面板的 /admin/policy 带 reset 会把 db.policy 整份写回，刚设的开关键会被无声清掉
+     （11-06 实测事故）。独立文件只有本端点 POST 能写，reset 动不到它。
+   ⛔ 默认禁用（文件不存在 / 读失败 = true）：部署上去立刻生效，不需要先手工建文件。
+   ⛔ 管理员后台走 /admin/policy GET/POST 读写，改完立即生效、不用重启服务。 */
+const MODEL_POLICY_FILE = __dirname + "/model-call-policy.json";
+function modelCallPolicy() {
+  try { return JSON.parse(fs.readFileSync(MODEL_POLICY_FILE, "utf8")) || {}; } catch { return {}; }
+}
+function modelCallDisabled() {
+  /* ⛔ 只有显式 false 才算「允许调用」；undefined / 文件缺失一律按禁用处理（保守） */
+  return modelCallPolicy().modelCallDisabled !== false;
+}
+function saveModelCallPolicy(disabled, by) {
+  const next = Object.assign({}, modelCallPolicy(), {
+    modelCallDisabled: Boolean(disabled), updatedAt: Date.now(), updatedBy: String(by || "admin"),
+  });
+  /* 原子写：先 .tmp 再 rename，⛔ 不写半个文件（服务每次请求都读） */
+  const tmp = MODEL_POLICY_FILE + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(next), { mode: 0o600 });
+  fs.renameSync(tmp, MODEL_POLICY_FILE);
+  return next;
+}
+
 function sessionUser(req) {
   const header = String(req.headers.authorization || "");
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
@@ -2211,6 +2255,12 @@ const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=40`;
   try {
     /* 注册 */
     if (p === "/register" && req.method === "POST") {
+      /* 11-06 用户令「关闭注册，仅限管理员登录」：
+         `policy.registrationOpen === false` 时一律不受理（含邀请码路径）。
+         ⛔ 只有**显式 false** 才算关闭（undefined = 保持原有行为）；恢复 = 改回 true，无需重新部署。 */
+      if (cloudLock().registrationOpen === false) {
+        return send(403, { ok: false, error: "registration-closed", message: "注册已关闭，当前仅限管理员登录" });
+      }
       if (!rateLimit(`reg:${ip}`, 3, 3600_000)) return send(429, { ok: false, error: "注册太频繁，请一小时后再试" });
       /* ② 每 IP 累计上限（见常量处说明：时限限流压速率，这条压总量） */
       const regCount = Number((db.registerIps && db.registerIps[ip]) || 0);
@@ -2223,7 +2273,11 @@ const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=40`;
       const inviteCode = normalizeInvite(body.invite);
       const invite = inviteRow(inviteCode);
       const isMaster = !invite && Boolean(REGISTER_INVITE_CODE) && String(body.invite || "").trim() === REGISTER_INVITE_CODE;
-      if (inviteRequired() && !invite && !isMaster) {
+      /* ⛔⛔ 11-13 开放注册：云管理锁里 registrationOpen=true 时不再强制邀请码
+         （外部用户要能自助注册、进网页下载 APP；仍保留邀请码记账 / 邀请奖励）。
+         ⛔ 锁为 false / 缺失时保持原来的邀请码制，⛔ 不默认放开。 */
+      const openRegistration = cloudLock().registrationOpen === true;
+      if (inviteRequired() && !openRegistration && !invite && !isMaster) {
         const reason = inviteCode ? "invite-not-found" : "invite-required";
         return send(403, { ok: false, error: reason, message: INVITE_REASON_TEXT[reason] });
       }
@@ -2333,6 +2387,12 @@ const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=40`;
         }
         persist();
         return send(401, { ok: false, error: "用户名或密码不对" });
+      }
+      /* 11-06 用户令「仅限管理员登录」：云管理暂时只服务管理员。
+         ⛔ 闸放在**密码校验通过之后**：密码错仍只回「用户名或密码不对」，
+            不通过状态码/文案泄露「这个账号存在、只是不是管理员」。 */
+      if (cloudLock().adminOnlyLogin === true && user.role !== "admin") {
+        return send(403, { ok: false, error: "admin-only", message: "云管理当前仅限管理员登录，普通账号已暂停使用" });
       }
       user.failCount = 0; user.lastFailAt = 0; user.lastLogin = Date.now(); persist();
       /* 10-18 设备管理：登录即登记本机（否则云端「已配对设备」永远是 0）。
@@ -3003,6 +3063,13 @@ const PRODUCT_RELEASES_PATH = `/repos/${PRODUCT_REPO}/releases?per_page=40`;
       }
       const owner = db.users.find((u) => u.username === effectiveUsername);
       if (!owner || owner.disabled) return send(403, { ok: false, error: "account-disabled" });
+      /* ⛔⛔ 11-13 管理员「禁用模型调用」开关：**执行端硬闸**，不靠前端把按钮置灰。
+         个人代理 / 团队代理 / 列模型一并拦（列模型不烧算力，但放行会让客户端反复重试）。
+         ⛔ 管理员账号放行：开放注册后仍要能自测链路；其余账号（含新注册）一律 403。
+         ⛔ 只读端点（登录、下载 APP、知识库、/kb/*）不受影响。 */
+      if (modelCallDisabled() && owner.role !== "admin") {
+        return send(403, { ok: false, error: "model-call-disabled", message: "管理员已禁用云端模型调用；如需使用请联系管理员，或在客户端配置自己的模型服务。" });
+      }
       /* 团队模式：必须是成员 + 记忆已开通 + 套餐没过期。任一不满足就拒（⛔ 不静默回落到个人计费，
          否则「以为在烧团队积分、实际扣自己」是最难查的一类账）。 */
       if (teamMode) {
@@ -6355,6 +6422,9 @@ location.replace("/");
           configuredStorageGb: gb(configuredBytes),
           signupPointsEnabled: pol.signupPointsEnabled !== false,
           storageEnabled: pol.storageEnabled !== false,
+          /* 11-13：模型调用开关读**独立文件**（⛔ 不在 db.policy，防 panel reset 清掉） */
+          modelCallDisabled: modelCallDisabled(),
+          registrationOpen: cloudLock().registrationOpen === true,
           /* 到期自动清理（10-23）：autoCleanSource = panel（面板已设过）/ env（跟随部署变量） */
           autoCleanEnabled: autoCleanEnabled(),
           autoCleanSource: autoCleanSource(),
@@ -6381,11 +6451,23 @@ location.replace("/");
         if (!Number.isFinite(g) || g <= 0 || g > 10240) return send(400, { ok: false, error: "默认云存储要填 0.1 ~ 10240 GB" });
         next.storageBytes = Math.round(g * 1073741824);
       }
+      /* ⛔⛔ 11-13 模型调用开关：写**独立文件**，⛔ 不写进 db.policy（reset / 面板整份写回
+         会把它无声清掉 —— 11-06 同一类事故）。reset 也只清额度，不动这个开关。 */
+      if (body && body.modelCallDisabled !== undefined) {
+        try {
+          saveModelCallPolicy(body.modelCallDisabled !== false, me.username);
+        } catch (e) {
+          console.log("[policy] ⛔ 模型调用开关写盘失败：" + (e && e.message));
+          return send(500, { ok: false, error: "模型调用开关保存失败（服务目录不可写）" });
+        }
+      }
       db.policy = next;
       persist();
       console.log("[policy] " + me.username + " 设置：注册赠分 " + ((db.policy || {}).signupPointsEnabled === false ? "关闭" : signupPoints())
         + " · 默认云存储 " + ((db.policy || {}).storageEnabled === false ? "关闭" : gb(storageDefaultBytes()) + " GB")
-        + " · 到期自动清理 " + (autoCleanEnabled() ? "开（宽限 " + GRACE_DAYS + " 天）" : "关（只提醒）"));
+        + " · 到期自动清理 " + (autoCleanEnabled() ? "开（宽限 " + GRACE_DAYS + " 天）" : "关（只提醒）")
+        + " · 模型调用 " + (modelCallDisabled() ? "已禁用" : "允许")
+        + " · 注册 " + (cloudLock().registrationOpen === true ? "开放" : "邀请码制"));
       return send(200, view());
     }
 

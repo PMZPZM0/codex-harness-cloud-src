@@ -397,7 +397,7 @@
        它是"注册来源"的唯一抓手 —— 见 docs/CLOUD-INVITE-CODES.md。 */
     var inviteInput = document.createElement("input");
     inviteInput.className = "field"; inviteInput.id = "acct-invite";
-    inviteInput.placeholder = "邀请码（8 位，向管理员索取）"; inviteInput.autocomplete = "off";
+    inviteInput.placeholder = "邀请码（选填；若站点要求，提交后会提示）"; inviteInput.autocomplete = "off";
     inviteInput.maxLength = 12; inviteInput.hidden = true;
     /* 10-23：邀请链接 https://<站点>/index.html?invite=<8位码> —— 打开即预填，并直接切到注册模式 */
     try {
@@ -427,7 +427,9 @@
       var password = passInput.value || "";
       var invite = (inviteInput.value || "").trim().toLowerCase();
       if (!username || !password) { status.textContent = "请填用户名和密码"; status.className = "status warn"; return; }
-      if (mode.v === "register" && !invite) { status.textContent = "请填邀请码（没有的话找管理员要一个）"; status.className = "status warn"; inviteInput.focus(); return; }
+      /* ⛔⛔ 11-13 开放注册：邀请码是否必填由**服务端**判定（db.policy.registrationOpen），
+         前端不再写死「没码不许提交」——否则管理员在后台开了开放注册，用户仍被这一行挡在门外。
+         邀请码制下服务端会回 403 + 明确原因；邀请链接预填的码仍照常提交与记账。 */
       go.disabled = true; status.textContent = mode.v === "login" ? "正在登录…" : "正在注册…"; status.className = "status";
       accountFetch(mode.v === "login" ? "/login" : "/register", { method: "POST", body: mode.v === "login" ? { username: username, password: password } : { username: username, password: password, invite: invite } })
         .then(function (res) {
