@@ -30,6 +30,7 @@ import { HARNESS_API_SKILL } from "./builtin-skills/14-skill-harness-api";
 import { OPENFILM_SKILL } from "./builtin-skills/26-skill-openfilm";
 import { FRONTEND_CANVAS_SKILL } from "./builtin-skills/20-skill-frontend-canvas";
 import { FRONTEND_DESIGN_SKILL } from "./builtin-skills/27-skill-frontend-design";
+import { RPA_RECIPES_SKILL } from "./builtin-skills/28-skill-rpa-recipes";
 import { VISUALIZATION_SKILL } from "./builtin-skills/21-skill-visualization";
 import { GRILL_ME_SKILL } from "./builtin-skills/24-skill-grill-me";
 import { CHALLENGE_REQUIREMENTS_SKILL } from "./builtin-skills/25-skill-challenge-requirements";
@@ -154,6 +155,8 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     ["frontend-canvas", FRONTEND_CANVAS_SKILL],
     // 11-03：前端设计方法（正文由 DESIGN.md 的 DESIGN-METHOD 标记区生成，不要手写第二份）。
     ["frontend-design", FRONTEND_DESIGN_SKILL],
+    /* 11-13：RPA 配方的保存/复用口径（rpa_save / rpa_run）—— 步骤格式与失败处理在技能里。 */
+    ["rpa-recipes", RPA_RECIPES_SKILL],
     // 10-17：可视化输出规范（用户立项「Codex 画可视化只会随手写 HTML」）——
     //  形态选择/硬性输出要求（单文件零外部依赖）/设计 token；输出走文件卡→预览→浏览器打开通道。
     ["visualization-guide", VISUALIZATION_SKILL],
