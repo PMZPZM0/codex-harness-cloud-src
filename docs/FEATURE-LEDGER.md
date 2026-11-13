@@ -898,3 +898,4 @@
 | 2026-11-13 | RPA 录制器补齐 macOS（Swift/CoreGraphics helper） | 新增 | 同主仓 9460647cc；云助手镜像同步 | mac 随包 Swift helper（构建期 swiftc 编译）：CGEventSource 读键鼠、NSWorkspace 记前台应用、CGEventPost 回放；录制需输入监控、回放需辅助功能；配方记 recordedOs，跨平台拒绝；快捷键 ⌘⌥F9/F10；守卫 57 条。⚠️ 无 mac 真机未验。 | 本轮 |
 | 2026-11-13 | RPA 定时（复用定时任务调度器；录制原生回放 / 文本模型回合） | 新增 | 同主仓 70c528834；云助手镜像同步 | RPA 页每条配方可设每天/每周/一次性/关闭；定时任务加 rpa 绑定，录制配方到点原生回放（无模型），文本配方走模型回合；删除配方级联删除定时；新增 rpa_schedule 工具；守卫 62 条、验收 9/9。 | 本轮 |
 | 2026-11-14 | 修复：微信 iLink 频道 bot 汇总不同步 / 消息断断续续 | 修复 | 三仓：electron/features/im-gateways.ts、守卫 07-turn-fold/38 | 分片追加 + iLink 每 24h 10 条配额 ⇒ 碎片吃配额、收尾汇总发不出。改为与 QQ/飞书/钉钉同口径：一轮只发一条干净最终正文，过程靠 typing。 | 本轮 |
+| 2026-11-14 | 机器人流式开关默认关闭 + 加「?」说明（仅 Telegram 支持真流式） | 改动 | 三仓：electron/bot-stream.ts、src/features/app-view/AppView/05-remote-console.tsx、守卫 07-turn-fold/38、_ctx 计数 | 查证只有 Telegram 能改写同一条气泡做真流式，微信/飞书/钉钉/QQ 均一轮一条整段。默认关闭（只认显式 true）；设置页加 ? 说明 + 修正文案；思考/工具标注仅 Telegram 生效。 | 本轮 |
