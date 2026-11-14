@@ -1518,6 +1518,8 @@ interface Window {
     harnessTeamDelete(groupId: string): Promise<{ ok: boolean; id?: string; error?: string; removedThreads?: number; totalThreads?: number; failed?: string[] }>;
     /* 团队模式：群记忆 / 群文件 */
     harnessTeamSetMemory(groupId: string, text: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：群规矩（硬约束，每轮注入） */
+    harnessTeamSetRules(groupId: string, text: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
     /* 团队模式：群项目地址（派活时作为子会话 cwd） */
     harnessTeamSetWorkspace(groupId: string, workspace: string): Promise<{ ok: boolean; group?: any; error?: string }>;
     /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */

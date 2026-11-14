@@ -1109,6 +1109,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamDelete: (groupId: string) => __ipc("harness-team:delete", 1, [groupId]),
   /* 团队模式：群记忆 / 群文件 */
   harnessTeamSetMemory: (groupId: string, text: string) => __ipc("harness-team:set-memory", 2, [groupId, text]),
+  /* 团队模式：群规矩（硬约束，每轮注入） */
+  harnessTeamSetRules: (groupId: string, text: string) => __ipc("harness-team:set-rules", 2, [groupId, text]),
   /* 团队模式：群项目地址（派活时作为子会话 cwd） */
   harnessTeamSetWorkspace: (groupId: string, workspace: string) => __ipc("harness-team:set-workspace", 2, [groupId, workspace]),
   /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
