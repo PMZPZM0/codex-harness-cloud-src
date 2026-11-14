@@ -1558,7 +1558,7 @@ export async function run() {
         "src/features/drama-canvas/DramaCanvas.tsx": 928,   // 10-06 深夜 Round J +6 = 画布右键菜单加**视口钳制**（用户令「凡事弹窗类都要加自适应，不能被裁剪」）：坐标来自 clientX/Y，贴右/下边缘右键必被裁——Math.max(8, Math.min(…)) 两处
         "src/features/app-view/AppView/01-sidebar-shell.tsx": 1063,   // 11-12 实测：计划先行 + 不刷屏 + 反馈卡任务摘要
         "src/features/harness-team/04-team-group-view.tsx": 2052,   // 11-12 +4（实测净行）：用户气泡/引用块接 TeamMessageBody（群消息附件渲染同步主对话框，正文走 30-team-attachments）；此前 2048 = 11-12 +24 头像一致性（leadFaceOf + isTeamKidAuthor）；此前 2024 = 11-12 成员交回显式 @ 主理人
-        "electron/features/harness-team-ipc.ts": 2316,   // 11-12 +43（实测净行，三仓同值）：逐个拉人建的群按座位认编排主体 + 催办回合没调派活工具则不落群   // 11-12 实测：成员交回显式 @ 主理人
+        "electron/features/harness-team-ipc.ts": 2317,   // 11-12 +43（实测净行，三仓同值）：逐个拉人建的群按座位认编排主体 + 催办回合没调派活工具则不落群   // 11-12 实测：成员交回显式 @ 主理人
         "electron/features/dispatch-rpc.ts": 1009,   /* 11-11 新登记（实测净行）：产物归档工具分派 + 记忆工具按调用者身份传 seat */   /* 11-11 按实测记账（+292 净行）：11-11 任务账本 + 群头进度 */    // 11-09 按实测回填（含 CLI 真链路接线）；   // 11-09 审查按实测记账（停止请求残留/中枢名单串行化 + 相应断言）；此前   // 11-08 按实测记账（本线未改该文件：并行线「群消息用量页脚兜底」38d7e0e4e 增行后未记账，HEAD 上本就红）   // 11-08 按实测记账（净行）：并线 92bfeda83「事件驱动重拉（group-talk-tick）」把注册宿主推到 1064；⛔ 应拆
         "src/features/harness-team/03-team-settings.tsx": 1020,   // 11-12 实测：管理员=群级身份
         "electron/remote.ts": 1147,   // 11-06 +62（实测）：手机看屏（采集循环 / 租约 / 三个接口）   // 11-06 +1（实测）：事件缓冲改 createEventBuffer（seq 游标）   // 11-06 +25（实测）：/api/rpc 类型白名单（叶子模块 remote-rpc-types）+ 四个排队分支   // 10-31 按实测记账（手机端：移除拍照 / 思考历史顺序 / APK 0.1.16）；此前 906   // 10-30 按实测记账 905→906（本线未改本文件：并行线顶栏/远控在途改动）；
