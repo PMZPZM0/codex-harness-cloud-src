@@ -721,6 +721,11 @@ async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: numb
 async function relayLeadAfterMembers(groupId: string, teamId: string, note: string): Promise<void> {
   const group = (readStore().groups ?? []).find((g) => String(g.id) === String(groupId));
   if (!group) return;
+  /* ⛔ 11-15「沟通没完成就收尾」：回喂主理人时把未结项一并带上（有账没清就不许收口）。 */
+  const openNoteRows = openTaskRowsOf(groupId);
+  const openNote = openNoteRows.length
+    ? `\n⛔ 群里还有 ${openNoteRows.length} 件没交回：${openNoteRows.map((r) => `${r.toName}（${r.title}）`).join("、")}——全部清账之前不许写「收口」，先把他们点名推进。`
+    : "";
   const teams = await readUsableExpertTeams().catch(() => []);
   const team = teams.find((t) => String(t?.teamId) === String(teamId)) as
     | { lead?: { id?: string; name?: string } }
@@ -734,7 +739,7 @@ async function relayLeadAfterMembers(groupId: string, teamId: string, note: stri
     targetKind: "member",
     targetKey: `${teamId}:${leadId}`,
   };
-  await runDispatchRounds(group, [target], note, "automation", { allowChain: true });
+  await runDispatchRounds(group, [target], note + openNote, "automation", { allowChain: true });
 }
 
 /** ⛔⛔ 11-11：群聊里这两个调度工具是**异步排片**（工具立刻回「已派单」、成员后台跑、
@@ -1063,6 +1068,15 @@ function openTaskCountOf(groupId: string): number {
   return open.length - expired.length;
 }
 
+/** 未结项清单（回喂主理人时点名用）：谁还没交、交的是什么。⛔ 已按超时口径过滤。 */
+function openTaskRowsOf(groupId: string): Array<{ toName: string; title: string }> {
+  const now = Date.now();
+  const store = readStore();
+  return Object.values(store.tasks ?? {})
+    .filter((x) => x.groupId === groupId && x.status === "open" && now - Number(x.at ?? 0) <= HANDOFF_TIMEOUT_MS)
+    .map((x) => ({ toName: String(x.toName ?? ""), title: String(x.title ?? "") }));
+}
+
 /* ⛔ 11-14 Phase 2（抄 Pachat「LISTEN_RETRY_MS=5min / LISTEN_TRIES=2」）：成员一轮失败后的**延迟重试**。
    每 (群::成员) 最多重试 1 次，隔 5 分钟；成功即重置、新消息开跑时作废旧的重试。⛔ in-memory + unref，
    进程重启即丢（Pachat 的 listener 重启同样重置，不做跨重启持久）。 */
@@ -1111,6 +1125,11 @@ async function runDispatchRounds(
      主理人被回喂后**只给一次**验收/收口机会。原来给 3 次 ⇒ 它每被叫醒一次就说一段、
      再派一轮，群里就是同一批人反复说话。⇒ 一次足够写结论；还要推进就等用户下一句。 */
   const MAX_LEAD_CATCH_UPS = 1;
+  /* ⛔⛔ 11-15 用户令（思路拍板）：**两人沟通的收尾权在发起者手里** ——
+     接收方（被 @ 的人）交回后必须把话头送回发起者，由它决定继续（再 @）还是了结；
+     ⛔ 接收方不能收尾（它的「收到 / 完成」不算数）。有界：MAX_MEMBER_CATCH_UPS + 预算 + 每人回合上限。 */
+  const MAX_MEMBER_CATCH_UPS = 6;
+  let memberCatchUps = 0;
   let leadCatchUps = 0;
   /* ⛔ 11-14：自由催办（宿主强催主理人再跑一轮）已移除 —— 抄 Pachat，谁说话由「被@ / 被回复 / 有未读」
      决定，宿主不再在「主理人没派活」时强催它一轮（那正是"同一问题回两条"的来源）。 */
@@ -1802,6 +1821,22 @@ async function runDispatchRounds(
       /* ③ 宿主判定终止：完成由任务项数 / 预算 / 每人回合上限决定，⛔ 不采信模型自报「做完了」
          （11-12 借鉴成熟群聊编排：COUNT THE ITEMS, NOT THE HEADS）。 */
       const hostStop = shouldStopGroupTurn({ chainBudget, ranCount, maxTurnsPerMember: MAX_TURNS_PER_MEMBER });
+      /* ⛔⛔ 11-15 用户令（「沟通没完成就收尾」）：造镜说「等编镜的 shotlist.csv」，
+         但没人给编镜开任务 ⇒ openTasks=0 ⇒ 宿主判"没活了"直接收尾，编镜永远不出现。
+         ⇒ 产出里出现「等 X 的 Y 文件」这类交付承诺时，宿主**自动开一条点名任务**：
+           openTasks>0 ⇒ classifyTurn 判 continue（不许收尾），管理员被回喂后会去点 X，
+           X 交回 ⇒ closeTasksFor 关账 ⇒ 才允许收口。
+         ⛔ 只认"等 X 的 Y.扩展名"这种可核验的交付承诺，⛔ 不把"我建议 / 可以派"当成任务。 */
+      for (const promiseMatch of String(outputForStore ?? "").matchAll(
+        /等\s*([^\s，。！？、：]{1,8})\s*的\s*([^\s，。！？]{2,40}?\.(?:csv|xlsx?|docx?|md|json|txt|png|jpe?g|mp4|wav|mp3|pdf))/g,
+      )) {
+        const promisedTo = String(promiseMatch[1] ?? "").trim();
+        const promisedFile = String(promiseMatch[2] ?? "").trim();
+        const target = roster.find((m) => String(m.name) === promisedTo);
+        if (target && promisedTo !== partner.name) {
+          openTaskFor(group.id, { id: partner.id, name: partner.name }, { id: target.id, name: target.name }, promisedFile);
+        }
+      }
       if (hop === 0 && !hostStop.stop && okFlag && output && guard.allowRelay) {
         const queue: Array<{ next: GroupTarget; ask: { ask: string } }> = [];
         /* ② 显式发言权：本轮已发言者按共享消息总线一次性算出，宿主仲裁谁能接话，
@@ -1900,8 +1935,13 @@ async function runDispatchRounds(
               if (lead && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(lead.id)) {
                 leadCatchUps += 1;
                 chainBudget -= 1;
+                const openRows = openTaskRowsOf(group.id);
+                const openLine = openRows.length
+                  ? `⛔ 群里还有 ${openRows.length} 件没交回：${openRows.map((r) => `${r.toName}（${r.title}）`).join("、")}。`
+                    + "先把这些人按顺序点名（等交回），**全部清账之前不许写「收口」**。"
+                  : "全部已清账，可以写总结了。";
                 void runOne(lead as unknown as GroupTarget, 0, caller,
-                  `[系统] 这一轮你点名的 ${queue.length} 位成员都按顺序交回了（产出已在群里）。`
+                  `[系统] 这一轮你点名的 ${queue.length} 位成员都按顺序交回了（产出已在群里）。${openLine}`
                   + "现在就做一件事：**写一条总结**——每人一句他在群里说了什么/他的定位，"
                   + "最后一句告诉用户这批招呼已经到齐。"
                   + "⛔ 不要再派活（同一条需求里不重复叫人）、不要报进度、不要「收到」了事、不要代写成员产出。")
@@ -1916,6 +1956,23 @@ async function runDispatchRounds(
             void (async () => {
               for (const item of queue) {
                 await runOne(item.next, 0, caller, item.ask.ask).catch(() => undefined);
+              }
+              /* ⛔⛔ 11-15 用户令（「任务输出后，需要继续艾特回去跟他在沟通的那个智能体」）：
+                 接收方交回 ≠ 结束 —— 把话头**送回发起者**（partner），由它决定：
+                   · 要继续 ⇒ 另起一行 @名字（宿主会真的把人叫起来，回到上面串行循环）；
+                   · 要结束 ⇒ 它自己写「此事了结」且不再 @ 任何人。
+                 ⛔ 接收方的「收到 / 完成」不算收尾 —— 收尾权只在发起者手里。
+                 有界：memberCatchUps(6) + chainBudget(12) + 每人 MAX_TURNS_PER_MEMBER(3)，
+                 超时任务由 HANDOFF_TIMEOUT_MS 自动关账，不会无限烧。 */
+              if (chainBudget > 0 && memberCatchUps < MAX_MEMBER_CATCH_UPS && canRun(partner.id)) {
+                memberCatchUps += 1;
+                chainBudget -= 1;
+                await runOne(partner, 0, caller,
+                  `[系统] 你 @ 的 ${queue.map((i) => i.next.name).join("、")} 已经交回了（产出在群里）。`
+                  + "这场沟通是你发起的：**只有你能收尾**——要继续就另起一行 @名字（他会被真的叫起来）；"
+                  + "确认结束才写「此事了结」且不再 @ 任何人。⛔ 接收方的「收到 / 完成」不算收尾，"
+                  + "⛔ 不要客套式地再 @ 一遍说「辛苦了」——那会多烧一轮。")
+                  .catch(() => undefined);
               }
             })();
           }
