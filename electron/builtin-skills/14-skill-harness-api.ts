@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（121 个能力域 / 707 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（122 个能力域 / 710 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -540,4 +540,8 @@ RPA 配方（录制好的桌面自动化流程）
 ### autoUpdate（5 通道）
 自动化能力与引擎的**后台自动更新**：桌面自动化 nuphus / Mac 电脑操作 open-computer-use / Codex 引擎各一个独立开关（缺省即开，存 app-settings.json）；浏览器自动化 Ego Lite 单独一个开关（默认关，开启后后台跑官方 ego-browser upgrade）。⛔ 手动更新与后台更新走**同一批函数**，不存在两套判据
 通道：autoUpdate:status, autoUpdate:set, autoUpdate:scan, autoUpdate:run, autoUpdate:run-all
+
+### design-md（3 通道）
+设计参考库（11-15，VoltAgent/awesome-design-md，MIT）：84 份来自真实网站的品牌 DESIGN.md（Google Stitch 格式：颜色/字体/圆角/组件 tokens + 主题、排版、组件、布局、Do/Don't、响应式、迭代指南），随包离线可用。设置 → 能力与内容 →「设计参考」可浏览/搜索/预览/复制/导出到项目；Codex 通过 design_md 工具（list / get / search）按需取规范做界面。⛔ 只作风格参考，不复制品牌 logo / 商标
+通道：design-md:list, design-md:get, design-md:export
 `;

@@ -105,6 +105,7 @@
       "src/lib/*.mjs",
       "scripts/lib/*.cjs",
       "electron/declared-plugins/**",
+      "resources/design-md/**",
       "build/icon.png",
       "public/icon.png",
       "build/icon.ico",

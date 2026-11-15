@@ -520,6 +520,10 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["autoUpdate:status", "autoUpdate:set", "autoUpdate:scan", "autoUpdate:run", "autoUpdate:run-all"],
     note: "10-13 统一更新体系：组件清单在 electron/update-registry.ts（单一真相源，含不支持更新的条目及原因），执行层在 electron/update-backends.ts，安全网（快照/回滚/幂等）在 electron/update-safety.ts。status/set 管开关，scan 给全量清单，run / run-all 是手动更新入口。⛔ 手动链与自动链**共用**同一个 updateComponent，不写第二套判据；⛔ 所有远端一律国内镜像（npm→npmmirror、pip→清华、GitHub→gh-mirror）",
   },
+  { prefix: "design-md", count: 3, status: "in-features", file: "features/design-md-ipc.ts",
+    channels: ["design-md:list", "design-md:get", "design-md:export"],
+    note: "11-15 新增：设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md 随包）—— list/get 给设置页与工具 design_md 共用；export 写项目 design-references/<slug>.md（⛔ 不覆盖项目自己的 DESIGN.md）",
+  },
 ];
 
 /** 按通道（完整 channel 名）查所属域条目 */
