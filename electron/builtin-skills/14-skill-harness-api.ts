@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（122 个能力域 / 710 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（123 个能力域 / 717 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -544,4 +544,8 @@ RPA 配方（录制好的桌面自动化流程）
 ### design-md（3 通道）
 设计参考库（11-15，VoltAgent/awesome-design-md，MIT）：84 份来自真实网站的品牌 DESIGN.md（Google Stitch 格式：颜色/字体/圆角/组件 tokens + 主题、排版、组件、布局、Do/Don't、响应式、迭代指南），随包离线可用。设置 → 能力与内容 →「设计参考」可浏览/搜索/预览/复制/导出到项目；Codex 通过 design_md 工具（list / get / search）按需取规范做界面。⛔ 只作风格参考，不复制品牌 logo / 商标
 通道：design-md:list, design-md:get, design-md:export
+
+### photocraft（7 通道）
+PhotoCraft 图像编辑（11-15，storytold/photocraft，MIT/Apache-2.0）：纯 Rust 重写的开源 Photoshop（图层/蒙版/调整层/文字/PSD）。按需下载便携包（约 137MB，GitHub release 镜像序 + SHA256SUMS 校验）到「设置 → 开发工具 → PhotoCraft 图像编辑」；Codex 用 photocraft 工具做调色/滤镜/格式转换/批量处理/命令发现，装了以后还会注册 [mcp_servers.photocraft] 连接器（roots 限 userData/photocraft-io）；图片卡可「在 PhotoCraft 中编辑」打开原生窗口
+通道：photocraft:status, photocraft:info, photocraft:convert, photocraft:run, photocraft:batch, photocraft:commands, photocraft:open
 `;

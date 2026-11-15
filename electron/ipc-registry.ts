@@ -524,6 +524,9 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["design-md:list", "design-md:get", "design-md:export"],
     note: "11-15 新增：设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md 随包）—— list/get 给设置页与工具 design_md 共用；export 写项目 design-references/<slug>.md（⛔ 不覆盖项目自己的 DESIGN.md）",
   },
+  { prefix: "photocraft", count: 7, status: "in-features", file: "features/photocraft-ipc.ts",
+    channels: ["photocraft:status", "photocraft:info", "photocraft:convert", "photocraft:run", "photocraft:batch", "photocraft:commands", "photocraft:open"],
+    note: "11-15 新增：PhotoCraft（storytold/photocraft，MIT/Apache-2.0）—— 按需下载便携包（CLI+GUI）；工具 photocraft 做调色/滤镜/转换/批量/命令发现；open 用原生 GUI 编辑；MCP 段由 custom-model-apply 生成（roots=userData/photocraft-io）" },
 ];
 
 /** 按通道（完整 channel 名）查所属域条目 */
