@@ -68,7 +68,10 @@ const ri = readFileSync(join(ROOT, "electron/features/runtime-ipc.ts"), "utf8");
 //   RUNTIME_CHANNELS 数组与 import 注释里，用裸 indexOf 会切到那些位置 ⇒ 整段判空、恒假红。
 const unAt = ri.indexOf('ipcHost.handle("runtime:uninstall"');
 ok(unAt > 0, "定位到 runtime:uninstall 的 handler（锚点是 handle 调用，不是通道名）");
-const un = unAt >= 0 ? ri.slice(unAt, unAt + 6000) : "";
+/* ⛔⛔ 11-15：固定 6000 字符窗口会把卸载链尾部的 recordToolRemoved 挤出 ⇒ 假红。
+   窗口终点改按下一个 handler 的起点算（云助手专属分支保留不动）。 */
+const unEnd = ri.indexOf('ipcHost.handle("runtime:cancel"', unAt);
+const un = unAt >= 0 ? ri.slice(unAt, unEnd > unAt ? unEnd : unAt + 12000) : "";
 ok(/recordToolRemoved/.test(un), "recordToolRemoved 落在 runtime:uninstall 处理器内（不是别处）");
 ok(/try \{ recordToolRemoved\(id\); \} catch/.test(un),
   "清账包在 try/catch 里（账本坏了不该让卸载报错）");
