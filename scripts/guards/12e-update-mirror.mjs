@@ -35,8 +35,8 @@ const updates = codeOnly(read("electron/updates.ts"));
 const official = codeOnly(read("electron/codex-official-market.ts"));
 
 /* ── 单一真相源 ── */
-ok(/export const GH_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.com\/", "https:\/\/ghfast\.top\/", ""\] as const/.test(mirrorSrc),
-  "镜像表唯一一份在 gh-mirror.ts：gh-proxy → ghfast → 直连(空串)，顺序即契约");
+ok(/export const GH_MIRROR_PREFIXES = \["", "https:\/\/hk\.gh-proxy\.com\/", "https:\/\/gh-proxy\.com\/"\] as const/.test(mirrorSrc),
+  "镜像表唯一一份在 gh-mirror.ts：**直连 → hk.gh-proxy → gh-proxy**（11-15 实测：旧序把 269KB/s 的源排第一，比直连慢 47 倍）");
 ok(!/"https:\/\/gh-proxy\.com\/"/.test(updates) && !/"https:\/\/gh-proxy\.com\/"/.test(official),
   "⛔ 镜像字面量不再散落：updates / 官方市场都从 gh-mirror 取（voice/model-store 除外 —— 它的顺序是按实测速度排的，语义不同）");
 ok(/const MIRROR_PREFIXES = GH_MIRROR_PREFIXES/.test(official),

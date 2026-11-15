@@ -279,7 +279,9 @@ export async function downloadUpdate(
   //    这个坑直到 v0.0.18 才暴露：09-15 才把更新源切成 GitHub 单源，而当时仓库 0 个 release，
   //    检查更新拿不到东西，从来没走到过下载这一步。现在跟随最多 5 跳。
   const MAX_REDIRECTS = 5;
-  const hop = async (url: string, depth: number): Promise<{ path: string; bytes: number }> => {
+  /* ⛔⛔ 11-15：这条链原来没有响应头超时 / 停滞超时 / 速度下限 —— 搭上 6KB/s 的限速镜像就一路慢到底。
+     ⇒ 20s 拿不到响应头换源 / 60s 无数据换源 / 12s 后平均 <200KB/s 且还有候选换源（最后一个不因慢被掐死）。 */
+  const hop = async (url: string, depth: number, hasAlternative = false): Promise<{ path: string; bytes: number }> => {
     const parsed = new URL(url);
     // ⛔ 只允许 https（09-13 审计 P0）：这条链的产物会被 `shell.openPath` 当安装包执行，
     // 明文 http 给中间的代理/DNS/公共 Wi-Fi 留了一个"把安装包换掉"的窗口。
@@ -315,7 +317,7 @@ export async function downloadUpdate(
               reject(new Error(`更新包地址重定向目标非法：${String(res.headers.location).slice(0, 120)}`));
               return;
             }
-            hop(next, depth + 1).then(resolve, reject);
+            hop(next, depth + 1, hasAlternative).then(resolve, reject);
             return;
           }
           if (status < 200 || status >= 300) {
@@ -342,6 +344,21 @@ export async function downloadUpdate(
             if (signal.aborted) { onAbort(); reject(new Error("已取消下载")); return; }
             signal.addEventListener("abort", onAbort, { once: true });
           }
+          const firstByteAt = Date.now();
+          /* ⛔ 11-15：20s 无字节 / 12s 后平均 <200KB/s 且还有候选 ⇒ 换源（旧实现一个超时都没有，限速镜像能拖几小时） */
+          const watchdog = setInterval(() => {
+            const elapsedMs = Date.now() - firstByteAt;
+            if (received === 0) {
+              if (elapsedMs >= 60_000) { clearInterval(watchdog); req.destroy(new Error("60 秒没有任何数据")); }
+              return;
+            }
+            const elapsedSec = elapsedMs / 1000;
+            if (hasAlternative && elapsedSec >= 12 && received / elapsedSec < 200 * 1024) {
+              clearInterval(watchdog);
+              req.destroy(new Error("太慢（" + Math.round(received / elapsedSec / 1024) + "KB/s），已换源"));
+            }
+          }, 1000);
+          out.on("close", () => clearInterval(watchdog));
           res.on("data", (chunk: Buffer) => {
             received += chunk.length;
             if (onProgress) {
@@ -377,6 +394,7 @@ export async function downloadUpdate(
           });
         }
       );
+      req.setTimeout(20_000, () => req.destroy(new Error("20 秒拿不到响应头")));
       req.on("error", reject);
       req.end();
     });
@@ -388,10 +406,12 @@ export async function downloadUpdate(
      sha256 不符删坏文件并换下一档；全失败给合并错误（带最后一次原因）。 */
   const candidates = mirrorCandidates(releaseUrl);
   let lastError: unknown = new Error("no_candidate");
-  for (const candidate of candidates) {
+  for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+    const candidate = candidates[candidateIndex];
+    const hasAlternative = candidateIndex < candidates.length - 1;
     await fs.rm(destPath, { force: true }).catch(() => undefined);
     try {
-      const result = await hop(candidate, 0);
+      const result = await hop(candidate, 0, hasAlternative);
       /* ⛔ 完整性校验（09-13 审计 P0 保留）：有期望哈希就必须匹配，不匹配**删文件并换下一档**。 */
       if (expectedSha256) {
         const actual = await sha256OfFile(result.path);
@@ -409,7 +429,7 @@ export async function downloadUpdate(
   {
     const detail = lastError instanceof Error ? lastError.message : String(lastError);
     await fs.rm(destPath, { force: true }).catch(() => undefined);
-    throw new Error(`全部下载通道（gh-proxy / ghfast / 直连）都失败了；最后一次：${detail}`);
+    throw new Error(`全部下载通道（直连 / hk.gh-proxy / gh-proxy）都失败了；最后一次：${detail}`);
   }
 }
 

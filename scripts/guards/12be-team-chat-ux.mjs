@@ -2189,6 +2189,7 @@ const catalog = [
     ok(/const nudgeAsk = \/\^\\\[系统\\\]\\s\*你这一轮/.test(ipc)
       && /const echoedNudge = Boolean\(nudgeAsk && !teamToolUsedSince/.test(ipc),
       "⑤ 防重复只在**催办类** ask 生效（回喂 / 定时任务的验收结论必须落群 —— 真机回归 22:55 钉住）");
+  }
   /* ⛔⛔ 11-13 用户：「外面还是会显示那个伙伴会话，就是成员艾特成员的时候，这里会显示调度会话」。
      主侧栏的隐藏集原来只取 `bossThreads.memberIds`（= **BOSS 群**成员）⇒ 工作伙伴群（`grp_*`）
      的成员会话一个都不在里面 ⇒ 成员互相 @（group_say relay）新建/复用的伙伴会话照样透到
@@ -2199,7 +2200,6 @@ const catalog = [
     ok(/Object\.keys\(talkThreads\.byId \?\? \{\}\)/.test(shell)
       && /useSyncExternalStore\(subscribeTeamTalkThreads, getTeamTalkThreads\)/.test(shell),
       "⑥ 主侧栏隐藏集并入工作伙伴群台账 talkThreads.byId（⛔ 只藏 BOSS 群 = 成员互相 @ 的伙伴会话照样透出）");
-  }
   }
   {
     const guardrails = codeOnly(read("electron/features/group-talk/05-guardrails.ts"));
@@ -2219,6 +2219,30 @@ const catalog = [
       && /dispatchMcpCount !== 0/.test(boot)
       && !/已固定走 MCP/.test(reg),
       "⛔ harness-dispatch MCP 已退役：不再注册、残留段会清理、能力表不再声称走 MCP");
+  }
+
+  /* ⛔⛔ 11-15 用户（截图 + 连骂）：「艾特成员就要每个成员发一个艾特，这种垃圾机制删了」
+     「一个消息艾特多个成员就可以解决的问题，一个消息艾特一个成员，不刷屏，见鬼了」。
+     旧实现：每起一位成员就在群里落一条 `@成员：任务`（team-invoke 里逐条 append）⇒
+     派 4 位 = 4 条几乎一样的消息。⇒ 现在必须：同一批派活**合并成一条**、
+     且**一条消息里 @ 多个成员**（同任务的人合并到同一行）。 */
+  {
+    const invoke = codeOnly(read("electron/team-invoke.ts"));
+    ok(!/text:\s*`@\$\{member\.name\}：/.test(invoke),
+      "⛔ 逐人一条的派活消息已删除（`@成员：任务` 每条一位 = 用户判词「这种垃圾机制」）");
+    ok(/function queueDispatchEcho\(/.test(invoke) && /DISPATCH_ECHO_WINDOW_MS/.test(invoke)
+      && /function flushDispatchEcho\(/.test(invoke),
+      "派活回执走合并器：同一批（时间窗口内）收进一个缓冲，只发一条");
+    const flush = invoke.slice(invoke.indexOf("function flushDispatchEcho("), invoke.indexOf("const memberLocks"));
+    ok(/\.map\(\(n\) => `@\$\{n\}`\)/.test(flush),
+      "一条消息里 @ 多个成员（同任务的人合并成一行 `@A @B：任务`）");
+    ok(/byBrief\.size === 1/.test(flush),
+      "同一件活只写一遍任务正文（⛔ 不按人重复同一段话 = 刷屏的根源）");
+    ok(/## 群里最近在聊什么/.test(invoke) && /别重复介绍自己/.test(invoke),
+      "成员提示词带上群里最近的原始对话（知道自己说过什么、别人答过什么）");
+    const bridge = codeOnly(read("electron/team-group-bridge.ts"));
+    ok(/RELAY_COALESCE_MS/.test(bridge) && /pendingRelays/.test(bridge),
+      "成员交回后回喂主理人按群合并（1.5s 内多次交回只叫醒一次 —— 否则「回复一次又让人回复一次」）");
   }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
