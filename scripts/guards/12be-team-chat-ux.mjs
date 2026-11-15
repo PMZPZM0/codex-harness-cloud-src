@@ -412,6 +412,15 @@ const catalog = [
         && ipcSup.includes("!options.suppressLead"),
         "用户直接 @ 成员时管理员不插嘴（⛔ 只收敛给管理员那种才回喂）");
     }
+    /* ⛔ 11-15 用户截图：「他是回复艾特他那个人的」—— 造镜的气泡引用的是「回复 潘总」，
+       因为成员产出落群时没写 via，渲染层只能回退到最近一条人话。
+       ⇒ 必须写清「谁叫的我」：互 @ 接力 = 那位成员；工具派活 = 团主理人。 */
+    {
+      const rawInvoke = read("electron/team-invoke.ts");
+      ok(rawInvoke.includes("callerId") && rawInvoke.includes("callerName")
+        && rawInvoke.includes("via: {") && rawInvoke.includes("input.callerName"),
+        "成员产出写 via（引用谁叫他来的），⛔ 不再一律回退成「回复 用户」");
+    }
     const fallback = codeOnly(read("electron/team-tool-fallback.ts"));
     const boot = codeOnly(read("electron/features/boot.ts"));
     ok(/extraTools\?: unknown\[\]/.test(chan)
@@ -571,13 +580,14 @@ const catalog = [
       "接力不串群：排片跑完/成员交回必回交主理人，⛔ 不再按 teamId 判断有没有人在跑");
     /* ⛔⛔ 11-12 用户：「成员汇报给主代理的时候没有艾特主代理，主代理能知道他跑完了？」 */
     ok(/handoffTo: teamAuthorIdOf/.test(read("electron/team-invoke.ts"))
-      && /handoffTo: leadAuthorId/.test(teamIpcSrc)
+      /* ⛔ 11-15 新口径：交回对象 = **叫他来的人**（管理员点名 = 主理人；互 @ = 那位成员；用户直 @ = 不写）。 */
+      && /handoffTo: caller\.id/.test(teamIpcSrc)
       && /handoffTo: String\(entry/.test(read("src/lib/team-models.mjs"))
       && /handoffTo: String\(msg\?\.handoffTo/.test(read("src/lib/team-models.mjs"))
       && /team-msg__handoff/.test(hostView)
       && /run\.leadThreadId/.test(fallback)
       && !/activeRunList\(\)\.some\(\(run\) => String\(run\.teamId/.test(fallback),
-      "成员交回显式 @ 主理人（结构化 handoffTo + 名字行标签），回喂按 leadThreadId 不串群");
+      "成员交回写「叫他来的人」（结构化 handoffTo + 名字行标签；⛔ 用户直 @ 的产出不标交回），回喂按 leadThreadId 不串群");
     /* ⛔⛔ 11-14（抄 Pachat）：自由催办已**整体移除** —— 谁说话由「被@/被回复/有未读」决定，
        宿主不再在"主理人没派活 / 刚答完信息"时强催一轮（那正是「同一问题回两次」的来源）。⛔ 不许复活。 */
     ok(!/leadSelfNudges/.test(teamIpcSrc) && !/leadTurnTaskLike/.test(teamIpcSrc) && !/isInfoRequest/.test(teamIpcSrc),
@@ -591,7 +601,7 @@ const catalog = [
     ok(/export function relayGroupLead/.test(bridge)
       && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
       && /relayLeadAfterMembers\(/.test(dispatch)
-      && /runDispatchRounds\(group, \[target\], note, "automation"/.test(dispatch),
+      && /runDispatchRounds\(group, \[target\], note \+ openNote, "automation"/.test(dispatch),
       "回喂走群聊串行队列（不落假用户消息、⛔ 不并发 resume 同一条会话）");
     /* ⛔ 11-12 用户：「就正常对话聊天派活，主代理一直刷屏」⇒ 口径从「回一句已派给谁」
        改成「拿到已派单就不要再说话」（派单消息已经进群，复述=同一件事说两遍）。 */
