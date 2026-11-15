@@ -1,48 +1,73 @@
 /**
- * updates-ipc（09-22 架构改造：从 electron/main.ts 组合根按域拆出，纯搬迁；
- *            10-03 改插件形态，P2 批次 2）
+ * updates-ipc（09-22 从 main.ts 拆域；10-03 插件化；10-11 云助手自动更新）
  *
- * 域：**应用更新链**（检查更新 / 下载 / 定位安装包 / 运行安装）。
- * 搬出符号：IPC handler updates:check / updates:download / updates:reveal / updates:install，
- *          及其权威状态 lastUpdateInfo / lastVerifiedUpdatePath。
- * 消费方：设置 → 控制台 → Codex 引擎更新。
+ * 域：**应用更新链**——检查 / 下载 / 定位 / 安装 + **后台静默检查**与**状态机**。
+ *
+ * ── 10-11 云助手自动更新（用户需求：进度反馈 / 后台静默检查 / 下载与安装）────────
+ *  ① 状态机（本域单一真相源）：idle → checking → available → downloading → downloaded
+ *     → installing → done / error。每次相位变化都 `sender.send("updates:state", …)` 推给
+ *     渲染层（无头形态经 headless 的 wc.send 包装自动转 SSE 广播给浏览器）。
+ *  ② 后台静默检查：启动后 30s 首查（避开开机高峰），之后每 6h 一次；失败按 5min → 15min
+ *     → 1h → 6h **退避**，断网（net.isOnline === false）直接跳过不打扰。
+ *  ③ 下载：进度事件带**已下载/总量/速度/剩余**（updates.ts 内 3s 滑窗算速率，样本不足
+ *     给 0/null，不给假数字）；支持**取消**（AbortSignal）与 `.part` 断点续传。
+ *  ④ 安装：仍只接受"刚刚校验通过的那个文件"（09-13 审计 P0 口径不动）；新增
+ *     **稍后安装**（记住已校验文件，下次启动提示）与**跳过此版本**（同版本不再提示）。
+ *  ⑤ 产品线隔离：助手只认 `cloud-v*` + `CodexHarnessAssistant-*`（updates.ts 内分流），
+ *     与桌面版 `v*` 互不串——同仓两条产品线的最大串味点。
  *
  * 跨域符号（checkLatestUpdate / downloadUpdate / installUpdate / defaultDownloadDir /
- * fileExists / UPDATE_CHANNEL）直接来自 ./updates，不依赖 main.ts，零跨域耦合。
- *
- * ── 10-03 插件化 ────────────────────────────────────────────────────────────
- *   · `inject: ["ipc"]` + `ipcHost.handle`，⛔ 不再直接 import `ipcMain`；
- *   · 两个**权威状态**（lastUpdateInfo / lastVerifiedUpdatePath）搬进 setup 闭包 ——
- *     它们本来就是"本域私有状态"，进闭包后随卸载一起消失（更干净）；
- *   · 四个通道的全部安全校验（"只认刚校验通过的那个包"）**逐字保留**；
- *   · `ctx.effect` 卸载摘通道。
- * ⛔ 注册时机不变：生成物在主进程模块加载期 import 本文件 ⇒ handler 立即注册（早于 whenReady）。
+ * fileExists / UPDATE_CHANNEL / isAssistantRuntime）直接来自 ./updates，零跨域耦合。
  */
-import { app, shell } from "electron";
+import { app, net, powerMonitor, shell } from "electron";
+import fs from "node:fs";
+import { stat as statAsync, rename as renameAsync } from "node:fs/promises";
 import path from "node:path";
-import { statSync } from "node:fs";
-import { spawn } from "node:child_process";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-import { sendToWindow } from "./window-bus";
-
 import {
   checkLatestUpdate,
   defaultDownloadDir,
   pruneOldInstallers,
   downloadUpdate,
-  downloadUpdateDifferential,
   fileExists,
-  hasPendingDifferential,
-  quitAndInstallDifferential,
   installUpdate,
+  isAssistantRuntime,
   UPDATE_CHANNEL,
 } from "../updates";
 
 /** handler 里用到的发送端形状（⛔ 不写 any：只需要 sender.send 这一个能力）。 */
 type UpdateSender = { sender: { send(channel: string, payload: unknown): void } };
 
-const UPDATE_CHANNELS = ["updates:check", "updates:download", "updates:reveal", "updates:install"];
+const UPDATE_CHANNELS = [
+  "updates:check", "updates:download", "updates:reveal", "updates:install",
+  "updates:check-silent", "updates:state-read", "updates:cancel-download",
+  "updates:defer-install", "updates:skip-version",
+];
+
+/** 相位（单一真相源：渲染层只按这个渲染，不要自己推断）。 */
+type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "installing" | "done" | "error";
+type UpdateState = {
+  phase: UpdatePhase;
+  version?: string;
+  filename?: string;
+  changelog?: string;
+  percent: number;
+  receivedBytes: number;
+  totalBytes: number;
+  speedBytesPerSec: number;
+  etaSeconds: number | null;
+  error?: string;
+  /** 稍后安装：已校验文件路径 + 版本（下次启动提示）。 */
+  deferredVersion?: string;
+  /** 当前是否在电池供电（安装会中断，UI 应提示插电）。 */
+  onBattery?: boolean;
+};
+
+/** 后台检查节奏（10-11 用户定：静默、低打扰）。 */
+const FIRST_CHECK_DELAY_MS = 30_000;
+const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const BACKOFF_STEPS_MS = [5 * 60_000, 15 * 60_000, 60 * 60_000, CHECK_INTERVAL_MS];
 
 export const updatesFeature = defineFeature<null>({
   id: "updates",
@@ -51,96 +76,180 @@ export const updatesFeature = defineFeature<null>({
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("updates: 缺少 ipc 服务（宿主未提供）");
 
-    /* ⛔⛔ 启动即清**旧安装包**（10-17 用户令：「更新重启完成后把旧的安装包去了，否则越积越大」）。
-      为什么放在"重启后"而不是"安装完立刻"：安装包拉起后本进程马上退出，那一刻删不掉
-      （自己还握着句柄）；**新版本跑起来的这一刻**才是安全的清理点。
-      ⛔ 静默 + 幂等：清不掉就留着，绝不影响启动（这里**不许抛**，也不许拖慢首屏）。 */
+    // ★ 更新链的主进程侧权威（09-13 审计 P0）：下载地址与安装路径**不再由渲染层决定**。
+    /* ⛔⛔ 启动即清**旧安装包**（10-17 用户令「更新重启完成后把旧的安装包去了」）。
+      放在"重启后"而不是"安装完立刻"：安装包拉起后本进程马上退出，那一刻删不掉
+      （自己还握着句柄）；**新版本跑起来的这一刻**才是安全清理点。
+      ⛔ 静默 + 幂等：清不掉就留着，绝不影响启动。 */
     try {
       const swept = pruneOldInstallers(defaultDownloadDir(app.getPath("downloads")));
-      if (swept.removed > 0) {
-        console.log(`[updates] 已清理 ${swept.removed} 个旧安装包（约 ${Math.round(swept.bytes / 1048576)}MB）`);
-      }
+      if (swept.removed > 0) console.log(`[updates] 已清理 ${swept.removed} 个旧安装包（约 ${Math.round(swept.bytes / 1048576)}MB）`);
     } catch { /* 清不掉不影响启动 */ }
 
-    // ★ 更新链的主进程侧权威（09-13 审计 P0）：下载地址与安装路径**不再由渲染层决定**。
-    //   `updates:check` 拿到的 info 存在这里，下载用它自己的 downloadUrl + sha256 校验，
-    //   安装只接受"刚刚校验通过的那个文件"——渲染层即使被注入也换不掉安装包。
-    let lastUpdateInfo: { downloadUrl?: string; sha256?: string; version?: string; tag?: string; filename?: string } | null = null;
+    let lastUpdateInfo: { downloadUrl?: string; sha256?: string; version?: string; filename?: string } | null = null;
     let lastVerifiedUpdatePath = "";
-    /** 10-12：静默下载并发闸（重复触发时不重复下几百 MB）。 */
-    let silentDownloading = false;
+    let state: UpdateState = { phase: "idle", percent: 0, receivedBytes: 0, totalBytes: 0, speedBytesPerSec: 0, etaSeconds: null };
+    let downloadAbort: AbortController | null = null;
+    /** 进度事件节流：>=2% 或 >=300ms 推一次（高频 IPC 会刷屏渲染层）。 */
+    let lastPush = { pct: -1, at: 0 };
+    let backoffIndex = 0;
+    let checkTimer: ReturnType<typeof setTimeout> | null = null;
 
-    /** 10-25 差分优先：Windows 且有版本信息时先走 electron-updater；
-     *  任何失败（无 latest.yml / 无 blockmap / 镜像挂 / 校验失败）都返回 null，
-     *  调用方继续原有的完整包下载。 */
-    const tryDifferential = async (mode: "differential" | "full" | undefined, onProgress?: (info: { receivedBytes: number; totalBytes: number; percent: number }) => void) => {
-      /* ⛔⛔ 11-15 方案 A（用户拍板）：**不再因为 mode==="full" 跳过 updater**。
-         差分的基线（已安装版本的 blockmap）只有 electron-updater 自己安装时才登记；
-         我们自建下载器 + spawn 安装器的老路永远不登记 ⇒ 每次更新都是整包（实测 386MB，与安装包同大）。
-         ⇒ 一律先交给 updater：没有基线时它自己下整包（并且这次安装会建立基线），
-            有基线时它下差分（几十兆）。它彻底不可用（镜像全挂 / 无 latest.yml）才回退自建下载器。
-         ⛔ mode 现在只影响进度文案，不再影响走哪条通道 —— 想强制整包请把 latest.yml 去掉。 */
-      const version = lastUpdateInfo?.version;
-      if (!version) return null;
+    /** 持久化（跳过版本 / 稍后安装 / 上次检查时间）——放 userData，卸载域时随闭包消失。 */
+    const stateFile = () => path.join(app.getPath("userData"), "updates-state.json");
+    type Persisted = { skippedVersion?: string; deferredPath?: string; deferredVersion?: string; lastCheckAt?: number };
+    const readPersisted = (): Persisted => {
+      try { return JSON.parse(fs.readFileSync(stateFile(), "utf8")) as Persisted; } catch { return {}; }
+    };
+    const writePersisted = (next: Persisted) => {
+      try { fs.writeFileSync(stateFile(), JSON.stringify(next, null, 2), { mode: 0o600 }); } catch { /* 不影响主流程 */ }
+    };
+
+    /** 相位推进 + 广播（同时保留最近状态供 state-read 拉取）。 */
+    const setState = (patch: Partial<UpdateState>, sender?: UpdateSender) => {
+      const onBattery = powerMonitor.isOnBatteryPower?.() ?? false;
+      state = { ...state, ...patch, onBattery };
+      const payload = { ...state, product: isAssistantRuntime() ? "assistant" : "desktop", channel: isAssistantRuntime() ? "assistant" : UPDATE_CHANNEL };
+      try { sender?.sender.send("updates:state", payload); } catch { /* 窗口可能已销毁 */ }
+      return payload;
+    };
+
+    /** 后台静默检查：失败退避、断网跳过、下载中不并发。 */
+    const scheduleCheck = (delayMs: number) => {
+      if (checkTimer) clearTimeout(checkTimer);
+      checkTimer = setTimeout(() => { void runSilentCheck(); }, delayMs);
+    };
+    const runSilentCheck = async () => {
+      // 下载中不并发检查（会覆盖 lastUpdateInfo 的下载地址）
+      if (state.phase === "downloading") { scheduleCheck(CHECK_INTERVAL_MS); return; }
+      // 断网直接跳过：不弹错、不退避（网络恢复后按常规节奏再查）
+      if (net.isOnline && !net.isOnline()) { scheduleCheck(15 * 60_000); return; }
+      setState({ phase: "checking" });
       try {
-        const result = await downloadUpdateDifferential({ version, tag: lastUpdateInfo?.tag }, onProgress);
-        lastVerifiedUpdatePath = result.path;
-        return { ...result, bytes: statSync(result.path).size };
-      } catch (error: any) {
-        console.warn("[updates] 差分更新失败，回退完整包：", error?.message ?? error);
-        return null;
+        const info = await checkLatestUpdate(String(app.getVersion() || "0.0.0"), process.platform, process.arch);
+        const persisted = readPersisted();
+        if (info?.hasUpdate && info.version && persisted.skippedVersion === info.version) {
+          setState({ phase: "idle", version: info.version, changelog: info.changelog });
+        } else {
+          lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: info.version, filename: info.filename } : null;
+          setState({
+            phase: info?.hasUpdate ? "available" : "idle",
+            version: info?.version,
+            filename: info?.filename,
+            changelog: info?.changelog,
+            percent: 0, receivedBytes: 0, totalBytes: (info as any).size ?? 0, speedBytesPerSec: 0, etaSeconds: null,
+            error: undefined,
+          });
+        }
+        backoffIndex = 0;
+        scheduleCheck(CHECK_INTERVAL_MS);
+      } catch (error) {
+        // 静默失败：只落状态不打扰用户，按退避重试
+        setState({ phase: "idle", error: (error as Error).message });
+        backoffIndex = Math.min(backoffIndex + 1, BACKOFF_STEPS_MS.length - 1);
+        scheduleCheck(BACKOFF_STEPS_MS[backoffIndex]);
       }
     };
 
-    ipcHost.handle("updates:check", async () => {
+    // 启动后台静默检查（30s 后首查，之后按节奏；卸载时清 timer）
+    scheduleCheck(FIRST_CHECK_DELAY_MS);
+
+    ipcHost.handle("updates:check", async (event: unknown) => {
+      const sender = event as UpdateSender;
       try {
         const currentVersion = String(app.getVersion() || "0.0.0");
-        // ⛔ 09-15 用户定稿：更新源只剩 GitHub Releases（发布站不再分发安装包）
+        setState({ phase: "checking" }, sender);
         const info = await checkLatestUpdate(currentVersion, process.platform, process.arch);
-        lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, tag: (info as any).tag, filename: (info as any).filename } : null;
-        return { ok: true, info, currentVersion, channel: UPDATE_CHANNEL, source: "github" as const };
+        lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: info.version, filename: info.filename } : null;
+        const payload = setState({
+          phase: info?.hasUpdate ? "available" : "idle",
+          version: info?.version, filename: info?.filename, changelog: info?.changelog,
+          totalBytes: (info as any).size ?? 0, percent: 0, receivedBytes: 0, speedBytesPerSec: 0, etaSeconds: null, error: undefined,
+        }, sender);
+        return { ok: true, info, currentVersion, channel: payload.channel, source: "github" as const };
       } catch (err: any) {
+        setState({ phase: "error", error: err?.message || String(err) }, sender);
         return { ok: false, error: err?.message || String(err) };
       }
     });
 
-    ipcHost.handle("updates:download", async (event: unknown, input: { downloadUrl?: string; filename?: string; mode?: "differential" | "full" }) => {
-      // ⛔ 容器把 event 收窄成 unknown（宿主不该假设回调知道 Electron 类型面）⇒ 这里显式收窄，
-      //    且只取 sender.send 一个能力（不把整个 IpcMainInvokeEvent 泄漏进业务逻辑）。
+    // 静默检查（UI 的"检查更新"按钮走这条：不弹错误提示、失败只落状态）
+    ipcHost.handle("updates:check-silent", async () => {
+      await runSilentCheck();
+      return { ok: true, state };
+    });
+
+    ipcHost.handle("updates:state-read", async () => ({ ok: true, state }));
+
+    ipcHost.handle("updates:download", async (event: unknown, input: { downloadUrl?: string; filename?: string }) => {
       const sender = event as UpdateSender;
       try {
-        // 有"刚检查到的官方地址"就用它；渲染层传的地址只在没有检查结果时才作为兜底，
-        // 而且无论如何都会被 downloadUpdate 的 https + sha256 双重校验挡住。
         const url = lastUpdateInfo?.downloadUrl || input?.downloadUrl;
         if (!url) return { ok: false, error: "没有可用的更新地址（请先检查更新）" };
-        let lastPushed = -1;
-        const pushProgress = (percent: number) => {
-          const pct = Math.round(percent * 100);
-          // 每 2% 推一次（+ 必定推 100%），避免高频 IPC 刷屏
-          if (pct !== lastPushed && (pct - lastPushed >= 2 || pct >= 100)) {
-            lastPushed = pct;
-            sender.sender.send("updates:download-progress", percent);
-          }
-        };
-        // 10-25 差分优先：失败自动回退下面的完整包下载
-        const differential = await tryDifferential(input?.mode, ({ percent }) => pushProgress(percent));
-        if (differential) {
-          return { ok: true, path: differential.path, bytes: differential.bytes, differential: true };
-        }
         const dir = defaultDownloadDir(app.getPath("downloads"));
         const safeName = String(input?.filename || lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
         const dest = path.join(dir, safeName);
-        const info = await downloadUpdate(url, dest, ({ percent }) => pushProgress(percent), lastUpdateInfo?.sha256);
+        // ⛔ .part 断点续传：中途取消/断网不丢已下的部分，下次同版本续传（Range）。
+        const partPath = `${dest}.part`;
+        const resumeFrom = fileExists(partPath) ? (await statAsync(partPath)).size : 0;
+        downloadAbort?.abort();
+        downloadAbort = new AbortController();
+        setState({ phase: "downloading", version: lastUpdateInfo?.version, filename: safeName, percent: 0, receivedBytes: resumeFrom, speedBytesPerSec: 0, etaSeconds: null, error: undefined }, sender);
+        lastPush = { pct: -1, at: 0 };
+        const info = await downloadUpdate(url, partPath, (progress) => {
+          const pct = Math.round(progress.percent * 100);
+          const now = Date.now();
+          if (pct !== lastPush.pct && (pct - lastPush.pct >= 2 || pct >= 100 || now - lastPush.at >= 300)) {
+            lastPush = { pct, at: now };
+            setState({
+              phase: "downloading",
+              percent: progress.percent,
+              receivedBytes: progress.receivedBytes,
+              totalBytes: progress.totalBytes || state.totalBytes,
+              speedBytesPerSec: progress.speedBytesPerSec ?? 0,
+              etaSeconds: progress.etaSeconds ?? null,
+            }, sender);
+          }
+        }, lastUpdateInfo?.sha256, downloadAbort.signal, resumeFrom);
+        await renameAsync(partPath, info.path).catch(() => undefined);
         lastVerifiedUpdatePath = info.path;   // 只有校验通过才会走到这里
-        return { ok: true, path: info.path, bytes: info.bytes, differential: false };
+        setState({ phase: "downloaded", version: lastUpdateInfo?.version, filename: safeName, percent: 1, receivedBytes: info.bytes, speedBytesPerSec: 0, etaSeconds: 0 }, sender);
+        return { ok: true, path: info.path, bytes: info.bytes };
       } catch (err: any) {
-        return { ok: false, error: err?.message || String(err) };
+        const cancelled = /取消/.test(String(err?.message ?? ""));
+        setState({ phase: cancelled ? "available" : "error", error: cancelled ? undefined : err?.message || String(err) }, sender);
+        return { ok: false, error: err?.message || String(err), cancelled };
+      } finally {
+        downloadAbort = null;
       }
     });
 
+    ipcHost.handle("updates:cancel-download", async () => {
+      downloadAbort?.abort();
+      downloadAbort = null;
+      setState({ phase: "available", percent: 0, speedBytesPerSec: 0, etaSeconds: null, error: undefined });
+      return { ok: true };
+    });
+
+    // 稍后安装：记住已校验文件与版本，下次启动（available 之前）提示一次
+    ipcHost.handle("updates:defer-install", async () => {
+      if (!lastVerifiedUpdatePath || !fileExists(lastVerifiedUpdatePath)) return { ok: false, error: "no_verified_update" };
+      const next = { ...readPersisted(), deferredPath: lastVerifiedUpdatePath, deferredVersion: lastUpdateInfo?.version };
+      writePersisted(next);
+      setState({ phase: "available", deferredVersion: next.deferredVersion });
+      return { ok: true, ...next };
+    });
+
+    ipcHost.handle("updates:skip-version", async (_event, version: string) => {
+      const clean = String(version ?? "").trim();
+      if (!clean) return { ok: false, error: "缺少版本号" };
+      writePersisted({ ...readPersisted(), skippedVersion: clean });
+      setState({ phase: "idle", version: clean });
+      return { ok: true, skippedVersion: clean };
+    });
+
     ipcHost.handle("updates:reveal", async (_event, filePath: string) => {
-      // ⛔ 隐私加固（09-19 审计中危）：只允许定位「刚下载并通过 sha256 校验的那个安装包」，
-      // 与 updates:install 同一口径——渲染层传任意其它路径一律拒绝。
+      // ⛔ 隐私加固（09-19 审计中危）：只允许定位「刚下载并通过 sha256 校验的那个安装包」。
       if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
       if (path.resolve(String(filePath ?? "")) !== path.resolve(lastVerifiedUpdatePath)) return { ok: false, error: "path_not_verified" };
       shell.showItemInFolder(lastVerifiedUpdatePath);
@@ -148,127 +257,29 @@ export const updatesFeature = defineFeature<null>({
     });
 
     // 下载完成后运行安装包：交给系统默认程序打开（Windows 下即启动安装向导）
-    // ⛔ 只接受**刚刚下载并通过 sha256 校验的那个文件**（09-13 审计 P0）：此前渲染层可以传任意
-    // 路径进来，配合"下载地址也由渲染层给"就构成"任意 exe 落盘并执行"。渲染层被注入时也换不掉。
-    ipcHost.handle("updates:install", async (_event, filePath: string) => {
+    // ⛔ 只接受**刚刚下载并通过 sha256 校验的那个文件**（09-13 审计 P0）。
+    ipcHost.handle("updates:install", async (event: unknown, filePath: string) => {
+      const sender = event as UpdateSender;
       if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
       if (path.resolve(String(filePath ?? "")) !== path.resolve(lastVerifiedUpdatePath)) {
         return { ok: false, error: "path_not_verified" };
       }
       if (!fileExists(lastVerifiedUpdatePath)) return { ok: false, error: "file_not_found" };
+      setState({ phase: "installing" }, sender);
       const started = await installUpdate(lastVerifiedUpdatePath);
+      if (started) {
+        // 安装已启动：清掉稍后安装记录（下次启动是新版本了）
+        const next = { ...readPersisted() };
+        delete next.deferredPath; delete next.deferredVersion;
+        writePersisted(next);
+      }
       return { ok: started, error: started ? undefined : "open_failed" };
     });
 
-    /* ══════════════════════════════════════════════════════════════════════
-     * 10-12 新增：后台静默下载 + 「重启安装」通道（修「下载完还要自己找安装包」）
-     *
-     * ⛔⛔ **为什么 `updates:install` 不够用**：它只 `shell.openPath(exe)` 把安装向导
-     *   拉起来，而应用进程还在跑 —— NSIS 覆盖安装要求先关掉旧进程，于是安装向导
-     *   弹出「无法关闭，请手动关闭」，或干脆被浏览器/安全软件抢了打开方式而失败。
-     *   旧逻辑失败即静默退回「打开文件夹」（界面只弹一句"请手动安装"）⇒ 用户体验
-     *   就是「下载完还得自己找包、自己装」。**正解是 quit-and-install**：
-     *   先退出应用（清干净引擎与文件占用），再拉起安装包。
-     *
-     * ⛔ 安全口径**沿用** `updates:install` 那条（09-13 审计 P0）：只接受
-     *   「刚刚下载并 sha256 校验通过的那个文件」，渲染层传任意路径一律拒。
-     *   静默下载走的是**主进程自己取的地址**（lastUpdateInfo），不接受渲染层指定。
-     * ══════════════════════════════════════════════════════════════════════ */
-
-    /** 后台静默下载 → 校验通过后置位；已就绪时再次调用直接返回（幂等）。 */
-    ipcHost.handle("updates:download-silent", async (_event, input?: { mode?: "differential" | "full" }) => {
-      // ⛔ 幂等：已经下好并校验过就别重复下几百 MB。
-      if (lastVerifiedUpdatePath && fileExists(lastVerifiedUpdatePath)) {
-        return { ok: true, alreadyDone: true, version: lastUpdateInfo?.version, path: lastVerifiedUpdatePath };
-      }
-      if (silentDownloading) return { ok: false, error: "already_downloading" };
-      // ⛔ 没检查过就没有权威地址：静默下载**自己检查一次**，绝不接受渲染层给的 URL。
-      if (!lastUpdateInfo?.downloadUrl) {
-        try {
-          const currentVersion = String(app.getVersion() || "0.0.0");
-          const info = await checkLatestUpdate(currentVersion, process.platform, process.arch);
-          lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, tag: (info as any).tag, filename: (info as any).filename } : null;
-        } catch {
-          return { ok: false, error: "check_failed" };
-        }
-      }
-      const url = lastUpdateInfo?.downloadUrl;
-      if (!url) return { ok: false, error: "no_update" };
-      silentDownloading = true;
-      try {
-        // 10-25 差分优先；失败继续走下面的完整包
-        const differential = await tryDifferential(input?.mode);
-        if (differential) {
-          sendToWindow("updates:ready", { version: lastUpdateInfo?.version, path: differential.path });
-          return { ok: true, version: lastUpdateInfo?.version, path: differential.path, differential: true };
-        }
-        const dir = defaultDownloadDir(app.getPath("downloads"));
-        const safeName = String(lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
-        const info = await downloadUpdate(url, path.join(dir, safeName), undefined, lastUpdateInfo?.sha256);
-        lastVerifiedUpdatePath = info.path;
-        // ⛔ 主动推一条事件：渲染层可能没打开设置页，只能靠事件弹窗（需求 3）。
-        sendToWindow("updates:ready", { version: lastUpdateInfo?.version, path: info.path });
-        return { ok: true, version: lastUpdateInfo?.version, path: info.path, differential: false };
-      } catch (err: any) {
-        return { ok: false, error: err?.message || String(err) };
-      } finally {
-        silentDownloading = false;
-      }
-    });
-
-    /**
-     * 「重启安装」：退出应用并拉起已校验的安装包。
-     *
-     * ⛔⛔ 11-15 用户实测「点重启更新，应用关了、安装提醒出来一下就没装成」：
-     *   **差分包必须由下载它的 electron-updater 自己去装**（`quitAndInstall(true, true)`
-     *   ＝ `/S` 静默安装 + 装完自动拉起新版本）。原来不管哪条路径都 `spawn(pending.exe)`，
-     *   而本仓 `nsis.oneClick=false` ⇒ 起来的是**交互式向导 + UAC 提权框**，
-     *   我们同时 `app.quit()` ⇒ 应用消失、向导被挡在后面，用户以为更新失败。
-     *   ⛔ 顺序仍守「先起安装动作、再退出自己」：quitAndInstall 内部就是先拉起安装器再退出。
-     *   ⛔ 完整包路径（手动下的 `Codex.Harness.Desktop-*.exe`）同理要带 `/S`，
-     *     否则同样把用户丢进向导；only macOS 不适用（NSIS 专属，其余平台返回明确错误）。
-     */
-    ipcHost.handle("updates:restart-install", async () => {
-      if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
-      if (!fileExists(lastVerifiedUpdatePath)) return { ok: false, error: "file_not_found" };
-      if (process.platform !== "win32") {
-        return { ok: false, error: "unsupported_platform" };
-      }
-      /* ⚠️ 等一小会儿让调用方（渲染层）先把 toast 收起来，否则退出瞬间还在闪。 */
-      await new Promise((r) => setTimeout(r, 120));
-      // ① 差分就绪：交给 updater 静默装 + 自启（它会自己 quit，⛔ 这里不许再 app.quit()）。
-      if (hasPendingDifferential()) {
-        try {
-          quitAndInstallDifferential();
-          return { ok: true, via: "differential" };
-        } catch (error) {
-          // updater 装不了（极少见：pending 被清 / 状态没就绪）→ 回退到拉起安装包，不静默吞。
-          console.warn("[updates] 差分静默安装失败，回退拉起安装包：", (error as Error)?.message ?? error);
-        }
-      }
-      try {
-        /* ② 完整包 / 回退路径：`--updated` + `/S` 两个参数缺一不可 ——
-         `/S` = 静默（⛔ 不带它就会弹交互式 NSIS 向导，就是用户看到的「安装提醒」）；
-         `--updated` = 告诉 electron-builder 的 installer.nsh「这是覆盖更新」，
-         它才会在装完后**自动拉起新版本**（electron-updater 自己 doInstall 时传的也是这两个）。 */
-        // ⛔ spawn 不 wait：安装包是独立进程，等它结束就等于永远不退出。
-        spawn(lastVerifiedUpdatePath, ["--updated", "/S"], { detached: true, stdio: "ignore" }).unref();
-        // ⛔ 引擎与各子进程的收尾**不在这里手写**：`app.quit()` 会触发 main.ts 的
-        //    `before-quit`，那里已经统一做 cleanupAll / 停看门狗 / 断 SSH / 销毁语音工作线程。
-        //    （原先这里写了一个 `server.stop?.().catch()` —— `server` 上根本没有 stop 方法，
-        //      TS 直接报错；而且即便有，手写收尾也会与 before-quit 的那套**重复执行**。）
-        app.quit();
-        return { ok: true, via: "installer" };
-      } catch (err: any) {
-        return { ok: false, error: err?.message || String(err) };
-      }
-    });
-
     ctx.effect(() => {
+      if (checkTimer) clearTimeout(checkTimer);
+      downloadAbort?.abort();
       for (const channel of UPDATE_CHANNELS) ipcHost.removeHandler(channel);
-      // 新增通道也要在卸载时摘掉（否则热重载会叠 handler）。
-      ipcHost.removeHandler("updates:download-silent");
-      ipcHost.removeHandler("updates:restart-install");
     });
   },
 });
