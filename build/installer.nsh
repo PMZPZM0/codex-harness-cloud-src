@@ -11,6 +11,22 @@
   Sleep 800
 !macroend
 
+!macro customInit
+  ; 11-16 oneClick 迁移保护：旧版 assisted 安装可能选过「所有用户」（HKLM）。
+  ; oneClick 默认按当前用户装到 %LOCALAPPDATA%\Programs；直接装会与旧全机安装并存两份。
+  ;   · 管理员运行 ⇒ 原地覆盖旧的全机目录；
+  ;   · 非管理员 ⇒ 明确提示先卸载旧版（不静默装第二份）。
+  ReadRegStr $0 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${If} $0 != ""
+    ${If} ${UAC_IsAdmin}
+      StrCpy $INSTDIR $0
+    ${Else}
+      MessageBox MB_ICONEXCLAMATION|MB_OK "检测到旧版是按「所有用户」安装的：$0$\r$\n请先卸载旧版，或以管理员身份运行本次安装，避免出现两份安装。"
+      Quit
+    ${EndIf}
+  ${EndIf}
+!macroend
+
 !macro customInstall
   DetailPrint "内置工具：Node / Python / rg 等首次使用时按需下载（国内镜像优先）"
 !macroend
