@@ -527,6 +527,9 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
   { prefix: "photocraft", count: 7, status: "in-features", file: "features/photocraft-ipc.ts",
     channels: ["photocraft:status", "photocraft:info", "photocraft:convert", "photocraft:run", "photocraft:batch", "photocraft:commands", "photocraft:open"],
     note: "11-15 新增：PhotoCraft（storytold/photocraft，MIT/Apache-2.0）—— 按需下载便携包（CLI+GUI）；工具 photocraft 做调色/滤镜/转换/批量/命令发现；open 用原生 GUI 编辑；MCP 段由 custom-model-apply 生成（roots=userData/photocraft-io）" },
+  { prefix: "artcraft", count: 3, status: "in-features", file: "features/artcraft-ipc.ts",
+    channels: ["artcraft:status", "artcraft:open", "artcraft:sync"],
+    note: "11-16 新增：Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）—— 按需下载 Launcher 便携包（约 11MB）；open 打开 Launcher 装/更新 18 个创作 App；sync 在网关 craft-ai-mcp 出现时重写 config.toml（[mcp_servers.ArtCraft]，一个入口覆盖全部已装 App；11-16 实测上游 v0.19.2 尚未随包出货网关，故 MCP 段条件式生成）" },
 ];
 
 /** 按通道（完整 channel 名）查所属域条目 */
