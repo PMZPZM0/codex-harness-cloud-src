@@ -380,7 +380,7 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 
 （与主仓同构。）开发工具里只有一张「Craft 全家桶」卡（三级弹窗：卡 → `ArtCraftSuite` 的 19 个 App（17 官方 + 2 社区）网格 → 每个 App 一层弹窗；PhotoCraft 那层复用完整 `PhotoCraftCard`）。Launcher 只负责装 App；**装完联动**：主进程扫描 Launcher 安装目录得到已装列表 + exe 版本，弹窗轮询刷新，装完回来显示「已安装 vX」，名单变化时自动重写 config。**工具按 App 拆开**：每个已装且带 `*-cli.exe` 的 App 各自一条 `[mcp_servers.<id>]` + 独立 dynamicTool `craft_<id>`（执行端 artcraft:run；路径闸 + 不覆盖输入 + 参数≤20KB），⛔ 不再用统一网关。PhotoCraft 仍用 `photocraft` 工具与 `[mcp_servers.photocraft]`。⛔ 只下载官方发行物、不重打包、不冒充 ArtCraft 官方。判据：守卫 12bt 51 条 / 12bu 66 条 + 验收 photocraft（三级入口）与 artcraft（联动 + artcraft:run 真跑）。
 
-- **产出文件按格式打开**（11-16 用户令「跟 PhotoCraft 一样」）：`src/lib/craft-openers.mjs` 是格式→App 的单一真相源；文件卡右键菜单与媒体产物卡（图片/视频/音频）只对**已安装**的 App 显示「用 X 打开」，走 `artcraft:run` 的 `open`（spawn 官方主程序带文件，不开 shell）。装完自动接入后提示「新开会话或切走再切回后模型可用」。
+- **产出文件按格式打开**（11-16 用户令「跟 PhotoCraft 一样」）：`src/lib/craft-openers.mjs` 是格式→App 的单一真相源；产出文件卡的「打开方式」下拉、文件卡右键菜单与媒体产物卡（图片/视频/音频）只对**已安装**的 App 显示「用 X 打开」，走 `artcraft:run` 的 `open`（spawn 官方主程序带文件，不开 shell）。装完自动接入后提示「新开会话或切走再切回后模型可用」。
 
 ## 🧹 交付卫生（2026-11-08 用户令，硬性，守卫组 14）
 
