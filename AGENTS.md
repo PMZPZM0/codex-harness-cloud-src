@@ -378,7 +378,7 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 
 ### 🖼 PhotoCraft 专业图像后期（11-15）/ 🧰 Craft 全家桶（11-16）
 
-（与主仓同构。）开发工具里只有一张「Craft 全家桶」卡（三级弹窗：卡 → `ArtCraftSuite` 的 19 个 App（17 官方 + 2 社区）网格 → 每个 App 一层弹窗；PhotoCraft 那层复用完整 `PhotoCraftCard`，原独立卡已撤销）。ArtCraft Launcher 便携包（约 11MB，镜像序 + SHA256SUMS）按需安装；App 的安装/卸载交给 Launcher 本身，宿主不代装。PhotoCraft 官方便携包（约 137MB）在同一三级入口里安装；Codex 工具 `photocraft`（status/commands/info/run/convert/batch/open，命令白名单 + 参数上限 + 可信路径闸 + ⛔ 不覆盖原图）；安装后写 `[mcp_servers.photocraft]`（headless CLI，roots=userData/photocraft-io，**harness 所属段**；卸载直接删段并重启，旧覆盖快照会被清理）；图片产物卡「在 PhotoCraft 中编辑」打开原生 GUI。⛔⛔ 上游 Launcher v0.19.2 还没随包出货 craft-ai-mcp 网关（代码只在 main 分支）⇒ `[mcp_servers.ArtCraft]`（--stdio）只在网关二进制真存在时才写；不存在整段不写、卡片如实显示「等待 Launcher 新版」，上游发版后自动点亮。⛔ 只下载官方发行物、不重打包、不冒充 ArtCraft 官方。判据：守卫 `12bt-photocraft` 51 条 / `12bu-artcraft` 53 条 + 验收 `photocraft`（三级入口）与 `artcraft`。
+（与主仓同构。）开发工具里只有一张「Craft 全家桶」卡（三级弹窗：卡 → `ArtCraftSuite` 的 19 个 App（17 官方 + 2 社区）网格 → 每个 App 一层弹窗；PhotoCraft 那层复用完整 `PhotoCraftCard`）。Launcher 只负责装 App；**装完联动**：主进程扫描 Launcher 安装目录得到已装列表 + exe 版本，弹窗轮询刷新，装完回来显示「已安装 vX」，名单变化时自动重写 config。**工具按 App 拆开**：每个已装且带 `*-cli.exe` 的 App 各自一条 `[mcp_servers.<id>]` + 独立 dynamicTool `craft_<id>`（执行端 artcraft:run；路径闸 + 不覆盖输入 + 参数≤20KB），⛔ 不再用统一网关。PhotoCraft 仍用 `photocraft` 工具与 `[mcp_servers.photocraft]`。⛔ 只下载官方发行物、不重打包、不冒充 ArtCraft 官方。判据：守卫 12bt 51 条 / 12bu 66 条 + 验收 photocraft（三级入口）与 artcraft（联动 + artcraft:run 真跑）。
 
 ## 🧹 交付卫生（2026-11-08 用户令，硬性，守卫组 14）
 
@@ -782,7 +782,7 @@ GitHub Release Notes、`whats-new-notes.ts` 要点的**唯一权威数据源**�
 
 - 近期功能性变更（宿主行为，引擎交互相关）
 - 11-15 PhotoCraft 专业图像后期：按需下载 + photocraft 工具 + MCP 连接器 + 图片卡 GUI 编辑（见「### 🖼 PhotoCraft 专业图像后期」）
-- 11-16 Craft 全家桶：开发工具一张卡三级弹窗（Launcher 11MB 按需装 / 19 个 App 目录 / 每个 App 一层弹窗）；网关 craft-ai-mcp 未随上游出货 ⇒ 检测到才写 `[mcp_servers.ArtCraft]`（见「### 🧰 Craft 全家桶」）
+- 11-16 Craft 全家桶：开发工具一张卡三级弹窗（Launcher 11MB 按需装 / 19 个 App 目录 / 每个 App 一层弹窗）；装完联动（已装 + 版本自动显示），每个已装 App 独立 MCP + 工具 `craft_<id>`（见「### 🧰 Craft 全家桶」）
 - 11-15 设计参考库：84 份品牌 DESIGN.md 随包（工具 design_md + 设置页「设计参考」浏览/预览/导出/交给 Codex）（见「### 🎨 设计参考库」）
 - 10-21 长会话滚动条按回合总数撑高 + 按页水合（滚轮不跳 / 不回弹；顶部虚拟占位 + layout effect 首帧锚点补偿）
 - 10-21 长会话滑动窗口（全量加载后仍只挂 5 个回合，切会话不再变慢）+ 刻度尺当前阅读位置波浪 / 绿线等长可点击
