@@ -73,6 +73,18 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
             <div>
               <strong>{preview.member.name}{preview.isLead && <i className="expert-lead-badge">主理人</i>}</strong>
               <p>{preview.member.description || preview.member.profession.zh || "这位专家还没有写介绍。"}</p>
+              {(() => {
+                const tools: string[] = (preview.team as any)?.tools ?? [];
+                const skills: string[] = (preview.team as any)?.skills ?? [];
+                if (!tools.length && !skills.length) return <p className="expert-cap-line muted">尚未声明专业工具与技能</p>;
+                return (
+                  <p className="expert-cap-line">
+                    <span title={tools.join("、")}>工具 {tools.length}</span>
+                    <span title={skills.join("、")}>技能 {skills.length}</span>
+                    {tools.length ? <small>· {tools.slice(0, 4).join(" / ")}{tools.length > 4 ? " …" : ""}</small> : null}
+                  </p>
+                );
+              })()}
             </div>
           </div>
           <div className="agent-preview-section">
