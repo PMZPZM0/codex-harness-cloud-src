@@ -36,7 +36,8 @@
     "dev:main": "node scripts/watch-electron.mjs",
     "verify:runtime": "node scripts/verify-runtime.mjs",
     "memory:audit": "node scripts/memory-audit.mjs",
-    "memory:recall": "node scripts/memory-recall.mjs"
+    "memory:recall": "node scripts/memory-recall.mjs",
+    "pack:skillset": "node scripts/skillset-pack.mjs"
   },
   "dependencies": {
     "@google/model-viewer": "^4.4.0",
