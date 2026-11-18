@@ -973,3 +973,4 @@
 | 2026-11-17 | 侧栏任务视图：「折叠全部项目」置灰 + 会话文字与 tab 对齐 | 改动 | 三仓：src/features/app-view/AppView/01-sidebar-shell.tsx、src/styles/02-sidebar-threads.css、scripts/guards/{02-session-logic.mjs,11x-newbie-guide.mjs,09-structural.mjs} | 任务视图折叠按钮置灰；列表 is-tasks + 行文字 30px 对齐 tab；11x 锚点兼容模板串。判据：守卫 02/11x；check 绿。 | 本轮 |
 | 2026-11-17 | 侧栏品牌区（logo + 名称）布局优化 | 改动 | 三仓：src/styles/01-base-and-chrome.css | 品牌行 44px（mac margin-top 38 不变）、图标 26px 居中 + 轻投影、名称 15/700。判据：check 绿、探针 PASS。 | 本轮 |
 | 2026-11-17 | 侧栏品牌行与菜单间距收紧 | 改动 | 三仓：src/styles/{15-queued-messages.css,41-sidebar-guide.css} | .sidebar-tabs 10→2px、.sidebar-quick 10→0；gap 实测 2px；mac 同口径。判据：check 绿。 | 本轮 |
+| 2026-11-18 | 市场目录与随包工具更新 | 改动 | 三仓市场、引擎与工具安装器 | MCP 目录按服务 ID 对齐上游 19 个名称，刷新官方插件快照。Codex CLI 升至 0.170.0，Agent Desktop 升至 1.3.1，同时更新 Node 24、Python 3.13、ripgrep、uv、CMake 与 7-Zip 的随包版本。 | 本轮 |
