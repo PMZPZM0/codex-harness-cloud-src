@@ -972,3 +972,4 @@
 | 2026-11-17 | 勘误：装了 PhotoCraft 也算「已接入」 | 修复 | 三仓：electron/features/artcraft-ipc.ts、scripts/guards/12bu-artcraft.mjs | PhotoCraft 走自己的 photocraft MCP；检测到 CLI 且段已写入时并入 mcpServers。判据：守卫 12bu；验收 artcraft 14/14；check 绿。 | 勘误 |
 | 2026-11-17 | 侧栏任务视图：「折叠全部项目」置灰 + 会话文字与 tab 对齐 | 改动 | 三仓：src/features/app-view/AppView/01-sidebar-shell.tsx、src/styles/02-sidebar-threads.css、scripts/guards/{02-session-logic.mjs,11x-newbie-guide.mjs,09-structural.mjs} | 任务视图折叠按钮置灰；列表 is-tasks + 行文字 30px 对齐 tab；11x 锚点兼容模板串。判据：守卫 02/11x；check 绿。 | 本轮 |
 | 2026-11-17 | 侧栏品牌区（logo + 名称）布局优化 | 改动 | 三仓：src/styles/01-base-and-chrome.css | 品牌行 44px（mac margin-top 38 不变）、图标 26px 居中 + 轻投影、名称 15/700。判据：check 绿、探针 PASS。 | 本轮 |
+| 2026-11-17 | 侧栏品牌行与菜单间距收紧 | 改动 | 三仓：src/styles/{15-queued-messages.css,41-sidebar-guide.css} | .sidebar-tabs 10→2px、.sidebar-quick 10→0；gap 实测 2px；mac 同口径。判据：check 绿。 | 本轮 |

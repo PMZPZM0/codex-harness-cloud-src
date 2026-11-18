@@ -604,7 +604,8 @@
 
 /* ===== WorkBuddy 风格侧边栏 tab 导航 ===== */
 .sidebar-tabs {
-  margin: 10px 0 4px;
+  /* 11-17: 与 .sidebar-quick 合计 20px 空档 ⇒ 收到 2px（两个平台一致） */
+  margin: 2px 0 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
