@@ -269,8 +269,8 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     mkdirSync(join(memDir, "logs"), { recursive: true });
     for (let i = 0; i < 6; i += 1) writeFileSync(join(memDir, "logs", `${day(i)}.md`), `## ${day(i)}\n${"日志内容".repeat(2000)}\n`, "utf8");
     const hint = await inst.watermarkHint(ws);
-    (/L4/.test(hint) && /90%/.test(hint) ? ok : fail)(`【104】超水位时给出提示行（${hint.split("\n")[1] ? hint.split("\n")[1].slice(0, 60) : "空"}）`);
-    ((await inst.context(ws)).text.includes("记忆水位") ? ok : fail)("【104】水位提示进了常驻记忆块（引擎每轮都看得见，无需额外工具）");
+    (!String(hint).includes("记忆水位") ? ok : fail)("【104】水位提示已移除（金字塔已删）");
+    (!(await inst.context(ws)).text.includes("记忆水位") ? ok : fail)("【104】常驻记忆块里不再有水位提示");
     const pick = await inst.pickDistill(ws);
     (pick && pick.trigger === "watermark" && pick.dates.length === 3 ? ok : fail)(`【104】水位触发取最老一半（实际 ${pick?.trigger} / ${pick?.dates?.length} 天）`);
     const res = await inst.distill(ws, async () => "## 核心\n- 结论：约定 A\n\n## 纪要\n- 阶段纪要：做了 B\n", true);
@@ -329,13 +329,13 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const missingIds = MEMORY_PYRAMID.map((l) => l.id).filter((id) => !skillSrc.includes(`**${id}**`));
     (missingIds.length === 0 ? ok : fail)(`【104】技能正文含全部八层${missingIds.length ? "，缺：" + missingIds.join(",") : ""}`);
     (/rollups/.test(skillSrc) && /archive/.test(skillSrc) ? ok : fail)("【104】技能写明 L5 月卷 / L6 冷存档落点");
-    (readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8").includes('["memory-distill"') ? ok : fail)("【104】memory-distill 进了 entries（只写常量不注册 = 永不落盘）");
+    (!readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8").includes('"memory-distill"') ? ok : fail)("【104】memory-distill 已下架");
     try {
       const { buildDevInstructions } = await import("../../dist-electron/developer-instructions.js");
       const instr = buildDevInstructions({});
-      (instr.includes(MEMORY_DISTILL_SKILL) ? ok : fail)("【104】引擎指令点名技能 memory-distill（步骤在技能里，不在每轮指令里）");
-      (instr.includes("记忆水位") ? ok : fail)("【104】引擎指令写明触发 = 水位提示行（跟提示行文案同源）");
-      (instr.includes(`at ${Math.round(MEMORY_DISTILL_THRESHOLD * 100)}% of a layer`) ? ok : fail)("【104】指令里的阈值由常量拼装（改阈值不会漏改指令）");
+      (!instr.includes(MEMORY_DISTILL_SKILL) ? ok : fail)("【104】引擎指令不再点名 memory-distill");
+      (!instr.includes("记忆水位") ? ok : fail)("【104】引擎指令不再写水位触发");
+      (!instr.includes("memory pyramid") ? ok : fail)("【104】指令里不再有金字塔段");
     } catch (error) { fail(`【104】引擎指令产物读不到：${error?.message ?? error}`); }
   }
 }
