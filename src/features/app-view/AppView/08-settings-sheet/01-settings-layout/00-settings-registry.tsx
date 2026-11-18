@@ -507,7 +507,8 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     screenshot: { render: () => <ScreenshotSettingsSection onNotice={setNotice} /> },
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */
     pet: { render: () => <PetSettingsSection onNotice={setNotice} /> },
-    "component-library": { render: () => <ComponentLibrarySection /> },
+    /* 11-18：组件库能把片段「带进画布」⇒ 与设计库同口径，交提示词给主输入框。 */
+    "component-library": { render: () => <ComponentLibrarySection onHandoff={(text) => setPrompt(text)} /> },
     "design-library": { render: () => <DesignLibrarySection workspace={workspace} projects={projectGroups.map(([path]) => path)} onHandoff={(text) => setPrompt(text)} onCloseSettings={() => setSettingsOpen(false)} /> },
     "soul-market": { render: () => <SoulMarketSection onNotice={(m) => setNotice(m)} /> },
     "knowledge-base": { render: () => <KnowledgeBaseSection workspace={workspace} setNotice={(m) => setNotice(m)} /> },
