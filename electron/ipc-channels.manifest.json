@@ -4462,8 +4462,8 @@
     {
       "name": "installSkillPack",
       "channel": "skill-packs:install",
-      "paramsImpl": "input: { id: string }",
-      "paramsDecl": "input: { id: string }",
+      "paramsImpl": "input: { id: string; update?: boolean }",
+      "paramsDecl": "input: { id: string; update?: boolean }",
       "returns": "Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean }>",
       "invokeArgs": "input",
       "cast": null,
