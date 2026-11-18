@@ -114,6 +114,7 @@ import {
   Server,
   WifiOff,
   UserRound,
+  Tags,
   Rocket,
   BookMarked,
   Users,
@@ -202,6 +203,17 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const visibleEntries = <T extends { id?: unknown }>(entries: T[]): T[] =>
     hiddenSidebarThreadIds.size ? entries.filter((e) => !hiddenSidebarThreadIds.has(String(e?.id ?? ""))) : entries;
   const entityTags = useSyncExternalStore(subscribeEntityTags, getEntityTagState, getEntityTagState);
+  /* 11-17 用户令：「一键隐藏标签」——侧栏（会话 + 项目）徽标统一开关，落 localStorage。 */
+  const [hideSidebarTags, setHideSidebarTags] = useState<boolean>(() => {
+    try { return localStorage.getItem("sidebar-hide-tags") === "1"; } catch { return false; }
+  });
+  const toggleHideSidebarTags = () => {
+    setHideSidebarTags((value) => {
+      const next = !value;
+      try { localStorage.setItem("sidebar-hide-tags", next ? "1" : "0"); } catch { /* 隐私模式 */ }
+      return next;
+    });
+  };
   /* 10-31 用户令：会话行底色自选 —— 订阅让选色立刻重渲染本列表（行组件读 store 取色）。 */
   useSyncExternalStore(subscribeThreadRowColors, getThreadRowColors, getThreadRowColors);
   /* 10-31 用户令（截图点名）：「标签一列、会话列表开头一列，中间别留一大截」——
@@ -634,7 +646,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         onMouseEnter={(event) => maybeShowFunctionMenuTour(menuLocation, event.currentTarget)}
         onClick={toggleOptions}
       >
-        <LayoutGrid size={15} className="ic-violet" />
+        <LayoutGrid size={15} className="ic-accent" />
         <span>功能入口</span>
         <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
       </button>
@@ -792,7 +804,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   };
 
   return (
-    !popoutThreadId && <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">
+    !popoutThreadId && <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}${hideSidebarTags ? " hide-tags" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">
               <button className={`brand-mark sidebar-toggle ${sidebarCollapsed ? "is-collapsed" : "is-expanded"}`} aria-label={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} title={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} onClick={() => { if (narrow) return; const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("sidebar-collapsed", String(next)); }}>
                 <img className="ch-logo ch-logo-img" src={`${import.meta.env.BASE_URL}icon.png`} alt="" aria-hidden="true" />
                 <span className="sidebar-toggle-arrow"><ArrowLeft size={13} strokeWidth={2.4} /></span>
@@ -806,14 +818,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   <MessageCirclePlus size={16} strokeWidth={2} className="ic-blue" /><span>新建任务</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
                 </button>
                 <button
-                  className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber"
+                  className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-accent"
                   title={`新建指挥中枢（${bossShortcutLabel()}）：先选项目地址，再进欢迎界面；可建多个、互不干扰`}
                   onClick={() => openBossSession()}
                 >
                   <Crown size={15} /><span>指挥中枢</span><kbd className="quick-kbd">{bossShortcutLabel()}</kbd>
                 </button>
                 <button
-                  className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-violet"
+                  className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-accent"
                   title="工作伙伴：团队成员 + 伙伴，@ 一下就派活"
                   onClick={() => { void window.codex.popoutTeam(); }}
                 >
