@@ -48,6 +48,8 @@ export async function run() {
   const appEntry = read("src/App.tsx");
   const popoutQuery = read("src/lib/media-desk-window.ts");
   const sidebar = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
+  /* 11-18：自媒体工作台 / 拓展功能入口现在在功能入口菜单里。 */
+  const fmMeta = read("src/features/function-menu/FunctionMenu.tsx");
   const winFactory = read("electron/features/window-factory.ts");
   const dispatchCore = read("electron/features/dispatch-core.ts");
   const dispatchRpc = read("electron/features/dispatch-rpc.ts");
@@ -72,8 +74,12 @@ export async function run() {
   ok(!/\["media-desk", "自媒体工作台"/.test(catalogs) && !/自媒体工作台/.test(help) && !/"media-desk": \{ render:/.test(pageSrc)
     && !/page: "自媒体工作台"/.test(help),
     "设置页入口已撤（导航 / 帮助总览 / 页面注册三处都不再出现）");
-  ok(/mediaDeskPopout\(\)/.test(sidebar) && sidebar.indexOf("popoutTeam()") >= 0 && sidebar.indexOf("popoutTeam()") < sidebar.indexOf("mediaDeskPopout()"),
-    "侧栏入口在「工作伙伴」下面（同一组快捷入口，顺序钉住）");
+  /* 11-18 用户令：「把自媒体工作台和功能拓展放到功能入口里面」——
+     ⛔ 侧栏顶部不再有「自媒体工作台」常驻按钮；入口与动作由 function-menu 派发（id === "media"）。 */
+  ok(!/<span>自媒体工作台<\/span>/.test(sidebar)
+    && /id === "media"\) \{ void window\.codex\.mediaDeskPopout\(\)/.test(sidebar)
+    && /media: \{ label: "自媒体工作台"/.test(fmMeta),
+    "自媒体工作台已并入功能入口（侧栏无常驻按钮；动作经 function-menu 的 media 派发）");
   ok(/isMediaDeskWindow/.test(appEntry) && /<MediaDeskPopoutRoot \/>/.test(appEntry) && /document\.title = "自媒体工作台"/.test(popout)
     && /media-desk-popout-head/.test(popout) && /-webkit-app-region: drag/.test(boardCss),
     "独立窗口根：App 分流 + 标题栏可拖拽（与工作伙伴同口径）");
