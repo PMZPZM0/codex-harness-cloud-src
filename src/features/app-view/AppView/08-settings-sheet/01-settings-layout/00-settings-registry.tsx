@@ -465,6 +465,11 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     sendFavorite,
     updateFavoriteItem,
   } = app;
+  const openExpert = (name: string, tool: string) => {
+    const team = app.expertTeams.find((entry) => entry.lead.name === name);
+    if (!team) { app.setSettingsPage("expert-center"); setNotice(`请先为「${name}」建档，再从「${tool}」发起任务`); return; }
+    void app.startMemberDirectSession(team, team.lead, `请帮我检查「${tool}」的就绪情况，并给出下一步建议。`);
+  };
 
   return {
     /* 团队模式（10-05）：独立板块，registry 只放一行渲染 */
@@ -502,13 +507,20 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
        ⇒ 一级页不再放插槽）。⛔ id 与注册方式都没变：DomainsPanel / DeclaredPluginsPanel 仍
        各自 registerSlot，声明式插件照旧能挂到这些位置 —— 10-07 那次「同一 id 写成两处 ⇒
        功能域画两遍、声明式插件从不显示」的坑，继续由【268-c】按 id 全局去重钉着。 */
-    devtools: { render: () => <DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} runtimeModal={runtimeModal} setRuntimeModal={setRuntimeModal} onOpenExperts={() => setSettingsPage("expert-center")} /> },
+    devtools: { render: () => <DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} runtimeModal={runtimeModal} setRuntimeModal={setRuntimeModal} onOpenExperts={openExpert} /> },
     extensibility: { render: () => <ExtensibilitySettingsSection onNotice={setNotice} /> },
     screenshot: { render: () => <ScreenshotSettingsSection onNotice={setNotice} /> },
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */
     pet: { render: () => <PetSettingsSection onNotice={setNotice} /> },
     /* 11-18：组件库能把片段「带进画布」⇒ 与设计库同口径，交提示词给主输入框。 */
-    "component-library": { render: () => <ComponentLibrarySection onHandoff={(text) => setPrompt(text)} /> },
+    "component-library": { render: () => <ComponentLibrarySection onHandoff={(text) => setPrompt(text)} onRestore={async (doc) => {
+      if (!await app.openAppConfirm("恢复已保存的画布？", "当前画布将被这份稿件替换。", "恢复画布")) return;
+      const { waitSketchReady, applySketchDoc } = await import("../../../../ui-sketch");
+      setSettingsOpen(false);
+      app.setUiSketchOpen(true);
+      try { await waitSketchReady(); const reply = await applySketchDoc(doc); if (!reply.ok) throw new Error(reply.error); }
+      catch (error) { app.setNotice(`恢复画布失败：${String(error)}`); }
+    }} /> },
     "design-library": { render: () => <DesignLibrarySection workspace={workspace} projects={projectGroups.map(([path]) => path)} onHandoff={(text) => setPrompt(text)} onCloseSettings={() => setSettingsOpen(false)} /> },
     "soul-market": { render: () => <SoulMarketSection onNotice={(m) => setNotice(m)} /> },
     "knowledge-base": { render: () => <KnowledgeBaseSection workspace={workspace} setNotice={(m) => setNotice(m)} /> },
