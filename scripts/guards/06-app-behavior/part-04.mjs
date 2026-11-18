@@ -30,9 +30,9 @@ export async function run() {
   (/createPortal\([\s\S]{0,600}?className="project-menu"/.test(side180)
     && /document\.querySelector\("\.sidebar"\)\?\.getBoundingClientRect\(\)/.test(side180)
     && /const left = Math\.max\(8, Math\.min\(\(side \? side\.right : rect\.right\) \+ 6, window\.innerWidth - width - 8\)\)/.test(side180)
-    && /const top = Math\.max\(8, Math\.min\(rect\.top - 4, window\.innerHeight - height - 8\)\)/.test(side180)
+    && /const top = Math\.max\(8, Math\.min\(rect\.top \+ rect\.height \/ 2 - height \/ 2, window\.innerHeight - height - 8\)\)/.test(side180)
     && /\.project-menu\s*\{[^}]*position:\s*fixed[^}]*z-index:\s*10021/.test(readFileSync(join(ROOT, "src", "styles", "15-queued-messages.css"), "utf8")) ? ok : fail)(
-    "【180】项目菜单 portal 到 body 向右弹 + 视口钳制自适应（⛔ 横锚侧栏右缘，不嵌侧栏滚动容器）"
+    "【180】项目菜单 portal 到 body 向右弹 + 视口钳制自适应 + 与「⋯」按钮上下居中（⛔ 横锚侧栏右缘，不嵌侧栏滚动容器）"
   );
   (!/projectMenuUp/.test(side180) && !/\.project-menu\.is-up/.test(readFileSync(join(ROOT, "src", "styles", "15-queued-messages.css"), "utf8")) ? ok : fail)(
     "【180】⛔ 旧内嵌形态不许复活（projectMenuUp / is-up 翻转已删）"
@@ -348,8 +348,8 @@ export async function run() {
   (nav180.includes("sidebar-quick") && nav180.includes("新建任务") && nav180.includes("指挥中枢") ? ok : fail)(
     "【180】新建任务 / 指挥中枢在顶部快捷区（搜索任务 10-25 移到视图行 🔍）"
   );
-  (/className="view-toolbar-btn ic-cyan" title="搜索任务"/.test(side180) ? ok : fail)(
-    "【180】搜索任务入口在视图行工具条（🔍 + title，可点可发现）"
+  (/view-toolbar-btn ic-cyan"><Search[\s\S]{0,400}?<span>搜索任务<\/span>/.test(side180) ? ok : fail)(
+    "【180】搜索任务入口在视图行的「⋯」菜单里（🔍 + 文案，可点可发现；11-17 由悬浮工具条改为三点菜单）"
   );
   (!/<kbd>/.test(nav180) ? ok : fail)(
     "【180】快捷入口不再显示快捷键键帽（快捷键本身仍由全局监听生效）"
