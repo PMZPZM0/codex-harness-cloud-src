@@ -473,7 +473,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} setNotice={setNotice} rpaRecipeCount={(rpaRecipes ?? []).length} /> },
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
     "boss-groups": { render: () => <BossGroupsSection openAppConfirm={openAppConfirm} onNotice={setNotice} /> },
-    "expert-center": { render: () => expertMarketOpen ? <ExpertMarketSection localSkills={localSkills} onBack={() => setExpertMarketOpen(false)} onInstalled={() => void refreshExpertCenterData()} onNotice={(m) => setNotice(m)} /> : <><ExpertCenterSection expertTeams={expertTeams} EXPERT_CATEGORY_DEFS={EXPERT_CATEGORY_DEFS} expertTeamMemberDirect={expertTeamMemberDirect} startMemberDirectSession={startMemberDirectSession} onOpenMarket={() => setExpertMarketOpen(true)} onBack={() => setSettingsPage("agentteam")} /></> },
+    "expert-center": { render: () => expertMarketOpen ? <ExpertMarketSection localSkills={localSkills} onBack={() => setExpertMarketOpen(false)} onInstalled={() => void refreshExpertCenterData()} onNotice={(m) => setNotice(m)} /> : <><ExpertCenterSection expertTeams={expertTeams} EXPERT_CATEGORY_DEFS={EXPERT_CATEGORY_DEFS} expertTeamMemberDirect={expertTeamMemberDirect} startMemberDirectSession={startMemberDirectSession} onOpenMarket={() => setExpertMarketOpen(true)} saveExpertTeam={saveExpertTeam} refreshExpertTeams={() => void refreshExpertCenterData()} onBack={() => setSettingsPage("agentteam")} /></> },
     /* 10-31 用户令：CLI 智能体入口从「开发工具」挪到「专家/专家团」。 */
     "cli-agents": { render: () => <CliAgentsSettingsSection setNotice={setNotice} onBack={() => setSettingsPage("agentteam")} /> },
     user: { render: () => <UserCenterSection
@@ -502,7 +502,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
        ⇒ 一级页不再放插槽）。⛔ id 与注册方式都没变：DomainsPanel / DeclaredPluginsPanel 仍
        各自 registerSlot，声明式插件照旧能挂到这些位置 —— 10-07 那次「同一 id 写成两处 ⇒
        功能域画两遍、声明式插件从不显示」的坑，继续由【268-c】按 id 全局去重钉着。 */
-    devtools: { render: () => <DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} runtimeModal={runtimeModal} setRuntimeModal={setRuntimeModal} /> },
+    devtools: { render: () => <DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} runtimeModal={runtimeModal} setRuntimeModal={setRuntimeModal} onOpenExperts={() => setSettingsPage("expert-center")} /> },
     extensibility: { render: () => <ExtensibilitySettingsSection onNotice={setNotice} /> },
     screenshot: { render: () => <ScreenshotSettingsSection onNotice={setNotice} /> },
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */
@@ -556,7 +556,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     backup: { render: () => <BackupSettingsSection thread={thread} backupBusy={backupBusy} exportThreadsMarkdown={exportThreadsMarkdown} exportThreadsBackup={exportThreadsBackup} threads={threads} importThreadsBackup={importThreadsBackup} importConversationMarkdown={importConversationMarkdown} /> },
     archive: { render: () => <ArchiveSettingsSection ArchivePage={ArchivePage} setNotice={setNotice} setSettingsOpen={setSettingsOpen} openThread={openThread} openAppConfirm={openAppConfirm} refreshThreads={refreshThreads} /> },
     /* 11-11 产物归档：本仓不做设置页拆分，直接挂这一页（数据组已满 6 项，放人格与记忆组）*/
-    artifacts: { render: () => <ArtifactPanel workspace={workspace} /> },
+    artifacts: { render: () => <ArtifactPanel workspace={workspace} onOpenThread={(id: string) => { openThread(id); setSettingsOpen(false); }} /> },
     storage: { render: () => <>
                   <StorageSection
                           onNotice={setNotice}
