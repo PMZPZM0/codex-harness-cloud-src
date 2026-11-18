@@ -71,9 +71,12 @@ export async function run() {
     && /mediaDeskUpdate/.test(preload) && /mediaDeskUpdate\(/.test(dts),
     "桥齐备（endpoint / popout / version / check-update / update，preload 与 vite-env 都在）");
   /* 11-11 用户令：入口从设置页挪到侧栏「工作伙伴」下面，开独立窗口；设置页三处必须全部撤掉。 */
-  ok(!/\["media-desk", "自媒体工作台"/.test(catalogs) && !/自媒体工作台/.test(help) && !/"media-desk": \{ render:/.test(pageSrc)
-    && !/page: "自媒体工作台"/.test(help),
-    "设置页入口已撤（导航 / 帮助总览 / 页面注册三处都不再出现）");
+  /* 11-11 用户令 + 11-18 修订：**设置页入口**必须撤（导航 / 页面注册 / 帮助里的设置页条目），
+     但帮助总览里「入口在哪」必须写对（⛔ 不许出现 page: "自媒体工作台" 那种设置页条目）。 */
+  ok(!/\["media-desk", "自媒体工作台"/.test(catalogs) && !/"media-desk": \{ render:/.test(pageSrc)
+    && !/page: "自媒体工作台"/.test(help)
+    && /label: "自媒体工作台", where: "侧栏底部「功能入口」/.test(help),
+    "自媒体工作台：设置页入口已撤，但帮助总览写明「侧栏底部『功能入口』」这一个正确位置");
   /* 11-18 用户令：「把自媒体工作台和功能拓展放到功能入口里面」——
      ⛔ 侧栏顶部不再有「自媒体工作台」常驻按钮；入口与动作由 function-menu 派发（id === "media"）。 */
   ok(!/<span>自媒体工作台<\/span>/.test(sidebar)
