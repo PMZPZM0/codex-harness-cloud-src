@@ -99,7 +99,8 @@ export const codexFeature = defineFeature<null>({
            ⛔ 失败静默：拉不到工具不能挡住 thread/start。 */
         try {
           const { listMcpDynamicTools, toDynamicTools } = await import("../mcp-bridge");
-          const mcpTools = toDynamicTools(await listMcpDynamicTools());
+          const { MCP_LAZY, buildMcpGatewayTools } = await import("../mcp-gateway");
+          const mcpTools = MCP_LAZY ? buildMcpGatewayTools() : toDynamicTools(await listMcpDynamicTools());
           if (mcpTools.length) {
             const existing = Array.isArray((params as any)?.dynamicTools) ? (params as any).dynamicTools : [];
             (params as any).dynamicTools = [...existing, ...mcpTools];
