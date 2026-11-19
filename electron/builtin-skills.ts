@@ -102,7 +102,7 @@ export async function ensureEgoBrowserSkill(skillsDir: string): Promise<void> {
 
 /** 把随包的内置技能写进技能目录（缺就补），返回写入了哪些。 */
 /** 11-19：技能描述截成一行（只截 frontmatter 的 description，正文不动）。 */
-function clampSkillDescription(content: string, max = 120): string {
+function clampSkillDescription(content: string, max = 60): string {
   const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return content;
   const head = m[1];
